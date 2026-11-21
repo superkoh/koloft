@@ -1,0 +1,42 @@
+$ koloft page tap iframe -- Pass the robot check  → {"passed":true}
+  header: 👆 **NAME** asks you to tap a web page
+  body: Page: shop.example
+Pass the robot check
+Say which squares to tap.
+  label: Squares to tap, in order
+  tap before a picture: Koloft has no picture to tap on yet: press New picture.
+  picture: grid.png
+  tap A1 B2: Tapped A1, B2.
+  tap Z99 Q: Koloft tapped nothing: Z99, Q is not a square on the picture.
+  tap nothing: Koloft tapped nothing: no square is not a square on the picture.
+  exit 0: The owner said it passed. Look at the page to see whether it went through.
+$ koloft page tap iframe -- Pass the robot check  → {"doneInKoloft":true}
+  header: 👆 **NAME** asks you to tap a web page
+  body: Page: shop.example
+Pass the robot check
+Say which squares to tap.
+  label: Squares to tap, in order
+  exit 0: The owner said they were done, on the Mac. Look at the page to see whether it went through.
+$ koloft page tap iframe -- Pass the robot check  → {"ended":"declined"}
+  header: 👆 **NAME** asks you to tap a web page
+  body: Page: shop.example
+Pass the robot check
+Say which squares to tap.
+  label: Squares to tap, in order
+  exit 1: koloft: the owner gave up on this; nothing more is tapped. Look at the page to see where it stands.
+$ koloft page tap iframe -- Pass the robot check  → {"ended":"timeout"}
+  header: 👆 **NAME** asks you to tap a web page
+  body: Page: shop.example
+Pass the robot check
+Say which squares to tap.
+  label: Squares to tap, in order
+  exit 1: koloft: the owner did not finish in time. Look at the page to see where it stands.
+$ koloft page tap iframe -- Pass the robot check  → {"passed":true}
+  exit 1: koloft: the owner is asleep and cannot tap the page now. Skip this step, go on with the rest, and say in your report that it waits for the owner.
+$ koloft page tap iframe -- Pass the robot check  → {"passed":true}
+  exit 1: koloft: no single element matches that selector in this session's Workbench pages, or it is not valid CSS. Give a selector that matches exactly one element: the smallest one that holds what the owner must tap, usually the check's <iframe>.
+$ koloft page tap iframe -- Pass the robot check  → {"passed":true}
+  exit 1: koloft: no single element matches that selector in this session's Workbench pages, or it is not valid CSS. Give a selector that matches exactly one element: the smallest one that holds what the owner must tap, usually the check's <iframe>.
+$ koloft page tap iframe  → {"passed":true}
+  exit 2: koloft: usage: koloft page tap <css selector> -- "<one line that tells the owner what to do>"
+the picture of a part out of view fails with: the part of the page to show is out of view

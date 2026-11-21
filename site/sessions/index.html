@@ -150,10 +150,46 @@
             and for a <a href="../scheduled/">scheduled job</a>, for each part it leaves on
             <code>Default</code> or <code>Same as usual</code>. A resume, a restart and a session an
             agent starts do not take it. If the model does not take that thinking level, the session
-            starts without it. The same box has a place for rules: how this folder's agents pick the
-            model and thinking of a session they start (see <a href="../agents/">agents</a>). Left
-            empty, they use Koloft's own pick. Every agent gets this, on your Mac and in a
-            <a href="../remote/">remote folder</a>.
+            starts without it. For Codex and Antigravity, your account may not have a model you
+            picked from the list. Then the session starts on the next model down (or on the agent's
+            own model), at the highest thinking level that model takes up to the one you picked (or
+            with none), and a short note says so, such as
+            <code>This account has no carbon model, so it runs on gemini-4-neon.</code> A model name
+            that is not in the list is not checked. The same box has a place for rules: how this
+            folder's agents pick the model and thinking of a session they start (see
+            <a href="../agents/">agents</a>). Left empty, they use Koloft's own pick. Every agent
+            gets this, on your Mac and in a <a href="../remote/">remote folder</a>.
+          </li>
+          <li id="instructions">
+            Last in the <code>Session defaults…</code> box is <code>Instructions</code>: write what
+            every session in this folder should follow. After you save, each new session that starts
+            there, or in another copy of the same repository, gets it, at the end of the text Koloft
+            gives its agent, under "Written by the owner for this workspace". The instructions count
+            for every agent, on your Mac and in a remote folder, for sessions an agent starts too,
+            but not for your butler, which has
+            <a href="../accounts/#butler-instructions">its own</a>. A session you resume may keep
+            the text it started with. Where the project's own <code>AGENTS.md</code> or
+            <code>CLAUDE.md</code> says otherwise, an agent may follow that file instead. The rules
+            and the instructions share one limit of 10,000 bytes; the box shows how much is left.
+          </li>
+          <li id="every-workspace">
+            For a rule every project should follow, open Settings ▸ Sessions, find
+            <code>Instructions for every workspace</code> and click <code>Edit</code>. Each new
+            session in each folder gets these first, then that folder's own
+            <code>Instructions</code>. This holds for every agent, on your Mac and in a
+            <a href="../remote/">remote folder</a>, but not for your butler or the helpers it starts
+            in its own folder. To keep one folder out, open its <code>Session defaults…</code> and
+            pick <code>Leave them out</code> under <code>Instructions for every workspace</code>.
+          </li>
+          <li id="instructions-ask">
+            Tell a session to remember a rule ("from now on, always …") and its agent can propose
+            that line for its folder's instructions, or for every workspace's. A
+            <code>Change the instructions?</code> box opens over that session's terminal, showing
+            who wants the change and the lines it adds or removes. Nothing changes until you click
+            <code>Change them</code>; <code>Don't change</code> (or <kbd>Esc</kbd>) leaves the text
+            as it was. While you are away, the same question can come to
+            <a href="../discord/#instructions-card">Discord</a>. Every agent can do this, on your
+            Mac and in a remote folder.
           </li>
           <li>Click an old row to resume that session.</li>
           <li id="sleep">
@@ -219,6 +255,15 @@
                 </td>
               </tr>
               <tr>
+                <td>any light with <code>⏸ N</code></td>
+                <td>
+                  N things it started sit in the background, not working right now: a server, a
+                  watcher or a timer, a helper or a command with nothing to do yet, or a program it
+                  left running. The mark can come twice, as in <code>⏸ 1 ⏸ 2</code>: first the
+                  helpers and commands, then the rest. Hover the mark to see them.
+                </td>
+              </tr>
+              <tr>
                 <td>dim green</td>
                 <td>done a while ago, nothing new; a sleeping session looks the same</td>
               </tr>
@@ -254,8 +299,9 @@
         <ul class="dash">
           <li>
             A small <mark class="hl">red dot</mark> after a session's name means it is calling you:
-            its turn is done, it waits for your OK, or it quit on its own. Hover the dot to see
-            which. It sits beside the light; it does not replace it.
+            its turn is done, it waits for your OK (or for a password, a code or a sign-in that has
+            no card on Discord), or it quit on its own. Hover the dot to see which. It sits beside
+            the light; it does not replace it.
           </li>
           <li>
             Looking at the session does not clear the dot. It goes when the session works again: you
@@ -352,7 +398,8 @@
         </div>
         <ul class="dash">
           <li>
-            When Koloft cannot read what a session asks, its card says
+            When Koloft cannot read what a session asks, or the session asks for a password, a code
+            or a sign-in that has no card on Discord, its card says
             <code>“…” is waiting for you in its tab</code>, and <code>Open session</code> takes you
             there. Every card Koloft puts there has that link.
           </li>
@@ -523,6 +570,26 @@
             the button, or one from the ▾ list or <kbd>⌘⏎</kbd>), does the job and reports back to
             your butler. "Set up Discord" works its own way (see
             <a href="../discord/#set-up">discord</a>).
+          </li>
+          <li>
+            To show the agent a picture, such as a screenshot, paste it into the box with
+            <kbd>⌘V</kbd>. Koloft takes PNG, JPEG, GIF and WebP. A small copy shows under your
+            words. You can paste more than one; the × on a picture takes it away. A picture needs
+            words with it. With only a picture, the button stays off and the tip reads
+            <code>Say what to do with the picture · Esc</code>.
+          </li>
+          <li>
+            When your words start a session, or go to a helper of your butler, they end with one
+            <code class="nowrap">Picture: …</code> line per picture. The line names a copy Koloft
+            keeps on this Mac for about a week. Claude Code, Codex, Muse Code and Antigravity all
+            get these lines; Antigravity may ask you before it opens a picture. When a session
+            starts in a <a href="../remote/">remote folder</a>, Koloft first copies the picture to
+            that machine, and the line names the copy there. That copy can be deleted after about a
+            day, the same way as a <a href="../workbench/#pick">picked part of a page</a>. If the
+            copy fails, Koloft says <code>A pasted picture could not be copied to …</code>, and the
+            line names the file on this Mac. The picture is left behind when <kbd>⌘P</kbd> jumps to
+            a session or a workspace, does an action like "open settings", or sets up Discord.
+            Assist sees only your words, not the picture.
           </li>
           <li>
             When none of your accounts can run <a href="../accounts/#assist">Assist</a>, the button
@@ -801,7 +868,10 @@
           </li>
           <li>
             <a href="#session-defaults">Session defaults…</a>
-            <span class="why">— the model and thinking its new sessions start on</span>
+            <span class="why"
+              >— the model and thinking its new sessions start on, and
+              <a href="#instructions">instructions</a> for them</span
+            >
           </li>
           <li>
             <a href="../scheduled/">Scheduled jobs…</a>

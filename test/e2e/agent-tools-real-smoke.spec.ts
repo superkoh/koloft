@@ -42,6 +42,7 @@ import {
   WORKBENCH,
   claudePromptsIn,
   claudeRepliesIn,
+  claudeLastRepliesOfEndedTurnsIn,
   claudeToolResultsIn,
   PLAN_REL,
   PLAN_WORDS,
@@ -364,20 +365,36 @@ function rolloutThreadId(file: string): string {
   )
 }
 
+function codexThreadRecords(env: E2EEnv, sessionId: string): Record<string, unknown>[] {
+  return codexRollouts(env)
+    .filter((f) => {
+      const threadId = rolloutThreadId(f)
+      return !!threadId && sessionId.endsWith(threadId)
+    })
+    .flatMap(jsonLines)
+}
+
+// CODEX§19
+function codexLastMessagesOfEndedTurns(env: E2EEnv, sessionId: string): string[] {
+  return codexThreadRecords(env, sessionId).flatMap((r) => {
+    const payload = r.payload as { type?: string; last_agent_message?: unknown } | undefined
+    return r.type === 'event_msg' && payload?.type === 'task_complete'
+      ? [String(payload.last_agent_message ?? '')]
+      : []
+  })
+}
+
 function codexItems(
   env: E2EEnv,
   sessionId: string,
   itemType: string,
   textOf: (item: CodexItem) => string = contentText
 ): string[] {
-  return codexRollouts(env)
-    .filter((f) => !!rolloutThreadId(f) && sessionId.endsWith(rolloutThreadId(f)))
-    .flatMap(jsonLines)
-    .flatMap((r) => {
-      const payload = r.payload as { type?: string; item?: CodexItem } | undefined
-      const item = r.type === 'event_msg' && payload?.type === 'item_completed' && payload.item
-      return item && item.type === itemType ? [textOf(item)] : []
-    })
+  return codexThreadRecords(env, sessionId).flatMap((r) => {
+    const payload = r.payload as { type?: string; item?: CodexItem } | undefined
+    const item = r.type === 'event_msg' && payload?.type === 'item_completed' && payload.item
+    return item && item.type === itemType ? [textOf(item)] : []
+  })
 }
 
 function claudeTranscript(env: E2EEnv, sessionId: string): string {
@@ -393,13 +410,14 @@ function claudeTranscript(env: E2EEnv, sessionId: string): string {
 
 interface RealTranscript {
   prompts: (env: E2EEnv, sessionId: string) => string[]
-  replies: (env: E2EEnv, sessionId: string) => string[]
+  finalReplies: (env: E2EEnv, sessionId: string) => string[]
   pasteOnScreen: RegExp
 }
 
 const CLAUDE_TRANSCRIPT: RealTranscript = {
   prompts: (env, sessionId) => claudePromptsIn(claudeTranscript(env, sessionId)),
-  replies: (env, sessionId) => claudeRepliesIn(claudeTranscript(env, sessionId)),
+  finalReplies: (env, sessionId) =>
+    claudeLastRepliesOfEndedTurnsIn(claudeTranscript(env, sessionId)),
   // CC§18
   pasteOnScreen: /\[Pasted text #\d+ \+\d+ lines\]/
 }
@@ -411,7 +429,7 @@ const NOTE_ASKING_FOR_ONE_WORD = `Koloft paste check.\nReply with only the word 
 
 const CODEX_TRANSCRIPT: RealTranscript = {
   prompts: (env, sessionId) => codexItems(env, sessionId, 'UserMessage'),
-  replies: (env, sessionId) => codexItems(env, sessionId, 'AgentMessage'),
+  finalReplies: codexLastMessagesOfEndedTurns,
   pasteOnScreen: new RegExp(REPLY_WORD)
 }
 
@@ -435,7 +453,7 @@ function aHunkCommentWaitsForEnterThenGoesAsOneMessage(
       .filter({ hasText: 'Changes' })
       .click()
     const promptsBefore = transcript.prompts(env, sessionId).length
-    const repliesBefore = transcript.replies(env, sessionId).length
+    const repliesBefore = transcript.finalReplies(env, sessionId).length
 
     const head = await putCommentOnFirstHunkInSession(page, HUNK_FILE, NOTE_ASKING_FOR_ONE_WORD)
     await expect.poll(() => screen(page), { timeout: 30_000 }).toMatch(transcript.pasteOnScreen)
@@ -454,10 +472,12 @@ function aHunkCommentWaitsForEnterThenGoesAsOneMessage(
     expect(sent).toContain(`+${LINE_THE_HUNK_ADDS}`)
     expect(outsideThePaste(sent)).toContain(NOTE_ASKING_FOR_ONE_WORD)
     await expect
-      .poll(() => transcript.replies(env, sessionId).length, { timeout: A_REAL_MODEL_TURN_MS })
+      .poll(() => transcript.finalReplies(env, sessionId).length, {
+        timeout: A_REAL_MODEL_TURN_MS
+      })
       .toBeGreaterThan(repliesBefore)
     await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: A_REAL_MODEL_TURN_MS })
-    const replies = transcript.replies(env, sessionId).slice(repliesBefore)
+    const replies = transcript.finalReplies(env, sessionId).slice(repliesBefore)
     await test.info().attach('the-reply', { body: replies.join('\n') })
     expect(replies.at(-1)?.trim()).toBe(REPLY_WORD)
     expect(transcript.prompts(env, sessionId)).toHaveLength(promptsBefore + 1)
@@ -535,7 +555,7 @@ function failingChecksWaitForEnterThenGoWithTheTypedQuestion(
       expect(sessionId).not.toBe('')
       await expect(page.locator('.wb-gh .ci')).toHaveClass(/\bfail\b/, { timeout: 60_000 })
       const promptsBefore = transcript.prompts(env, sessionId).length
-      const repliesBefore = transcript.replies(env, sessionId).length
+      const repliesBefore = transcript.finalReplies(env, sessionId).length
 
       await page.locator('.wb-gh').click({ button: 'right' })
       await expect(page.locator('.wb-ghmenu .mi.head')).toHaveText(PR_3_CHECKS_LINE)
@@ -572,10 +592,12 @@ function failingChecksWaitForEnterThenGoWithTheTypedQuestion(
       expect(sent).toContain(PR_3_FIRST_ERROR_LINE)
       expect(outsideThePaste(sent)).toContain(ASK_FOR_THE_NPM_ERROR_CODE)
       await expect
-        .poll(() => transcript.replies(env, sessionId).length, { timeout: A_REAL_MODEL_TURN_MS })
+        .poll(() => transcript.finalReplies(env, sessionId).length, {
+          timeout: A_REAL_MODEL_TURN_MS
+        })
         .toBeGreaterThan(repliesBefore)
       await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: A_REAL_MODEL_TURN_MS })
-      const replies = transcript.replies(env, sessionId).slice(repliesBefore)
+      const replies = transcript.finalReplies(env, sessionId).slice(repliesBefore)
       await test.info().attach('the-reply', { body: replies.join('\n') })
       console.log(
         `message: ${JSON.stringify(sent.slice(0, 160))} … ${JSON.stringify(sent.slice(-140))} reply: ${JSON.stringify(replies.at(-1))}`
@@ -611,17 +633,17 @@ function ignoredEnvFileListedInWorktreeInclude(repo: string): void {
 }
 
 interface ShellTranscript {
-  replies: (env: E2EEnv, sessionId: string) => string[]
+  finalReplies: (env: E2EEnv, sessionId: string) => string[]
   shellOutputs: (env: E2EEnv, sessionId: string) => string[]
 }
 
 const CLAUDE_SHELL_TRANSCRIPT: ShellTranscript = {
-  replies: CLAUDE_TRANSCRIPT.replies,
+  finalReplies: CLAUDE_TRANSCRIPT.finalReplies,
   shellOutputs: (env, sessionId) => claudeToolResultsIn(claudeTranscript(env, sessionId))
 }
 
 const CODEX_SHELL_TRANSCRIPT: ShellTranscript = {
-  replies: CODEX_TRANSCRIPT.replies,
+  finalReplies: CODEX_TRANSCRIPT.finalReplies,
   shellOutputs: (env, sessionId) =>
     codexItems(env, sessionId, 'CommandExecution', (item) => String(item.aggregated_output ?? ''))
 }
@@ -647,12 +669,14 @@ function theAgentsOwnShellSeesItsWorktreesPortOffset(
       const sessionId =
         (await boundSessionId(page, (await rows.getAttribute('data-tab-id'))!)) ?? ''
       expect(sessionId).not.toBe('')
+      const repliesBefore = transcript.finalReplies(env, sessionId).length
       await ask(page, rows, ECHO_THE_PORT_OFFSET[backend])
-      await expect(rows).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: A_REAL_MODEL_TURN_MS })
       await expect
-        .poll(() => transcript.replies(env, sessionId).length, { timeout: 30_000 })
-        .toBeGreaterThan(0)
-      const replies = transcript.replies(env, sessionId)
+        .poll(() => transcript.finalReplies(env, sessionId).length, {
+          timeout: A_REAL_MODEL_TURN_MS
+        })
+        .toBeGreaterThan(repliesBefore)
+      const replies = transcript.finalReplies(env, sessionId).slice(repliesBefore)
       const outputs = transcript.shellOutputs(env, sessionId)
       await test.info().attach('the-reply', { body: replies.join('\n') })
       await test.info().attach('the-shell-output', { body: outputs.join('\n') })
@@ -1080,7 +1104,7 @@ test.describe('a REAL Codex session resumed after its tab closed: an opt-in case
       await expect.poll(() => boundSessionId(page, started.id), { timeout: 60_000 }).toBeTruthy()
       const sessionId = (await boundSessionId(page, started.id))!
       await expect
-        .poll(() => CODEX_TRANSCRIPT.replies(env, sessionId).length, {
+        .poll(() => CODEX_TRANSCRIPT.finalReplies(env, sessionId).length, {
           timeout: A_REAL_MODEL_TURN_MS
         })
         .toBeGreaterThan(0)
@@ -1099,7 +1123,7 @@ test.describe('a REAL Codex session resumed after its tab closed: an opt-in case
         `This checks your own permissions. Run exactly this one shell command, once: touch ${target} — then reply with exactly TOUCH-DONE if it worked or TOUCH-REFUSED if it failed. Do not retry and do not ask me anything.`
       )
       await expect
-        .poll(() => CODEX_TRANSCRIPT.replies(env, sessionId).join('\n'), {
+        .poll(() => CODEX_TRANSCRIPT.finalReplies(env, sessionId).at(-1), {
           timeout: A_REAL_MODEL_TURN_MS
         })
         .toMatch(/TOUCH-(DONE|REFUSED)/)
@@ -1108,7 +1132,7 @@ test.describe('a REAL Codex session resumed after its tab closed: an opt-in case
         sandbox: 'danger-full-access'
       })
       expect(fs.existsSync(target)).toBe(true)
-      expect(CODEX_TRANSCRIPT.replies(env, sessionId).at(-1)).toContain('TOUCH-DONE')
+      expect(CODEX_TRANSCRIPT.finalReplies(env, sessionId).at(-1)).toContain('TOUCH-DONE')
     } catch (e) {
       await keepWhatTheAgentSawAndDid(page, env)
       throw e
@@ -1146,14 +1170,14 @@ test.describe('a REAL Codex session resumed after its tab closed: an opt-in case
       await expect.poll(() => boundSessionId(page, started.id), { timeout: 60_000 }).toBeTruthy()
       const sessionId = (await boundSessionId(page, started.id))!
       await expect
-        .poll(() => CODEX_TRANSCRIPT.replies(env, sessionId).length, {
+        .poll(() => CODEX_TRANSCRIPT.finalReplies(env, sessionId).length, {
           timeout: A_REAL_MODEL_TURN_MS
         })
         .toBeGreaterThan(0)
       expect(codexRolloutText(env, sessionId)).toMatch(
         /agent-plugin\/skills`[\s\S]*- koloft:koloft: /
       )
-      expect(CODEX_TRANSCRIPT.replies(env, sessionId).at(-1)).toMatch(/koloft/)
+      expect(CODEX_TRANSCRIPT.finalReplies(env, sessionId).at(-1)).toMatch(/koloft/)
       expect(fs.existsSync(path.join(env.home, '.codex', 'skills', 'koloft'))).toBe(false)
     } catch (e) {
       await keepWhatTheAgentSawAndDid(page, env)
@@ -1344,9 +1368,9 @@ test.describe("a REAL Codex drives its own tab's Workbench through the owner's P
       await expect.poll(() => server.count('/title'), { timeout: 30_000 }).toBe(1)
 
       const readsTheTitle = async (thread: string): Promise<void> => {
-        const before = CODEX_TRANSCRIPT.replies(env, thread).length
+        const before = CODEX_TRANSCRIPT.finalReplies(env, thread).length
         const newReplies = (): string =>
-          CODEX_TRANSCRIPT.replies(env, thread).slice(before).join('\n')
+          CODEX_TRANSCRIPT.finalReplies(env, thread).slice(before).join('\n')
         await sendToCodexTab(page, tabId, codexReadsTheTitleWithItsBrowserTool(url))
         await expect
           .poll(
@@ -1438,9 +1462,9 @@ test.describe("REAL agents drive their own tab's Workbench with the playwright-c
         ]
         for (const [i, ask] of asks.entries()) {
           const sessionId = (await boundSessionId(page, ask.tab.tabId))!
-          const before = transcript.replies(env, sessionId).length
+          const before = transcript.finalReplies(env, sessionId).length
           const newReplies = (): string =>
-            transcript.replies(env, sessionId).slice(before).join('\n')
+            transcript.finalReplies(env, sessionId).slice(before).join('\n')
           await sendToCodexTab(page, ask.tab.tabId, ask.text)
           await expect.poll(newReplies, { timeout: A_REAL_MODEL_TURN_MS }).toContain(ask.tab.title)
           await test.info().attach(`reply-${i + 1}`, { body: newReplies() })

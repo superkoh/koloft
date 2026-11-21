@@ -74,8 +74,9 @@ export function unexpectedExitWanted<
   T extends { kind: string; sessionId?: string; jobId?: string }
 >(
   tab: T | undefined,
-  exit: Pick<TerminalExit, 'unexpected' | 'runStarted'>
+  exit: Pick<TerminalExit, 'unexpected'>,
+  runStarted: boolean
 ): tab is T & { kind: SessionBackend } {
   if (!tab || !isSessionKind(tab.kind) || !exit.unexpected) return false
-  return !(tab.jobId !== undefined && tab.sessionId === undefined && !exit.runStarted)
+  return !(tab.jobId !== undefined && tab.sessionId === undefined && !runStarted)
 }

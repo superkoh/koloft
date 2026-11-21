@@ -166,6 +166,18 @@ method. A recheck adds its date, version and command to the bullet.
   zsh's Ctrl+U deletes the whole line wherever the caret is; bash's deletes from the
   caret back to the line's start. 2026-11-09, macOS 27.0 `/bin/zsh -f` and
   `/bin/bash --norc` (3.2), interactive, in a python pty read through `pyte`.
+- **An empty HOME does not hide Homebrew from a login shell.** On a Mac with Homebrew,
+  `/etc/paths.d/homebrew` holds `/opt/homebrew/bin`, and `zsh -l -i -c` and
+  `bash -l -i -c` with a fresh HOME and `PATH=/usr/bin:/bin:/usr/sbin:/sbin` both
+  printed a PATH ending in `/opt/homebrew/bin` and found a brew cask
+  `/opt/homebrew/bin/codex`. `zsh -o NO_GLOBAL_RCS -l -i -c` (zsh's own options showed
+  `login` on, `globalrcs` off) printed a PATH without it, found no `codex`, and still
+  read the HOME's own `.zprofile`: a `PATH` line there held. zsh reads `/etc/zshenv`
+  before that option takes effect (zsh manual, STARTUP/SHUTDOWN FILES), so a Mac whose
+  `/etc/zshenv` adds Homebrew still shows it; this Mac had no `/etc/zshenv`. The
+  official Codex installer picks `~/.zprofile` only when `$SHELL` ends in `/zsh`, so a
+  wrapper shell keeps that name. (2026-11-17, macOS 27.2, zsh 5.9, Codex 0.169.0 as a
+  brew cask, a scratch node script.)
 
 ## §3 macOS system tools and limits
 
@@ -295,16 +307,36 @@ method. A recheck adds its date, version and command to the bullet.
   a fake `open` on PATH cannot catch them. `openPath` does not reject on failure: it
   resolves with an error string (empty on success). `openExternal` and
   `showItemInFolder` report nothing like that.
-- **An unhandled promise rejection in main**, with no `unhandledRejection` handler
-  installed, becomes Electron's native "A JavaScript error occurred in the main
-  process" dialog.
+- **An error nobody caught in main holds the whole app until someone clicks.** A throw
+  in a timer (or any callback with no caller of ours above it), with no
+  `uncaughtException` listener of the app's own, makes Electron call
+  `dialog.showErrorBox('A JavaScript error occurred in the main process', …)`, a modal
+  box. The process lives on, but main's JavaScript takes no new work until the box is
+  dismissed. With a listener of the app's own on `uncaughtException`, Electron calls
+  the listener and opens no box. A promise rejection nobody handled opens no box either:
+  it prints `UnhandledPromiseRejectionWarning` to stderr and never reaches
+  `uncaughtException`. Measured 2026-11-18 on Electron 43.8.7 (macOS 27.2) in a
+  throwaway hidden app with `dialog.showErrorBox` swapped for a recorder. That the real
+  box holds main was read off the installed app (the same Electron) that night: the
+  unified log shows six boxes come up in the main process, and for the two that came up
+  alone while a window had focus, the `main-stalls.log` line spans from the box coming
+  up to within 100 ms of the click that closed it (2.2 s, and 6 h 52 min while nobody
+  was at the Mac); all 38 `koloft` calls from sessions that got no answer that night
+  fell between a box coming up and its click. A `sample` of that app taken while a
+  seventh box was up shows its main thread in `-[NSAlert runModal]`, called from
+  JavaScript run by `node::Environment::RunTimers`.
+
+Koloft dependents: once its window is made, `index.ts` listens for `uncaughtException`
+itself, writes the stack to `main-errors.log` in `userData` and shows a toast; before
+that, with no window to show a toast in, Electron's box stays. It writes a rejected
+promise nobody handled to the same log, with no toast.
 
 ## §5 Electron: windows, renderers and quitting
 
 - **A destroyed window or WebContents throws "Object has been destroyed"** on use:
   `BrowserWindow.webContents` is a getter that throws, `webContents.send` throws, and
   every getter (such as `getURL`) throws inside a `destroyed` handler (measured for
-  `getURL`). A throw inside a timer callback in main crashes main. The BrowserWindow
+  `getURL`). A throw inside a timer callback in main is an error nobody caught (§4). The BrowserWindow
   object outlives its webContents, so a null check on the window is not enough.
 - **`maximize()` shows a window that was created hidden** (macOS).
 - **`setBounds` throws** if any value is NaN.
@@ -555,7 +587,11 @@ method. A recheck adds its date, version and command to the bullet.
   Electron 43, T-FX-01's probe). After a click inside a guest, the element becomes the
   host's `document.activeElement` but matches neither `:focus` nor `:focus-within`, and
   no focus event fires in the host; the guest's webContents fires neither focus nor
-  blur. `focusout` fires while the old element is still active.
+  blur. `focusout` fires while the old element is still active. The way out is just as
+  quiet (measured on Electron 43 with `KOLOFT_TEST_BACKGROUND=1`, 2026-11-19,
+  instructions-by-agent's web-page case): a click on a plain host element moves
+  `activeElement` from the `<webview>` to `<body>` with no `blur` or `focusout` on the
+  `<webview>`; the host's own `pointerdown` for that click still fires.
 - **While a guest holds the caret, the host's `document.hasFocus()` is false** on a real
   window (measured in a manual round), and window `blur`/`focus` fire for that
   hand-over; only main's BrowserWindow focus events tell "went into a page" from "left
@@ -2282,6 +2318,15 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   not a valid value (`bad value: all`, the option stays off), and that error in a `-f`
   config file leaves the new pane in view-mode, eating every key (October 2026, tmux 3.3a
   in Docker, probed for remote Muse tabs).
+- **A passthrough a pane prints while no client is attached is never sent later.** A
+  client that attaches gets the pane's screen redrawn, not the `ESC P tmux; … ESC \` it
+  missed; one printed while a client is attached reaches it. So a remote tab that
+  attaches again after Koloft restarts sees no old 7501 frame, only the ones printed
+  from then on (2026-11-18, tmux 3.3a in the `koloft-e2e-sshd` Docker image,
+  `allow-passthrough on` from a `-f` config, a wrapped `ESC ] 7501 ; state=working`
+  printed in a detached session, then `attach` in a python pty with
+  `TERM=xterm-256color`: the pane's text arrived, the frame did not; a frame printed in
+  a new window after attaching arrived).
 - **Before 3.3 tmux has no `allow-passthrough` and always passes a pane's `ESC P tmux; …
   ESC \` on.** tmux 3.2a (Ubuntu 22.04) and 2.6 (Ubuntu 18.04) do not know the option
   (`invalid option` / `unknown option: allow-passthrough`), so Koloft's `set -gq
@@ -2919,6 +2964,19 @@ Gateway (the live connection that pushes events):
   `rename`; removing a folder gave `rename` for every file in it and for the folder. So a
   recursive watcher, too, must look at the file to tell a new or deleted one from an
   append.
+- **A directory watcher loses events while the same process opens or closes other
+  watchers.** Measured 2026-11-20 on macOS 27.2.1 (APFS) under Node 24.22.3 and under
+  Electron 43.8.7's own Node 24.22.1 (`ELECTRON_RUN_AS_NODE=1`): one `fs.watch` on a
+  folder, then 200 times, 20 ms apart, a new subfolder with a file in it. With nothing
+  else going on every subfolder was reported (0 of 600 missed over three runs); when
+  each step also opened an `fs.watch` on another folder and closed an older one, 1, 12, 4
+  and 2 of 200 were never reported. In Koloft's e2e app the projects-folder watcher
+  stayed silent for 15 s about a new folder made 57 ms after the first list was pushed,
+  while the app was opening its other watchers (1 run in 40, and 1 in 150). Why
+  (libuv's one shared FSEvents stream being restarted) is inferred, not checked. A
+  watcher that must not miss a new entry needs a second way to notice it: an
+  `fs.watchFile` on the folder sees its mtime change, and a fresh listing names the
+  entry.
 
 ## §41 What an Electron app's quit does to its children
 
@@ -3598,7 +3656,7 @@ cli/cli --limit 1 --json number,closingIssuesReferences`:
   "closingIssuesReferences"`, then the list of fields it knows.
 - **gh 2.72.0** takes the field and goes to GitHub (here `HTTP 401: Bad credentials`).
 
-Koloft dependents: `listTodoPulls` in `src/main/github.ts`, which lists again without the
+Koloft dependents: `listTodoPulls` in `src/plugins/todo/main/pulls.ts`, which lists again without the
 field and says so; a remote workspace's pull requests are listed by that machine's gh.
 
 ## §62 Node `fs.rmSync` on a symbolic link to a folder
@@ -3653,7 +3711,7 @@ no longer runs a zsh function or `hash` entry named `claude`.
   picked over an `ansi` block and a coloured square at the start of each line.
 
 Koloft dependents: `markdownParts` (a Markdown copy goes as text) and `DIFF_LOOK` /
-`diffCopy` (a diff copy goes as pictures) in `src/main/discord/phoneCopy.ts`.
+`diffCopy` (a diff copy goes as pictures) in `src/plugins/discord/main/phoneCopy.ts`.
 
 ## §65 The `electron` npm package loaded by plain Node
 
@@ -3884,11 +3942,42 @@ registry folders stat them through `fs.promises`.
   `NSApplicationActivationPolicyAccessory` and the window never shown, one or two runs
   each, from a Koloft Claude Code tab. Not probed: App Nap or timer coalescing on an
   app with a Dock icon whose window stays covered for long.
+- **A worker thread can tell that the main thread is stuck, and `/usr/bin/sample` can
+  say what it is in.** A timer on the main thread cannot report a stall until the stall
+  is over. In a hidden Electron 43.8.7 app, the main thread bumped a number in a
+  `SharedArrayBuffer` every 250 ms and woke a `worker_threads` worker that sat in
+  `Atomics.wait` on it with a 1.5 s limit: 4 s of idling timed out no wait; a 9 s
+  `Atomics.wait` and a 6 s busy loop on the main thread each timed the worker's wait
+  out at 1.5 s. From the worker, `execFileSync('/usr/bin/sample', [pid, '1', '-file',
+  f])` then took 1.4–2.3 s and wrote a 270–284 KB text file with every thread's native
+  call stack while the main thread was still stuck. System frames in it are named
+  (`-[NSApplication run]`, `__CFRunLoopRun`); Electron's own frames are not, as its
+  framework ships stripped, and `sample` prints the nearest exported name instead. The
+  app quit as usual with the worker still waiting. The same on a copy of that
+  `Electron.app` signed ad hoc with the hardened runtime and the three entitlements the
+  shipped app carries (`allow-jit`, `allow-unsigned-executable-memory`,
+  `disable-library-validation`). Measured 2026-11-18 on macOS 27.2 (Darwin 27.2.0),
+  Apple silicon, once each. Left alone for 5 minutes in that hidden app (accessory
+  policy, no window), a 1 s timer on the main thread was never more than 5 ms late and
+  a 5 s wait in the worker never timed out. A worker that never returns to its own
+  event loop still gets `parentPort.postMessage` through to the main thread at once
+  (Koloft's e2e, the same day). Run from a shell, `sample` also reads the installed,
+  Developer ID signed and notarized Koloft 0.73.0 (the same day, once). Not probed: an
+  app with a Dock icon whose window stays covered for hours, where App Nap might hold
+  back the main thread's timers; what the watch sees when the Mac sleeps and wakes.
 
 Koloft dependents: `mainThreadStalls.ts`, while a Koloft window has focus (so App Nap
 and an idle Mac's battery are out of the picture), writes a line to `main-stalls.log` in
 `userData` whenever the main thread took no new work for 75 ms or more, with how much
-of that it spent on the CPU.
+of that it spent on the CPU. Focus or not, `mainThreadStuckWorker.ts` asks the main
+thread for a beat once a second with a message, so no timer on the main thread is
+involved (inferred, not checked: App Nap holds back timers, not messages). When an ask
+has had no answer for 5 s, it saves a `sample` of the process under `main-stuck/` in
+`userData` while the main thread is still stuck (the newest ten are kept; if `sample`
+fails or takes over 10 s, the file holds the reason). When the main thread takes work
+again, a line in `main-stalls.log` says how long that ask waited and names the file,
+and the next ask comes a minute later, so a main thread that sticks again and again is
+sampled at most about once a minute.
 
 ## §71 1Password for Mac: which browsers its app lets the extension in
 
@@ -3997,3 +4086,23 @@ the measurement. One run per row, except where two are given.
 Koloft dependents: `ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE` in `src/main/agentLift.ts`
 lifts an agent program only on a machine with `/usr/sbin/taskpolicy` (§59); on a Linux
 machine it leaves the agent and its tools as they start.
+
+## §73 The umask of `docker exec` under OrbStack
+
+- **`docker exec` runs with umask 0000, whoever it runs as.** `docker exec -u kuser … sh -c
+  umask` and the same as root both printed `0000`; a file written there came out `-rw-rw-rw-`.
+  The container's own first process (`/proc/1/status`) and `docker run … sh -c umask` both
+  read `0022`, and so did `ssh kuser@127.0.0.1 umask` from inside the container: an ssh
+  login there gets 0022.
+- **ssh refuses such a file as its config.** With `~/.ssh/config` at 0666 `ssh x true`
+  stopped at "Bad owner or permissions on /home/kuser/.ssh/config"; at 0644 the same
+  command went on to check the host key.
+- Measured 2026-11-17: OrbStack (kernel `7.2.12-orbstack`), Docker Engine 29.8.2, on
+  macOS 27.2.1; the `koloft-e2e-sshd` image (Debian 12, OpenSSH 9.2p1). Inferred, not
+  checked: that colima's `docker exec` gave 0022, since the same e2e setup passed there
+  until the move to OrbStack.
+
+Koloft dependents: none in the app. Every `docker exec` in test/e2e/helpers/docker.ts goes
+through `labExec`, which sets umask 022, the umask an ssh login there gets, before its
+command. The `docker exec` calls remote-git-accounts.spec.ts makes itself (a port relay,
+a `chown`, a `chmod`) write no file, and do not.

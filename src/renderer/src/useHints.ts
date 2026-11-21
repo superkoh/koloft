@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { HintId } from '@shared/types'
+import { fillsOf, onIn } from './pluginUi'
+import { PART_HINT } from './slots'
 import { firedHints, selectorOf, type ActiveHint, type HintFire, type HintSnapshot } from './hints'
+import { hintOn, tipNumber } from '@core/hints'
 import { panelIsOpen, panelTabId, useStore } from './store'
 import { updateSettings } from './components/settings/useSettingsUpdate'
 
@@ -20,7 +22,7 @@ function mainHasAnsweredPanelState(s: State): boolean {
 function snapOf(s: State): HintSnapshot {
   return {
     activeTabId: s.activeTabId,
-    githubBtn: s.githubBtn,
+    partsShown: s.partsShown,
     agentOpen: s.agentOpen,
     sessions: s.sessions,
     rows: s.workspaceRows
@@ -29,7 +31,12 @@ function snapOf(s: State): HintSnapshot {
 
 export function useHints(): ActiveHint | null {
   const [queue, setQueue] = useState<HintFire[]>([])
-  const [active, setActive] = useState<{ id: HintId; selector: string; n: number } | null>(null)
+  const [active, setActive] = useState<{
+    id: string
+    selector: string
+    n: number
+    of: number
+  } | null>(null)
   const [readyAt, setReadyAt] = useState(0)
   const panelShown = useStore(panelShownOf)
   const sidebarHidden = useStore((s) => s.settings.sidebarHidden)
@@ -42,7 +49,7 @@ export function useHints(): ActiveHint | null {
 
   useEffect(() => {
     return useStore.subscribe((s, prev) => {
-      for (const f of firedHints(snapOf(prev), snapOf(s))) enqueue(f)
+      for (const f of firedHints(snapOf(prev), snapOf(s), fillsOf(PART_HINT))) enqueue(f)
     })
   }, [enqueue])
 
@@ -57,6 +64,7 @@ export function useHints(): ActiveHint | null {
     const tryShow = (): void => {
       if (done || Date.now() < readyAt) return
       const st = useStore.getState()
+      if (!hintOn(next.id, onIn(st.settings))) return drop()
       if (st.settingsOpen || st.update.open) return
       if (next.id === 'workbench') {
         if (!mainHasAnsweredPanelState(st)) return
@@ -67,7 +75,7 @@ export function useHints(): ActiveHint | null {
       const seen = st.settings.hintsSeen
       drop()
       updateSettings({ hintsSeen: [...seen, next.id] })
-      setActive({ ...next, n: seen.length + 1 })
+      setActive({ ...next, ...tipNumber(seen, onIn(st.settings)) })
     }
     const t = setTimeout(tryShow, Math.max(0, readyAt - Date.now()))
     const off = useStore.subscribe(tryShow)

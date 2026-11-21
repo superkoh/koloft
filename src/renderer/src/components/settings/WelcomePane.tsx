@@ -10,6 +10,7 @@ import {
   IconWebPage,
   type Icon
 } from '../../icons'
+import { BROWSER_CONTROL_PAGE_NAME } from '@plugins/browser-control/api'
 import { useStore } from '../../store'
 import { useSettingsUpdate } from './useSettingsUpdate'
 
@@ -36,7 +37,7 @@ const CARDS: { Icon: Icon; title: string; body: string; where: string }[] = [
     Icon: IconWebPage,
     title: 'Your agent drives your browser',
     body: "Playwright tools use Koloft's tabs, with your logins. One switch turns it off.",
-    where: 'Settings ▸ Extensions'
+    where: BROWSER_CONTROL_PAGE_NAME
   },
   {
     Icon: IconAccounts,

@@ -7,12 +7,13 @@ import {
   type RouteWorkspace,
   type SessionRoute
 } from '@shared/sessionRoute'
-import type { Assist } from './assist'
+import type { Assist } from '@core/assistModels'
+import type { ButlerAssistJobId } from '@plugins/butler/shared/assistJobs'
 
 export interface SessionRouterDeps {
   rows(): WorkspaceRows[]
   worktrees(wsPath: string): Promise<WorktreeInfo[]>
-  assist: Assist
+  assist: Assist<ButlerAssistJobId>
 }
 
 export async function routeSession(

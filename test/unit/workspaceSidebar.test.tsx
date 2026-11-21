@@ -19,7 +19,10 @@ vi.mock('../../src/renderer/src/components/SessionBackendIcon', () => ({
   }
 }))
 
-vi.mock('../../src/renderer/src/components/ButlerRow', () => ({ ButlerRow: () => null }))
+vi.mock('../../src/plugins/butler/renderer/ButlerRow', () => ({
+  ButlerRow: () => null,
+  RenameButlerDialog: () => null
+}))
 
 const { useStore } = await import('../../src/renderer/src/store')
 const { WorkspaceSidebar } = await import('../../src/renderer/src/components/WorkspaceSidebar')
@@ -84,7 +87,6 @@ describe('WorkspaceSidebar (C2): a row redraws only when what it shows changes',
         onNewWorktreeSession={() => {}}
         onRestoreSession={() => {}}
         onSessionDefaults={() => {}}
-        onScheduledJobs={() => {}}
       />
     )
     const claudeRow = container.querySelector('[data-tab-id="pty-claude"]')!
@@ -114,7 +116,6 @@ function renderSidebar(): HTMLElement {
       onNewWorktreeSession={() => {}}
       onRestoreSession={() => {}}
       onSessionDefaults={() => {}}
-      onScheduledJobs={() => {}}
     />
   ).container
 }

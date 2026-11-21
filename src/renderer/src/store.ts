@@ -2,17 +2,16 @@ import { BACKEND_LABEL, identityOf, sourceOf } from '@shared/sessionBackend'
 import { hasWorkbench, ipcErrorText, isSessionKind, resumeFailureMessage } from './agentUi'
 import { create } from 'zustand'
 import type { InboxSnapshot } from '@shared/inbox'
+import type { InstructionAskView } from '@plugins/sessions/shared/instructionAsks'
+import { DEFAULT_SETTINGS } from '@shared/settingsOps'
 import {
-  DEFAULT_SETTINGS,
   DEFAULT_TERMINAL_TITLE,
   type AccountView,
   type AdoptableTab,
   type ArtifactView,
   type AttentionEvent,
-  type SecretAskView,
   type BaseChoice,
   type BrowserJsDialog,
-  type CronState,
   type SessionWorkbenchState,
   type LoginProgress,
   type LeftoverProcess,
@@ -33,9 +32,14 @@ import type { LoginFlowState } from './components/settings/loginFlow'
 import type { FilesTab } from './components/filesModel'
 import type { ResumeDialogState } from './resumeFlow'
 import { endEditsOf, rekeyOwner } from './editRegistry'
-import { endedTabsLiveElsewhere, selectionRoot, welcomeTarget, workspaceOfRow } from './sessionRows'
+import {
+  endedTabsLiveElsewhere,
+  everyWorkspaceRows,
+  selectionRoot,
+  welcomeTarget,
+  workspaceOfRow
+} from './sessionRows'
 import { inRoot } from './browseModel'
-import { butlerSetUp, butlerTabOf, everyWorkspaceRows, isButlerTab } from './butlerRows'
 import {
   activateTab as activateWbTab,
   closeTab as closeWbTab,
@@ -117,9 +121,9 @@ interface AppState {
   sessions: SessionInfo[]
   leftovers: Record<string, LeftoverProcess[]>
   attention: AttentionEvent[]
-  secretAsks: SecretAskView[]
+  instructionAsks: InstructionAskView[]
   inbox: InboxSnapshot
-  inboxOpen: boolean
+  centrePage: string | null
   revealRow: { tabId: string } | null
   settings: Settings
   settingsOpen: boolean
@@ -136,7 +140,7 @@ interface AppState {
   sidebarWidth: number
   notesHeight: number
   workspaceRows: WorkspaceRows[]
-  butlerWorkspace: WorkspaceRows | null
+  claimedWorkspaces: WorkspaceRows[]
   toast: string | null
   toastReveal: string | null
   workbenchOpen: Record<string, boolean>
@@ -152,7 +156,7 @@ interface AppState {
   followsAgentBrowser: Record<string, true>
   overlayDialog: BrowserJsDialog | null
   termFocus: { ptyId: string; n: number }
-  githubBtn: boolean
+  partsShown: Readonly<Record<string, boolean>>
   lastWsPath: string | null
   selectedWs: string | null
   update: UpdateState
@@ -160,7 +164,6 @@ interface AppState {
   setUpdateOffer: (offer: UpdateCheckResult | null) => void
   resumeDialog: ResumeDialogState | null
   resumeLaunch: { id: string; title: string } | null
-  cron: CronState
   machine: MachineState | null
   closeConfirm: {
     tabId: string
@@ -174,27 +177,20 @@ interface AppState {
   } | null
   unsavedPrompt: {
     files: string[]
-    jobs?: number
+    lost?: number
     ended?: string
     onCancel(): void
     onDiscard(): void
     onSave(): void | Promise<void>
   } | null
-  butlerTab: string | null
-  assistAsked: boolean
-  bindButler: boolean
-  renameButler: boolean
   orphanConfirm: string | null
 
   addTab: (t: Tab) => void
   addTabQuiet: (t: Tab) => void
-  setCron: (s: CronState) => void
   setMachine: (s: MachineState | null) => void
   adoptTabs: (tabs: AdoptableTab[], activeTabBeforeReload: string | null) => void
   removeTab: (id: string) => void
   closeTab: (id: string) => void
-  landOnButler: () => void
-  openButler: (fresh?: boolean) => Promise<string | null>
   setActive: (id: string) => void
   setTabTitle: (id: string, title: string) => void
   setTabAlive: (id: string, alive: boolean) => void
@@ -208,9 +204,9 @@ interface AppState {
   setSessions: (s: SessionInfo[]) => void
   setLeftovers: (l: Record<string, LeftoverProcess[]>) => void
   setAttention: (pending: AttentionEvent[]) => void
-  setSecretAsks: (asks: SecretAskView[]) => void
+  setInstructionAsks: (asks: InstructionAskView[]) => void
   setInbox: (inbox: InboxSnapshot) => void
-  setInboxOpen: (open: boolean) => void
+  setCentrePage: (id: string | null) => void
   setSettings: (s: Settings) => void
   setSettingsOpen: (open: boolean) => void
   openSettingsPane: (pane: SettingsPaneId) => void
@@ -239,10 +235,6 @@ interface AppState {
   setResumeLaunch: (l: AppState['resumeLaunch']) => void
   setCloseConfirm: (c: AppState['closeConfirm']) => void
   setUnsavedPrompt: (p: AppState['unsavedPrompt']) => void
-  setButlerTab: (tabId: string) => void
-  setAssistAsked: (asked: boolean) => void
-  setBindButler: (open: boolean) => void
-  setRenameButler: (open: boolean) => void
   setOrphanConfirm: (rowId: string | null) => void
 
   ensureWorkbench: (tabId: string) => Promise<void>
@@ -273,11 +265,10 @@ interface AppState {
   followAgentBrowser: (tabId: string) => void
   setLastWsPath: (p: string) => void
   selectWorkspace: (path: string) => void
-  openWorkspaceList: (path: string, what: 'issues' | 'pulls') => void
 
   focusPanelTerm: (ptyId: string) => void
 
-  setGithubBtn: (on: boolean) => void
+  setPartShown: (part: string, on: boolean) => void
   openTerminalTab: (tabId: string) => void
   closeTerminalTab: (ptyId: string) => void
   terminalExited: (ptyId: string) => boolean
@@ -303,7 +294,6 @@ const RESTART_COOLDOWN_MS = 1000
 const NO_CONVERSATION_LIVE_NOTICE = 'Nothing to restart yet — this session has no conversation.'
 const NO_CONVERSATION_DEAD_NOTICE = 'Nothing to resume — this session never had a conversation.'
 const RELAUNCH_REFUSED_NOTICE = 'Could not start the session again'
-const GITHUB_LIST_UNREACHABLE_NOTICE = 'Could not find this workspace’s GitHub page — try again.'
 const restoreLaunches = new Set<string>()
 let toastTimer: ReturnType<typeof setTimeout> | null = null
 const closedTermPtys = new Set<string>()
@@ -333,7 +323,7 @@ function killTerminalsOf(tabId: string): string[] {
 }
 
 function rowOfTab(
-  s: Pick<AppState, 'workspaceRows' | 'butlerWorkspace'>,
+  s: Pick<AppState, 'workspaceRows' | 'claimedWorkspaces'>,
   tab: Tab
 ): { row: SessionRow; wsPath: string } | undefined {
   const cwd = tab.launch?.cwd ?? tab.cwd
@@ -366,14 +356,33 @@ export function tabAsItsAgent(tab: Tab | undefined): Tab | undefined {
   return agent ? { ...tab, ...agent, sessionId: lastSessionId.get(tab.id) } : tab
 }
 
-function watchedSessionLeavesForButler(s: AppState, tabId: string): boolean {
+export interface LandingAfterClose {
+  isLandingTab: (s: AppState, tabId: string) => boolean
+  land: () => void
+}
+
+let landingAfterClose: LandingAfterClose | null = null
+
+export function landAfterClosingAWatchedSession(landing: LandingAfterClose): void {
+  landingAfterClose = landing
+}
+
+export type ClaimsWorkspace = (w: WorkspaceRows) => boolean
+
+let claimsWorkspace: ClaimsWorkspace = () => false
+
+export function keepWorkspacesOutOfTheList(claims: ClaimsWorkspace): void {
+  claimsWorkspace = claims
+}
+
+function watchedSessionLeaves(s: AppState, tabId: string): boolean {
   const leaving = s.tabs.find((t) => t.id === tabId)
   return (
+    !!landingAfterClose &&
     s.activeTabId === tabId &&
     (isSessionKind(leaving?.kind) || watchedSessionEndedIn.has(tabId)) &&
     !!(leaving?.sessionId || lastSessionId.get(tabId)) &&
-    butlerSetUp(s) &&
-    !isButlerTab(s.sessions, s.butlerTab, tabId)
+    !landingAfterClose.isLandingTab(s, tabId)
   )
 }
 
@@ -475,8 +484,8 @@ function tabStateMoved(oldId: string, newId: string, sessionId?: string): void {
   if (sessionId !== undefined) lastSessionId.set(newId, sessionId)
 }
 
-function shownTab(id: string): { activeTabId: string; resumeLaunch: null; inboxOpen: false } {
-  return { activeTabId: id, resumeLaunch: null, inboxOpen: false }
+function shownTab(id: string): { activeTabId: string; resumeLaunch: null; centrePage: null } {
+  return { activeTabId: id, resumeLaunch: null, centrePage: null }
 }
 
 function takeOverTab(old: Tab, t: Tab, select: boolean): void {
@@ -689,9 +698,9 @@ export const useStore = create<AppState>((set, get) => ({
   sessions: [],
   leftovers: {},
   attention: [],
-  secretAsks: [],
+  instructionAsks: [],
   inbox: { cards: [], ready: [] },
-  inboxOpen: false,
+  centrePage: null,
   revealRow: null,
   settings: DEFAULT_SETTINGS,
   settingsOpen: false,
@@ -709,7 +718,7 @@ export const useStore = create<AppState>((set, get) => ({
   sidebarWidth: DEFAULT_SETTINGS.sidebarWidth,
   notesHeight: DEFAULT_SETTINGS.notesHeight,
   workspaceRows: [],
-  butlerWorkspace: null,
+  claimedWorkspaces: [],
   toast: null,
   toastReveal: null,
   workbenchOpen: {},
@@ -725,7 +734,7 @@ export const useStore = create<AppState>((set, get) => ({
   cdpAttached: {},
   followsAgentBrowser: {},
   termFocus: { ptyId: '', n: 0 },
-  githubBtn: false,
+  partsShown: {},
   lastWsPath: null,
   selectedWs: null,
   update: { open: false, phase: 'checking' },
@@ -734,13 +743,8 @@ export const useStore = create<AppState>((set, get) => ({
   resumeDialog: null,
   resumeLaunch: null,
   closeConfirm: null,
-  cron: { jobs: [], live: [], folders: {}, notes: {} },
   machine: null,
   unsavedPrompt: null,
-  butlerTab: null,
-  assistAsked: false,
-  bindButler: false,
-  renameButler: false,
   orphanConfirm: null,
 
   addTab: (t) => {
@@ -763,7 +767,6 @@ export const useStore = create<AppState>((set, get) => ({
           }
     )
   },
-  setCron: (cron) => set({ cron }),
   setMachine: (machine) => set({ machine }),
   adoptTabs: (tabs, activeTabBeforeReload) => {
     const fresh = tabs.filter((a) => !get().tabs.some((t) => t.id === a.id))
@@ -801,7 +804,7 @@ export const useStore = create<AppState>((set, get) => ({
     }))
   },
   removeTab: (id) => {
-    const toButler = watchedSessionLeavesForButler(get(), id)
+    const toLand = watchedSessionLeaves(get(), id)
     killTerminalsOf(id)
     endEditsOf(id)
     set((s) => {
@@ -823,30 +826,12 @@ export const useStore = create<AppState>((set, get) => ({
         ...workbenchStateDropped(s, [id])
       }
     })
-    if (toButler && !get().inboxOpen) get().landOnButler()
+    if (toLand && !get().centrePage) landingAfterClose?.land()
   },
   closeTab: (id) => {
     restoreLaunches.delete(id)
     window.api.terminal.kill(id)
     get().removeTab(id)
-  },
-  landOnButler: () => {
-    const live = butlerTabOf(get().sessions, get().butlerTab, get().tabs)
-    if (live) return get().activateTab(live)
-    const landedOn = get().activeTabId
-    void window.api.conductors.open().then((r) => {
-      if (!r.ok) return get().showToast(r.error)
-      get().setButlerTab(r.tabId)
-      if (get().activeTabId === landedOn) get().activateTab(r.tabId)
-    })
-  },
-  openButler: async (fresh = false) => {
-    const r = await (fresh ? window.api.conductors.startFresh() : window.api.conductors.open())
-    if (!r.ok) return r.error
-    const st = get()
-    st.setButlerTab(r.tabId)
-    st.activateTab(r.tabId)
-    return null
   },
   setActive: (id) => set({ activeTabId: id }),
   setTabTitle: (id, title) =>
@@ -1075,7 +1060,8 @@ export const useStore = create<AppState>((set, get) => ({
           changed = true
           if (t.id === s.activeTabId) {
             activeReverted = true
-            if (!isButlerTab(s.sessions, s.butlerTab, t.id)) watchedSessionEndedIn.add(t.id)
+            if (landingAfterClose && !landingAfterClose.isLandingTab(s, t.id))
+              watchedSessionEndedIn.add(t.id)
           }
           agentBeforeSessionEnded.set(t.id, { kind: t.kind, title: t.title })
           return { ...t, kind: 'shell' as TabKind, sessionId: undefined, title: 'Terminal' }
@@ -1092,9 +1078,9 @@ export const useStore = create<AppState>((set, get) => ({
   },
   setLeftovers: (leftovers) => set({ leftovers }),
   setAttention: (attention) => set({ attention }),
-  setSecretAsks: (secretAsks) => set({ secretAsks }),
+  setInstructionAsks: (instructionAsks) => set({ instructionAsks }),
   setInbox: (inbox) => set({ inbox }),
-  setInboxOpen: (inboxOpen) => set({ inboxOpen }),
+  setCentrePage: (centrePage) => set({ centrePage }),
   setSettings: (settings) => set({ settings }),
   setSettingsOpen: (settingsOpen) => set({ settingsOpen, settingsPane: null }),
   openSettingsPane: (settingsPane) => set({ settingsOpen: true, settingsPane }),
@@ -1149,26 +1135,26 @@ export const useStore = create<AppState>((set, get) => ({
       workbenchParked.delete(k)
     }
     set((s) => {
+      const claimed = new Set(all.filter(claimsWorkspace))
       const workspaceRows = keepUnchangedWorkspaces(
         s.workspaceRows,
-        all.filter((w) => !w.workspace.butler)
+        all.filter((w) => !claimed.has(w))
       )
-      const butler = all.find((w) => w.workspace.butler)
-      const butlerWorkspace = butler ? keepIfSame(s.butlerWorkspace ?? undefined, butler) : null
+      const claimedWorkspaces = keepUnchangedWorkspaces(s.claimedWorkspaces, [...claimed])
       const selectedWs = workspaceRows.some((w) => w.workspace.path === s.selectedWs)
         ? s.selectedWs
         : null
       if (
         gone.length === 0 &&
         workspaceRows === s.workspaceRows &&
-        butlerWorkspace === s.butlerWorkspace &&
+        claimedWorkspaces === s.claimedWorkspaces &&
         selectedWs === s.selectedWs
       )
         return s
       return {
         ...(gone.length > 0 && workbenchStateDropped(s, gone)),
         workspaceRows,
-        butlerWorkspace,
+        claimedWorkspaces,
         selectedWs
       }
     })
@@ -1190,10 +1176,6 @@ export const useStore = create<AppState>((set, get) => ({
   setResumeLaunch: (resumeLaunch) => set({ resumeLaunch }),
   setCloseConfirm: (closeConfirm) => set({ closeConfirm }),
   setUnsavedPrompt: (unsavedPrompt) => set({ unsavedPrompt }),
-  setButlerTab: (butlerTab) => set({ butlerTab }),
-  setAssistAsked: (assistAsked) => set({ assistAsked }),
-  setBindButler: (bindButler) => set({ bindButler }),
-  setRenameButler: (renameButler) => set({ renameButler }),
   setOrphanConfirm: (orphanConfirm) => set({ orphanConfirm }),
 
   ensureWorkbench: (tabId) => {
@@ -1307,21 +1289,12 @@ export const useStore = create<AppState>((set, get) => ({
       resumeLaunch: null,
       workbenchFull: false
     }),
-  openWorkspaceList: (path, what) => {
-    get().selectWorkspace(path)
-    void window.api.github
-      .target(path, what)
-      .then((url) => {
-        if (!url) return get().showToast(GITHUB_LIST_UNREACHABLE_NOTICE)
-        get().openWorkbenchTarget(workspaceWorkbenchKey(path), { url, source: 'user' })
-      })
-      .catch(() => get().showToast(GITHUB_LIST_UNREACHABLE_NOTICE))
-  },
 
   focusPanelTerm: (ptyId) => set((st) => ({ termFocus: { ptyId, n: st.termFocus.n + 1 } })),
   // PLATFORM§25
-  setGithubBtn: (on) => {
-    if (get().githubBtn !== on) set({ githubBtn: on })
+  setPartShown: (part, on) => {
+    if ((get().partsShown[part] ?? false) !== on)
+      set({ partsShown: { ...get().partsShown, [part]: on } })
   },
 
   openTerminalTab: (tabId) =>
@@ -1548,7 +1521,7 @@ export function openInterceptedFile(
     return
   }
   if (!activeTabId) {
-    window.api.preview.osOpen(src)
+    window.api.os.open(src)
     return
   }
   setOpenFile(file)

@@ -9,6 +9,7 @@ export default defineConfig({
       '@shared': resolve(__dirname, 'src/shared'),
       '@core': resolve(__dirname, 'src/core'),
       '@plugins': resolve(__dirname, 'src/plugins'),
+      '@renderer': resolve(__dirname, 'src/renderer/src'),
       // PLATFORM§21
       '@xterm/headless': resolve(
         __dirname,

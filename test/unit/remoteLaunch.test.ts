@@ -1,4 +1,5 @@
 import { describe, it, expect, afterAll } from 'vitest'
+import { knowPluginStates } from '../../src/core/switches'
 import crypto from 'crypto'
 import fs from 'fs'
 import os from 'os'
@@ -139,6 +140,7 @@ const spec = ({
   settings = { hooks: {} },
   claudeArgs = ['--session-id', 'sess1'],
   agentPlugin,
+  docsPlugin = true,
   trustFolder,
   program,
   ...over
@@ -153,7 +155,7 @@ const spec = ({
   }
   return program
     ? { ...tab, program }
-    : claudeTabSpec(tab, { settings, claudeArgs, agentPlugin, trustFolder })
+    : claudeTabSpec(tab, { settings, claudeArgs, agentPlugin, docsPlugin, trustFolder })
 }
 
 function stage(r: Remote, files: Record<string, string | Buffer>, s: TabSpec) {
@@ -573,6 +575,23 @@ describe("Koloft's skills a Codex, Muse or Antigravity tab keeps in its home on 
     expect(fs.statSync(path.join(skills, 'koloft-docs')).ino).toBe(docsFolder)
     expect(fs.readdirSync(skills).sort()).toEqual(['koloft-docs'])
   })
+
+  it('with Docs writing off, the koloft-docs skill folder is taken away and the koloft skill is kept as before', () => {
+    const root = mkroot('skill-docs-off')
+    const machineDir = path.join(root, 'm-1')
+    const skills = path.join(root, 'home', 'skills')
+    putSkillsInMachinePackage(machineDir)
+    const run = (line: string): number | null =>
+      spawnSync(PLAINEST_SHELL_THE_LINE_MUST_SURVIVE, ['-c', line]).status
+    expect(run(skillsFromMachineLine(skills, machineDir, true))).toBe(0)
+    knowPluginStates({ 'docs-writing': { on: false } })
+    try {
+      expect(run(skillsFromMachineLine(skills, machineDir, true))).toBe(0)
+    } finally {
+      knowPluginStates({})
+    }
+    expect(fs.readdirSync(skills).sort()).toEqual(['koloft'])
+  })
 })
 
 describe('U-TAB-*: the tab script on the machine', () => {
@@ -702,6 +721,41 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(claudeEnvOf(spec()).KOLOFT_PORT_OFFSET).toBeUndefined()
   })
 
+  // CC§29
+  it("turns the advisor off for a Fable claude on the machine — asked by --model, by the resumed session's last model, or by the machine's own Claude default — and leaves it on for any other", () => {
+    const advisorOff = (claudeArgs: string[], files: Record<string, string> = {}): string => {
+      const b = box(spec({ claudeArgs }))
+      for (const [rel, text] of Object.entries(files)) {
+        fs.mkdirSync(path.dirname(path.join(b.home, rel)), { recursive: true })
+        fs.writeFileSync(path.join(b.home, rel), text)
+      }
+      expect(b.run().status).toBe(0)
+      return b.env().CLAUDE_CODE_DISABLE_ADVISOR_TOOL ?? ''
+    }
+    const opusDefault = { '.claude/settings.json': '{\n  "model": "opus"\n}\n' }
+    const fableDefault = { '.claude/settings.json': '{"theme":"dark","model":"fable[1m]"}' }
+    const switchedToFable = {
+      ...opusDefault,
+      '.claude/projects/-w/s9.jsonl': [
+        '{"attachment":{"type":"model","identity":{"modelId":"claude-opus-5-5"}}}',
+        '{"attachment":{"type":"model","identity":{"modelId":"claude-fable-5-2"}}}',
+        '{"attachment":{"type":"advisor_tool","model":"claude-fable-5-2"}}'
+      ].join('\n')
+    }
+    expect(advisorOff(['--session-id', 's1', '--model', 'fable'], opusDefault)).toBe('1')
+    expect(advisorOff(['--session-id', 's1'], fableDefault)).toBe('1')
+    expect(advisorOff(['--session-id', 's1'], opusDefault)).toBe('')
+    expect(advisorOff(['--resume', 's9'], switchedToFable)).toBe('1')
+    expect(
+      advisorOff(['--resume', 's9'], {
+        ...fableDefault,
+        '.claude/projects/-w/s9.jsonl':
+          '{"attachment":{"type":"model","identity":{"modelId":"claude-opus-5-5"}}}\n{"attachment":{"type":"advisor_tool","model":"claude-fable-5-2"}}\n'
+      })
+    ).toBe('')
+    expect(advisorOff(['--session-id', 's1', '--model', 'opus'], fableDefault)).toBe('')
+  })
+
   it("with agent tools on, claude gets Koloft's skill and Koloft's prompt from the machine package next to the koloft-docs skill it always gets, and finds the machine's playwright-cli, then its koloft, first on its PATH, told which tab it runs in", () => {
     const b = box(spec({ agentPlugin: true }))
     expect(b.run().status).toBe(0)
@@ -718,6 +772,14 @@ describe('U-TAB-*: the tab script on the machine', () => {
     ])
     expect(b.env().PATH.split(':').slice(0, 2)).toEqual([`${m}/claude-bin/`, `${m}/bin/`])
     expect(b.env().KOLOFT_TAB_ID).toBe('T')
+  })
+
+  it('without the koloft-docs skill, claude on the machine gets no --plugin-dir for it, and still gets Koloft’s own', () => {
+    const b = box(spec({ agentPlugin: true, docsPlugin: false }))
+    expect(b.run().status).toBe(0)
+    const m = `${b.home}/.koloft/m-0000000000000000`
+    expect(b.argv()).not.toContain(`${m}/docs-plugin/`)
+    expect(b.argv()).toContain(`${m}/agent-plugin/`)
   })
 
   // PLATFORM§33

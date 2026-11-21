@@ -7,5 +7,6 @@ const SORT_OUT_THE_TO_DOS =
 export const TODO_NOTICE = `Koloft got a new command after this conversation began: koloft todo. ${SORT_OUT_THE_TO_DOS} There is nothing to answer now.`
 
 export const TEXT: readonly TextBlock[] = [
-  { slot: 'butler-koloft', text: ` ${SORT_OUT_THE_TO_DOS}` }
+  { slot: 'owners-ai-koloft', text: ` ${SORT_OUT_THE_TO_DOS}` },
+  { slot: 'away-digest-more', text: '; koloft todo lists them all' }
 ]

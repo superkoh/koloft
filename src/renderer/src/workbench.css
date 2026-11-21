@@ -37,6 +37,7 @@
   border-bottom: 1px solid var(--line);
   overflow-x: auto;
   scrollbar-width: none;
+  container-type: inline-size;
 }
 .wb-tabs::-webkit-scrollbar {
   display: none;
@@ -139,7 +140,8 @@
   margin: 0 2px;
   background: var(--line-2);
 }
-.wb-gh {
+.wb-gh,
+.wb-git {
   -webkit-app-region: no-drag;
   flex: 0 0 auto;
   display: flex;
@@ -159,11 +161,24 @@
 .wb-gh.has {
   color: var(--fg-dim);
 }
-.wb-gh .n {
+.wb-gh .n,
+.wb-git .n {
   font-family: var(--mono);
   font-size: 11px;
 }
-.wb-gh.pending {
+.wb-git .n {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@container (max-width: 520px) {
+  .wb-git .n {
+    display: none;
+  }
+}
+.wb-gh.pending,
+.wb-git.pending {
   opacity: 0.45;
 }
 .wb-gh .ci {
@@ -181,7 +196,8 @@
 .wb-gh .ci.pending {
   background: var(--amber);
 }
-.wb-gh:hover {
+.wb-gh:hover,
+.wb-git:hover {
   background: var(--bg-3);
   color: var(--fg);
 }
@@ -249,7 +265,8 @@
 }
 /* ADR-0014 */
 .menu.wb-newmenu,
-.menu.wb-ghmenu {
+.menu.wb-ghmenu,
+.menu.wb-gitmenu {
   position: absolute;
   top: 38px;
   z-index: 40;
@@ -257,15 +274,18 @@
 .wb-newmenu {
   right: 9px;
 }
-.wb-ghmenu {
+.wb-ghmenu,
+.wb-gitmenu {
   left: 9px;
 }
 .wb-newmenu:focus,
-.wb-ghmenu:focus {
+.wb-ghmenu:focus,
+.wb-gitmenu:focus {
   outline: none;
 }
 .wb-newmenu .mi,
-.wb-ghmenu .mi {
+.wb-ghmenu .mi,
+.wb-gitmenu .mi {
   width: 100%;
   border: none;
   background: none;

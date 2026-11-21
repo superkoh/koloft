@@ -1,7 +1,7 @@
 import http from 'http'
 import { spawnSync } from 'child_process'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AgyApi, activeHookName, type PendingInteraction } from '../../src/main/agyApi'
+import { AgyApi, agentStateUpdate, type PendingInteraction } from '../../src/main/agyApi'
 
 const TOKEN = 'csrf-123'
 const SERVICE = '/exa.language_server_pb.LanguageServerService/'
@@ -14,6 +14,7 @@ interface Call {
 
 let calls: Call[]
 let trajectory: unknown
+let backgroundTasksReply: unknown
 let stream: (res: http.ServerResponse) => void
 let httpsPort: http.Server
 let apiPort: http.Server
@@ -45,7 +46,13 @@ beforeAll(async () => {
         return res.end('invalid CSRF token')
       }
       res.writeHead(200, { 'content-type': 'application/json' })
-      res.end(method === 'GetCascadeTrajectory' ? JSON.stringify({ trajectory }) : '{}')
+      res.end(
+        method === 'GetCascadeTrajectory'
+          ? JSON.stringify({ trajectory })
+          : method === 'ListBackgroundTasks'
+            ? JSON.stringify(backgroundTasksReply)
+            : '{}'
+      )
     })
   })
 })
@@ -58,6 +65,7 @@ afterAll(() => {
 beforeEach(() => {
   calls = []
   trajectory = { trajectoryId: 't1', steps: [] }
+  backgroundTasksReply = {}
   stream = (res) => res.end()
 })
 
@@ -208,8 +216,109 @@ describe('AgyApi (the local Connect API agy serves, AGY§16)', () => {
     await vi.waitFor(() => expect(got).toHaveLength(2))
     live.close()
     expect(sent('StreamAgentStateUpdates')).toEqual([{ conversationId: 'c1' }])
-    expect(got.map(activeHookName)).toEqual(['context_summary', undefined])
+    expect(got.map((m) => agentStateUpdate(m).activeHook)).toEqual(['context_summary', undefined])
     expect(got[1]).toEqual({ status: 'IDLE' })
+  })
+
+  it('preserves full TaskSnapshot metadata from ListBackgroundTasks and unwraps StreamAgentStateUpdates', async () => {
+    backgroundTasksReply = {
+      tasks: [
+        {
+          conversationId: 'c1',
+          task: {
+            taskId: 'c1/task-2',
+            toolName: 'run_command',
+            toolSummary: 'Dev server',
+            description: 'npm run dev',
+            isDaemon: true,
+            startTime: '2026-11-18T00:00:00Z',
+            stepIndex: 2,
+            logUri: 'file:///tmp/task-2.log'
+          }
+        },
+        {
+          conversationId: 'c1',
+          task: {
+            taskId: 'c1/task-4',
+            toolName: 'schedule',
+            description: 'Timer: 30s',
+            stepIndex: 4
+          }
+        }
+      ]
+    }
+    expect(await api().backgroundTasks('c1')).toEqual([
+      {
+        taskId: 'c1/task-2',
+        conversationId: 'c1',
+        toolName: 'run_command',
+        toolSummary: 'Dev server',
+        description: 'npm run dev',
+        isDaemon: true,
+        startTime: Date.parse('2026-11-18T00:00:00Z'),
+        stepIndex: 2,
+        logUri: 'file:///tmp/task-2.log'
+      },
+      {
+        taskId: 'c1/task-4',
+        conversationId: 'c1',
+        toolName: 'schedule',
+        description: 'Timer: 30s',
+        stepIndex: 4
+      }
+    ])
+    expect(
+      agentStateUpdate({
+        update: {
+          conversationId: 'c1',
+          status: 'CASCADE_RUN_STATUS_IDLE',
+          activeHook: { hookName: 'context_summary' },
+          backgroundTasksUpdate: {
+            totalLength: 1,
+            backgroundTasks: [
+              {
+                taskSnapshot: {
+                  taskId: 'c1/task-2',
+                  toolName: 'run_command',
+                  description: 'npm run dev',
+                  isDaemon: true
+                }
+              }
+            ]
+          }
+        }
+      })
+    ).toEqual({
+      conversationId: 'c1',
+      status: 'CASCADE_RUN_STATUS_IDLE',
+      activeHook: 'context_summary',
+      backgroundTasksTotal: 1,
+      backgroundTasks: [
+        {
+          taskId: 'c1/task-2',
+          conversationId: 'c1',
+          toolName: 'run_command',
+          description: 'npm run dev',
+          isDaemon: true
+        }
+      ]
+    })
+    expect(
+      agentStateUpdate({
+        update: {
+          conversationId: 'c1',
+          status: 'CASCADE_RUN_STATUS_IDLE',
+          fullyIdle: true,
+          backgroundTasksUpdate: {}
+        }
+      })
+    ).toEqual({
+      conversationId: 'c1',
+      status: 'CASCADE_RUN_STATUS_IDLE',
+      fullyIdle: true,
+      backgroundTasksTotal: 0,
+      backgroundTasks: []
+    })
   })
 
   it('fails when the process serves no API', async () => {

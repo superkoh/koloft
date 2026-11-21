@@ -23,7 +23,7 @@ import {
   openViaAgent,
   tabTitles
 } from './helpers/browser'
-import { openSettings } from './helpers/extensions'
+import { openPluginPage } from './helpers/extensions'
 import { startEchoServer } from './helpers/fixtureServer'
 
 test.describe('CDP client lifecycle: the user always wins, and a connected client is always told', () => {
@@ -140,8 +140,7 @@ test.describe('CDP client lifecycle: the user always wins, and a connected clien
     try {
       await browser.contexts()[0].newPage()
 
-      await openSettings(page)
-      await page.locator('.set-ni', { hasText: 'Extensions' }).click()
+      await openPluginPage(page, 'Browser control')
       await page
         .locator('.set-row', { hasText: 'Let agents drive this Browser' })
         .locator('button[role="switch"], input[type="checkbox"], .switch')

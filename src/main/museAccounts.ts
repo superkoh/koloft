@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { isDeepStrictEqual } from 'util'
-import { record } from './codexObservation'
+import { record } from '@plugins/sessions/main/codexObservation'
 import { writeWholeBeforeVisible } from './jsonDrops'
 import { KOLOFT_SKILLS, keepSkillsIn } from './agentPlugin'
 import { playwrightMcpEnv, runsPlaywrightMcp } from './browserControlEnv'
@@ -17,7 +17,7 @@ export function museHomeOf(userData: string, name: string): string {
 
 // MUSE§21
 export const MUSE_PASSES_TO_PLAYWRIGHT = Object.keys(playwrightMcpEnv(''))
-const SET_THOUGH_THERE_IS_NO_WORKBENCH_BROWSER = Object.fromEntries(
+export const SET_THOUGH_THERE_IS_NO_WORKBENCH_BROWSER = Object.fromEntries(
   MUSE_PASSES_TO_PLAYWRIGHT.map((key) => [key, ''])
 )
 

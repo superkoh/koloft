@@ -1,0 +1,17 @@
+== issue
+#218 Start a session from an issue
+https://github.com/acme/app/issues/218
+
+Read this issue and its comments yourself (gh issue view 218 --comments), then work on it.
+== pull request
+#329 Fix the restart
+https://github.com/acme/app/pull/329
+
+Read this pull request and its comments yourself (gh pr view 329 --comments), then work on it.
+== issue from ⌘P
+#218 Start a session from an issue
+https://github.com/acme/app/issues/218
+
+Read this issue and its comments yourself (gh issue view 218 --comments), then work on it.
+
+and add a test

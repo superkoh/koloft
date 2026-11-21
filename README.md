@@ -70,7 +70,7 @@ shell.
 - **Discord** — a bot of your own on your Discord server, so you can talk to Koloft's
   butler (Koloft's own AI session, the first row of the sessions list) from your phone:
   it answers you in its channel and reaches your sessions for you. Set up in
-  `Settings ▸ Discord`.
+  `Settings ▸ Plugins ▸ Discord`.
 - **Workbench panel** — one per session, with four kinds of tab:
   - `Files` (pinned): **Changes**, the files this session touched with an inline diff,
     and **Browse**, a tree of the workspace. A folder the agent keeps outside the project
@@ -85,8 +85,9 @@ shell.
 
   Each hunk in Changes has `✎ comment` in its header, which puts that hunk and your note
   into the session's input box. In a GitHub project a GitHub button sits next to Files:
-  the pull request and its checks, commit and push, and a failing check sent to the
-  session. ⇧⌘B folds the Workbench down to a small card beside the terminal.
+  the pull request and its checks, and a failing check sent to the session. Commit and
+  push sit on the branch button every git folder gets. ⇧⌘B folds
+  the Workbench down to a small card beside the terminal.
 
   ![The Workbench's Browse view: the workspace's file tree with a Markdown file shown rendered beside it](.github/assets/screenshot-browse.png)
 - **A note per workspace** — a plain-text note in its own island under the sessions
@@ -211,7 +212,7 @@ What to expect:
 | When a session's agent connects | It just drives — nothing is asked. The switch below is the one control. |
 | Pages it opens | Background web tabs with an unread dot, exactly like an agent's `open`. No pane opens itself, and the tab it is driving is marked. |
 | Which pages it can see | That session's tabs only. Each session has its own endpoint, on loopback, behind an unguessable path. |
-| Turning it off | Settings → Extensions → **Let agents drive this Browser**. Off disconnects whatever is connected right now, and sends those tools back to launching their own browser. |
+| Turning it off | Settings → Plugins → Browser control → **Let agents drive this Browser**. Off disconnects whatever is connected right now, and sends those tools back to launching their own browser. |
 | Sending one tool elsewhere | An explicit `--cdp-endpoint` wins over the variable, so a tool can be pointed at another browser without touching the switch. |
 | `--isolated` and friends | These do **not** get a tool out: it connects to Koloft anyway, then fails on the first command, because this endpoint serves the session's own tabs and cannot mint a fresh browser context. The switch is the way out. |
 | The trade | The agent drives the browser you are signed into. That is the point — and it is what the switch is for. |
@@ -345,7 +346,7 @@ and approvals go to your own bot. The only hosts it ever reaches on its own are:
 | `claude.ai`, `chatgpt.com`, `dev.meta.ai`, `antigravity.google` | the official installers of `claude`, `codex`, `muse` and `agy`, only when you ask for a tool this Mac lacks: its Install button on the welcome, its "Click to install." card (when you set up Assist, or on the start page of a folder on this Mac while this Mac has none of the four), or signing in to it (on the welcome or in Settings ▸ Accounts) |
 | `claude.ai`, `dev.meta.ai`, `antigravity.google`, `nodejs.org`, `unofficial-builds.nodejs.org` | only for a **remote** workspace, and only to install what that machine is missing — `claude`, `muse` and `agy` from their official installers, Node from `nodejs.org` (or, on an old Linux, the unofficial build); `codex` and, for Claude Code sessions, `playwright-cli` come from `npm`, which fetches them from npm's own site; `bash`, `tmux`, `rsync` and `python3` come from the machine's own package manager |
 | `chromewebstore.google.com`, `clients2.google.com`, `update.googleapis.com` | only for Chrome extensions in the in-app browser: the store page, the extension download, and a once-per-launch update check |
-| `discord.com`, `gateway.discord.gg` | only once a bot token is set in `Settings ▸ Discord`; files sent from Discord are fetched from Discord's own file host |
+| `discord.com`, `gateway.discord.gg` | only once a bot token is set in `Settings ▸ Plugins ▸ Discord`; files sent from Discord are fetched from Discord's own file host |
 | `duckduckgo.com` | whatever you type in the browser's address bar that is not a URL |
 
 A remote workspace also reaches the machine you named, over `ssh` and `rsync`.
