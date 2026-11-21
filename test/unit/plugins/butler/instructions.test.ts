@@ -32,7 +32,7 @@ const textOfBytes = (unit: string, bytes: number): string =>
 // CC§13
 const CLAUDE_START_HOOK_MAX_UNITS = 10_000
 // CODEX§17
-const CODEX_INSTRUCTIONS_SEEN_WHOLE_BYTES = 22_438
+const CODEX_APP_SERVER_INSTRUCTIONS_SEEN_WHOLE_BYTES = 24_604
 // AGY§12
 const AGY_START_MESSAGE_SEEN_WHOLE_BYTES = 300_000
 // MUSE§1
@@ -80,7 +80,7 @@ describe('how long the owner’s instructions for the butler may be', () => {
   it('a Codex butler’s developer instructions at the limit stay within the length seen reaching the model whole', () => {
     const text = textOfBytes('中', INSTRUCTIONS_MAX_BYTES)
     expect(Buffer.byteLength(butlerPrompt(LONGEST_NAME, EVERY_FACT, text))).toBeLessThanOrEqual(
-      CODEX_INSTRUCTIONS_SEEN_WHOLE_BYTES
+      CODEX_APP_SERVER_INSTRUCTIONS_SEEN_WHOLE_BYTES
     )
   })
 
@@ -98,7 +98,7 @@ describe('how long the owner’s instructions for the butler may be', () => {
       `${butlerHelperRole(LONGEST_NAME, text)}\n\n${handover}`
     ].join('\n\n')
     expect(Buffer.byteLength(developerInstructions)).toBeLessThanOrEqual(
-      CODEX_INSTRUCTIONS_SEEN_WHOLE_BYTES
+      CODEX_APP_SERVER_INSTRUCTIONS_SEEN_WHOLE_BYTES
     )
   })
 

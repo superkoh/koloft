@@ -222,7 +222,6 @@ manifest of the Todo plugin:
 ```ts
 import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
 import { TEXT } from './prompts/text'
-import { TEXT as SKILL_TEXT } from './skill/text'
 
 export const plugin: PluginManifest = {
   formatVersion: PLUGIN_FORMAT_VERSION,
@@ -233,7 +232,7 @@ export const plugin: PluginManifest = {
   needs: ['sessions', 'butler', 'github'],
   settings: { keys: ['todoNotes'] },
   commands: [{ verb: 'todo' }],
-  text: [...TEXT, ...SKILL_TEXT]
+  text: TEXT
 }
 ```
 
@@ -349,8 +348,9 @@ fills:
 
 Inside a text, `{{name}}` (lowercase letters and hyphens) marks a place for more text.
 
-These are the Todo plugin's blocks, from its `prompts/text.ts` (the file also exports the
-notice an old butler conversation gets, [Main-process parts](#main-process-parts)). The first
+These are two of the Todo plugin's blocks, from its `prompts/text.ts` (the file also has a
+longer one about `koloft todo` itself, and exports the notice an old butler conversation gets,
+[Main-process parts](#main-process-parts)). The first
 adds a sentence to the part of the butler's prompt about the `koloft` command; the second
 ends a sentence of the butler's away digest:
 
@@ -421,8 +421,8 @@ These are the slots, values and facts in use today:
 | slot | `butler-lines-gained` | Butler; the end of `butler-plugins-changed` that gives the sentences, with the value `lines` |
 | slot | `butler-lines-came` | Butler; the message the butler gets when sentences came into its prompt with no switch turned (Discord got a bound channel), with the value `lines` |
 | slot | `butler-guide-moved` | Butler; the notice a butler conversation from before the butler's own lines left `koloft help` gets once; it holds `owners-ai-itself-koloft` and `owners-ai-folder-koloft` |
-| slot | `owners-ai-itself-koloft` | Sessions core; sentences in the butler's prompt about the `koloft` command that only the butler itself gets (its helpers' prompt gives this slot the value `''`) |
-| slot | `owners-ai-folder-koloft` | Sessions core, Scheduled tasks, GitHub; sentences in the butler's prompt that hold for every session in its folder, so its helpers get them too |
+| slot | `owners-ai-itself-koloft` | Sessions core, Discord; sentences in the butler's prompt about the `koloft` command that only the butler itself gets (its helpers' prompt gives this slot the value `''`) |
+| slot | `owners-ai-folder-koloft` | Sessions core, Scheduled tasks, GitHub, Discord, Todo; sentences in the butler's prompt that hold for every session in its folder, so its helpers get them too |
 | slot | `owners-ai-koloft` | Sessions core, GitHub, Discord, Todo; sentences in the butler's prompt about the `koloft` command |
 | slot | `session-answered-by-keys` | Butler; half a sentence at the end of Sessions core's reply for a question Koloft cannot read, with the value `the-question`; left out where the butler itself reads the reply (its own `koloft session answer`, and its report of what Koloft answered while the owner slept) |
 | slot | `session-close-refused-for-the-owners-ai` | Butler; the end of Sessions core's `koloft session close` refusal for the butler |
@@ -431,8 +431,8 @@ These are the slots, values and facts in use today:
 | slot | `todo-method-phone` | Discord; the half-sentence about the phone in `koloft todo`'s method |
 | slot | `route-worktree-picks` | GitHub; the picks ⌘P's routing prompt offers for a new worktree session (an issue number) |
 | slot | `koloft-help` | Sessions core; the guide that `koloft help` prints, the `koloft` skill holds and the `koloft` command carries as a file, with one slot for each other section in its order |
-| slot | `koloft-help-…` | one for each section, rule or half-sentence of that guide; filled by Sessions core, Workbench, Browser control, Inbox, Scheduled tasks, GitHub, Discord, Todo and Passwords and sign-in (each plugin's `skill/text.ts` names its own) |
-| slot | `koloft-skill` | Sessions core; the `koloft` skill's one-line description, with slots `koloft-skill-…` where Workbench, Browser control and Scheduled tasks add a few words, and `koloft-skill-or-list`, where Todo and Passwords and sign-in each add an item |
+| slot | `koloft-help-…` | one for each section, rule or half-sentence of that guide; filled by Sessions core, Workbench, Browser control, Inbox, Scheduled tasks, GitHub, Discord and Passwords and sign-in (each plugin's `skill/text.ts` names its own) |
+| slot | `koloft-skill` | Sessions core; the `koloft` skill's one-line description, with slots `koloft-skill-…` where Workbench, Browser control and Scheduled tasks add a few words, and `koloft-skill-or-list`, where Passwords and sign-in adds an item |
 | value | `butler-name` | the butler's code; the butler's name |
 | value | `owner-instructions` | the butler's code and Sessions core; what the owner wrote in the butler's Instructions, in a workspace's, or in the Instructions for every workspace |
 | value | `plugins-now` | the butler's code; which plugins are now on or off, as "Todo is now off, Passwords and sign-in is now on" |
@@ -443,8 +443,7 @@ These are the slots, values and facts in use today:
 | value | `project-rules` | the caller; the rules the owner wrote for the model and effort of sessions in a project |
 | fact | `discord-bound` | Discord's code, when Discord has a bound channel; it reaches the butler's prompt through the butler's `roleFacts` |
 
-Only one block uses `whenOff` today: Sessions core's block in `koloft-help-command-output`,
-used while Discord is off, ends the sentence Discord's block would have ended.
+No block uses `whenOff` today.
 
 ### Commands
 
@@ -872,7 +871,7 @@ either:
   `(From Koloft:) `, and the key is added; a new conversation is added to every list whose
   `on()` holds when it binds, as it already knows. The plugin that hands in a news names its own
   list, so the saved record keeps that name. `src/main/index.ts` hands in Todo's `TODO_NEWS`
-  (`knownBy: 'knowsTodo'`) and the butler's `GUIDE_MOVED_NEWS` (`knownBy: 'knowsItsOwnLines'`).
+  (`knownBy: 'knowsTodo'`) and the butler's `GUIDE_MOVED_NEWS` (`knownBy: 'knowsAllItsOwnLines'`).
 
 ## Format version
 
