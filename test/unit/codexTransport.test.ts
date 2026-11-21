@@ -256,10 +256,16 @@ require(${JSON.stringify(binary)});
     expect(result.env).toEqual({ home: directory, key: 'test-key' })
     const config = codexEnvironment({
       CODEX_CUSTOM_CONFIG: 'keep',
-      CLAUDE_CODE_OAUTH_TOKEN: 'remove'
+      CLAUDE_CODE_OAUTH_TOKEN: 'remove',
+      ANTIGRAVITY_CONVERSATION_ID: 'remove',
+      GEMINI_API_KEY: 'remove',
+      TBH_MANAGED_HOOKS_PATH: 'remove'
     })
     expect(config.CODEX_CUSTOM_CONFIG).toBe('keep')
     expect(config.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
+    expect(config.ANTIGRAVITY_CONVERSATION_ID).toBeUndefined()
+    expect(config.GEMINI_API_KEY).toBeUndefined()
+    expect(config.TBH_MANAGED_HOOKS_PATH).toBeUndefined()
   })
 
   it("runs the app-server, where Codex runs its commands, with the session's own port offset and never an inherited one", async () => {

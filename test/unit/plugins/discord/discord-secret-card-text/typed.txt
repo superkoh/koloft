@@ -1,0 +1,15 @@
+card with 0 file(s):
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# What you type shows on your screen as plain text. Koloft passes it on itself: the session never sees it, and it does not stay in this chat.
+  buttons: Enter it [primary] secret:<id>
+reply: {"type":4,"data":{"content":"Only the owner Koloft is paired with can answer here.","flags":64}}
+reply: {"type":9,"data":{"custom_id":"secret:<id>","title":"Koloft","components":[{"type":1,"components":[{"type":4,"custom_id":"value","label":"LABEL","style":1,"required":true,"max_length":4000}]}]}}
+reply: {"type":4,"data":{"content":"Nothing was typed, so nothing was passed on.","flags":64}}
+card edited:
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# ✅ Passed on.
+  buttons: 
+reply: {"type":4,"data":{"content":"Koloft passed it on.","flags":64}}
+reply: {"type":4,"data":{"content":"Koloft is no longer waiting for this.","flags":64}}

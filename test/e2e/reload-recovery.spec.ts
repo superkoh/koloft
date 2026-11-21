@@ -299,7 +299,6 @@ interface TabKind {
   agent: AgentName
   remote: boolean
   replyPrefix: string
-  listedTwiceWhileFallingAsleep?: true
   start: (page: Page, env: E2EEnv, ws: string) => Promise<RunningTab>
 }
 
@@ -433,7 +432,6 @@ const TAB_KINDS: TabKind[] = [
     agent: 'Muse',
     remote: true,
     replyPrefix: 'echo: ',
-    listedTwiceWhileFallingAsleep: true,
     start: async (page, env, ws) => {
       await newSessionInWith(page, ws, 'Muse')
       await expect
@@ -484,7 +482,6 @@ const TAB_KINDS: TabKind[] = [
     agent: 'Antigravity',
     remote: true,
     replyPrefix: 'Answer to: ',
-    listedTwiceWhileFallingAsleep: true,
     start: async (page, env, ws) => {
       await newSessionInWith(page, ws, 'Antigravity')
       const { tabId, id } = (await OTHER_AGENTS_ON_THE_MACHINE.find(
@@ -505,9 +502,6 @@ const TAB_KINDS: TabKind[] = [
 ]
 
 const THE_MOMENT_IT_FALLS_ASLEEP_MS = 20
-
-const LISTED_TWICE_ISSUE =
-  'issue #1959: listed both live and asleep while its pty still runs, a reload keeps the live copy and a click no longer wakes it'
 
 async function launchFor(
   kind: TabKind,
@@ -645,7 +639,6 @@ test.describe('every other kind of session tab is re-adopted by a reload just as
       test(`T-REL-09: a reload the moment a ${kindName(kind)} tab falls asleep on the machine keeps it asleep — its row stays, nothing starts again, and clicking it wakes the same session`, async ({
         env
       }) => {
-        test.fixme(!!kind.listedTwiceWhileFallingAsleep, LISTED_TWICE_ISSUE)
         test.setTimeout(300_000)
         env.launchEnv.KOLOFT_IDLE_MS = String(WAITING_TO_IDLE_MS)
         env.launchEnv.KOLOFT_IDLE_CLOSE_MS = String(IDLE_TO_SLEEP_MS)

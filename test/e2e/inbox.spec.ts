@@ -50,7 +50,7 @@ import {
   ASKED_BEFORE_IT_STOPPED,
   SHOW_PLAN_AGAIN
 } from '../../src/main/koloftInbox'
-import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '../../src/main/discord/dialog'
+import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '../../src/plugins/sessions/main/dialog'
 
 const ANSWER_WAITS_FOR_THE_UNDO_MS = 20_000
 const KEYS_READ_APART_MS = 300
@@ -1256,6 +1256,39 @@ test.describe(() => {
           await quitAndClose(app)
         }
       })
+
+    test(`a question of a remote ${agent.label} session still waiting on the owner stays in Needs you when the owner restarts its tab, which stops it on the machine, and a pick there then reaches the restarted session as a message`, async ({
+      env
+    }) => {
+      test.setTimeout(A_REMOTE_AGENT_CASE_TAKES_MS + A_RESTARTED_TAB_ATTACHES_WITHIN_MS)
+      const { app, page } = await launchWith(env, agent)
+      try {
+        const { tabId: before, card } = await askOnTheMachine(page, env, agent)
+        await triggerRestart(app)
+        await expect(card).toContainText(ASKED_BEFORE_IT_STOPPED, {
+          timeout: A_RESTARTED_TAB_ATTACHES_WITHIN_MS
+        })
+        const row = wsRows(page, REMOTE_WS_NAME).first()
+        await expect(row).not.toHaveAttribute('data-tab-id', before, {
+          timeout: A_RESTARTED_TAB_ATTACHES_WITHIN_MS
+        })
+        await expect(row).toHaveClass(/\bst-waiting\b/, {
+          timeout: A_RESTARTED_TAB_ATTACHES_WITHIN_MS
+        })
+        const tabId = (await row.getAttribute('data-tab-id')) as string
+        await card.locator('.ibx-choice', { hasText: asks.pick }).click()
+        await expect
+          .poll(async () => (await asks.got(env, page, tabId)).replace(/\s+/g, ''), {
+            timeout: A_RESUMED_SESSION_TAKES_A_MESSAGE_MS
+          })
+          .toContain(`?«${asks.pick}»`)
+        await showDone(page)
+        await expect(card).toHaveCount(1)
+        await expect(card.locator('.ibx-dstat')).toContainText('Answered')
+      } finally {
+        await quitAndClose(app)
+      }
+    })
   }
 
   test('a plan a remote Antigravity session still shows after a Koloft restart keeps its Approve, since agy lives on in tmux on the machine; Approve there reaches agy on the machine, which is never told to show the plan again', async ({

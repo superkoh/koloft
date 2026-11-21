@@ -6,6 +6,7 @@ const readline = require('readline')
 const { execFile, spawnSync } = require('child_process')
 
 const ESC = '\x1b'
+const CLEAR_THE_LINE = '\x15'
 const STATUS_ASK = `${ESC}]7501;?${ESC}\\`
 const STATUS_ON = `${ESC}]7501;?:states=`
 const MODEL = 'fake-model'
@@ -791,6 +792,8 @@ function tui() {
         typed = ''
         line(done.trim())
       } else if (ch === '\x7f') typed = typed.slice(0, -1)
+      // MUSE§17
+      else if (ch === CLEAR_THE_LINE) typed = typed.slice(0, typed.lastIndexOf('\n') + 1)
       else if (ch >= ' ' || ch === '\n') typed += ch
     }
   })

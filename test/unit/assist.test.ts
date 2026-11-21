@@ -3,7 +3,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { koloftAssist } from '../../src/main/assist'
-import { DEFAULT_SETTINGS, type AssistSetting, type BackendId } from '../../src/shared/types'
+import type { AssistSetting, BackendId } from '../../src/shared/types'
+import { DEFAULT_SETTINGS } from '../../src/shared/settingsOps'
 
 function recordingBinary(name: string, reply: string): { bin: string; log: string } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-assist-'))
@@ -48,7 +49,8 @@ function assistWith(
       const binary = bins[backend]
       if (!binary) return null
       return { binary, env: backend === 'codex' ? { CODEX_HOME: '/homes/work' } : {} }
-    }
+    },
+    onThisAccount: async (_backend, asked) => asked
   })
 }
 
@@ -128,6 +130,55 @@ describe('Koloft Assist', () => {
         .slice(0, 5)
     ).toEqual(['-p', '--model', 'opus', '--effort', 'high'])
     expect(read(codex.log + '.argv')).toBeNull()
+  })
+
+  // AGY§21
+  it('runs a job on the model its account has in place of the picked one, without the thinking level that model does not take', async () => {
+    const agy = recordingBinary('agy', JSON.stringify({ status: 'SUCCESS', response: 'NEWS' }))
+    const reply = await koloftAssist({
+      picks: picksOf({
+        backend: 'agy',
+        rows: { turn: { backend: 'agy', model: 'gemini-4-neon', effort: 'xhigh' } }
+      }),
+      enabled: () => true,
+      target: async () => ({ binary: agy.bin, env: {} }),
+      onThisAccount: async () => ({ model: 'gemini-4-argon' })
+    })({ ...JOB, row: 'turn' })
+    expect(reply).toBe('NEWS')
+    const argv = read(agy.log + '.argv')!
+      .trim()
+      .split('\n')
+    expect(argv.slice(argv.indexOf('json') + 1)).toEqual(['--model', 'gemini-4-argon'])
+  })
+
+  it('counts the wait for the account’s models toward the job’s time limit', async () => {
+    const LIMIT_MS = 1000
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-assist-wait-'))
+    const bin = path.join(dir, 'claude')
+    fs.writeFileSync(
+      bin,
+      `#!/bin/sh\ncat > /dev/null\nsleep ${(0.6 * LIMIT_MS) / 1000}\necho ok\n`,
+      {
+        mode: 0o755
+      }
+    )
+    vi.resetModules()
+    process.env.KOLOFT_ASSIST_TIMEOUT_MS = String(LIMIT_MS)
+    try {
+      const { koloftAssist: fresh } = await import('../../src/main/assist')
+      const answerAfterWaiting = (waitMs: number): Promise<string | null> =>
+        fresh({
+          picks: picksOf({ backend: 'claude' }),
+          enabled: () => true,
+          target: async () => ({ binary: bin, env: {} }),
+          onThisAccount: (_backend, asked) =>
+            new Promise((done) => setTimeout(() => done(asked), waitMs))
+        })(JOB)
+      expect((await answerAfterWaiting(0))?.trim()).toBe('ok')
+      expect(await answerAfterWaiting(0.7 * LIMIT_MS)).toBeNull()
+    } finally {
+      delete process.env.KOLOFT_ASSIST_TIMEOUT_MS
+    }
   })
 
   describe('a model the account does not take', () => {
@@ -219,7 +270,8 @@ describe('Koloft Assist', () => {
             rows: { title: { backend: 'codex', model: 'gpt-6-luna' } }
           }),
           enabled: () => true,
-          target: async () => ({ binary: codex, env: {} })
+          target: async () => ({ binary: codex, env: {} }),
+          onThisAccount: async (_backend, asked) => asked
         })
       } finally {
         delete process.env.KOLOFT_ASSIST_TIMEOUT_MS

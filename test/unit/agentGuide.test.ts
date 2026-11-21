@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { AGENT_GUIDE, agentGuide } from '../../src/shared/agentGuide'
+import { agentGuide } from '../../src/shared/agentGuide'
 import { koloftPrompt, WAITING_QUESTION_TOOL } from '../../src/plugins/sessions/api'
 import { DISCORD_PREFIX } from '../../src/plugins/discord/api'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
@@ -34,9 +34,10 @@ describe("a project's own rules for picking a session's model and effort", () =>
     }
   )
 
-  it('reach the prompt exactly as the owner wrote them, even when they hold {{…}} or $ patterns', () => {
+  it('reach the prompt and koloft help exactly as the owner wrote them, even when they hold {{…}} or $ patterns', () => {
     const odd = 'Name it {{butler-name}} or {{session}}; replace $& with $1 and $$.'
     expect(koloftPrompt('claude', odd)).toContain(`    ${odd}\nKoloft's own way:`)
+    expect(agentGuide(odd)).toContain(`        ${odd}\n    Koloft's own way:`)
   })
 
   it('come first in koloft help under session new, indented with it, and are not in the help of a project without rules', () => {
@@ -45,7 +46,7 @@ describe("a project's own rules for picking a session's model and effort", () =>
     expect(help.slice(at)).toContain(
       "they leave out.\n        Docs: sonnet, low.\n        Never start a Codex session for work in src/renderer.\n    Koloft's own way: Sort the task first."
     )
-    expect(AGENT_GUIDE).not.toContain("Koloft's own way")
+    expect(agentGuide()).not.toContain("Koloft's own way")
   })
 })
 

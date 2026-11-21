@@ -2,7 +2,7 @@ import { execFileSync } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import type { GithubFixture } from '../../../src/main/github'
+import type { GithubFixture } from '../../../src/core/gh'
 import type { AgentName } from './p1'
 
 export interface E2EEnv {
@@ -168,8 +168,32 @@ export function setupE2EEnv(): E2EEnv {
   )
 
   const nodeDir = path.dirname(process.execPath)
+  const inheritedEnv = Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key]) =>
+        !key.startsWith('KOLOFT_') &&
+        !key.startsWith('ANTIGRAVITY_') &&
+        !key.startsWith('CLAUDE_CODE_') &&
+        !key.startsWith('CODEX_') &&
+        !key.startsWith('TBH_') &&
+        !key.startsWith('PLAYWRIGHT_') &&
+        !key.startsWith('PWTEST_') &&
+        !key.startsWith('GIT_CONFIG_') &&
+        !key.startsWith('TMUX') &&
+        key !== 'ANT_ACCOUNT' &&
+        key !== 'CLAUDECODE' &&
+        key !== 'CLAUDE_EFFORT' &&
+        key !== 'CLAUDE_JOB_DIR' &&
+        key !== 'CLAUDE_PID' &&
+        key !== 'AI_AGENT' &&
+        key !== 'WSL_INTEROP' &&
+        key !== 'WSL_DISTRO_NAME' &&
+        key !== 'GEMINI_API_KEY' &&
+        key !== 'ELECTRON_RENDERER_URL'
+    )
+  )
   const launchEnv: NodeJS.ProcessEnv = {
-    ...process.env,
+    ...inheritedEnv,
     HOME: home,
     PATH: `${fakeBin}:${nodeDir}:/usr/bin:/bin:/usr/sbin:/sbin`,
     KOLOFT_CLAUDE_CMD: 'claude',
@@ -187,10 +211,8 @@ export function setupE2EEnv(): E2EEnv {
     KOLOFT_FILE_DIALOG_FILE: fileDialogFile,
     KOLOFT_TEST_MACHINE_FILE: roomyMachineNotTheDevMacsOwnLoad,
     KOLOFT_TEST_BACKGROUND: '1',
-    KOLOFT_DOM_RENDERER: '1',
-    ELECTRON_RENDERER_URL: undefined
+    KOLOFT_DOM_RENDERER: '1'
   }
-  delete (launchEnv as Record<string, unknown>).ELECTRON_RENDERER_URL
 
   return {
     home,
@@ -306,6 +328,11 @@ export function installMuse(env: E2EEnv): void {
   addMuseAccount(env)
 }
 
+export const MUSE_SIGNED_IN_WITH_META = JSON.stringify({
+  schema_version: 1,
+  providers: { meta: { access_token: 'fake' } }
+})
+
 // MUSE§13
 export function addMuseAccount(
   env: E2EEnv,
@@ -322,11 +349,49 @@ export function addMuseAccount(
   })
 }
 
-export function installAgy(env: E2EEnv): void {
+export function installAgyWithNoAccount(env: E2EEnv): void {
   const binary = path.join(env.fakeBin, 'agy')
   fs.symlinkSync(path.join(__dirname, '..', 'fixtures', 'fake-agy.js'), binary)
   env.launchEnv.KOLOFT_AGY_CMD = binary
+}
+
+export function installAgy(env: E2EEnv): void {
+  installAgyWithNoAccount(env)
   addAgyAccount(env)
+}
+
+export function signInAgyWithGoogle(env: E2EEnv, name: string): void {
+  const appDir = path.join(env.userData, 'agy-homes', name, 'antigravity-cli')
+  fs.mkdirSync(path.join(appDir, 'cache'), { recursive: true })
+  fs.writeFileSync(
+    path.join(appDir, 'cache', 'onboarding.json'),
+    JSON.stringify({ onboardingComplete: true })
+  )
+  fs.writeFileSync(path.join(appDir, 'antigravity-oauth-token'), '{}')
+}
+
+export function writeAgyWeeklyUsage(env: E2EEnv, remaining: number): string {
+  const usage = path.join(env.home, 'fake-agy-usage.json')
+  fs.writeFileSync(
+    usage,
+    JSON.stringify({
+      groups: [
+        {
+          name: 'Gemini Models',
+          buckets: [
+            {
+              id: 'gemini-weekly',
+              name: 'Weekly Limit Remaining',
+              window: 'weekly',
+              remaining_fraction: remaining,
+              reset_time: new Date(Date.now() + 6 * 24 * 3600 * 1000).toISOString()
+            }
+          ]
+        }
+      ]
+    })
+  )
+  return usage
 }
 
 // AGY§5 AGY§6

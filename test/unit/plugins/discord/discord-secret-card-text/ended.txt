@@ -1,0 +1,55 @@
+# answered in Koloft
+card with 0 file(s):
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# What you type shows on your screen as plain text. Koloft passes it on itself: the session never sees it, and it does not stay in this chat.
+  buttons: Enter it [primary] secret:<id>
+card edited:
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# ✅ Answered in Koloft.
+  buttons: 
+# done in Koloft
+card with 0 file(s):
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# What you type shows on your screen as plain text. Koloft passes it on itself: the session never sees it, and it does not stay in this chat.
+  buttons: Enter it [primary] secret:<id>
+card edited:
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# ✅ Answered in Koloft.
+  buttons: 
+# turned down in Koloft
+card with 0 file(s):
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# What you type shows on your screen as plain text. Koloft passes it on itself: the session never sees it, and it does not stay in this chat.
+  buttons: Enter it [primary] secret:<id>
+card edited:
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# ⏹ Turned down in Koloft.
+  buttons: 
+# the session closed
+card with 0 file(s):
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# What you type shows on your screen as plain text. Koloft passes it on itself: the session never sees it, and it does not stay in this chat.
+  buttons: Enter it [primary] secret:<id>
+card edited:
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# ⏹ The session closed.
+  buttons: 
+# no answer in time
+card with 0 file(s):
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# What you type shows on your screen as plain text. Koloft passes it on itself: the session never sees it, and it does not stay in this chat.
+  buttons: Enter it [primary] secret:<id>
+card edited:
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# ⌛ Koloft stopped waiting.
+  buttons: 

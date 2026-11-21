@@ -136,6 +136,22 @@ export async function settingsNavItems(page: Page): Promise<string[]> {
   return texts.map((t) => t.replace(/\s+/g, ' ').trim())
 }
 
+export async function openPluginPage(page: Page, plugin: string): Promise<Locator> {
+  await openSettings(page)
+  await page.locator(EXT.nav, { hasText: 'Plugins' }).click()
+  await page.getByRole('button', { name: `Open ${plugin}`, exact: true }).click()
+  const main = page.locator('.set-main')
+  await expect(main.locator('.set-ph h3')).toHaveText(plugin)
+  return main
+}
+
+export async function switchPlugin(page: Page, plugin: string, on: boolean): Promise<void> {
+  await openSettings(page)
+  await page.locator(EXT.nav, { hasText: 'Plugins' }).click()
+  await page.getByRole('switch', { name: plugin, exact: true }).setChecked(on)
+  await closeSettings(page)
+}
+
 export async function openExtensionsPane(page: Page): Promise<void> {
   await openSettings(page)
   await page.locator(EXT.nav, { hasText: 'Extensions' }).click()

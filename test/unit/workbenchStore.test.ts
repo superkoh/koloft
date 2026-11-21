@@ -23,7 +23,7 @@ vi.stubGlobal('window', {
   api: {
     workbench: { get, setState },
     github: { target: githubTarget },
-    preview: { osOpen },
+    os: { open: osOpen },
     browser: { openExternal },
     settings: { set: vi.fn() },
     terminal: { kill: vi.fn() }
@@ -34,6 +34,7 @@ const { useStore, previewLinkTarget, openWebPage, openInterceptedFile, tabEvicte
   await import('../../src/renderer/src/store')
 const { beginEdit, endEdit, getEntry, setText, allDirtyTabs } =
   await import('../../src/renderer/src/editRegistry')
+const { openWorkspaceList } = await import('../../src/plugins/github/renderer/lists')
 
 const TAB = 'pty-1'
 const SID = 'sess-1'
@@ -739,9 +740,9 @@ describe('a workspace row’s own Workbench', () => {
       [WS_KEY]: { open: false, tabs: [{ kind: 'file', title: 'a.md', path: '/repo/a.md' }] }
     }
 
-    useStore.getState().openWorkspaceList(WS, 'issues')
+    openWorkspaceList(WS, 'issues')
     await vi.waitFor(() => expect(strip(WS_KEY)?.tabs.some((t) => t.kind === 'web')).toBe(true))
-    useStore.getState().openWorkspaceList(WS, 'issues')
+    openWorkspaceList(WS, 'issues')
     await flush()
 
     const s = useStore.getState()
@@ -782,14 +783,18 @@ describe('a workspace row’s own Workbench', () => {
 
   it('when the GitHub page cannot be found, the click says so instead of doing nothing', async () => {
     githubTarget.mockResolvedValueOnce(null as unknown as string)
-    useStore.getState().openWorkspaceList(WS, 'issues')
+    openWorkspaceList(WS, 'issues')
 
-    await vi.waitFor(() => expect(useStore.getState().toast).toMatch(/GitHub page/))
+    await vi.waitFor(() =>
+      expect(useStore.getState().toast).toBe(
+        'Could not find this workspace’s GitHub page — try again.'
+      )
+    )
     expect(strip(WS_KEY)).toBeUndefined()
   })
 
   it('removing the workspace forgets its Workbench, so adding it back starts clean', async () => {
-    useStore.getState().openWorkspaceList(WS, 'pulls')
+    openWorkspaceList(WS, 'pulls')
     await vi.waitFor(() => expect(strip(WS_KEY)).toBeDefined())
     useStore.getState().setOpenFile({ src: '/repo/a.md', label: 'a.md' }, WS_KEY)
 

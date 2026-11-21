@@ -37,8 +37,8 @@ const { BrowserModal } = await import('../../src/renderer/src/components/Browser
 const { ExtensionConfirm } = await import('../../src/renderer/src/components/ExtensionConfirm')
 const { CommandPalette } = await import('../../src/renderer/src/components/CommandPalette')
 const { RestoreDialog } = await import('../../src/renderer/src/components/RestoreDialog')
-const { CronJobsDialog } = await import('../../src/renderer/src/components/CronJobsDialog')
-const { useDismissOnOutside } = await import('../../src/renderer/src/components/WorkspaceSidebar')
+const { CronJobsDialog } = await import('../../src/plugins/scheduled-tasks/renderer/CronJobsDialog')
+const { useDismissOnOutside } = await import('../../src/renderer/src/components/menuPlace')
 const { TopbarUsage } = await import('../../src/renderer/src/components/TopbarUsage')
 
 const answers: unknown[] = []

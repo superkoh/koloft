@@ -1,0 +1,8 @@
+SESSIONS (every workspace; the butler and its helpers left out; working sessions left out; a session on another machine shows no work left, which Koloft cannot check there)
+
+Closed, with work left in its worktree, or Koloft could not check it:
+- "changes title" · Claude · /work/shop · local · last active 2 days ago · id: changes · branch: changes · Changes not committed: 2
+- "commits title" · Claude · /work/shop · local · last active 2 days ago · id: commits · branch: commits · Commits on no other branch and no remote branch: 2
+- "unasked title" · Claude · /work/shop · local · last active 2 days ago · id: unasked · branch: unasked · Commits on no other branch and no remote branch: 1 (Koloft could not ask GitHub whether a merged pull request holds them. If one does, nothing is lost, and pushing would only bring back the branch GitHub deleted.)
+- "unlisted title" · Claude · /work/shop · local · last active 2 days ago · id: unlisted · branch: unlisted · git could not list the commits in /work/shop/.claude/worktrees/unlisted.
+- "gone title" · Claude · /work/shop · local · last active 2 days ago · id: gone · branch: gone · git could not read /work/shop/.claude/worktrees/gone: its .git file is gone.

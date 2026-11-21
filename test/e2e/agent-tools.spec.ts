@@ -10,6 +10,7 @@ import {
   agyTranscriptOf,
   installAgy,
   installCodex,
+  installFakeGh,
   installMuse,
   museCalls,
   museSaid,
@@ -22,6 +23,17 @@ import { runGit, setupGitFixture } from './helpers/gitFixture'
 import { installHalfWayWorktreeRemoval, installStallingGit } from './helpers/gitSpawnLog'
 import { codexAnswers, fakeCodexLog, startLocalSession, type CodexWireLine } from './helpers/codex'
 import { setupChangeFixture } from './helpers/filesFixture'
+import {
+  MUSE_IS_TOLD_ON_A_FIRST_MESSAGE,
+  sessionPromptsHandedOut,
+  agentPluginSays,
+  docsSkillHandedOut,
+  filesNamedUnder,
+  koloftSkillsUnder,
+  PASSWORDS_IN_THE_SKILL
+} from './helpers/koloftSkills'
+import { DISCORD_PREFIX } from '../../src/plugins/discord/api'
+import { switchPlugin } from './helpers/extensions'
 import { WORKBENCH } from './helpers/workbench'
 import { guestByUrl, guestContents, newWebTab, typeInAddressBar } from './helpers/browser'
 import { startEchoServer } from './helpers/fixtureServer'
@@ -53,6 +65,7 @@ import {
 
 const CENTER = '.term-island .term-wrap'
 const PANEL = '.wb-panel .wb-term'
+const BOUND_CHANNEL = { guildId: '111', channelId: '222', name: 'koloft-all' }
 const KOLOFT_SHIM_WAITS_UP_TO_10S_PLUS_ROOM_MS = 30_000
 const HOLD_KID_BEFORE_IT_BINDS_MS = 5_000
 const ASSIST_TITLES_PAST_THE_SHIMS_TEN_SECONDS_MS = 15_000
@@ -1238,6 +1251,255 @@ test.describe('`koloft` inside a Koloft tab: the command Koloft puts on PATH rea
 
       expect(await koloftInSession(page, 'help')).not.toBe('0')
       expect((await waitForCalls(env, 1))[0].argv).not.toContain('--append-system-prompt-file')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  for (const backend of SESSION_BACKENDS)
+    test(`with Docs writing turned off in Settings ▸ Plugins, a new ${backend} session is handed no koloft-docs skill`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      installAgent(env, backend)
+      seedSettings(env, { pluginsOn: { 'docs-writing': false } })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await startAgentTab(page, env, backend)
+        expect(await koloftInSession(page, 'help')).toBe('0')
+        expect(
+          docsSkillHandedOut(
+            env.home,
+            readCalls(env).flatMap((c) => c.argv)
+          )
+        ).toEqual([])
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+  for (const backend of SESSION_BACKENDS)
+    test(`with Passwords and sign-in turned off in Settings ▸ Plugins, a new ${backend} session's koloft help and koloft skill say nothing of passwords, koloft secret and koloft page are refused, and Koloft puts no sudo of its own on its PATH`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      installAgent(env, backend)
+      seedSettings(env, { pluginsOn: { passwords: false } })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await startAgentTab(page, env, backend)
+
+        expect(await koloftInSession(page, 'secret page input')).not.toBe('0')
+        expect(await koloftInSession(page, 'page tap iframe -- "Tick it."')).not.toBe('0')
+        const refusals = (await shownTermText(page, CENTER)).match(
+          /koloft: Passwords and sign-in is turned off in Settings ▸ Plugins\./g
+        )
+        expect(refusals).toHaveLength(2)
+        expect(await koloftInSession(page, 'help')).toBe('0')
+        const help = await shownTermText(page, CENTER)
+        expect(help).toContain('koloft session new')
+        expect(help).not.toContain('PASSWORDS, CODES')
+        const skills = koloftSkillsUnder(env.home)
+        expect(skills.length).toBeGreaterThan(0)
+        for (const skill of skills) expect(skill).not.toContain('get a password, code or sign-in')
+        expect(filesNamedUnder(env.home, 'koloft-askpass')).toEqual([])
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+  for (const backend of SESSION_BACKENDS)
+    test(`with Discord set up but turned off in Settings ▸ Plugins, a new ${backend} session's koloft help, koloft skill and session prompt say nothing of Discord, and koloft discord is refused`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      installAgent(env, backend)
+      seedSettings(env, { pluginsOn: { discord: false }, discord: { channel: BOUND_CHANNEL } })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await startAgentTab(page, env, backend)
+
+        expect(await koloftInSession(page, 'discord status')).not.toBe('0')
+        expect(await shownTermText(page, CENTER)).toContain(
+          'koloft: Discord is turned off in Settings ▸ Plugins.'
+        )
+        expect(await koloftInSession(page, 'help')).toBe('0')
+        const help = await shownTermText(page, CENTER)
+        expect(help).toContain('koloft session new')
+        expect(help).not.toContain('koloft discord setup')
+        const skills = koloftSkillsUnder(env.home)
+        expect(skills.length).toBeGreaterThan(0)
+        for (const skill of skills) expect(skill).not.toMatch(/discord/i)
+        await runIn(page, centerTerm(page), MUSE_IS_TOLD_ON_A_FIRST_MESSAGE)
+        const prompts = (): string[] => sessionPromptsHandedOut(env.home)[backend]
+        await expect.poll(() => prompts().length).toBeGreaterThan(0)
+        for (const prompt of prompts()) expect(prompt).not.toContain(DISCORD_PREFIX)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+  test('an owner who never set up Discord has it off: a new session’s koloft help, koloft skill and prompt say nothing of Discord, and koloft discord is refused', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+
+      expect(await koloftInSession(page, 'discord status')).not.toBe('0')
+      expect(await shownTermText(page, CENTER)).toContain(
+        'koloft: Discord is turned off in Settings ▸ Plugins.'
+      )
+      expect(await koloftInSession(page, 'help')).toBe('0')
+      expect(await shownTermText(page, CENTER)).not.toContain('koloft discord setup')
+      for (const skill of koloftSkillsUnder(env.home)) expect(skill).not.toMatch(/discord/i)
+      const prompts = sessionPromptsHandedOut(env.home).claude
+      expect(prompts.length).toBeGreaterThan(0)
+      for (const prompt of prompts) expect(prompt).not.toContain(DISCORD_PREFIX)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  for (const backend of SESSION_BACKENDS)
+    test(`with Todo turned off in Settings ▸ Plugins, koloft todo in a new ${backend} session is refused with the reason`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      installAgent(env, backend)
+      seedSettings(env, { pluginsOn: { todo: false } })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await startAgentTab(page, env, backend)
+
+        expect(await koloftInSession(page, 'todo')).not.toBe('0')
+        expect(await shownTermText(page, CENTER)).toContain(
+          'koloft: Todo is turned off in Settings ▸ Plugins.'
+        )
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+  test('with GitHub on, koloft gh in a session runs gh in that session’s workspace on this Mac and prints what gh said', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    installFakeGh(env, {
+      issues: [
+        {
+          number: 7,
+          title: 'koloft-gh-ran-here',
+          url: 'https://github.com/acme/app/issues/7',
+          updatedAt: '2026-11-01T00:00:00Z'
+        }
+      ]
+    })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+
+      expect(await koloftInSession(page, 'gh issue list')).toBe('0')
+      expect(await shownTermText(page, CENTER)).toContain('koloft-gh-ran-here')
+      expect(fs.readFileSync(path.join(env.home, 'fake-gh-calls.txt'), 'utf8')).toContain(
+        'issue list'
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  for (const backend of SESSION_BACKENDS)
+    test(`with GitHub turned off in Settings ▸ Plugins, a new ${backend} session's koloft help and koloft skill say nothing of koloft gh, and koloft gh and koloft todo are refused with the reason`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      installAgent(env, backend)
+      seedSettings(env, { pluginsOn: { github: false } })
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await startAgentTab(page, env, backend)
+
+        expect(await koloftInSession(page, 'gh auth status')).not.toBe('0')
+        expect(await koloftInSession(page, 'todo')).not.toBe('0')
+        const said = await shownTermText(page, CENTER)
+        expect(said).toContain('koloft: GitHub is turned off in Settings ▸ Plugins.')
+        expect(said).toContain(
+          'koloft: Todo is off because GitHub is turned off in Settings ▸ Plugins.'
+        )
+        expect(await koloftInSession(page, 'help')).toBe('0')
+        const help = await shownTermText(page, CENTER)
+        expect(help).toContain('koloft session new')
+        expect(help).not.toContain('koloft gh <gh command>')
+        const skills = koloftSkillsUnder(env.home)
+        expect(skills.length).toBeGreaterThan(0)
+        for (const skill of skills) expect(skill).not.toContain('koloft gh ')
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+
+  test('turning Passwords and sign-in off in Settings ▸ Plugins while Koloft runs rewrites the koloft skill at once, and koloft secret in a session started afterwards is refused', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const holdsPasswords = (): boolean =>
+        koloftSkillsUnder(env.userData).some((s) => s.includes(PASSWORDS_IN_THE_SKILL))
+      expect(holdsPasswords()).toBe(true)
+      await switchPlugin(page, 'Passwords and sign-in', false)
+      await expect.poll(holdsPasswords).toBe(false)
+
+      await startSessionIn(page, 'ws-a')
+      expect(await koloftInSession(page, 'secret')).not.toBe('0')
+      expect(await shownTermText(page, CENTER)).toContain(
+        'koloft: Passwords and sign-in is turned off in Settings ▸ Plugins.'
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test("turning Passwords and sign-in off in Settings ▸ Plugins while Koloft runs takes passwords out of the koloft skill in the Muse account's skills folder at the next Muse launch, though an earlier Muse session there already had it written", async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    installAgent(env, 'muse')
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const museSkills = (): string[] => koloftSkillsUnder(path.join(env.userData, 'muse-homes'))
+      await startAgentTab(page, env, 'muse')
+      expect(museSkills()).toHaveLength(1)
+      expect(museSkills()[0]).toContain(PASSWORDS_IN_THE_SKILL)
+
+      await switchPlugin(page, 'Passwords and sign-in', false)
+      await expect.poll(() => agentPluginSays(env.userData, PASSWORDS_IN_THE_SKILL)).toBe(false)
+
+      await newSessionInWith(page, 'ws-a', 'Muse')
+      await expect.poll(() => museCalls(env).length, { timeout: 60_000 }).toBe(2)
+      expect(museSkills()).toHaveLength(1)
+      expect(museSkills()[0]).not.toContain(PASSWORDS_IN_THE_SKILL)
     } finally {
       await quitAndClose(app)
     }

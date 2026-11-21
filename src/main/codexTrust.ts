@@ -1,9 +1,9 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { writePrivateAtomically } from './privateFile'
+import { writePrivateAtomically } from '@core/privateFile'
 import { realpathSafe } from './projectInfo'
-import { record } from './codexObservation'
+import { record } from '@plugins/sessions/main/codexObservation'
 import type { KoloftHook } from './codexLaunchConfig'
 
 export function codexConfigFile(env: NodeJS.ProcessEnv | undefined): string {

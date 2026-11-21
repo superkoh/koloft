@@ -150,7 +150,7 @@ async function typeIntoRemote(page: Page, tabId: string, text: string): Promise<
 }
 
 test.describe('The butler on this Mac looking after a Claude session on an SSH machine (Docker)', () => {
-  test('E-SSH-C1: the butler’s message reaches the remote session on its message socket there; the session’s question shows its row waiting for approval and is answered by the butler with koloft session answer, and the next with koloft session keys, pressed through ssh and tmux, and a dialog of two questions, the second taking several picks, with one koloft session answer line per question; the reply that ends that turn is handed to the butler, whose answer reaches the channel; the only card that reaches it is the ⌨️ result card of the fake’s /koloft session send (the fake’s /koloft runs no model turn, unlike the real claude’s koloft skill, whose answer takes that card’s place)', async ({
+  test('E-SSH-C1: the butler’s message reaches the remote session on its message socket there; the session’s question shows its row waiting for approval and is answered by the butler with koloft session answer, and the next with koloft session keys, pressed through ssh and tmux; a Bash command it asks to run is allowed by koloft session answer yes, and the session goes on to run it; a question answered in the butler’s own words takes those words; and a dialog of two questions, the second taking several picks, with one koloft session answer line per question; the reply that ends that turn is handed to the butler, whose answer reaches the channel; the only card that reaches it is the ⌨️ result card of the fake’s /koloft session send (the fake’s /koloft runs no model turn, unlike the real claude’s koloft skill, whose answer takes that card’s place)', async ({
     env
   }) => {
     await withRemoteWorkspaceConductor(
@@ -159,7 +159,7 @@ test.describe('The butler on this Mac looking after a Claude session on an SSH m
       async ({ page, lab, fake }) => {
         await startSessionIn(page, 'kt-key', { remote: true })
         const remote = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.alive && !s.butler
+          (s) => s.alive && !s.overseer
         )!
         const transcript = (): string => transcriptOnTarget(lab, remote.sessionId)
         const remoteStatus = async (): Promise<string | undefined> =>
@@ -208,6 +208,29 @@ test.describe('The butler on this Mac looking after a Claude session on an SSH m
           )
           .toBe(true)
 
+        await expect
+          .poll(remoteStatus, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+          .toMatch(/^(waiting|idle)$/)
+        for (const [line, reply, result] of [
+          ['/bash make test', 'yes', '"Ran: make test"'],
+          ['/ask Which drink?|Tea|Coffee', '"Hot water please"', '"Picked: Hot water please"']
+        ] as const) {
+          await page.evaluate(
+            ([id, l]) => window.api.terminal.write(id, l + '\r'),
+            [remote.tabId, line]
+          )
+          await expect
+            .poll(remoteStatus, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+            .toBe('approval')
+          fake.say(OWNER, `/koloft session answer ${remote.sessionId} ${reply}`)
+          await expect
+            .poll(transcript, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+            .toContain(result)
+          await expect
+            .poll(remoteStatus, { timeout: A_LINE_THROUGH_SSH_AND_BACK_BY_THE_MIRROR_MS })
+            .toMatch(/^(waiting|idle)$/)
+        }
+
         await page.evaluate(
           ([id, line]) => window.api.terminal.write(id, line),
           [remote.tabId, '/ask Which colour?|Red|Green||+Which fruits?|Apple|Banana|Cherry\r']
@@ -235,7 +258,7 @@ test.describe('The butler on this Mac looking after a Claude session on an SSH m
       async ({ page, fake }) => {
         await startSessionIn(page, 'kt-key', { remote: true })
         const remote = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.alive && !s.butler
+          (s) => s.alive && !s.overseer
         )!
 
         fake.say(OWNER, `/koloft session command ${remote.sessionId} /context`)
@@ -272,13 +295,13 @@ test.describe('The butler on this Mac looking after a Claude session on an SSH m
           .poll(
             async () =>
               (await page.evaluate(() => window.api.sessions.list())).find(
-                (s) => s.alive && !s.butler && s.sessionId
+                (s) => s.alive && !s.overseer && s.sessionId
               )?.sessionId ?? '',
             { timeout: A_REAL_MODEL_TURN_THROUGH_THE_MIRROR_MS }
           )
           .not.toBe('')
         const remote = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.alive && !s.butler
+          (s) => s.alive && !s.overseer
         )!
         const transcript = (): string => transcriptOnTarget(lab, remote.sessionId)
         const remoteStatus = async (): Promise<string | undefined> =>

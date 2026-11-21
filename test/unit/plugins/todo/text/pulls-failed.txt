@@ -1,0 +1,4 @@
+{"state":"failed","why":"gh is not installed there."}
+{"state":"failed","why":"gh is not signed in there."}
+{"state":"failed","why":"HTTP 502"}
+{"state":"failed","why":"gh could not list them."}

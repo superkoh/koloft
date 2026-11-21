@@ -1,7 +1,7 @@
 import { spawn } from 'child_process'
 import path from 'path'
 import { worktreeHomeRoot } from './resumePlan'
-import { stripTerminalCodes } from './terminalCodes'
+import { stripTerminalCodes } from '@core/terminalCodes'
 
 // CC§4
 const CLAUDE_CLEARS_ITS_TITLE = '\x1b]0;\x07'
