@@ -572,6 +572,11 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
   | Failed turn (§22) | `error` | the error text |
   | Ask declined with Esc or `4` | `idle`, no `done` | — |
 
+- The `idle` waiting for the first key after `done` is dropped once the next turn
+  starts without a key (a message sent through the API, §16): a key pressed during
+  that turn sends no `idle`. (agy 1.5.10, Linux arm64, Docker with no network, a python
+  pty answering the terminal's queries, `AGY_CLI_OSC7501=on`, fake Gemini server,
+  2026-11-20, 1 run.)
 - A turn agy starts by itself (a background command finished, a subagent reported
   back) sends `working` then `done`. `!cmd` sends no `working`. No OSC 9, OSC 777 or
   bare BEL was seen; no OSC 0/2 unless a title script is set (§11).
@@ -1216,6 +1221,17 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
   agy sends `"backgroundTasksUpdate": {}` with `totalLength` and `backgroundTasks`
   omitted), `turnsUpdate`, `activeHook`;
   protojson omits `fullyIdle` when `false` and sends `"fullyIdle": true` when `true`.
+  Between a turn and the next one (agy 1.5.10, Linux arm64, Docker with no network, a
+  python pty answering the terminal's queries, `AGY_CLI_OSC7501=on`, fake Gemini
+  server, 2026-11-20, 1 run of each):
+  - a line typed and sent during a 10 s turn waits as "queued msg"; when the turn
+    ends the stream sends `IDLE` with `fullyIdle: true` (twice), then 7501 `done`, then
+    about 200 ms later the stream's `RUNNING` and 7501 `working` for the queued line.
+    The pty and the stream are two channels, so a reader can get that `IDLE` after
+    the next `working`;
+  - a `SendUserCascadeMessage` sent 2 s into a 10 s turn is taken into the same run:
+    the stream stays `RUNNING` until both are answered, with one 7501 `done` (the
+    second reply's text) and no `done`/`working` between them.
   `ListBackgroundTasks {"cascadeId"}` returns `{tasks: [{conversationId, task}]}` with
   the same `taskSnapshot` fields for both `run_command` and `schedule`, or `{}` when
   none are running.
