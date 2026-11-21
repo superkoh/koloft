@@ -577,7 +577,6 @@ import {
   TURN_OVER,
   ATTENTION_CHANGED,
   DIALOG_CLOSED,
-  STEP_LET_GO,
   TURN_STARTED,
   type LeftTab,
   type Moment,
@@ -630,7 +629,6 @@ import { docsWritingOn } from '@plugins/docs-writing/api'
 import { StartedSessions } from '@plugins/sessions/main/startedSessions'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
-import { HeldSteps } from '@plugins/sessions/main/heldSteps'
 import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
 import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
@@ -801,13 +799,10 @@ function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
 
-const heldSteps = new HeldSteps()
 const newsJudge = new NewsJudge({
   judge: (turn) => judgeTurn(assist, turn),
   awaitingVerdict: (tabId) => attention.awaitingVerdict(tabId),
-  markFyi: (tabId) => attention.markFyi(tabId),
-  holdsTurn: (tabId) => attention.holdsTurn(tabId),
-  judgedWhileHeld: (tabId, verdict) => heldSteps.judged(tabId, verdict)
+  markFyi: (tabId) => attention.markFyi(tabId)
 })
 newsJudge.onVerdict((tabId, verdict) => koloftInbox.judged(tabId, verdict))
 
@@ -970,7 +965,6 @@ const attention = new AttentionTracker((pending, event) => {
 attention.asleep = (tabId) => sleepers.has(tabId)
 attention.watching = () => (windowFocused() ? uiActiveTabId : null)
 attention.turnDone = (tabId) => newsJudge.marked(tabId)
-attention.claim = (tabId, step) => heldSteps.reached(tabId, step)
 // ADR-0039
 attention.outlivesKoloft = (tabId) => !!remoteHostOfTab(tabId)
 attention.waitsOnAnother = (tabId) => {
@@ -1163,7 +1157,6 @@ const ownerAsleep = new OwnerAsleep({
     const tab = butler?.liveTab()
     return tab ? [tab] : []
   },
-  askClaimed: (tabId) => heldSteps.askClaimed(tabId),
   tabs: agentTabIds,
   asked: async (tabId) => {
     const stored = await pendingAskOf(tabId)
@@ -4141,6 +4134,7 @@ app.whenReady().then(() => {
     isButlerTab: (tabId) => !!butler?.isButlerTab(tabId)
   })
   discordBinding = bindingNow
+  attention.turnTakenElsewhere = discordChannels.turnTakenOnDiscord
   butler = new Butler({
     userData,
     realpath: realpathSafe,
@@ -4432,7 +4426,6 @@ app.whenReady().then(() => {
     },
     owner: () => bindingNow.owner(),
     ownerAway,
-    askClaimed: (tabId) => heldSteps.askClaimed(tabId),
     ownerWrote: ownerCameBack,
     butlerName: butlerNameNow,
     destinationOf: (channelId) =>
@@ -4791,8 +4784,6 @@ app.on('before-quit', (e) => {
     browserTunnels.cancelOnQuit()
     pageForwards.cancelOnQuit()
   }
-  const heldMarks = attention.heldMarks()
-  if (!quitCommitted && heldMarks.length) saveAttention([...attention.list(), ...heldMarks])
   quitCommitted = true
   guard?.liftAllBeforeQuitting()
   if (!storedQuitStopped && storedSessions().some((s) => s.hasProcesses())) {
@@ -6902,18 +6893,6 @@ const startedPlugins: PluginsStarted = startPlugins(
           syncAnswerable()
         },
         tellAs: (tabId, opening, text) => sessionCommand.tellAs(tabId, opening, text),
-        holdSteps: (holder) => heldSteps.hold(holder),
-        letGo: (tabId, note) => {
-          const markHeld = attention.letGo(tabId, note)
-          const askHeld = heldSteps.letGo(tabId)
-          if (markHeld) newsJudge.letGo(tabId)
-          if (markHeld || askHeld) announceNow(STEP_LET_GO, tabId)
-        },
-        take: (tabId) => {
-          attention.take(tabId)
-          heldSteps.letGo(tabId)
-          newsJudge.taken(tabId)
-        },
         startBeside: (tabId, spec) =>
           startBeside(
             {
@@ -7054,10 +7033,6 @@ const startedPlugins: PluginsStarted = startPlugins(
         askChannelOf: askChannelOfTab,
         pendingAskOf,
         askUnreadablySoon
-      },
-      carriedTurns: {
-        steps: heldSteps,
-        carriedOnDiscord: discordChannels.turnTakenOnDiscord
       },
       endedTabs: {
         typing: () => discordTyping,

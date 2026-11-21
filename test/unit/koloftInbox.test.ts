@@ -94,19 +94,6 @@ describe('Koloft source — a session waiting on the owner is a card, and the ca
     expect(card.blocks[0]).toMatchObject({ type: 'choice' })
   })
 
-  it('the note a plugin let a mark go with shows in the suggestion line of its ask card and of its finished-turn card', async () => {
-    const w = world()
-    w.mark([{ ...asking, note: 'Alfred checked the tests' }])
-    await vi.waitFor(() => expect(w.inbox.all()).toHaveLength(1))
-    const done: AttentionEvent = { tabId: 't2', kind: 'turn-done', at: 200, sessionId: 's-t2' }
-    w.mark([{ ...done, note: 'Alfred left this to you' }])
-    w.koloft.turnEnded('t2', 'Merge it?', false)
-    w.koloft.judged('t2', { news: false })
-    expect(w.inbox.all().map((c) => c.suggestion?.text)).toEqual(
-      expect.arrayContaining(['Alfred checked the tests', 'Alfred left this to you'])
-    )
-  })
-
   it('answered in its tab, the card closes on its own', async () => {
     const w = world()
     w.mark([asking])

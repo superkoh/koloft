@@ -2,7 +2,6 @@ import type { BackendId, CreateTabOptions, SessionInfo } from '@shared/types'
 import { PEER_TRAITS, namedAtLaunch } from '@shared/sessionBackend'
 import { formatRemoteKey, isRemoteKey } from '@shared/remoteKey'
 import type { KoloftAsk } from './dialog'
-import type { StepHolder } from './heldSteps'
 import { errorText } from '@core/errorText'
 import { withHandover } from './handoverPreamble'
 import type { StartedSessions } from './startedSessions'
@@ -37,9 +36,6 @@ export interface SessionTabs {
   markAnswerable(tabId: string, on: boolean): void
   tellAs(tabId: string, opening: string, text: string): Promise<boolean>
   startBeside(tabId: string, spec: BesideSpec): Promise<BesideResult>
-  holdSteps(holder: StepHolder): void
-  letGo(tabId: string, note?: string): void
-  take(tabId: string): void
 }
 
 export interface BesideDeps {

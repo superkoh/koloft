@@ -693,7 +693,6 @@ export interface AttentionEvent extends AttentionSubject {
   fyi?: boolean
   wasAsking?: boolean
   stoppedByRestart?: boolean
-  note?: string
 }
 
 export interface OsOutletsSeenByTests {

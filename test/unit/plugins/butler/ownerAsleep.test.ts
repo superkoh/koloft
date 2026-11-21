@@ -49,7 +49,6 @@ function setup(over: Partial<OwnerAsleepDeps> = {}) {
       return true
     },
     awakeTabs: () => ['butler'],
-    askClaimed: () => false,
     tabs: () => ['a', 'b', 'butler', 'idle'],
     asked: async (tabId) => asks.get(tabId),
     answer: async (tabId, reply) => {
@@ -103,18 +102,6 @@ describe('owner asleep', () => {
       ['a', OWNER_ASLEEP_ANSWER],
       ['b', 'yes']
     ])
-  })
-
-  it('a question a plugin claims is left unanswered, even on falling asleep, until the plugin stops claiming it', async () => {
-    const claimed = new Set(['a'])
-    const t = setup({ askClaimed: (tabId) => claimed.has(tabId) })
-    t.asks.set('a', question('Blue or red?'))
-    await t.fallAsleep()
-    await t.asleep.asks('a')
-    expect(t.replies).toEqual([])
-    claimed.clear()
-    await t.asleep.asks('a')
-    expect(t.replies).toEqual([['a', OWNER_ASLEEP_ANSWER]])
   })
 
   it('a question that takes no words of its own gets its first option instead, and a dialog of several questions gets one answer each', async () => {
