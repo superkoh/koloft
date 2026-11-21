@@ -39,16 +39,19 @@ export const ADVISOR_OFF_ON_FABLE_FN = `advisor_off_on_fable() {
   esac
 }`
 
+const MACHINE_CLAUDE_MARK = 'koloft machine claude'
+
 // CC§29
 export const MACHINE_CLAUDE = `#!/bin/sh
+: ${MACHINE_CLAUDE_MARK}
 ${ADVISOR_OFF_ON_FABLE_FN}
 advisor_off_on_fable "$@"
-self=$(cd "$(dirname "$0")" && pwd)
 IFS=:
 set -f
 for d in $PATH; do
-  [ "\${d%/}" = "$self" ] && continue
-  [ -x "$d/claude" ] && exec "$d/claude" "$@"
+  [ -x "$d/claude" ] || continue
+  head -n 2 "$d/claude" 2>/dev/null | grep -q "${MACHINE_CLAUDE_MARK}" && continue
+  exec "$d/claude" "$@"
 done
 echo "claude: not found" >&2
 exit 127

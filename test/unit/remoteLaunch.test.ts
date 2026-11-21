@@ -435,8 +435,8 @@ function box(
   fs.mkdirSync(m, { recursive: true })
   fs.writeFileSync(path.join(m, 'tmux.conf'), TMUX_CONF)
   fs.writeFileSync(path.join(m, STATUS_RELAY_FILE), STATUS_RELAY_PY)
-  fs.mkdirSync(path.join(m, 'claude-bin'))
-  fs.writeFileSync(path.join(m, 'claude-bin', 'claude'), MACHINE_CLAUDE, { mode: 0o755 })
+  fs.mkdirSync(path.join(m, 'bin'))
+  fs.writeFileSync(path.join(m, 'bin', 'claude'), MACHINE_CLAUDE, { mode: 0o755 })
   fs.writeFileSync(
     path.join(m, 'ensure.sh'),
     `#!/bin/sh\n: > ${JSON.stringify(path.join(logs, 'ensure'))}\n${
@@ -780,6 +780,21 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(nested(['--model', 'fable'], '-p --model claude-sonnet-5-5 hi')).toEqual(['', ''])
     expect(nested(['--model', 'fable'], '--model fable')).toEqual(['1', '1'])
     expect(nested(['--model', 'opus'], '--model fable')).toEqual(['1', '1'])
+  })
+
+  it("the machine's claude wrapper hands over to the real claude past any Koloft wrapper on PATH, an older package's or its own spelled with //", () => {
+    const root = mkroot('wrappers')
+    const dirs = ['new', 'old', 'real'].map((n) => path.join(root, n))
+    for (const d of dirs) fs.mkdirSync(d)
+    for (const d of dirs.slice(0, 2))
+      fs.writeFileSync(path.join(d, 'claude'), MACHINE_CLAUDE, { mode: 0o755 })
+    fs.writeFileSync(path.join(dirs[2], 'claude'), '#!/bin/sh\necho "real $*"\n', { mode: 0o755 })
+    const res = spawnSync(path.join(dirs[0], 'claude'), ['--model', 'opus'], {
+      encoding: 'utf8',
+      env: { PATH: [`${root}//new/`, dirs[1], dirs[0], dirs[2], '/usr/bin:/bin'].join(':') },
+      timeout: 10_000
+    })
+    expect(res.stdout).toBe('real --model opus\n')
   })
 
   it("with agent tools on, claude gets Koloft's skill and Koloft's prompt from the machine package next to the koloft-docs skill it always gets, and finds the machine's playwright-cli, then its koloft, first on its PATH, told which tab it runs in", () => {
