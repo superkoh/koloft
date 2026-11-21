@@ -12,10 +12,10 @@ import {
   readAllCalls,
   runIn,
   sendShortcut,
+  settingsOnDisk,
   terminalText,
   waitBooted
 } from './helpers/p1'
-import { agentPluginSays } from './helpers/koloftSkills'
 import { openPluginPage, switchPlugin } from './helpers/extensions'
 import { startFakeDiscord } from './helpers/fakeDiscord'
 import { GUIDE_MOVED_NEWS } from '../../src/plugins/butler/api'
@@ -261,9 +261,7 @@ test.describe('The butler while a plugin switch changes', () => {
       await expect(butlerRow(page)).not.toHaveClass(/\bactive\b/)
 
       await switchPlugin(page, 'Todo', false)
-      await expect
-        .poll(() => agentPluginSays(env.userData, 'gather what waits on the owner'))
-        .toBe(false)
+      await expect.poll(() => settingsOnDisk(env).pluginsOn).toMatchObject({ todo: false })
       await page.waitForTimeout(BUTLER_WOULD_HAVE_HEARD_WITHIN_MS)
       expect(butlerCalls(env)).toHaveLength(1)
       await expect(butlerRow(page)).not.toHaveClass(/\bactive\b/)

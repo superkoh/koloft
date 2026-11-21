@@ -17,15 +17,19 @@ import {
   agySessionCalls as sessionCalls,
   agyTranscriptOf as transcriptOf,
   installAgy,
+  installAgyWithNoAccount,
   ownersGemini,
   seededAccount,
   seedSettings,
+  signInAgyWithGoogle,
   trustInAgy,
+  writeAgyWeeklyUsage,
   type AgyCall,
   type E2EEnv
 } from './helpers/env'
 import {
   agentRow,
+  agyQuotaUsed,
   agyConversationOnceFirstTurnEnded,
   centerTerm,
   chooseBackend,
@@ -43,6 +47,9 @@ import {
   runIn,
   seedWorktreeInterruptedBeforeAnySessionBound,
   sendShortcut,
+  ERASED_BY_COMMAND_BACKSPACE,
+  KEPT_AFTER_COMMAND_BACKSPACE,
+  sendALineErasedByCommandBackspaceThenAnother,
   sendTwoLinesJoinedByShiftEnter,
   startSessionIn,
   staysOnTheFolderPageNotTheButler,
@@ -102,45 +109,6 @@ async function startAgy(page: Page, env: E2EEnv, ws = 'ws-a'): Promise<AgyCall> 
   await newSessionInWith(page, ws, 'Antigravity')
   await expect.poll(() => sessionCalls(env).length).toBe(before + 1)
   return sessionCalls(env)[before]
-}
-
-function signInAgyWithGoogle(env: E2EEnv, name: string): void {
-  const appDir = path.join(env.userData, 'agy-homes', name, 'antigravity-cli')
-  fs.mkdirSync(path.join(appDir, 'cache'), { recursive: true })
-  fs.writeFileSync(
-    path.join(appDir, 'cache', 'onboarding.json'),
-    JSON.stringify({ onboardingComplete: true })
-  )
-  fs.writeFileSync(path.join(appDir, 'antigravity-oauth-token'), '{}')
-}
-
-function writeAgyWeeklyUsage(env: E2EEnv, remaining: number): string {
-  const usage = path.join(env.home, 'fake-agy-usage.json')
-  fs.writeFileSync(
-    usage,
-    JSON.stringify({
-      groups: [
-        {
-          name: 'Gemini Models',
-          buckets: [
-            {
-              id: 'gemini-weekly',
-              name: 'Weekly Limit Remaining',
-              window: 'weekly',
-              remaining_fraction: remaining,
-              reset_time: new Date(Date.now() + 6 * 24 * 3600 * 1000).toISOString()
-            }
-          ]
-        }
-      ]
-    })
-  )
-  return usage
-}
-
-async function agyQuotaUsed(page: Page): Promise<number | undefined> {
-  return (await page.evaluate(() => window.api.accounts.probe())).find((a) => a.kind === 'agy-home')
-    ?.quota?.[0]?.used
 }
 
 async function boundAgy(page: Page): Promise<{ tabId: string; id: string }> {
@@ -910,6 +878,27 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     }
   })
 
+  // AGY§15
+  test('⌘⌫ in an Antigravity tab reaches agy as Ctrl-U, so what was typed on the line before it never reaches the prompt', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startAgy(page, env)
+      await sendALineErasedByCommandBackspaceThenAnother(page, centerTerm(page))
+      const { id } = await agyConversationOnceFirstTurnEnded(page)
+      expect(transcriptOf(env, id)).toContain(`Answer to: ${KEPT_AFTER_COMMAND_BACKSPACE}`)
+      expect(transcriptOf(env, id)).not.toContain(ERASED_BY_COMMAND_BACKSPACE)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('an Antigravity session whose .claude/worktrees folder was deleted and whose worktree Koloft has no record of is rebuilt there from its branch on a click, for the same conversation', async ({
     env
   }) => {
@@ -1206,9 +1195,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
   test('with only an Antigravity account signed in with Google, opening Koloft reads its quota with agy -p /usage and the capsule shows it and names it for a screen reader, with no tab started and nothing clicked', async ({
     env
   }) => {
-    const binary = path.join(env.fakeBin, 'agy')
-    fs.symlinkSync(FAKE_AGY, binary)
-    env.launchEnv.KOLOFT_AGY_CMD = binary
+    installAgyWithNoAccount(env)
     signInAgyWithGoogle(env, E2E_AGY_ACCOUNT)
     seedSettings(env, { hintsOff: true, accounts: [seededAccount(E2E_AGY_ACCOUNT, 'agy-home')] })
     const app = await launchApp(env)
@@ -1227,9 +1214,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
   test('after Koloft is reopened, the first Antigravity session started while no quota can be read runs in the account added since, not the one that was full when Koloft was last open', async ({
     env
   }) => {
-    const binary = path.join(env.fakeBin, 'agy')
-    fs.symlinkSync(FAKE_AGY, binary)
-    env.launchEnv.KOLOFT_AGY_CMD = binary
+    installAgyWithNoAccount(env)
     trustInAgy(env, env.workspaces.a)
     const homeOf = (name: string) => path.join(env.userData, 'agy-homes', name)
     signInAgyWithGoogle(env, E2E_AGY_ACCOUNT)
@@ -1263,9 +1248,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
   test('the first Antigravity tab after Koloft reopens, started while no quota can be read, prints the quota read before the restart with how long ago it was read, as a Codex or Muse tab does', async ({
     env
   }) => {
-    const binary = path.join(env.fakeBin, 'agy')
-    fs.symlinkSync(FAKE_AGY, binary)
-    env.launchEnv.KOLOFT_AGY_CMD = binary
+    installAgyWithNoAccount(env)
     trustInAgy(env, env.workspaces.a)
     signInAgyWithGoogle(env, E2E_AGY_ACCOUNT)
     seedSettings(env, { hintsOff: true, accounts: [seededAccount(E2E_AGY_ACCOUNT, 'agy-home')] })

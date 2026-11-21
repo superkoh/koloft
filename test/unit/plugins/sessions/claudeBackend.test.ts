@@ -23,6 +23,7 @@ import { replyJson } from '../../../../src/main/agentRequests'
 import { answered } from '../../../../src/core/command'
 import { mirrorHookDir } from '../../../../src/main/remote/paths'
 import { START_IN_STATUS_LOG } from '../../../../src/plugins/sessions/main/hooks'
+import type { AgentCallerState } from '../../../../src/main/host/sshHost'
 
 function fakeTracker(): ClaudeBackendDeps['tracker'] {
   const tracked = new Map<string, { sessionId: string }>()
@@ -119,6 +120,10 @@ function machineBackend(): {
   binds: [string, string][]
   answeredFor: (string | undefined)[]
   sent: [string, string, string | null][]
+  callerSeen: (AgentCallerState | undefined)[]
+  callerChecks: string[]
+  waits: (() => boolean)[]
+  release(): void
   drop(name: string, body: unknown): void
   appendLog(name: string, lines: unknown[]): void
 } {
@@ -136,7 +141,11 @@ function machineBackend(): {
     machineOfTab: (id: string) => MACHINE_TABS[id]?.host ?? CODEX_TABS[id],
     hosts: {
       machine: (host: string) => ({
-        answerAgent: async (id: string, reply: string | null) => void sent.push([host, id, reply])
+        answerAgent: async (id: string, reply: string | null) => void sent.push([host, id, reply]),
+        agentCallerWaits: async (id: string) => {
+          callerChecks.push(id)
+          return callerSeen.shift()
+        }
       })
     },
     tracker: {
@@ -160,8 +169,17 @@ function machineBackend(): {
     events: () => {},
     machineOf: (id: string) => MACHINE_TABS[id]?.host
   } as unknown as ClaudeBackendDeps)
-  backend.agentReply = async (tabId) => {
+  const callerSeen: (AgentCallerState | undefined)[] = []
+  const callerChecks: string[] = []
+  const waits: (() => boolean)[] = []
+  let release = (): void => {}
+  const held = new Promise<void>((r) => (release = r))
+  backend.agentReply = async (tabId, _raw, stillWaiting) => {
     answeredFor.push(tabId)
+    if (stillWaiting) {
+      waits.push(stillWaiting)
+      await held
+    }
     return answered(`for ${tabId}`)
   }
   backend.watchRemoteHookMirrors()
@@ -171,6 +189,10 @@ function machineBackend(): {
     binds,
     answeredFor,
     sent,
+    callerSeen,
+    callerChecks,
+    waits,
+    release,
     drop: (name, body) => fs.writeFileSync(path.join(mirrorDir, name), JSON.stringify(body)),
     appendLog: (name, lines) =>
       fs.appendFileSync(
@@ -204,6 +226,50 @@ describe('ClaudeBackend: koloft requests from a session on a remote machine', ()
 
     expect(m.sent).toEqual([['devbox', 'r1', replyJson(answered('for pty-a'))]])
     expect(m.boundTo.get('pty-a')).toBe('sid-of-pty-a')
+  })
+
+  async function readsWhileTheOwnerIsAsked(
+    seen: (AgentCallerState | undefined)[]
+  ): Promise<{ read: boolean[]; sent: [string, string, string | null][] }> {
+    const m = machineBackend()
+    m.callerSeen.push(...seen)
+    m.drop('req-r11.json', { ...(request('pty-a', 'k-sa') as object), pid: 77 })
+    await vi.waitFor(() => expect(m.waits).toHaveLength(1), { timeout: 5000 })
+    const read: boolean[] = []
+    for (let i = 0; i <= seen.length; i++) {
+      read.push(m.waits[0]())
+      await new Promise((r) => setTimeout(r, 0))
+    }
+    m.release()
+    await vi.waitFor(() => expect(m.sent).toHaveLength(1), { timeout: 5000 })
+    return { read, sent: m.sent }
+  }
+
+  it('reads a koloft command on the machine as no longer waiting once its pid, first seen running koloft, is gone; a pid never seen running koloft, as from another pid namespace, or a broken link keeps it waiting; once it stopped, its answer is taken away instead of written', async () => {
+    const { read, sent } = await readsWhileTheOwnerIsAsked([
+      'gone',
+      undefined,
+      'runs',
+      undefined,
+      'gone'
+    ])
+    expect(read).toEqual([true, true, true, true, true, false])
+    expect(sent).toEqual([['devbox', 'r11', null]])
+  })
+
+  it('reads a koloft command on the machine as no longer waiting once its request is gone from there, which an ended command takes with it, even before its pid was ever seen running', async () => {
+    const { read, sent } = await readsWhileTheOwnerIsAsked(['gone', 'request-gone'])
+    expect(read).toEqual([true, true, false])
+    expect(sent).toEqual([['devbox', 'r11', null]])
+  })
+
+  it('checks nothing on the machine for a request whose answer never asked the owner, and answers it', async () => {
+    const m = machineBackend()
+    m.release()
+    m.drop('req-r12.json', { ...(request('pty-a', 'k-sa') as object), pid: 78 })
+    await vi.waitFor(() => expect(m.sent).toHaveLength(1), { timeout: 5000 })
+    expect(m.sent).toEqual([['devbox', 'r12', replyJson(answered('for pty-a'))]])
+    expect(m.callerChecks).toEqual([])
   })
 
   // CC§1

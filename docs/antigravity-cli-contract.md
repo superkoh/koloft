@@ -572,6 +572,11 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
   | Failed turn (§22) | `error` | the error text |
   | Ask declined with Esc or `4` | `idle`, no `done` | — |
 
+- The `idle` waiting for the first key after `done` is dropped once the next turn
+  starts without a key (a message sent through the API, §16): a key pressed during
+  that turn sends no `idle`. (agy 1.5.10, Linux arm64, Docker with no network, a python
+  pty answering the terminal's queries, `AGY_CLI_OSC7501=on`, fake Gemini server,
+  2026-11-20, 1 run.)
 - A turn agy starts by itself (a background command finished, a subagent reported
   back) sends `working` then `done`. `!cmd` sends no `working`. No OSC 9, OSC 777 or
   bare BEL was seen; no OSC 0/2 unless a title script is set (§11).
@@ -946,6 +951,17 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
   in, the answer was `ZEBRA`. With the PNG outside it, `-p` produced no answer and
   listed `denied_actions: [{action: "read_file"}]`: the outside-workspace ask of §26,
   which headless mode cannot show. Not run: the same in the TUI, where that ask shows.
+- **A `/<skill>` first line pasted with a `Picture:` line still sends the skill, and
+  the line goes with the words in one turn.** Measured 2026-11-17, agy 1.5.10 (build
+  `5253791805734912`, `linux_arm64.json`), Docker `--network none`, a fake Gemini
+  server, bare `agy` in a pty, the text written as one bracketed paste plus `\r` on the
+  first OSC 7501 `idle` frame (as §31). With and without `\n\nPicture: <png>` (the PNG
+  outside the workspace): `/probe-skill say hi` (in `<ws>/.agents/skills/`; 3 runs with
+  the picture, plus 1 inside tmux 3.3a on the title script's first `idle`) and the
+  built-in `/antigravity-guide …` sent `<USER_REQUEST>` holding the words and the
+  `Picture:` line, and the `<SKILL>` block in the same user part; `$ARGUMENTS` stays as
+  written. `/nosuch do X` went as plain text, the `Picture:` line in `<USER_REQUEST>`. No
+  request held `inlineData`, `fileData` or `image/png`.
 
 ## §14 Asks in the terminal and the keys that answer them
 
@@ -1216,6 +1232,17 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
   agy sends `"backgroundTasksUpdate": {}` with `totalLength` and `backgroundTasks`
   omitted), `turnsUpdate`, `activeHook`;
   protojson omits `fullyIdle` when `false` and sends `"fullyIdle": true` when `true`.
+  Between a turn and the next one (agy 1.5.10, Linux arm64, Docker with no network, a
+  python pty answering the terminal's queries, `AGY_CLI_OSC7501=on`, fake Gemini
+  server, 2026-11-20, 1 run of each):
+  - a line typed and sent during a 10 s turn waits as "queued msg"; when the turn
+    ends the stream sends `IDLE` with `fullyIdle: true` (twice), then 7501 `done`, then
+    about 200 ms later the stream's `RUNNING` and 7501 `working` for the queued line.
+    The pty and the stream are two channels, so a reader can get that `IDLE` after
+    the next `working`;
+  - a `SendUserCascadeMessage` sent 2 s into a 10 s turn is taken into the same run:
+    the stream stays `RUNNING` until both are answered, with one 7501 `done` (the
+    second reply's text) and no `done`/`working` between them.
   `ListBackgroundTasks {"cascadeId"}` returns `{tasks: [{conversationId, task}]}` with
   the same `taskSnapshot` fields for both `run_command` and `schedule`, or `{}` when
   none are running.
@@ -2004,6 +2031,13 @@ model_invocable}]`); `agy -p "hi"` showed what the model gets.
   `_agents/skills/`, no matter which copy's own folder name sorted first. Not probed:
   `/SKILL`, an empty `name`, a `name` with a space or one agy's own command has, two
   copies of a `name` inside one folder, and the TUI in a workspace agy does not trust.
+- **A pasted `/automation …` line runs a different skill.** 2026-11-17, agy 1.5.10
+  linux-arm64, Docker, fake Gemini server, one bracketed paste plus `\r` on the first
+  OSC 7501 `idle` (and 2 s later: the same): `/automation summarize my notes every
+  morning` reached the model as `<USER_REQUEST>/agy-customizations summarize my notes
+  every morning</USER_REQUEST>` with the `agy-customizations` skill's body, with and
+  without a `Picture:` line after it (1 run each). Why the name changed (the slash popup's
+  top entry taking the Enter is a guess) was not probed.
 
 ## §32 The folder's AGENTS.md as a memory
 

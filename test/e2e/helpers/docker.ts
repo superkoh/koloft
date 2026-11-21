@@ -100,12 +100,21 @@ function ensureImage(name: string, sources: string[]): string {
   return image
 }
 
+// PLATFORM§73
+function labExec(container: string, command: string[], execFlags: string[] = []): string[] {
+  return ['exec', ...execFlags, container, 'sh', '-c', 'umask 022 && exec "$@"', 'sh', ...command]
+}
+
 async function hostKeyOf(container: string): Promise<string> {
   const deadline = Date.now() + LAB_READY_DEADLINE_MS
   for (;;) {
-    const r = spawnSync(docker(), ['exec', container, 'cat', '/etc/ssh/ssh_host_ed25519_key.pub'], {
-      encoding: 'utf8'
-    })
+    const r = spawnSync(
+      docker(),
+      labExec(container, ['cat', '/etc/ssh/ssh_host_ed25519_key.pub']),
+      {
+        encoding: 'utf8'
+      }
+    )
     const [type, key] = (r.stdout ?? '').trim().split(/\s+/)
     if (r.status === 0 && key) return `${type} ${key}`
     if (Date.now() > deadline) throw new Error(`no host key in ${container}: ${r.stderr}`)
@@ -314,13 +323,17 @@ export function thawMachine(lab: SshLab): void {
   dk(['unpause', lab.target])
 }
 
+function asUserIn(container: string, user: string, script: string): string[] {
+  return labExec(container, ['sh', '-c', script], ['-u', user, '-w', `/home/${user}`])
+}
+
 export function runOnTarget(
   lab: SshLab,
   user: string,
   script: string,
   container = lab.target
 ): string {
-  return dk(['exec', '-u', user, '-w', `/home/${user}`, container, 'sh', '-c', script])
+  return dk(asUserIn(container, user, script))
 }
 
 export async function runOnTargetWhileServing(
@@ -329,45 +342,35 @@ export async function runOnTargetWhileServing(
   script: string,
   container = lab.target
 ): Promise<string> {
-  const { stdout } = await promisify(execFile)(docker(), [
-    'exec',
-    '-u',
-    user,
-    '-w',
-    `/home/${user}`,
-    container,
-    'sh',
-    '-c',
-    script
-  ])
+  const { stdout } = await promisify(execFile)(docker(), asUserIn(container, user, script))
   return stdout
 }
 
 export function runOnBastion(lab: SshLab, user: string, script: string): string {
-  return dk(['exec', '-u', user, '-w', `/home/${user}`, lab.bastion, 'sh', '-c', script])
+  return dk(asUserIn(lab.bastion, user, script))
 }
 
 export function installOnTarget(lab: SshLab, file: string, at: string): void {
   dk(['cp', file, `${lab.target}:${at}`])
-  dk(['exec', lab.target, 'chmod', '755', at])
+  dk(labExec(lab.target, ['chmod', '755', at]))
 }
 
 export function installFakeCodexOnTarget(lab: SshLab): void {
   const dir = '/usr/local/lib/fake-codex'
-  dk(['exec', lab.target, 'mkdir', '-p', `${dir}/node_modules`])
+  dk(labExec(lab.target, ['mkdir', '-p', `${dir}/node_modules`]))
   dk(['cp', path.join(FIXTURES, 'fake-codex.js'), `${lab.target}:${dir}/fake-codex.js`])
   dk([
     'cp',
     path.dirname(require.resolve('ws/package.json')),
     `${lab.target}:${dir}/node_modules/ws`
   ])
-  dk([
-    'exec',
-    lab.target,
-    'sh',
-    '-c',
-    `printf '#!/bin/sh\\nexec node ${dir}/fake-codex.js "$@"\\n' > /usr/local/bin/codex && chmod 755 /usr/local/bin/codex`
-  ])
+  dk(
+    labExec(lab.target, [
+      'sh',
+      '-c',
+      `printf '#!/bin/sh\\nexec node ${dir}/fake-codex.js "$@"\\n' > /usr/local/bin/codex && chmod 755 /usr/local/bin/codex`
+    ])
+  )
 }
 
 // MUSE§10
@@ -390,13 +393,13 @@ export function installFakeMuseOnTarget(lab: SshLab, users: string[]): void {
 }
 
 export function installCurlOnTarget(lab: SshLab): void {
-  dk([
-    'exec',
-    lab.target,
-    'sh',
-    '-c',
-    'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends curl'
-  ])
+  dk(
+    labExec(lab.target, [
+      'sh',
+      '-c',
+      'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends curl'
+    ])
+  )
 }
 
 export const FAKE_RESPONSES_PORT = 8090
@@ -404,23 +407,18 @@ export const FAKE_RESPONSES_PORT = 8090
 export function startFakeResponsesOnTarget(lab: SshLab, command: string, log: string): void {
   const at = '/usr/local/lib/fake-responses.js'
   dk(['cp', path.join(FIXTURES, 'fake-responses.js'), `${lab.target}:${at}`])
-  dk([
-    'exec',
-    '-d',
-    '-u',
-    'kuser',
-    lab.target,
-    'node',
-    at,
-    String(FAKE_RESPONSES_PORT),
-    command,
-    log
-  ])
+  dk(
+    labExec(
+      lab.target,
+      ['node', at, String(FAKE_RESPONSES_PORT), command, log],
+      ['-d', '-u', 'kuser']
+    )
+  )
 }
 
 export function servePageOnTarget(lab: SshLab, port: number, html: string): void {
   const server = `require('http').createServer((q, s) => s.end(${JSON.stringify(html)})).listen(${port}, '127.0.0.1')`
-  dk(['exec', '-d', '-u', 'kuser', lab.target, 'node', '-e', server])
+  dk(labExec(lab.target, ['node', '-e', server], ['-d', '-u', 'kuser']))
 }
 
 export function loginsAccepted(lab: SshLab, user: string): number {
@@ -495,9 +493,9 @@ exec "$HOME/.local/muse-official/muse" --provider echo "$@"
 
 export function installRealMuseOnTheMachine(lab: SshLab, user: string): void {
   const home = `/home/${user}`
-  dk(['exec', lab.target, 'mkdir', '-p', `${home}/.local/muse-official`, `${home}/.local/bin`])
+  dk(labExec(lab.target, ['mkdir', '-p', `${home}/.local/muse-official`, `${home}/.local/bin`]))
   dk(['cp', `${LINUX_MUSE_DIR}/.`, `${lab.target}:${home}/.local/muse-official/`])
-  dk(['exec', lab.target, 'chown', '-R', `${user}:${user}`, `${home}/.local`])
+  dk(labExec(lab.target, ['chown', '-R', `${user}:${user}`, `${home}/.local`]))
   const launcher = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-lab-muse-')), 'muse')
   fs.writeFileSync(launcher, MUSE_ON_THE_ECHO_MODEL)
   installOnTarget(lab, launcher, `${home}/.local/bin/muse`)

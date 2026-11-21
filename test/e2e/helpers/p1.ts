@@ -789,6 +789,21 @@ export async function sendTwoLinesJoinedByShiftEnter(page: Page, term: Locator):
   await page.keyboard.press('Enter')
 }
 
+export const ERASED_BY_COMMAND_BACKSPACE = 'dropped words'
+export const KEPT_AFTER_COMMAND_BACKSPACE = 'kept words'
+
+export async function sendALineErasedByCommandBackspaceThenAnother(
+  page: Page,
+  term: Locator,
+  kept = KEPT_AFTER_COMMAND_BACKSPACE
+): Promise<void> {
+  await term.click()
+  await page.keyboard.type(ERASED_BY_COMMAND_BACKSPACE)
+  await page.keyboard.press('Meta+Backspace')
+  await page.keyboard.type(kept)
+  await page.keyboard.press('Enter')
+}
+
 const BETWEEN_SAMPLES_MS = 100
 const SAMPLES_WHILE_THE_CHECK_IS_OUT = 5
 
@@ -811,6 +826,23 @@ export async function expectNoCodexWhileTheCheckIsOutNorAfter(
   samples.push(await codexShown())
   expect(answer.find((b) => b.id === 'codex')?.available).toBe(false)
   expect(samples.filter((n) => n > 0).length, `samples with ${what}`).toBe(0)
+}
+
+export async function agyQuotaUsed(page: Page): Promise<number | undefined> {
+  return (await page.evaluate(() => window.api.accounts.probe())).find((a) => a.kind === 'agy-home')
+    ?.quota?.[0]?.used
+}
+
+export async function museLimitWindows(page: Page): Promise<number | undefined> {
+  return (await page.evaluate(() => window.api.accounts.probe())).find(
+    (a) => a.kind === 'muse-home'
+  )?.limits?.windows.length
+}
+
+export async function codexAccountsWithLimits(page: Page): Promise<number> {
+  return (await page.evaluate(() => window.api.accounts.probe())).filter(
+    (a) => a.kind === 'codex-home' && a.limits
+  ).length
 }
 
 export async function waitBooted(page: Page): Promise<void> {

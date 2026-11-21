@@ -95,8 +95,12 @@ export class AgentRequests {
     return this.settle(dir, name, parseAgentRequest(raw), tabId)
   }
 
-  replyFor(tabId: string | undefined, raw: unknown): Promise<AgentReply> {
-    return this.replyTo(parseAgentRequest(raw), tabId)
+  replyFor(
+    tabId: string | undefined,
+    raw: unknown,
+    stillWaiting?: () => boolean
+  ): Promise<AgentReply> {
+    return this.replyTo(parseAgentRequest(raw), tabId, stillWaiting)
   }
 
   private async settle(

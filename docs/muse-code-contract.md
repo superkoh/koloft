@@ -333,6 +333,16 @@ so; the model's own shell tool was checked against those on macOS with the fake 
   <userData>/palette-pictures/<uuid>.png` in a fresh worktree. It printed "Read <path>"
   and answered `ZEBRA`, the file being outside the workspace. Muse made no title of its
   own, so Koloft's row was titled from the prompt's first characters.
+- **A first prompt that starts with `/` still loads its skill; the `Picture:` line rides
+  after the words.** Measured 2026-11-17, Muse Code 1.4.23 (`1.4.23-R8977.1`, Linux
+  arm64) in Docker `--network none`, a fake model server (`--base-url`,
+  `META_API_KEY=FAKE`, `MUSE_MODEL=fake-model`), `--trust-workspace "<prompt>"` in a
+  pty; 1 run each, with and without `\n\nPicture: <png>` (the PNG outside the
+  workspace). `/probe-skill say hi` (in `<ws>/.agents/skills/`) and the built-in `/plan
+  …` each showed "Loaded skill …" and sent the skill body, then the words, then the
+  `Picture:` line, in one user message; `$ARGUMENTS` in the body stays as written.
+  `/nosuch do X` went as plain text, the `Picture:` line after it, with no error. No
+  request held an image part. Inside tmux was not run.
 
 ## §6 tmux swallows OSC 7501
 

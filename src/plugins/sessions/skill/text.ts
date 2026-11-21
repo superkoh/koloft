@@ -68,7 +68,7 @@ koloft session send <id or name> "<message>"
     Example: koloft session send 0199c3f2-7a41-7c30-9e55-1d2b8f6a0c11 "Tell me what you found."
 
 koloft session command <id or name | me> /<command> [arguments]
-    Run one slash command (like /compact, /clear or /context) in any session, or in yourself with "me". Koloft waits until that session is idle with no question showing, types the command, and hands you what it printed as a message from Koloft{{koloft-help-command-output}} command line itself only tells you it was handed over. After /clear (or /new in Codex) the session gets a new id: reach it by its name, or run koloft session list again. A command that opens a menu is closed with Esc, so give the command its arguments (like /model haiku).
+    Run one slash command (like /compact, /clear or /context) in any session, or in yourself with "me". Koloft waits until that session is idle with no question showing, types the command, and hands you what it printed as a message from Koloft. The command line itself only tells you it was handed over. After /clear (or /new in Codex) the session gets a new id: reach it by its name, or run koloft session list again. A command that opens a menu is closed with Esc, so give the command its arguments (like /model haiku).
     Example: koloft session command fix-login /compact keep the test plan
 
 koloft session screen <id or name | me>
@@ -104,7 +104,7 @@ RULES
 
 1. Once you start a session, keep it under your control: remember its name, and give it work and collect its results by messaging it. When you no longer need it, tell the owner.{{koloft-help-rule-open}}{{koloft-help-rule-cron}}{{koloft-help-rule-note}}{{koloft-help-workbench}}{{koloft-help-cron}}
 
-${SESSIONS}{{koloft-help-inbox}}{{koloft-help-todo}}{{koloft-help-passwords}}{{koloft-help-chat}}{{koloft-help-github}}{{koloft-help-web-pages}}{{koloft-help-remote-web-tabs}}`
+${SESSIONS}{{koloft-help-inbox}}{{koloft-help-passwords}}{{koloft-help-chat}}{{koloft-help-github}}{{koloft-help-web-pages}}{{koloft-help-remote-web-tabs}}`
 
 const KOLOFT_SKILL =
   "Use the koloft command to ask Koloft, the app this session runs in, to {{koloft-skill-workbench}}{{koloft-skill-cron}}list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, close this session and its worktree for good, read or change the owner's instructions for this workspace{{koloft-skill-or-list}}.{{koloft-skill-web-pages}} Read this before running any koloft{{koloft-skill-web-pages-command}} command."
@@ -118,6 +118,5 @@ export const TEXT: readonly TextBlock[] = [
 
 `
   },
-  { slot: 'koloft-help-command-output', whenOff: 'discord', text: '. The' },
   { slot: 'koloft-skill', text: KOLOFT_SKILL }
 ]

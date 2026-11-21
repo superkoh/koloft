@@ -166,6 +166,18 @@ method. A recheck adds its date, version and command to the bullet.
   zsh's Ctrl+U deletes the whole line wherever the caret is; bash's deletes from the
   caret back to the line's start. 2026-11-09, macOS 27.0 `/bin/zsh -f` and
   `/bin/bash --norc` (3.2), interactive, in a python pty read through `pyte`.
+- **An empty HOME does not hide Homebrew from a login shell.** On a Mac with Homebrew,
+  `/etc/paths.d/homebrew` holds `/opt/homebrew/bin`, and `zsh -l -i -c` and
+  `bash -l -i -c` with a fresh HOME and `PATH=/usr/bin:/bin:/usr/sbin:/sbin` both
+  printed a PATH ending in `/opt/homebrew/bin` and found a brew cask
+  `/opt/homebrew/bin/codex`. `zsh -o NO_GLOBAL_RCS -l -i -c` (zsh's own options showed
+  `login` on, `globalrcs` off) printed a PATH without it, found no `codex`, and still
+  read the HOME's own `.zprofile`: a `PATH` line there held. zsh reads `/etc/zshenv`
+  before that option takes effect (zsh manual, STARTUP/SHUTDOWN FILES), so a Mac whose
+  `/etc/zshenv` adds Homebrew still shows it; this Mac had no `/etc/zshenv`. The
+  official Codex installer picks `~/.zprofile` only when `$SHELL` ends in `/zsh`, so a
+  wrapper shell keeps that name. (2026-11-17, macOS 27.2, zsh 5.9, Codex 0.169.0 as a
+  brew cask, a scratch node script.)
 
 ## §3 macOS system tools and limits
 
@@ -2952,6 +2964,19 @@ Gateway (the live connection that pushes events):
   `rename`; removing a folder gave `rename` for every file in it and for the folder. So a
   recursive watcher, too, must look at the file to tell a new or deleted one from an
   append.
+- **A directory watcher loses events while the same process opens or closes other
+  watchers.** Measured 2026-11-20 on macOS 27.2.1 (APFS) under Node 24.22.3 and under
+  Electron 43.8.7's own Node 24.22.1 (`ELECTRON_RUN_AS_NODE=1`): one `fs.watch` on a
+  folder, then 200 times, 20 ms apart, a new subfolder with a file in it. With nothing
+  else going on every subfolder was reported (0 of 600 missed over three runs); when
+  each step also opened an `fs.watch` on another folder and closed an older one, 1, 12, 4
+  and 2 of 200 were never reported. In Koloft's e2e app the projects-folder watcher
+  stayed silent for 15 s about a new folder made 57 ms after the first list was pushed,
+  while the app was opening its other watchers (1 run in 40, and 1 in 150). Why
+  (libuv's one shared FSEvents stream being restarted) is inferred, not checked. A
+  watcher that must not miss a new entry needs a second way to notice it: an
+  `fs.watchFile` on the folder sees its mtime change, and a fresh listing names the
+  entry.
 
 ## §41 What an Electron app's quit does to its children
 
@@ -4061,3 +4086,23 @@ the measurement. One run per row, except where two are given.
 Koloft dependents: `ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE` in `src/main/agentLift.ts`
 lifts an agent program only on a machine with `/usr/sbin/taskpolicy` (§59); on a Linux
 machine it leaves the agent and its tools as they start.
+
+## §73 The umask of `docker exec` under OrbStack
+
+- **`docker exec` runs with umask 0000, whoever it runs as.** `docker exec -u kuser … sh -c
+  umask` and the same as root both printed `0000`; a file written there came out `-rw-rw-rw-`.
+  The container's own first process (`/proc/1/status`) and `docker run … sh -c umask` both
+  read `0022`, and so did `ssh kuser@127.0.0.1 umask` from inside the container: an ssh
+  login there gets 0022.
+- **ssh refuses such a file as its config.** With `~/.ssh/config` at 0666 `ssh x true`
+  stopped at "Bad owner or permissions on /home/kuser/.ssh/config"; at 0644 the same
+  command went on to check the host key.
+- Measured 2026-11-17: OrbStack (kernel `7.2.12-orbstack`), Docker Engine 29.8.2, on
+  macOS 27.2.1; the `koloft-e2e-sshd` image (Debian 12, OpenSSH 9.2p1). Inferred, not
+  checked: that colima's `docker exec` gave 0022, since the same e2e setup passed there
+  until the move to OrbStack.
+
+Koloft dependents: none in the app. Every `docker exec` in test/e2e/helpers/docker.ts goes
+through `labExec`, which sets umask 022, the umask an ssh login there gets, before its
+command. The `docker exec` calls remote-git-accounts.spec.ts makes itself (a port relay,
+a `chown`, a `chmod`) write no file, and do not.

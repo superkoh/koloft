@@ -344,17 +344,22 @@ describe('the butler', () => {
     ['muse', 'muse:local:old-thread'],
     ['agy', 'agy:local:old-conv']
   ] as const)(
-    'a %s conversation from before koloft help stopped carrying the lines only for the butler, which keeps the role it started with, is told them once when resumed, beside nothing it already knew; one started since is told nothing',
+    'a %s conversation from before koloft help stopped carrying the lines only for the butler, which keeps the role it started with, is told them once when resumed, beside no other news it already had; one told only the sessions lines, before the Todo and Discord ones joined them, is told the whole set again; one started since is told nothing',
     async (backend, oldKey) => {
       news = [{ ...TODO_NEWS, on: () => todoOn }, GUIDE_MOVED_NEWS]
-      session = { sessionIds: [oldKey], lastSessionKey: oldKey, knowsTodo: [oldKey] }
+      session = {
+        sessionIds: [oldKey],
+        lastSessionKey: oldKey,
+        knowsTodo: [oldKey],
+        knowsItsOwnLines: [oldKey]
+      }
       transcripts.add(oldKey)
       choice = { backend }
       const c = make()
       const back = await c.open()
       if (!back.ok) throw new Error(back.error)
       expect(notices).toEqual([`${FROM_KOLOFT}${GUIDE_MOVED_NEWS.text()}`])
-      await vi.waitFor(() => expect(session.knowsItsOwnLines).toEqual([oldKey]))
+      await vi.waitFor(() => expect(session.knowsAllItsOwnLines).toEqual([oldKey]))
       c.onBound(back.tabId, oldKey)
       c.onPtyExit(back.tabId)
       await c.open()
@@ -364,7 +369,7 @@ describe('the butler', () => {
       const fresh = make()
       const freshTab = await opened(fresh)
       fresh.onBound(freshTab, `${oldKey}-new`)
-      expect(session.knowsItsOwnLines).toEqual([`${oldKey}-new`])
+      expect(session.knowsAllItsOwnLines).toEqual([`${oldKey}-new`])
       fresh.onPtyExit(freshTab)
       transcripts.add(`${oldKey}-new`)
       await fresh.open()
@@ -396,9 +401,53 @@ describe('the butler', () => {
     todoOn = true
     transcripts.add(NEW_CODEX)
     await fresh.open()
-    expect(notices).toEqual([
-      `${FROM_KOLOFT}${TODO_NEWS.text()} The owner changed Settings ▸ Plugins after this conversation began: Todo is now on. A plugin that is off takes away its commands and what your instructions say about it; run koloft help to see what you can use now. There is nothing to answer now.`
+    expect(notices).toHaveLength(1)
+    expect(notices[0].startsWith(`${FROM_KOLOFT}${TODO_NEWS.text()} `)).toBe(true)
+    expect(notices[0]).toContain(': Todo is now on. ')
+    expect(notices[0]).toContain('koloft todo file <workspace> <file>')
+    expect(notices[0].split('run koloft todo and do what it prints')).toHaveLength(2)
+  })
+
+  it('an old conversation told the lines that left koloft help is not told them again when a plugin it saw off is now on', async () => {
+    news = [{ ...TODO_NEWS, on: () => todoOn }, GUIDE_MOVED_NEWS]
+    todoOn = false
+    discordOn = false
+    const c = make()
+    const tab = await opened(c)
+    c.onBound(tab, CLAUDE_KEY)
+    c.onPtyExit(tab)
+    session = { ...session, knowsAllItsOwnLines: [] }
+    todoOn = true
+    discordOn = true
+    transcripts.add(CLAUDE_KEY)
+    const back = await make().open()
+    if (!back.ok) throw new Error(back.error)
+    expect(notices).toHaveLength(1)
+    expect(notices[0]).toContain(GUIDE_MOVED_NEWS.text())
+    for (const command of ['koloft todo file <workspace> <file>', 'koloft discord send <file>'])
+      expect(notices[0].split(command)).toHaveLength(2)
+  })
+
+  it('a conversation started while Todo or Discord was off is told, once the plugin is on, the commands only the butler’s side uses, which koloft help no longer lists', async () => {
+    news = []
+    todoOn = false
+    discordOn = false
+    const c = make()
+    const tab = await opened(c)
+    c.onBound(tab, CLAUDE_KEY)
+    todoOn = true
+    discordOn = true
+    c.whatItKnowsMayHaveChanged()
+    await vi.waitFor(() => expect(notices).toHaveLength(1))
+    for (const command of [
+      'koloft todo note <workspace>',
+      'koloft todo file <workspace> <file>',
+      'koloft discord send <file>',
+      'koloft discord shot <file or web address>',
+      'koloft discord thread open <session>',
+      'koloft session command me posts'
     ])
+      expect(notices[0]).toContain(command)
   })
 
   it('what it is told when the owner changed plugins since its conversation began, pinned', () =>
@@ -636,7 +685,7 @@ describe('the butler', () => {
       sessionIds: [CLAUDE_KEY],
       lastSessionKey: CLAUDE_KEY,
       knowsTodo: [CLAUDE_KEY],
-      knowsItsOwnLines: [CLAUDE_KEY],
+      knowsAllItsOwnLines: [CLAUDE_KEY],
       pluginsSeen: { key: CLAUDE_KEY, on: { todo: true, passwords: true } }
     }
     transcripts.add(CLAUDE_KEY)
