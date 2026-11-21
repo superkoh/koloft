@@ -15,22 +15,24 @@ function useDialogKeys(
   buttons: RefObject<HTMLButtonElement | null>[],
   onEscape: () => void
 ): void {
+  const latest = useRef({ buttons, onEscape })
+  latest.current = { buttons, onEscape }
   useEffect(() => {
     if (!open) return
     const onKey = (e: globalThis.KeyboardEvent): void => {
       if (e.key === 'Escape') {
-        onEscape()
+        latest.current.onEscape()
         return
       }
       if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
-      const row = buttons.map((b) => b.current).filter((b) => b && !b.disabled)
+      const row = latest.current.buttons.map((b) => b.current).filter((b) => b && !b.disabled)
       const at = row.indexOf(document.activeElement as HTMLButtonElement)
       const next = at < 0 ? 0 : at + (e.key === 'ArrowRight' ? 1 : -1)
       row[Math.max(0, Math.min(row.length - 1, next))]?.focus()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  })
+  }, [open])
 }
 
 export function CloseSessionDialog(): JSX.Element | null {
@@ -130,7 +132,7 @@ export function FullCloseDialog(): JSX.Element | null {
   const go = (): void => {
     dismiss()
     if (refused) requestCloseTab(shown.tabId)
-    else void window.api.sessions.closeFully(shown.sessionId)
+    else void window.api.sessions.closeFully(shown.sessionId, shown.tabId)
   }
 
   return (
@@ -142,8 +144,8 @@ export function FullCloseDialog(): JSX.Element | null {
             {refused ? fullCloseRefusedBody(shown.title) : fullCloseBody(shown.title, shown.status)}
           </p>
           {left === null && <p className="field-hint">{FULL_CLOSE_CHECKING}</p>}
-          {left?.map((what) => (
-            <p key={what} className="field-hint close-left">
+          {left?.map((what, i) => (
+            <p key={i} className="field-hint close-left">
               {what}
             </p>
           ))}

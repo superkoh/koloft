@@ -176,7 +176,7 @@ interface AppState {
       save(): Promise<boolean>
     }
   } | null
-  fullClose: (FullCloseTarget & { tabId: string; left: string[] | null }) | null
+  fullClose: (FullCloseTarget & { left: string[] | null }) | null
   unsavedPrompt: {
     files: string[]
     lost?: number

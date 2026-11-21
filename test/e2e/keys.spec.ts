@@ -1,11 +1,17 @@
 import fs from 'fs'
 import path from 'path'
-import type { Locator, Page } from '@playwright/test'
+import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { runGit, setupGitFixture } from './helpers/gitFixture'
 import { installStallingGit } from './helpers/gitSpawnLog'
 import { codexRows, startCodex } from './helpers/codex'
-import { installCodex } from './helpers/env'
+import { installCodex, type E2EEnv } from './helpers/env'
+import {
+  addRemoteWorkspace,
+  killFakeRemote,
+  launchWithRemote,
+  REMOTE_WS_NAME
+} from './helpers/remote'
 import {
   centerTerm,
   gitInit,
@@ -152,22 +158,37 @@ test.describe('Keyboard shortcuts · native accelerators are driven as shortcut:
     await snap(page, 'T-KEY-06')
   })
 
-  async function worktreeSessionIn(
-    page: Page,
+  interface InWorktreeSession {
+    app: ElectronApplication
+    page: Page
+    rows: Locator
+    tree: string
     clone: string
-  ): Promise<{ rows: Locator; tree: string }> {
-    await waitBooted(page)
-    const dlg = await openWorktreeSession(page, 'repo')
-    await dlg.getByRole('textbox').click()
-    await page.keyboard.type('done')
-    await page.keyboard.press('Enter')
-    const rows = wsRows(page, 'repo')
-    await expect(rows).toHaveCount(1, { timeout: 60_000 })
-    await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-    const tree = path.join(clone, '.claude', 'worktrees', 'done')
-    await expect.poll(() => fs.existsSync(path.join(tree, 'NOTES.md'))).toBe(true)
-    await rows.click()
-    return { rows, tree }
+  }
+
+  async function inWorktreeSession(
+    env: E2EEnv,
+    body: (s: InWorktreeSession) => Promise<void>
+  ): Promise<void> {
+    const { clone } = setupGitFixture(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const dlg = await openWorktreeSession(page, 'repo')
+      await dlg.getByRole('textbox').click()
+      await page.keyboard.type('done')
+      await page.keyboard.press('Enter')
+      const rows = wsRows(page, 'repo')
+      await expect(rows).toHaveCount(1, { timeout: 60_000 })
+      await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const tree = path.join(clone, '.claude', 'worktrees', 'done')
+      await expect.poll(() => fs.existsSync(path.join(tree, 'NOTES.md'))).toBe(true)
+      await rows.click()
+      await body({ app, page, rows, tree, clone })
+    } finally {
+      await quitAndClose(app)
+    }
   }
 
   const fullCloseDialog = (page: Page): Locator =>
@@ -177,11 +198,7 @@ test.describe('Keyboard shortcuts · native accelerators are driven as shortcut:
     env
   }) => {
     test.setTimeout(180_000)
-    const fx = setupGitFixture(env)
-    const app = await launchApp(env)
-    try {
-      const page = await app.firstWindow()
-      const { rows, tree } = await worktreeSessionIn(page, fx.clone)
+    await inWorktreeSession(env, async ({ app, page, rows, tree }) => {
       const dialog = fullCloseDialog(page)
 
       await sendShortcut(app, 'shortcut:close-session')
@@ -199,23 +216,17 @@ test.describe('Keyboard shortcuts · native accelerators are driven as shortcut:
       await expect(rows).toHaveClass(/\bcold\b/, { timeout: 40_000 })
       await expect(rows).toHaveCount(1)
       expect(fs.existsSync(tree)).toBe(true)
-    } finally {
-      await quitAndClose(app)
-    }
+    })
   })
 
   test('T-KEY-08: ⌘W asks first with Cancel focused, then Close for good takes the row out at once, while git is still deleting the worktree, and deletes the worktree and its branch', async ({
     env
   }) => {
     test.setTimeout(180_000)
-    const fx = setupGitFixture(env)
-    const app = await launchApp(env)
-    try {
-      const page = await app.firstWindow()
-      const { rows, tree } = await worktreeSessionIn(page, fx.clone)
+    await inWorktreeSession(env, async ({ app, page, rows, tree, clone }) => {
       fs.rmSync(path.join(tree, 'NOTES.md'))
       installStallingGit(env, {
-        root: fx.clone,
+        root: clone,
         subcommand: 'worktree',
         verb: 'remove',
         lastArg: tree,
@@ -234,11 +245,9 @@ test.describe('Keyboard shortcuts · native accelerators are driven as shortcut:
       expect(fs.existsSync(tree), 'git is still deleting the worktree').toBe(true)
 
       await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
-      expect(runGit(fx.clone, 'branch', '--list', 'worktree-done').trim()).toBe('')
+      expect(runGit(clone, 'branch', '--list', 'worktree-done').trim()).toBe('')
       await expect(rows).toHaveCount(0)
-    } finally {
-      await quitAndClose(app)
-    }
+    })
   })
 
   test('T-KEY-09: ⌘W closes a Codex session for good the same way: its tab and its row go', async ({
@@ -261,6 +270,31 @@ test.describe('Keyboard shortcuts · native accelerators are driven as shortcut:
       await expect(page.locator('.modal-backdrop')).toHaveCount(0)
     } finally {
       await quitAndClose(app)
+    }
+  })
+
+  test('T-KEY-10: ⌘W on a session on another machine says Koloft cannot check what closing would lose there and offers only Close tab only', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const rows = wsRows(page, REMOTE_WS_NAME)
+      await rows.first().click()
+
+      await sendShortcut(app, 'shortcut:close-session')
+      const dialog = fullCloseDialog(page)
+      const tabOnly = dialog.getByRole('button', { name: 'Close tab only' })
+      await expect(tabOnly).toBeEnabled({ timeout: 30_000 })
+      await expect(dialog).toContainText('runs on another machine')
+      await tabOnly.click()
+      await expect(rows.first()).toHaveClass(/\bcold\b/, { timeout: 60_000 })
+      await expect(rows).toHaveCount(1)
+    } finally {
+      await quitAndClose(app)
+      killFakeRemote(env)
     }
   })
 })

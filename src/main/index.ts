@@ -2154,11 +2154,7 @@ const sessionDeps: SessionVerbDeps = {
           tellTheOwner(text)
           tellStarter(target, text)
         }
-        const closed = await closeSessionFully(target, undefined, tell).catch((error) => {
-          tell(`${target.title}: ${String(error)}`)
-          return false
-        })
-        if (!closed) return
+        if (!(await closeOrTell(target, tell))) return
       }
     }, CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
   overseer: { is: isButlerNow, target: butlerTarget, folder: butlerFolderNow, ...butlersWords },
@@ -5181,7 +5177,7 @@ async function closeSessionFully(
   info?: ProjectInfo,
   tell = tellTheOwner
 ): Promise<boolean> {
-  await workspaceMgr?.hideWhileClosing(target.sessionId)
+  workspaceMgr?.hideWhileClosing(target.sessionId)
   try {
     await treeRemovals.settled(target.treeRoot)
     const where = info ?? projectInfoFor(target.treeRoot)
@@ -5263,6 +5259,26 @@ function cronRunTree(root: string, worktree?: string): ProjectInfo {
 
 const NO_SESSION_FOR_THE_RUN = "Koloft cannot find this run's session."
 const NO_SESSION_TO_CLOSE = 'Koloft cannot find this session in the list.'
+const ON_ANOTHER_MACHINE =
+  'It runs on another machine, where Koloft cannot check what closing it would lose.'
+const THE_OWNERS_AI = 'It is your AI helper, which Koloft keeps open.'
+
+function closableInTab(sessionId: string, tabId: string): ClosableSession | string {
+  const live = sessionOfTab(tabId)
+  if (live?.sessionId && live.sessionId !== sessionId) return NO_SESSION_TO_CLOSE
+  const found = live?.sessionId ? live : closableSessions().find((s) => s.sessionId === sessionId)
+  if (!found) return NO_SESSION_TO_CLOSE
+  if (hostOfTab(tabId) === 'ssh' || isRemoteKey(found.treeRoot)) return ON_ANOTHER_MACHINE
+  if (isButlerNow(tabId)) return THE_OWNERS_AI
+  return { ...found, sessionId, tabId }
+}
+
+function closeOrTell(target: ClosableSession, tell: (text: string) => void): Promise<boolean> {
+  return closeSessionFully(target, undefined, tell).catch((error) => {
+    tell(`${target.title}: ${String(error)}`)
+    return false
+  })
+}
 
 async function whatClosingTheRunWouldLose(
   tabId: string,
@@ -6655,22 +6671,19 @@ const startedPlugins: PluginsStarted = startPlugins(
         archive: archiveSession,
         setResident: (id, on) => workspaceMgr?.setResident(id, on),
         killTab: (tabId) => killTabPty(tabId),
-        closingLoses: async (id) => {
-          const target = closableSessions().find((s) => s.sessionId === id)
-          if (!target) return [NO_SESSION_TO_CLOSE]
+        closingLoses: async (id, tabId) => {
+          const found = closableInTab(id, tabId)
+          if (typeof found === 'string') return [found]
           return whatClosingWouldLose(
-            target,
+            found,
             undefined,
             Date.now() + A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS
           )
         },
-        closeFully: async (id) => {
-          const target = closableSessions().find((s) => s.sessionId === id)
-          if (!target) return false
-          return closeSessionFully(target).catch((error) => {
-            tellTheOwner(`${target.title}: ${String(error)}`)
-            return false
-          })
+        closeFully: async (id, tabId) => {
+          const found = closableInTab(id, tabId)
+          if (typeof found === 'string') tellTheOwner(found)
+          else await closeOrTell(found, tellTheOwner)
         },
         leftovers: () => leftovers,
         stopLeftover: async (sessionId, pid) => {

@@ -119,21 +119,27 @@ describe('closeTabIntent (D3 ⌘W gate)', () => {
 describe('fullCloseTarget (which tab ⌘W closes for good)', () => {
   it('closes a bound agent tab for good, naming it and saying when it is still busy', () => {
     expect(fullCloseTarget(tab('t1'), [sess('t1', { status: 'working' })])).toEqual({
+      tabId: 't1',
       sessionId: 'sid-t1',
       title: 'Refactor session management',
       status: 'working'
     })
     expect(fullCloseTarget(tab('t1'), [sess('t1', { status: 'waiting' })])).toEqual({
+      tabId: 't1',
       sessionId: 'sid-t1',
       title: 'Refactor session management'
     })
   })
 
-  it('closes a sleeping tab for good by the session id the tab kept', () => {
+  it('closes a sleeping or still-resuming tab for good by the session id the tab kept', () => {
     expect(fullCloseTarget({ ...tab('t1'), sessionId: 'kept' }, [])).toEqual({
+      tabId: 't1',
       sessionId: 'kept',
       title: 'Claude'
     })
+    expect(
+      fullCloseTarget({ ...tab('t1'), sessionId: 'kept' }, [sess('t1', { sessionId: '' })])
+    ).toMatchObject({ tabId: 't1', sessionId: 'kept' })
   })
 
   it('leaves to a plain tab close: no tab, a shell tab, a launch not bound yet, an ended tab, a scheduled run, the butler', () => {

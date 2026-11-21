@@ -268,7 +268,7 @@ export class WorkspaceManager {
   private state: RescanState = { bucketDirs: [], workspaceSlugs: [] }
   private launches = new Map<string, PendingLaunch>()
   private leavingTheirWorktree = new Map<string, { tabId: string; tabEnded: boolean }>()
-  private closingForGood = new Set<string>()
+  private closingForGood = new Map<string, number>()
   private rootWatchers = new Map<string, { close(): void }>()
   private slugsListedByLastScan = new Map<string, Set<string>>()
   private bucketWatchers = new Map<string, fs.FSWatcher>()
@@ -376,11 +376,7 @@ export class WorkspaceManager {
   }
 
   private hidden(id: string): boolean {
-    return (
-      this.leavingTheirWorktree.has(id) ||
-      this.closingForGood.has(id) ||
-      (this.deps.hiddenRow?.(id) ?? false)
-    )
+    return this.leavingTheirWorktree.has(id) || (this.deps.hiddenRow?.(id) ?? false)
   }
 
   private withParents(rows: SessionRow[]): SessionRow[] {
@@ -628,13 +624,21 @@ export class WorkspaceManager {
     this.scheduleRescan()
   }
 
-  hideWhileClosing(sessionId: string): Promise<void> {
-    this.closingForGood.add(sessionId)
-    return this.whenScanned()
+  hideWhileClosing(sessionId: string): void {
+    this.closingForGood.set(sessionId, (this.closingForGood.get(sessionId) ?? 0) + 1)
+    this.rowsCache = this.withoutClosing(this.rowsCache)
+    this.deps.pushRows(this.rowsCache)
   }
 
   closingEnded(sessionId: string): void {
+    const left = (this.closingForGood.get(sessionId) ?? 0) - 1
+    if (left > 0) return void this.closingForGood.set(sessionId, left)
     if (this.closingForGood.delete(sessionId)) this.scheduleRescan()
+  }
+
+  private withoutClosing(rows: WorkspaceRows[]): WorkspaceRows[] {
+    if (!this.closingForGood.size) return rows
+    return rows.map((e) => ({ ...e, rows: e.rows.filter((r) => !this.closingForGood.has(r.id)) }))
   }
 
   launchEnded(tabId: string): void {
@@ -1072,7 +1076,9 @@ export class WorkspaceManager {
     this.bucketDirById = bucketDirById
     this.transcriptFileById = transcriptFileById
     const ordered = this.inLayoutOrder(payload)
-    this.rowsCache = this.stampLive(ordered, await this.revealDirsExisting(ordered))
+    this.rowsCache = this.withoutClosing(
+      this.stampLive(ordered, await this.revealDirsExisting(ordered))
+    )
     this.allRowsCache = allRowsByWs
     this.wsBySession = wsBySession
     this.deps.pushRows(this.rowsCache)
