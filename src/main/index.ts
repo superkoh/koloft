@@ -545,20 +545,8 @@ import { phoneCopier } from '@plugins/discord/main/phoneCopier'
 import { roomNote, tabChannels } from '@plugins/discord/main/tabChannels'
 import type { MainIpc } from '@core/ipc'
 import { pushState as pushCronState } from '@plugins/scheduled-tasks/main/channels'
-import { pushChanged as pushInboxChanged } from '@plugins/inbox/main/channels'
 import { pushStatus as pushStatusToDiscordPane } from '@plugins/discord/main/channels'
 import { pushAsks as pushSecretAsks } from '@plugins/passwords/main/channels'
-import { INBOX_SENDER, Inbox } from './inbox'
-import { flushInbox, loadInbox, saveInbox } from './inboxFile'
-import {
-  askFromClaude,
-  askFromCodex,
-  inboxFooter,
-  where,
-  KoloftInbox,
-  type AskedSession,
-  type KoloftAsk
-} from './koloftInbox'
 import { ClaudeDialogWatch } from './claudeDialogWatch'
 import {
   A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS,
@@ -623,7 +611,6 @@ const pluginIpc: MainIpc = {
   onEvent: (channel, listener) => ipcMain.on(channel, listener),
   push: (channel, ...args) => sendToRenderer(channel as Channel, ...args)
 }
-const pushInbox = pushInboxChanged(pluginIpc)
 const pushDiscordStatus = pushStatusToDiscordPane(pluginIpc)
 const pushToSessions = sessionsPushes(pluginIpc)
 
@@ -2189,43 +2176,30 @@ const sessionDeps: SessionVerbDeps = {
 }
 const sessionCommand = sessionVerb(sessionDeps)
 
-const inbox = new Inbox(
-  {
-    now: () => Date.now(),
-    sendToSession: (ref, text, toItsOwnSession) =>
-      sessionCommand.sendFrom(INBOX_SENDER, ref, text, toItsOwnSession),
-    answerSession: (ref, given) => koloftInbox.answer(ref, given),
-    startSession: async (spec, card, onReply) => {
-      const started = await sessionCommand.startForReply(
-        card.session ?? undefined,
-        spec,
-        ownersPermission(),
-        onReply
-      )
-      const bound = started.session && sessionOfTab(started.session)?.sessionId
-      return bound ? { ...started, session: bound } : started
-    },
-    footer: (card, action) => inboxFooter(card, action.lets),
-    changed: () => {
-      if (inboxPushQueued) return
-      inboxPushQueued = true
-      queueMicrotask(() => {
-        inboxPushQueued = false
-        const now = inbox.snapshot()
-        if (!quitCommitted) saveInbox(now)
-        pushInbox(now)
-      })
-    }
+const inboxCards: PluginStartDeps['inbox']['cards'] = {
+  now: () => Date.now(),
+  sendFrom: (sender, ref, text, toItsOwnSession) =>
+    sessionCommand.sendFrom(sender, ref, text, toItsOwnSession),
+  startSession: async (spec, card, onReply) => {
+    const started = await sessionCommand.startForReply(
+      card.session ?? undefined,
+      spec,
+      ownersPermission(),
+      onReply
+    )
+    const bound = started.session && sessionOfTab(started.session)?.sessionId
+    return bound ? { ...started, session: bound } : started
   },
-  loadInbox()
-)
-let inboxPushQueued = false
+  quitting: () => quitCommitted
+}
 
 function liveSessionOf(ref: string): SessionInfo | undefined {
   return allSessions().find((s) => s.alive && (s.tabId === ref || s.sessionId === ref))
 }
 
-function inboxSessionOfTab(tabId: string): AskedSession | undefined {
+function inboxSessionOfTab(
+  tabId: string
+): ReturnType<PluginStartDeps['inbox']['koloft']['sessionOfTab']> {
   const s = sessionOfTab(tabId)
   if (!s?.sessionId) return undefined
   const ws = sessionBackends.workspaceOfTab(tabId)
@@ -2238,26 +2212,19 @@ function inboxSessionOfTab(tabId: string): AskedSession | undefined {
   }
 }
 
-async function inboxAskOf(tabId: string): Promise<KoloftAsk | undefined> {
-  const claude = claudeAsks.get(tabId)
-  if (claude) return askFromClaude(claude)
-  const other = await pendingAskOf(tabId)
-  return other && askFromCodex(other)
-}
-
-const koloftInbox = new KoloftInbox({
-  inbox,
+const inboxKoloft: PluginStartDeps['inbox']['koloft'] = {
   marks: () => attention.list(),
   sessionOfTab: inboxSessionOfTab,
   liveTabOf: (ref) => {
     const s = liveSessionOf(ref)
     return s && { tabId: s.tabId, backend: s.backendId }
   },
-  askOf: inboxAskOf,
+  claudeAskOf: (tabId) => claudeAsks.get(tabId),
+  pendingAskOf,
   answer: answerSession,
   butlerSide,
   watching: () => attention.watching()
-})
+}
 
 const claudeDialogs = new ClaudeDialogWatch({
   watchedProcess: (tabId) => {
@@ -2341,14 +2308,6 @@ const cronCommand: PluginStartDeps['scheduled-tasks']['command'] = {
   },
   toast: (text) => sendToRenderer(CH.toast.show, text),
   now: () => new Date()
-}
-
-const inboxCommand: PluginStartDeps['inbox']['command'] = {
-  inbox: () => inbox,
-  whereOf: (caller) => {
-    const s = inboxSessionOfTab(caller.tabId)
-    return s ? where(s) : {}
-  }
 }
 
 const discordCommand: PluginStartDeps['discord']['command'] = {
@@ -6759,16 +6718,10 @@ const startedPlugins: PluginsStarted = startPlugins(
       }
     },
     inbox: {
-      eachTurn: {
-        inbox: koloftInbox,
-        tookTheTurn: (tabId) => startedPlugins.sessions.tookTheTurn(tabId)
-      },
-      command: inboxCommand,
-      channels: {
-        cards: inbox,
-        sync: () => koloftInbox.sync(),
-        toast: (text) => sendToRenderer(CH.toast.show, text)
-      }
+      cards: inboxCards,
+      koloft: inboxKoloft,
+      tookTheTurn: (tabId) => startedPlugins.sessions.tookTheTurn(tabId),
+      toast: (text) => sendToRenderer(CH.toast.show, text)
     },
     'scheduled-tasks': {
       command: cronCommand,
@@ -6878,3 +6831,4 @@ const {
   writeRelayEnv
 } = startedPlugins['browser-control']
 const { TODO_NEWS } = startedPlugins.todo
+const { koloftInbox, flushInbox } = startedPlugins.inbox

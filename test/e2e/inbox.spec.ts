@@ -39,7 +39,7 @@ import {
   ANSWER_NOT_TAKEN_ON_A_CARD,
   ASKED_BEFORE_IT_STOPPED,
   SHOW_PLAN_AGAIN
-} from '../../src/main/koloftInbox'
+} from '../../src/plugins/inbox/main/koloftInbox'
 import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '../../src/plugins/sessions/main/dialog'
 
 const ANSWER_WAITS_FOR_THE_UNDO_MS = 20_000

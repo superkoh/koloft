@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import type { AttentionEvent, BackendId } from '../../src/shared/types'
-import { Inbox, type InboxHost } from '../../src/main/inbox'
-import { pickToPress, UNDO_MS, type InboxAnswers } from '../../src/shared/inbox'
+import type { AttentionEvent, BackendId } from '../../../../src/shared/types'
+import { Inbox, type InboxHost } from '../../../../src/plugins/inbox/main/inbox'
+import { pickToPress, UNDO_MS, type InboxAnswers } from '../../../../src/shared/inbox'
 import {
   ANSWER_NOT_TAKEN_ON_A_CARD,
   ASKED_BEFORE_IT_STOPPED,
@@ -11,11 +11,11 @@ import {
   replyFor,
   type KoloftAsk,
   type KoloftInboxDeps
-} from '../../src/main/koloftInbox'
-import { inboxVerb } from '../../src/plugins/inbox/main/inboxVerb'
-import { ANSWER_NOT_TAKEN } from '../../src/plugins/sessions/main/dialog'
-import { SHOWS_NO_DIALOG } from '../../src/plugins/sessions/main/sessionAsks'
-import type { AgentCaller } from '../../src/core/command'
+} from '../../../../src/plugins/inbox/main/koloftInbox'
+import { inboxVerb } from '../../../../src/plugins/inbox/main/inboxVerb'
+import { ANSWER_NOT_TAKEN } from '../../../../src/plugins/sessions/main/dialog'
+import { SHOWS_NO_DIALOG } from '../../../../src/plugins/sessions/main/sessionAsks'
+import type { AgentCaller } from '../../../../src/core/command'
 
 function host(sent: [string, string][] = []): InboxHost {
   return {
