@@ -471,6 +471,8 @@ interface Tracked {
   endingTurn?: { turn: TalkTurn; deadline: ReturnType<typeof setTimeout> }
   stopsBeforeTheirLines: number[]
   promptSinceLastStop: boolean
+  promptedSinceBind: boolean
+  historyTurnAwaitsItsStop: boolean
   inode?: number
   swept?: boolean
   relocatedCwd?: string
@@ -571,6 +573,8 @@ export class SessionTracker extends SessionRuntime {
       replyDone: false,
       stopsBeforeTheirLines: [],
       promptSinceLastStop: false,
+      promptedSinceBind: false,
+      historyTurnAwaitsItsStop: false,
       remote
     }
     this.tracked.set(tabId, t)
@@ -602,7 +606,11 @@ export class SessionTracker extends SessionRuntime {
       t.compactingFrom = undefined
       t.idleCompaction = false
     }
-    if (event.type === 'prompt' && t) t.promptSinceLastStop = true
+    if (event.type === 'prompt' && t) {
+      t.promptSinceLastStop = true
+      t.promptedSinceBind = true
+      if (t.caughtUp) t.historyTurnAwaitsItsStop = false
+    }
     if (event.type === 'stop') {
       const hasAPromptOfItsOwn = !!t?.promptSinceLastStop
       if (t) t.promptSinceLastStop = false
@@ -709,8 +717,11 @@ export class SessionTracker extends SessionRuntime {
     await this.parse(t).catch(() => {})
     if (this.tracked.get(tabId) !== t) return
     const turn = t.turns.open()
+    const itsTurnWasCaughtUpAsHistory = t.historyTurnAwaitsItsStop
+    t.historyTurnAwaitsItsStop = false
     if (turn) this.endOpenTurn(t, turn)
-    else if (t.remote && hasAPromptOfItsOwn) t.stopsBeforeTheirLines.push(Date.now())
+    else if (t.remote && hasAPromptOfItsOwn && !itsTurnWasCaughtUpAsHistory)
+      t.stopsBeforeTheirLines.push(Date.now())
   }
 
   private endOpenTurn(t: Tracked, turn: TalkTurn): void {
@@ -1114,7 +1125,11 @@ export class SessionTracker extends SessionRuntime {
     clearTimeout(t.endingTurn?.deadline)
     t.endingTurn = undefined
     t.stopsBeforeTheirLines = []
-    if (!keepBindMs) t.bindMs = Date.now()
+    if (!keepBindMs) {
+      t.bindMs = Date.now()
+      t.promptedSinceBind = false
+      t.historyTurnAwaitsItsStop = false
+    }
     t.resetMs = Date.now()
   }
 
@@ -1362,7 +1377,10 @@ export class SessionTracker extends SessionRuntime {
     else if (t.caughtUp) this.resumeWorkingIfStale(t, sawUserPrompt, sawAssistant)
     if (!t.caughtUp) {
       const history = t.turns.open()
-      if (history && history.at < t.bindMs) t.turns.end(history)
+      if (history && history.at < t.bindMs) {
+        t.turns.end(history)
+        t.historyTurnAwaitsItsStop = t.promptedSinceBind
+      }
       t.caughtUp = true
     }
     const open = t.turns.open()
