@@ -67,7 +67,7 @@ test.describe('when memory turns critical, Koloft lets go of the Workbench web p
     const busyRow = wsRows(page, 'ws-a').first()
     const busyTab = (await busyRow.getAttribute('data-tab-id'))!
     await runIn(page, centerTerm(page), `/open ${slow}`)
-    await wbTabByTitle(page, 'mid-turn').click()
+    await loadedTab(page, 'mid-turn').click()
     await expect((await guestByUrl(app, '/mid-turn')).locator('p')).toHaveText('mid-turn')
     await runIn(page, centerTerm(page), '/hold')
     await expect(busyRow).toHaveClass(/\bst-working\b/, { timeout: 30_000 })
