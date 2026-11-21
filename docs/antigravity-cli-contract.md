@@ -703,8 +703,9 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
     adds a user-role content after the first prompt: "The following is a
     <SYSTEM_MESSAGE> not actually sent by the user… injected by a SessionStart
     hook:\n…". It is stored once in the transcript and sent in every later request,
-    also after a `--conversation` or `-c` resume and in a `/fork`. 300 KB arrived
-    whole.
+    also after a `--conversation` or `-c` resume and in a `/fork`, until a compaction
+    (§17). 300 KB arrived whole. On 1.5.14 (Linux, 2026-11-21, once) a 1,262,401-byte
+    text reached the model as 49,178 bytes ending in `\n<truncated 1213433 bytes>`.
   - **On a remote tab it arrives whole, and a resume keeps the first text.** 2026-11-17,
     agy 1.5.10 (manifest build, sha512 checked) in the e2e SSH lab image (Docker, Debian
     12, arm64), a stand-in Gemini server on the API-key route. The tab was started the
@@ -1298,6 +1299,33 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
 - `AGY_CLI_AUTO_COMPACT_OVERRIDE` with `zzz`, `1000`, `1k`, `1%`, `5000`, `50%`
   changed nothing. `settings.json` `contextWindow` `"200k"` or `200000` is kept but
   changes neither limit.
+- **A compaction drops the words a `SessionStart` hook injected (§12), and nothing brings
+  them back on its own.** 2026-11-21, agy 1.5.14 Linux arm64 (manifest build, sha512
+  checked) in Docker, `--network none`, the TUI in tmux, a stand-in Gemini server that
+  saved each request, answered the summary call with a fixed summary and other calls
+  with a numbered reply. The hook printed `sessionStartOutput(text)` with a codeword in
+  it. The first request after `/compact` held exactly two user contents, a
+  `<CONTEXT_SUMMARY>` (the user's requests, the summary, the transcript paths) and the
+  new `<USER_REQUEST>`; the codeword was in no content and not in `systemInstruction`,
+  in this and every later request, with or without a `--conversation` resume first (2
+  runs each). The compaction request itself held the injected text and asks the model
+  to keep "standing rules … from user instructions"; only the transcript file keeps the
+  step. No `SessionStart` fires on the resume or the compaction, so a newer text the
+  relaunch had never arrived either.
+- **A `PreInvocation` `ephemeralMessage` puts them back.** Same build and set-up, the hook
+  rendered from `AGY_HOOK_SCRIPT` and installed as Koloft installs it, with texts of
+  24,000 characters (about 28.9 KB) holding newlines, tabs, quotes, backticks, `$HOME`,
+  `$(whoami)`, `\`, `%s`, `!!`, `{{x}}`, Chinese and an emoji. The hook's `transcriptPath`
+  holds the `"type":"CHECKPOINT"` step from the compaction on. Before the compaction the
+  text was in each request once (the `SessionStart` copy); after it, every request held
+  the text of the launch it ran in once, as one exact string: the first launch's without
+  a resume, the relaunch's after a `--conversation` resume (2 runs each). After a
+  `run_command` it rode at the end of `functionResponse.response.output`. The previous
+  call's copy is not sent again, but the transcript keeps each as an `EPHEMERAL_MESSAGE`
+  step (about 25.5 KB each here; 33 KB → 159 KB over 5 calls). Automatic compaction was
+  not reached (a 1.26 MB injected text arrived cut, a 1 MB pasted prompt was never sent),
+  so that it writes the same step for the hook to see is inferred from the bullet above,
+  not checked. The Mac build was not run.
 
 ## §18 Fork
 
