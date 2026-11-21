@@ -2463,7 +2463,35 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   under ZEBRA that never named the word was then `thread/resume`d on a server with
   `-c …YAK`, and another with the `developerInstructions: <HERON>` param: both answered
   ZEBRA, and neither YAK nor HERON reached the rollout. So a newer Koloft prompt does not
-  reach a resumed older session.
+  reach a resumed older session — until it next compacts (next bullet).
+- **From a compaction on, a thread runs on the `-c developer_instructions=` of the
+  app-server it compacts in.** 2026-11-21, Codex CLI 0.169.0 (Homebrew, macOS) and 0.170.0
+  (npm, in a scratch folder), `codex app-server --stdio` with Koloft's `initialize`
+  (`experimentalApi: true`), a scratch `HOME` and `CODEX_HOME`, and a local stand-in
+  Responses server that saved each request body. Two provider set-ups: a
+  `model_providers` entry with `wire_api="responses"`, and the built-in `openai` provider
+  with an API-key `auth.json` (made-up key) and `openai_base_url` at the stand-in. A
+  server with `-c …ALPHA` ran `thread/start` and one turn and was killed; a second server
+  `thread/resume`d the thread, compacted it, then ran two turns. The first reply and the
+  summary were sentinels: every request after a compaction held the summary and not the
+  first reply.
+  - Manual compaction is `thread/compact/start {threadId}`: a turn of its own with an
+    item `type:"contextCompaction"`. Through the custom provider it is an ordinary
+    `POST /v1/responses` ending in a "CONTEXT CHECKPOINT COMPACTION" user message;
+    through the `openai` provider it is also `POST /v1/responses`, ending in
+    `{type:"compaction_trigger"}` and answered by one `{type:"compaction",
+    encrypted_content}` item. Automatic compaction (`model_auto_compact_token_limit=1000`,
+    the stand-in reporting 200,000 tokens) runs inside the next turn, before its request,
+    by the same route.
+  - Resumed on a server with the same ALPHA, manual or automatic: ALPHA was in every
+    later request, as the first `input_text` of a `developer` message.
+  - Resumed on a server with `-c …BETA`: before a compaction only ALPHA reached the model
+    (as above); the compaction request itself still held ALPHA; every request after it
+    held BETA and no ALPHA, manual and automatic, both providers, both versions.
+  - A fresh thread compacted with no resume kept ALPHA. Every case ran twice, with the
+    same result.
+  - A resume on a server with no `-c developer_instructions=` was not run: whether the
+    text is then gone after a compaction is not probed yet.
 - **`$CODEX_HOME/AGENTS.md` reaches the model** as a `user` message
   `# AGENTS.md instructions\n\n<INSTRUCTIONS>…`: its codeword came back (same run).
   **Skills reach it only as a list**: a `developer` message `<skills_instructions>` holds
