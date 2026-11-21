@@ -73,10 +73,8 @@ export const fillsOfNotTurnedOff = <T,>(into: Slot<T>, settings: Settings): read
   placed().fillsOf(into, notTurnedOffIn(settings))
 
 export function useOwnerReach(): readonly string[] {
-  return fillsOf(
-    OWNER_REACH,
-    useStore((s) => s.settings)
-  )
+  usePluginsOnKey()
+  return fillsOf(OWNER_REACH)
 }
 
 const KEPT_WHILE_OFF: ReadonlySet<UiPlace> = new Set(['settings-page'])

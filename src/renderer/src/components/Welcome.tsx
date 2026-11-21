@@ -201,10 +201,7 @@ export function Welcome({
   const setWelcomeReplay = useStore((s) => s.setWelcomeReplay)
   const skipPermissions = useStore((s) => s.settings.skipPermissions)
   const methods = useStore((s) => s.settings.sessionMethods)
-  const [phoneReach] = fillsOfNotTurnedOff(
-    OWNER_REACH,
-    useStore((s) => s.settings)
-  )
+  const phoneReach = useStore((s) => fillsOfNotTurnedOff(OWNER_REACH, s.settings)[0])
 
   const [step, setStep] = useState<Step>(1)
   const [found, setFound] = useState<DiscoveredFolder[] | null>(null)

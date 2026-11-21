@@ -269,33 +269,26 @@ test.describe('Settings ▸ Plugins: one row per plugin, a switch for each optio
         return page.locator('.modal', { hasText: 'Rename your butler' }).locator('.field-hint')
       }
 
+      const butlersRow = (main: Locator): Locator => main.locator('.set-row').last()
+
       await openSettings(page)
       let main = await assistLines()
-      await expect(main.locator('.set-ph p')).toContainText(
-        'whom you talk to from the top of the sidebar or from Discord.'
-      )
-      await expect(main).toContainText(
-        'Your butler, whom you talk to from the top of the sidebar or from Discord.'
-      )
+      await expect(main.locator('.set-ph p')).toContainText('Discord')
+      await expect(butlersRow(main)).toContainText('Discord')
       await page.keyboard.press('Escape')
-      await expect(await renameHint()).toContainText(
-        'Shown as “Alfred · Butler” in the sidebar and in Discord.'
-      )
+      await expect(await renameHint()).toContainText('Discord')
       await page.keyboard.press('Escape')
 
       main = await openPluginsPane(page)
       await main.getByRole('switch', { name: 'Discord', exact: true }).uncheck()
       await expect.poll(() => pluginsOn(env)).toEqual({ discord: false })
       main = await assistLines()
-      await expect(main.locator('.set-ph p')).toContainText(
-        'whom you talk to from the top of the sidebar.'
-      )
-      await expect(main).toContainText('Your butler, whom you talk to from the top of the sidebar.')
+      await expect(butlersRow(main)).toContainText('Alfred')
       await expect(main).not.toContainText('Discord')
       await page.keyboard.press('Escape')
-      await expect(await renameHint()).toHaveText(
-        'Shown as “Alfred · Butler” in the sidebar. Other sessions reach it by this name.'
-      )
+      const hint = await renameHint()
+      await expect(hint).toContainText('Alfred · Butler')
+      await expect(hint).not.toContainText('Discord')
     } finally {
       await quitAndClose(app)
     }

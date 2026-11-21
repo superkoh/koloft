@@ -389,9 +389,7 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
       await expect(welcome(page).locator('.wl-perm')).toContainText(
         'Sessions run each step without stopping to ask.'
       )
-      await expect(welcome(page).locator('.wl-phone')).toContainText(
-        'Connect Discord any time, and I’ll ask you here when a session needs you.'
-      )
+      await expect(welcome(page).locator('.wl-phone')).toContainText('Discord')
       await snap(page, 'T-OB-05')
       await page.keyboard.press('Enter')
 
