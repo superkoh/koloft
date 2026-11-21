@@ -4786,33 +4786,22 @@ const cdpOps = new CdpOps({
 })
 
 const workbenchPages: PluginStartDeps['workbench']['pages'] = {
-  webPages: { activeTab: () => uiActiveTabId, machineOfTab },
-  sitePermissions: {
-    openExternally: openUrlExternally,
-    allowFullscreen: allowPageFullscreenWithoutTheWindow
-  },
-  pageRouting: {
-    openExternally: openUrlExternally,
-    driverOf: sessionDrivingGuest,
-    drivenFromAnotherMachine: guestDrivenFromAnotherMachine,
-    openAsDrivingAgentsTab: (guestId, url) => cdpOps.openAsDrivingAgentsTab(guestId, url),
-    handsOn: handsOnKoloft,
-    mainWindow: () => mainWindow,
-    showMainWindow,
-    showSignInWindows: !BACKGROUND_TEST
-  },
-  pageTools: {
-    machineOfTab,
-    savePickOn: (machine, name, png) => hosts.machine(machine).savePick(name, png),
-    savePickOnThisMac,
-    handsOn: handsOnKoloft,
-    underTest: BACKGROUND_TEST
-  },
-  pagesInUse: {
-    heldElsewhere: () => secretAsks?.pagesHeld() ?? [],
-    ownerDriven: relayAttached,
-    drivenFromAnotherMachine: guestDrivenFromAnotherMachine
-  }
+  activeTab: () => uiActiveTabId,
+  machineOfTab,
+  openExternally: openUrlExternally,
+  allowFullscreen: allowPageFullscreenWithoutTheWindow,
+  driverOf: sessionDrivingGuest,
+  drivenFromAnotherMachine: guestDrivenFromAnotherMachine,
+  openAsDrivingAgentsTab: (guestId, url) => cdpOps.openAsDrivingAgentsTab(guestId, url),
+  handsOn: handsOnKoloft,
+  mainWindow: () => mainWindow,
+  showMainWindow,
+  showSignInWindows: !BACKGROUND_TEST,
+  savePickOn: (machine, name, png) => hosts.machine(machine).savePick(name, png),
+  savePickOnThisMac,
+  underTest: BACKGROUND_TEST,
+  heldElsewhere: () => secretAsks?.pagesHeld() ?? [],
+  ownerDriven: relayAttached
 }
 
 // PLATFORM§8
@@ -6670,7 +6659,6 @@ const startedPlugins: PluginsStarted = startPlugins(
       pages: workbenchPages,
       commands: workbenchCommands,
       readerDocs,
-      pageChannels: { openExternal: openUrlExternally },
       channels: {
         files: (p) => hosts.of(p),
         base: sanitizeBase,
