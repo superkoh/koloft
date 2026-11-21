@@ -4792,7 +4792,7 @@ app.on('before-quit', (e) => {
     pageForwards.cancelOnQuit()
   }
   const heldMarks = attention.heldMarks()
-  if (heldMarks.length) saveAttention([...attention.list(), ...heldMarks])
+  if (!quitCommitted && heldMarks.length) saveAttention([...attention.list(), ...heldMarks])
   quitCommitted = true
   guard?.liftAllBeforeQuitting()
   if (!storedQuitStopped && storedSessions().some((s) => s.hasProcesses())) {

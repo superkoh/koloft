@@ -80,6 +80,20 @@ describe('NewsJudge — each finished turn is judged once, and only its own mark
     expect(heard).toEqual(['first tab-A false', 'second tab-A false'])
   })
 
+  it('a held turn’s verdict never reaches the next turn, nor anyone once the plugin took the turn before the verdict came back', async () => {
+    const { j, marked, heard, settle, held } = judge()
+    marked.add('tab-A')
+    held.add('tab-A')
+    j.turnEnded('tab-A', turn('Merge it?'))
+    await settle(false)
+    held.delete('tab-A')
+    j.turnEnded('tab-A', turn('Done?'))
+    j.letGo('tab-A')
+    j.taken('tab-A')
+    await settle(false)
+    expect(heard).toEqual([])
+  })
+
   it('asks once the turn and its mark are both in, in either order, a flapping mark keeps the verdict, and every subscriber hears each verdict', async () => {
     const { j, marked, fyi, heard, verdicts, settle } = judge()
     j.turnEnded('tab-A', turn('Done.'))

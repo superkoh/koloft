@@ -164,6 +164,7 @@ export class NewsJudge {
 
   taken(tabId: string): void {
     this.keptWhileHeld.delete(tabId)
+    this.beingJudged.delete(tabId)
   }
 
   private tell(tabId: string, verdict: Verdict): void {
@@ -191,5 +192,6 @@ export class NewsJudge {
 
   private nextRound(tabId: string): void {
     this.round.set(tabId, (this.round.get(tabId) ?? 0) + 1)
+    this.keptWhileHeld.delete(tabId)
   }
 }

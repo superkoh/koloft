@@ -75,10 +75,8 @@ export class AttentionTracker {
     next: SessionStatus,
     subject: AttentionSubject = {}
   ): void {
-    const held = this.held.get(tabId)
-    const heldStepIsOver =
-      next === 'working' || (held?.kind === 'approval') !== (next === 'approval')
-    if (held && heldStepIsOver) this.held.delete(tabId)
+    const kind = edgeAttention(prev, next)
+    if (next === 'working' || kind) this.held.delete(tabId)
     if (next === 'working') {
       const cur = this.pending.get(tabId)
       const mayAskAgain = cur?.wasAsking && !cur.stoppedByRestart && this.outlivesKoloft(tabId)
@@ -86,7 +84,6 @@ export class AttentionTracker {
       else this.askKeptThroughWorking.add(tabId)
       return
     }
-    const kind = edgeAttention(prev, next)
     if (!kind) return
     const claim = this.claim(tabId, kind)
     if (claim === 'take') return
@@ -111,7 +108,7 @@ export class AttentionTracker {
   }
 
   heldMarks(): AttentionEvent[] {
-    return [...this.held.values()]
+    return [...this.held.values()].filter((e) => !this.pending.has(e.tabId))
   }
 
   take(tabId: string): void {

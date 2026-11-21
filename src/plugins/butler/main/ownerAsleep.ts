@@ -193,7 +193,7 @@ export class OwnerAsleep {
       do {
         run.askedAgain = false
         answeredText = await this.answerShowing(tabId, answeredText)
-      } while (run.askedAgain && this.answersFor(tabId))
+      } while (run.askedAgain && this.answersFor(tabId) && !this.d.askClaimed(tabId))
     } finally {
       this.answering.delete(tabId)
     }

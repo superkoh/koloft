@@ -437,7 +437,11 @@ describe('attention — a step a plugin holds', () => {
     t.claim = () => 'hold'
     t.onStatusChange('tab-D', 'working', 'waiting')
     t.clear('tab-D')
-    expect(['tab-A', 'tab-B', 'tab-C', 'tab-D'].map((tab) => t.letGo(tab))).toEqual([
+    t.onStatusChange('tab-E', 'working', 'approval')
+    t.claim = () => 'take'
+    t.onStatusChange('tab-E', 'approval', 'approval')
+    expect(['tab-A', 'tab-B', 'tab-C', 'tab-D', 'tab-E'].map((tab) => t.letGo(tab))).toEqual([
+      false,
       false,
       false,
       false,
