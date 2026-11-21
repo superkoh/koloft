@@ -865,8 +865,8 @@ export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments,
   `(core, deps) => result`. `core` is a `PluginCore`: the app's one `commands`, `moments` and
   `ipc`. `deps` is what the plugin needs from the app while that code still lives outside the
   plugin ([Main-process parts](#main-process-parts)); its type is the plugin's own, and
-  `PluginStartDeps` in `src/plugins/starts.ts` collects them, so `src/main/index.ts` names no
-  plugin file to build them.
+  `PluginStartDeps` in `src/plugins/starts.ts` collects them, so `src/main/index.ts` takes
+  each deps type from that list rather than from the plugin's files.
 - `startPlugins(PLUGINS, PLUGIN_STARTS, core, deps)` calls each start once, in the order of the
   list of plugins, and returns what each gave back, keyed by plugin id (`PluginsStarted`).
   GitHub's start gives back its `GithubMain`, whose `followSwitch` and `sweepNow` the app
@@ -876,7 +876,9 @@ export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments,
   object hands in exists, and before Electron is ready, so before any session runs, any
   `koloft` command arrives or the window opens.
 - Inside one start, the order of its `moments.listen` calls is the order that plugin hears a
-  moment in ([Moments](#moments)). Across plugins the order of the starts does not matter.
+  moment in ([Moments](#moments)). Across plugins the order of the starts does not matter,
+  since `Moments` orders listeners by the list of plugins whoever listens first.
+- A start given for an id that is not on the list of plugins throws.
 - Every plugin is started, on or off. What a plugin that is off loses is still taken away by
   the registries ([Switches](#switches)). Nothing stops a started plugin.
 - The unit test `test/unit/pluginList.test.ts` checks that `src/plugins/starts.ts` holds the

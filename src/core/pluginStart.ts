@@ -24,6 +24,9 @@ export function startPlugins<S extends Starts>(
   core: PluginCore,
   deps: StartDeps<S>
 ): Started<S> {
+  for (const id of Object.keys(starts))
+    if (!plugins.some((p) => p.id === id))
+      throw new Error(`a start is given for "${id}", which is not on the list of plugins`)
   const started: Record<string, unknown> = {}
   for (const { id } of plugins)
     if (Object.hasOwn(starts, id))

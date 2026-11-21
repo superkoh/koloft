@@ -3618,7 +3618,7 @@ app.whenReady().then(() => {
     machinePkg = null
     if (!passwordsOn()) secretAsks?.declineAll()
     followDiscordSwitch()
-    started.github.followSwitch()
+    startedPlugins.github.followSwitch()
     try {
       writeSudoShims(shimDir, SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS)
       if (claudeAgentPlugin) claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
@@ -3675,7 +3675,7 @@ app.whenReady().then(() => {
     progress: (p) => sendToRenderer(CH.gitAccounts.loginProgress, p),
     accountsChanged: (views) => sendToRenderer(CH.gitAccounts.update, views),
     picksChanged: () => {
-      started.github.sweepNow()
+      startedPlugins.github.sweepNow()
       workspaceMgr?.restampLive()
     },
     runOnMachine: async (machine, script, args = [], opts = {}) => {
@@ -4073,13 +4073,13 @@ app.whenReady().then(() => {
       syncAnswerable()
     },
     freshness: (wsPath) => freshness?.get(wsPath),
-    pluginData: started.github.rowData,
+    pluginData: startedPlugins.github.rowData,
     gitAccount: (wsPath) => gitAccounts?.workspaceAccount(wsPath),
     gitPickable: (wsPath) => !!gitAccounts?.pickableOnMachine(wsPath),
     onRescanned: (wsPaths) => {
       void freshness?.refreshLocal(wsPaths)
       void gitAccounts?.refreshRepoKeys(wsPaths).then(() => workspaceMgr?.restampLive())
-      started.github.sweepNow()
+      startedPlugins.github.sweepNow()
       claudeBackend.watchRemoteHookMirrors()
     },
     jobCountFor: (wsPath) => cronRunner?.jobCountFor(wsPath) ?? 0,
@@ -4599,7 +4599,7 @@ app.whenReady().then(() => {
   })
   workspaceMgr.start()
   freshness.start()
-  started.github.followSwitch()
+  startedPlugins.github.followSwitch()
   ensureControlDir(remoteControlDir)
   remoteSync.start()
 
@@ -6770,7 +6770,7 @@ async function sessionPorts(tabId: string): Promise<ListeningPort[] | null> {
   return parseSessionPorts(await scanPortsOnMachine(machine, tags, tmuxName, remoteControlDir))
 }
 
-const started: PluginsStarted = startPlugins(
+const startedPlugins: PluginsStarted = startPlugins(
   PLUGINS,
   PLUGIN_STARTS,
   { commands, moments, ipc: pluginIpc },
@@ -6910,7 +6910,7 @@ const started: PluginsStarted = startPlugins(
       eachTurn: {
         butler: () => butler,
         digest: () => awayDigest,
-        tookTheTurn: (tabId) => started.sessions.tookTheTurn(tabId),
+        tookTheTurn: (tabId) => startedPlugins.sessions.tookTheTurn(tabId),
         asleep: ownerAsleep,
         butlerTabChanged: syncAnswerable
       },
@@ -6929,7 +6929,7 @@ const started: PluginsStarted = startPlugins(
     inbox: {
       eachTurn: {
         inbox: koloftInbox,
-        tookTheTurn: (tabId) => started.sessions.tookTheTurn(tabId)
+        tookTheTurn: (tabId) => startedPlugins.sessions.tookTheTurn(tabId)
       },
       command: inboxCommand,
       channels: {
