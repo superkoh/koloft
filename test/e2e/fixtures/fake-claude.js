@@ -68,7 +68,8 @@ if (argv[0] === 'setup-token') {
   const inkHardWrappedToken = tok.match(new RegExp(`.{1,${cols}}`, 'g')).join('\r\n')
   const authUrl = process.env.KOLOFT_FAKE_SETUP_URL
   if (authUrl) {
-    process.stdout.write(`\r\nBrowser didn't open? Visit: ${authUrl}\r\n`)
+    const osc8Link = `\x1b]8;;${authUrl}\x07${authUrl}\x1b]8;;\x07`
+    process.stdout.write(`\r\nBrowser didn't open? Visit: ${osc8Link}\r\n`)
     require('child_process').spawnSync('/bin/sh', ['-c', 'open "$0"', authUrl], {
       stdio: 'ignore'
     })

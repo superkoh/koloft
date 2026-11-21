@@ -1044,12 +1044,15 @@ test('E10: guided login captures the printed token (even wrapped at 80 columns) 
 
     await app.evaluate(({ BrowserWindow }) => {
       const sent: string[] = []
+      const progress: unknown[] = []
       ;(globalThis as unknown as { __terminalSent: string[] }).__terminalSent = sent
+      ;(globalThis as unknown as { __loginProgress: unknown[] }).__loginProgress = progress
       for (const win of BrowserWindow.getAllWindows()) {
         const send = win.webContents.send.bind(win.webContents)
         win.webContents.send = (channel: string, ...args: unknown[]) => {
           if (channel === 'terminal:data' || channel === 'terminal:exit')
             sent.push(JSON.stringify([channel, ...args]))
+          if (channel === 'accounts:login-progress') progress.push(args[0])
           return send(channel, ...args)
         }
       }
@@ -1089,6 +1092,14 @@ test('E10: guided login captures the printed token (even wrapped at 80 columns) 
         fs.existsSync(env.externalOpens) ? fs.readFileSync(env.externalOpens, 'utf8') : ''
       )
       .toContain(AUTH_URL)
+    const authPageUrls = await app.evaluate(() =>
+      (
+        globalThis as unknown as { __loginProgress: { phase: string; url?: string }[] }
+      ).__loginProgress
+        .filter((p) => p.phase === 'browser')
+        .map((p) => p.url)
+    )
+    expect(authPageUrls).toEqual([AUTH_URL])
     await expect(page.locator('.tb-ico[aria-label="Opened page"]')).toHaveCount(0)
   } finally {
     await app.close().catch(() => {})

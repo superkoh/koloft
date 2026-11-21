@@ -2649,7 +2649,8 @@ const INSTALL_STALLED = `The Claude Code install did not finish: it printed noth
 const LOGIN_BUF_MAX = 8192
 const LOGIN_PTY_COLS_WIDER_THAN_TOKEN = 800
 const ACCOUNT_PROBE_TIMEOUT_MS = 10_000
-const AUTH_URL_RE = /https?:\/\/[^\s'"`<>]+/
+// CC§7
+const AUTH_URL_RE = /https?:\/\/[^\s'"`<>\x00-\x1f\x7f]+/
 // CC§7
 const TOKEN_RE = /sk-ant-[A-Za-z0-9]{2,12}-[A-Za-z0-9_-]{24,}/
 

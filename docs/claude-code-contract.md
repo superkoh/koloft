@@ -1647,7 +1647,16 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   prints the token ("Long-lived authentication token created successfully", "Store this
   token securely") and the browser step (`BROWSER`, else `open`, with the URL) are the
   same on 2.1.306 and 2.1.308 once minified names are evened out (`strings`, 2026-10-22,
-  not run: no login was made).
+  not run: no login was made). **The printed sign-in link is wrapped in an OSC 8
+  hyperlink**: `ESC ] 8 ; ; <url> BEL <url> ESC ] 8 ; ; BEL`, even with
+  `TERM_PROGRAM=Apple_Terminal`, so a URL match that does not stop at the first control
+  character takes the target, the visible text and the closing code as one link. From
+  2.1.330 the printed link is short by default, `https://claude.ai/oauth/authorize?<44
+  characters>` (one scope letter and the 43-character code challenge), which the browser
+  follows with a 307 to the full link; `CLAUDE_CODE_FULL_SIGN_IN_LINK=1` prints the full
+  link again. The URL claude hands the browser itself (`BROWSER`, else `open`) is the full
+  link on both versions. (2026-11-21, 2.1.329 and 2.1.330 linux-arm64 in Docker, output
+  captured with `script`, not signed in.)
 - **Saved limit resets need a full-scope login; the token Koloft holds cannot read or use
   them.** Read 2026-10-13 from the 2.1.296 binary (`strings`): a hidden `/limit-reset`
   command reads resets from `GET /api/oauth/usage?cedar_ember=1&skip_spend=1` (blocks
