@@ -73,7 +73,7 @@ describe('store: claude → shell revert, only after a session actually bound', 
     const s = useStore.getState()
     const row = { id: 'sid-end1', title: 'My run', worktree: 'main', cwd: '/w', running: true }
     useStore.setState({
-      butlerWorkspace: null,
+      claimedWorkspaces: [],
       workspaceRows: [
         {
           workspace: { path: '/w', missing: false, isGit: true, hasHistory: true },
@@ -99,7 +99,7 @@ describe('store: claude → shell revert, only after a session actually bound', 
   for (const kind of ['claude', 'codex', 'muse', 'agy'] as const)
     it(`a ${kind} tab whose session left the list before its terminal exited is still that agent on the exit path, and an unexpected exit keeps it as that agent`, () => {
       useStore.setState({
-        butlerWorkspace: null,
+        claimedWorkspaces: [],
         workspaceRows: [
           { workspace: { path: '/w', missing: false, isGit: true, hasHistory: true }, rows: [] }
         ]
@@ -125,7 +125,7 @@ describe('store: claude → shell revert, only after a session actually bound', 
 
   it('gives a launch that died before its starting row ever arrived a row of its own, in the workspace holding its folder', () => {
     useStore.setState({
-      butlerWorkspace: null,
+      claimedWorkspaces: [],
       workspaceRows: [
         { workspace: { path: '/w', missing: false, isGit: true, hasHistory: false }, rows: [] }
       ]
@@ -163,7 +163,7 @@ describe('store: claude → shell revert, only after a session actually bound', 
   })
 
   it('does not keep a dead tab it cannot place in any workspace, so it never stays open without a row', () => {
-    useStore.setState({ butlerWorkspace: null, workspaceRows: [] })
+    useStore.setState({ claimedWorkspaces: [], workspaceRows: [] })
     const s = useStore.getState()
     s.addTab({ id: 'end4', kind: 'codex', title: 'Codex', cwd: '/elsewhere', alive: true })
     expect(s.keepEndedTab('end4', 'exited (code 1)')).toBe(false)
@@ -205,83 +205,6 @@ describe('store: claude → shell revert, only after a session actually bound', 
     useStore.setState({ openFiles: { P: { src: '/w/NOTES.md', label: 'NOTES.md' } } })
     s.setSessions([])
     expect(useStore.getState().openFiles['P']).toBeUndefined()
-  })
-})
-
-describe('store: closing the session you watch lands on the butler, whichever of session end and terminal exit comes first', () => {
-  let butlersOpened: number
-  const { settings, butlerTab } = useStore.getState()
-  afterEach(() => useStore.setState({ settings, butlerTab }))
-  beforeEach(() => {
-    butlersOpened = 0
-    ;(globalThis as { window?: unknown }).window = {
-      api: {
-        conductors: {
-          open: () => {
-            butlersOpened++
-            return new Promise(() => {})
-          }
-        }
-      }
-    }
-    useStore.setState({
-      butlerTab: null,
-      accounts: null,
-      settings: {
-        ...useStore.getState().settings,
-        skipPermissionsAgreed: true,
-        accounts: [
-          { name: 'a', kind: 'oauth', enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }
-        ]
-      }
-    })
-  })
-
-  it('lands on the butler when the session ended before its terminal exited', () => {
-    const s = useStore.getState()
-    s.addTab({ id: 'end-first', kind: 'claude', title: 'S', cwd: '/w', alive: true })
-    s.setSessions([session('end-first')])
-    s.setSessions([])
-    expect(useStore.getState().tabs[0].kind).toBe('shell')
-
-    useStore.getState().removeTab('end-first')
-
-    expect(butlersOpened).toBe(1)
-  })
-
-  it('does not start the butler again when the butler’s own session ended before its terminal exited', () => {
-    const s = useStore.getState()
-    s.addTab({ id: 'own-butler', kind: 'claude', title: 'Alfred', cwd: '/w', alive: true })
-    s.setSessions([{ ...session('own-butler'), butler: true }])
-    s.setSessions([])
-
-    useStore.getState().removeTab('own-butler')
-
-    expect(butlersOpened).toBe(0)
-  })
-
-  it('stays put when a session that ended in a background tab is picked and closed later', () => {
-    const s = useStore.getState()
-    s.addTab({ id: 'bg-ended', kind: 'claude', title: 'S', cwd: '/w', alive: true })
-    s.addTab({ id: 'bg-watched', kind: 'claude', title: 'S', cwd: '/w', alive: true })
-    s.setSessions([session('bg-ended'), session('bg-watched')])
-    s.setSessions([session('bg-watched')])
-    s.setActive('bg-ended')
-
-    useStore.getState().removeTab('bg-ended')
-
-    expect(butlersOpened).toBe(0)
-  })
-
-  it('stays put when a plain terminal that once ran claude is closed', () => {
-    const s = useStore.getState()
-    s.addTab({ id: 'plain-term', kind: 'shell', title: 'Terminal', cwd: '/w', alive: true })
-    s.setSessions([session('plain-term')])
-    s.setSessions([])
-
-    useStore.getState().removeTab('plain-term')
-
-    expect(butlersOpened).toBe(0)
   })
 })
 
@@ -379,7 +302,7 @@ describe('store: intercepted file open routing — the open always surfaces, tag
   it('falls back to OS open when there is no tab to attach the preview to (never swallowed)', () => {
     const calls: string[] = []
     ;(globalThis as { window?: unknown }).window = {
-      api: { preview: { osOpen: (p: string) => calls.push(p) } }
+      api: { os: { open: (p: string) => calls.push(p) } }
     }
     openInterceptedFile('gone', '/w/orphan.md')
     expect(calls).toEqual(['/w/orphan.md'])

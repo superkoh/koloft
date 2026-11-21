@@ -5,7 +5,7 @@ import path from 'path'
 import { shq } from '@shared/shellQuote'
 import { REMOTE_ENV_LINES } from './remote/install'
 import { REMOTE_COMPILE_CACHE } from './remote/paths'
-import { AGY_COST_ENV } from './agyHooks'
+import { AGY_COST_ENV } from '@plugins/sessions/main/agyHooks'
 
 // CC§6
 export interface StatusLineSetting {

@@ -842,8 +842,8 @@ function FilesContextMenu({
   }
   const remote = parseRemoteKey(menu.path)
   if (!remote) {
-    items.push(['Reveal in Finder', () => window.api.fs.reveal(menu.path)])
-    items.push(['Open with default app', () => window.api.preview.osOpen(menu.path)])
+    items.push(['Reveal in Finder', () => window.api.os.reveal(menu.path)])
+    items.push(['Open with default app', () => window.api.os.open(menu.path)])
   }
   const copied = remote ? remoteCopyText(remote.host, remote.path) : menu.path
   items.push(['Copy path', () => window.api.browser.copyText(copied)])

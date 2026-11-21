@@ -328,12 +328,12 @@
             <picture>
               <source
                 media="(max-width: 760px)"
-                srcset="../img/w-settings-usage-phone.webp"
+                srcset="../img/w-settings-usage-phone2.webp"
                 width="790"
                 height="1078"
               />
               <img
-                src="../img/w-settings-usage.webp"
+                src="../img/w-settings-usage2.webp"
                 width="1322"
                 height="808"
                 loading="lazy"
@@ -341,7 +341,7 @@
               />
             </picture>
           </div>
-          <figcaption>Settings ▸ Usage: one bar per day, and today's split by agent</figcaption>
+          <figcaption>Settings ▸ Usage: one bar per day, and each day's cost below</figcaption>
         </figure>
         <ul class="dash">
           <li>
@@ -410,15 +410,23 @@
         <ul class="dash">
           <li>
             <code>Runs on</code>: the agent for every job and for your butler, unless you pick
-            another in that job's row
+            another for that job
           </li>
           <li>
-            a row for each small job, and one for your butler. Each row has a button that reads
-            <code>Default</code> until you pick something. Click it to pick that row's own
-            <code>Runs on</code>, <code>Model</code> and <code>Thinking</code>
+            a row for each small job, and one for your butler, showing its pick (<code
+              >Default</code
+            >
+            until you pick something) and which plugin page it is set on. Click it to open that page
+            in <a href="../agents/#plugins">Settings ▸ Plugins</a>
           </li>
-          <li><code>Name</code>: your butler's name</li>
         </ul>
+        <p>
+          Each job is set on the page of the plugin it belongs to: <code>Name a new session</code>,
+          <code>Translate a handover</code> and <code>After each turn</code> on Sessions core,
+          <code>Pick the documents to show</code> on Workbench, and
+          <code>Route what you type in ⌘P</code> and your butler on Butler. There, click the job's
+          button to pick its own <code>Runs on</code>, <code>Model</code> and <code>Thinking</code>.
+        </p>
         <p>
           Switch an agent off in Settings ▸ Sessions and the rows that picked it go back to
           <code>Default</code>.
@@ -514,17 +522,19 @@
         <p>
           Your <mark class="hl">butler</mark> is the AI you talk to in Koloft. It is called Alfred
           until you give it another name. It is one session. It runs on the agent you pick for it in
-          Settings ▸ Assist, or the one in <code>Runs on</code> if you pick none. It runs on your
-          Mac in a folder of its own, not in one of your projects. Tell it what you want and it
-          reaches your sessions for you (see <a href="#what-it-can-do">what it can do</a>).
+          Settings ▸ Plugins ▸ Butler, or the one in Settings ▸ Assist ▸ <code>Runs on</code> if you
+          pick none. It runs on your Mac in a folder of its own, not in one of your projects. Tell
+          it what you want and it reaches your sessions for you (see
+          <a href="#what-it-can-do">what it can do</a>).
         </p>
         <ul class="dash">
           <li>
             Its row, <code>Alfred · Butler</code>, sits at the top of the sessions list, under the
-            <a href="../sessions/#inbox">Inbox</a> row. Under the name is its Discord channel, or
-            <code>not on Discord</code>. Until it has a Discord channel, the row is grey and says
+            <a href="../sessions/#inbox">Inbox</a> row. While Discord is on, under the name is its
+            Discord channel, or <code>not on Discord</code>. The row is grey and says
             <code>Not set up — click to start</code> while you have no account, or while
-            <code>Skip permission prompts</code> is on and you have not yet said yes to it.
+            <code>Skip permission prompts</code> is on and you have not yet said yes to it, unless
+            Discord is on and has a channel.
           </li>
           <li>
             When no agent can run it, a red line under the row says why: the agent is turned off,
@@ -534,12 +544,28 @@
           </li>
           <li>
             Click the row to open it. Right-click it for <code>Open</code>, <code>Rename…</code>,
-            <code>Start a fresh conversation</code>, and <code>Bind Discord channel…</code> (or
-            <code>Change Discord channel…</code> and <code>Unbind Discord</code> once it has one).
+            <code>Start a fresh conversation</code>, and, while Discord is on,
+            <code>Bind Discord channel…</code> (or <code>Change Discord channel…</code> and
+            <code>Unbind Discord</code> once it has one).
           </li>
           <li>
-            <code>Rename…</code> (or Settings ▸ Assist ▸ Name) changes the name in its row, in the
-            note's title and on Discord. Other sessions still reach it by every name it has had.
+            <code>Rename…</code> (or Settings ▸ Plugins ▸ Butler ▸ Name) changes the name in its
+            row, in the note's title and on Discord. Other sessions still reach it by every name it
+            has had.
+          </li>
+          <li id="butler-instructions">
+            Under its terminal is a strip with <code>Start a fresh conversation</code> and
+            <code>Instructions</code>. Click <code>Instructions</code> and write what your butler
+            should always know or do, one rule a line, then <code>Save</code> (<kbd>⌘⏎</kbd>). Your
+            butler and the helpers it starts follow it. Your butler uses it from its next fresh
+            conversation (on Muse, from its next start). <code>Start a fresh conversation</code> on
+            the strip asks first; <code>Start fresh</code> ends this conversation and starts a new
+            one that reads your instructions as they are now. A folder's sessions have
+            <a href="../sessions/#instructions">instructions of their own</a>, and there are
+            <a href="../sessions/#every-workspace">instructions for every workspace</a>; your butler
+            gets neither. Ask your butler to remember a rule and it can propose the line for its own
+            instructions, for one folder's, or for every workspace's, the
+            <a href="../sessions/#instructions-ask">same way a session does</a>.
           </li>
           <li>
             When the session tab you are looking at goes away (you close it, or its agent quits
@@ -582,7 +608,9 @@
             per project where that project's to-dos are kept. Then a helper named "Sort out to-dos"
             (in your language) asks you about them one at a time, in Koloft or on
             <a href="../discord/">Discord</a>. The one exception: sessions whose work is done come
-            up together, as one question: close them all, ask one by one, or leave them for now
+            up together, as one question: close them all, ask one by one, or leave them for now.
+            This is the Todo plugin. It is on until you turn off Todo or GitHub in
+            <a href="../agents/#plugins">Settings ▸ Plugins</a>
           </li>
           <li>
             hear a session's reply: when it hands work to a session, or answers its question, Koloft

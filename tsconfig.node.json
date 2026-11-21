@@ -24,5 +24,5 @@
     "src/core/**/*",
     "src/plugins/**/*"
   ],
-  "exclude": ["src/plugins/*/renderer/**"]
+  "exclude": ["src/plugins/*/renderer/**", "src/plugins/uis.ts"]
 }

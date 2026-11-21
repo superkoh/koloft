@@ -1,6 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { randomUUID } from 'crypto'
 import fs from 'fs/promises'
+import { sleep } from '@core/sleep'
 import http from 'http'
 import os from 'os'
 import path from 'path'
@@ -8,9 +9,10 @@ import type { Duplex } from 'stream'
 import WebSocket, { WebSocketServer } from 'ws'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { CODEX_TMP_DIR, ownedByThisRun } from './leftovers'
+import { MUSE_HOOKS_ENV } from './museHooks'
 import { answerStreamOf } from './remote/ssh'
 import { sharedProcessTable, type ProcessRow } from './processTable'
-import { envMs } from './sessionRuntime'
+import { envMs } from '@plugins/sessions/main/sessionRuntime'
 
 export type CodexFrame = Record<string, unknown>
 
@@ -58,8 +60,6 @@ const ROOM_FOR_THE_PLUGIN_LIST_TO_GROW = 5
 export const DEFAULT_MAX_FRAME =
   ROOM_FOR_THE_PLUGIN_LIST_TO_GROW * LARGEST_CODEX_REPLY_MEASURED_BYTES
 export const TUI_STALLED_AFTER_MS = 30_000
-export const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms))
 
 // CODEX§10
 export function codexEnvironment(overrides?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -78,10 +78,17 @@ export function codexEnvironment(overrides?: NodeJS.ProcessEnv): NodeJS.ProcessE
     'CLAUDE_EFFORT',
     'AI_AGENT',
     'TERM_SESSION_ID',
+    'GEMINI_API_KEY',
+    MUSE_HOOKS_ENV,
     ...BROWSER_TAB_ENV
   ])
   for (const key of Object.keys(env)) {
-    if (runtime.has(key) || key.startsWith('KOLOFT_') || key.startsWith('CLAUDE_CODE_'))
+    if (
+      runtime.has(key) ||
+      key.startsWith('KOLOFT_') ||
+      key.startsWith('CLAUDE_CODE_') ||
+      key.startsWith('ANTIGRAVITY_')
+    )
       delete env[key]
   }
   return env

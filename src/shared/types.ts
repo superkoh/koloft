@@ -1,6 +1,7 @@
 import type { SessionRoute } from './sessionRoute'
 import type { TokenCounts } from './pricing'
-import type { InboxAnswers, InboxLevel, InboxSnapshot } from './inbox'
+import type { PluginSettingValues } from '@plugins/settings'
+import type { InstructionsVersion } from '@core/ownerInstructions'
 
 export interface ProjectInfo {
   root: string
@@ -323,7 +324,7 @@ export interface AccountAddResult {
   account?: AccountView
 }
 
-export interface Settings {
+export interface AppSettings {
   sessionMethods: SessionMethods
   fontFamily: string
   fontSize: number
@@ -346,29 +347,26 @@ export interface Settings {
   statuslineBuiltin: boolean
   gitAutoFetch: boolean
   gitAutoPull: boolean
-  // PLATFORM§17
-  browserControl: boolean
   agentTools: boolean
+  pluginsOn: Record<string, boolean>
   notesHeight: number
   notesFolded: boolean
   keepAwake: boolean
-  ownerAsleepSince: number | null
   worldClocks: string[]
   onboardingSeen: boolean
   assist: AssistSetting
-  butler: ButlerSetting
   newProjectFolders: Record<string, string>
   hintsSeen: string[]
   hintsOff: boolean
-  discord: DiscordSettings
-  butlerSession: ButlerSession
   gitAccounts: GitAccount[]
   gitPicks: GitRepoPick[]
   gitSuggestionsDismissed: string[]
   gitMachines: Record<string, GitMachine>
-  todoNotes: Record<string, string>
   sessionDefaults: Record<string, SessionDefaults>
+  everyWorkspaceInstructions: InstructionsVersion[]
 }
+
+export type Settings = AppSettings & PluginSettingValues
 
 export interface OwnPick {
   model?: string
@@ -378,6 +376,13 @@ export interface OwnPick {
 export interface SessionDefaults {
   picks: Partial<Record<BackendId, OwnPick>>
   rules?: string
+  instructions?: InstructionsVersion[]
+  leavesOutEveryWorkspace?: true
+}
+
+export type SessionDefaultsDraft = Omit<SessionDefaults, 'instructions'> & {
+  instructions: string
+  instructionsOpened: string
 }
 
 export type SessionDefaultsRead =
@@ -388,9 +393,7 @@ export type SessionDefaultsRead =
     }
   | { ok: false; error: string }
 
-export const ASSIST_JOBS = ['title', 'handover', 'turn', 'docs', 'route'] as const
-export type AssistJobId = (typeof ASSIST_JOBS)[number]
-export type AssistRowId = AssistJobId | 'butler'
+export type AssistRowId = string
 
 export interface AssistPick {
   backend: BackendId
@@ -403,73 +406,19 @@ export interface AssistSetting {
   rows?: Partial<Record<AssistRowId, AssistPick>>
 }
 
-export interface ButlerSetting {
-  name: string
-  formerNames: string[]
-}
-
-export const DEFAULT_BUTLER_NAME = 'Alfred'
-
-export interface ButlerSession {
-  sessionIds: string[]
-  lastSessionKey?: string
-  knowsTodo?: string[]
-  // CC§3 CODEX§11
-  carried?: OwnPick
-}
-
-export interface DiscordChannel {
-  guildId: string
-  channelId: string
-  name: string
-}
-
-export interface DiscordSettings {
-  userId?: string
-  userName?: string
-  channel?: DiscordChannel
-  lastMessageId?: string
-  category?: DiscordChannel
-  oldThreadsArchived?: true
-  rooms?: SessionRoom[]
-}
-
-export interface SessionRoom {
-  threadId: string
-  keys: string[]
-  name: string
-  lastMessageId?: string
-  putDown?: true
-}
-
-export type DiscordPhase =
-  'off' | 'connecting' | 'connected' | 'token' | 'intents' | 'unreachable' | 'elsewhere'
-
-export interface DiscordStatus {
-  phase: DiscordPhase
-  botName?: string
-  applicationId?: string
-  guilds: DiscordGuild[]
-  appOwner?: DiscordUser
-  failing: Record<string, string>
-  candidate?: { name: string; text: string; at: number }
-}
-
-export interface DiscordGuild {
-  id: string
-  name: string
-  ownerId?: string
-}
-
-export interface DiscordUser {
-  id: string
-  name: string
-}
-
-export const DISCORD_OFF: DiscordStatus = { phase: 'off', guilds: [], failing: {} }
-
-export type ConductorSaveResult =
-  { ok: true } | { ok: false; error: string; cannotMakeChannels?: boolean }
+export type { ButlerSession, ButlerSetting } from '@plugins/butler/shared/types'
+export { DEFAULT_BUTLER_NAME } from '@plugins/butler/shared/types'
+export type {
+  ConductorSaveResult,
+  DiscordChannel,
+  DiscordGuild,
+  DiscordPhase,
+  DiscordSettings,
+  DiscordStatus,
+  DiscordUser,
+  SessionRoom
+} from '@plugins/discord/shared/types'
+export { DISCORD_OFF } from '@plugins/discord/shared/types'
 
 export type ConductorOpenResult = { ok: true; tabId: string } | { ok: false; error: string }
 
@@ -482,14 +431,14 @@ export interface PaletteRequest {
   at?: string
 }
 
-export const HINT_IDS = ['workbench', 'approval', 'agent-web', 'worktree', 'github'] as const
-export type HintId = (typeof HINT_IDS)[number]
+export const CORE_HINT_IDS = ['workbench', 'approval', 'agent-web', 'worktree'] as const
+export type HintId = (typeof CORE_HINT_IDS)[number]
 
 export const WORLD_CLOCK_MAX = 3
 
 export const SIDEBAR_MIN = 240
 
-export const DEFAULT_SETTINGS: Settings = {
+export const APP_DEFAULT_SETTINGS: AppSettings = {
   sessionMethods: {
     defaultBackend: 'claude',
     enabled: { claude: true, codex: true, muse: true, agy: true }
@@ -515,27 +464,23 @@ export const DEFAULT_SETTINGS: Settings = {
   statuslineBuiltin: true,
   gitAutoFetch: true,
   gitAutoPull: false,
-  browserControl: true,
   agentTools: true,
+  pluginsOn: {},
   notesHeight: 260,
   notesFolded: false,
   keepAwake: true,
-  ownerAsleepSince: null,
   worldClocks: [],
   onboardingSeen: false,
   assist: {},
-  butler: { name: DEFAULT_BUTLER_NAME, formerNames: [] },
   newProjectFolders: {},
   hintsSeen: [],
   hintsOff: false,
-  discord: {},
-  butlerSession: { sessionIds: [] },
   gitAccounts: [],
   gitPicks: [],
   gitSuggestionsDismissed: [],
   gitMachines: {},
-  todoNotes: {},
-  sessionDefaults: {}
+  sessionDefaults: {},
+  everyWorkspaceInstructions: []
 }
 
 export type BackendId = 'claude' | 'codex' | 'muse' | 'agy'
@@ -599,6 +544,7 @@ export interface CreateTabOptions {
   util?: boolean
   ownerTabId?: string
   role?: string
+  ownerText?: string
   ownerWords?: string
   conductor?: boolean
   trustFolder?: boolean
@@ -656,8 +602,11 @@ export type GitNumstatMap = Record<string, { added: number; removed: number }>
 
 export type BaseChoice = 'merge-base' | 'head'
 
+export type GitHead = { branch: string } | { detached: true }
+
 export interface GitChanges {
   base: string | null
+  head: GitHead | null
   status: GitStatusMap
   numstat: GitNumstatMap
   missing: boolean
@@ -818,6 +767,12 @@ export const PLACEHOLDER_TITLES: Record<BackendId, string> = {
   agy: 'Antigravity session'
 }
 
+const PLACEHOLDER_TITLE_SET = new Set<string>(Object.values(PLACEHOLDER_TITLES))
+
+export function isPlaceholderSessionTitle(title: string | undefined): boolean {
+  return !!title && PLACEHOLDER_TITLE_SET.has(title)
+}
+
 export const PENDING_SESSION_TITLE = 'Starting…'
 
 export interface SessionSource {
@@ -861,8 +816,17 @@ export interface DocVerdict {
   at: number
 }
 
+export interface WorkspaceClaim {
+  by: string
+  shownAs: string
+}
+
+export interface FolderClaim extends WorkspaceClaim {
+  path: string
+}
+
 export interface SessionInfo extends BackendSessionInfo, SessionSource {
-  butler?: boolean
+  overseer?: boolean
   turnOver?: boolean
   asking?: string
   docVerdicts?: Record<string, DocVerdict>
@@ -948,6 +912,12 @@ export type PrChecks =
   { state: 'ok'; checks: PrCheck[] } | { state: 'no-gh' | 'signed-out' | 'no-pr' | 'failed' }
 
 export type GitStepResult = { ok: true } | { ok: false; reason: string }
+
+export interface GitReadiness {
+  head: GitHead
+  commitable: boolean
+  hasPushRemote: boolean
+}
 
 export interface GithubItem {
   kind: 'issue' | 'pr'
@@ -1107,7 +1077,6 @@ export interface TerminalExit {
   exitCode: number
   signal?: number
   unexpected?: true
-  runStarted?: true
   accountIssue?: string
 }
 
@@ -1146,7 +1115,7 @@ export interface ScreenAnswer {
   sizedToPane: boolean
 }
 
-export interface KoloftApi {
+export interface CoreApi {
   isDev: boolean
   domRenderer: boolean
   testMode: boolean
@@ -1178,190 +1147,22 @@ export interface KoloftApi {
     answerScreen(a: ScreenAnswer): void
     logUnexpectedExit(s: UnexpectedExitScreen): void
   }
-  workbench: {
-    get(sessionId: string): Promise<SessionWorkbenchState>
-    setState(sessionId: string, state: SessionWorkbenchState): void
-    setAvailable(available: boolean, terminal: boolean): void
-    setFindAvailable(available: boolean): void
-    setSaveAvailable(available: boolean): void
-    setDirtyTabs(ids: string[]): void
-  }
   tabs: {
     list(): Promise<TabInventoryReply>
     moved(oldTabId: string, newTabId: string): void
     onKilledByMain(cb: (tabId: string) => void): () => void
     onSlept(cb: (tabId: string) => void): () => void
   }
-  sessions: {
-    backends(recheck?: boolean): Promise<BackendAvailability[]>
-    installTool(backend: BackendId): Promise<{ tabId: string; cwd: string } | null>
-    onToolsChanged(cb: () => void): () => void
-    onUpdate(cb: (sessions: SessionInfo[]) => void): () => void
-    onRelocated(cb: (e: { tabId: string; dir: string }) => void): () => void
-    noteActivity(tabId: string): void
-    list(): Promise<SessionInfo[]>
-    resumePlan(sessionId: string): Promise<ResumePlan>
-    resume(req: SessionResumeRequest): Promise<SessionResumeResult>
-    archive(id: string): Promise<boolean>
-    setResident(id: string, on: boolean): void
-    forceClose(id: string): Promise<{ ok: boolean }>
-    // CC§2
-    transcriptExists(sessionId: string): Promise<boolean>
-    noAccountToResume(sessionId: string): Promise<string | null>
-    leftovers(): Promise<Record<string, LeftoverProcess[]>>
-    onLeftovers(cb: (leftovers: Record<string, LeftoverProcess[]>) => void): () => void
-    stopLeftover(sessionId: string, pid: number): Promise<boolean>
-    ports(tabId: string): Promise<ListeningPort[] | null>
-    search(searchId: number, term: string): void
-    onSearchHits(cb: (found: SessionSearchHits) => void): () => void
-  }
-  inbox: {
-    list(): Promise<InboxSnapshot>
-    onChanged(cb: (snapshot: InboxSnapshot) => void): () => void
-    press(cardId: string, actionId: string, answers: InboxAnswers): void
-    confirm(cardId: string): void
-    undo(cardId: string): void
-    retry(cardId: string): void
-    dismiss(cardId: string): void
-    level(cardId: string, level: InboxLevel | null): void
-    top(cardId: string): void
-    clearNotes(): void
-  }
-  secret: {
-    list(): Promise<SecretAskView[]>
-    onAsks(cb: (asks: SecretAskView[]) => void): () => void
-    answer(id: string, value: string): void
-    done(id: string): void
-    decline(id: string): void
-  }
-  attention: {
-    list(): Promise<AttentionEvent[]>
-    activeTab(id: string | null): void
-    onActivateTab(cb: (tabId: string) => void): () => void
-    onChanged(cb: (pending: AttentionEvent[]) => void): () => void
-  }
-  preview: {
-    readText(path: string): Promise<string>
-    openFileDialog(): Promise<string | null>
-    osOpen(path: string): void
-    onOpenRequest(cb: (r: OpenRequest) => void): () => void
-  }
-  browserGuestLimit: number
   sessionScreenAtLoad: ScreenSize | null
   browserTabCap: number
-  browser: {
-    onOpenRequest(cb: (r: BrowserOpenRequest) => void): () => void
-    onDownload(cb: (d: BrowserDownload) => void): () => void
-    onDownloadEvent(cb: (e: BrowserDownloadEvent) => void): () => void
-    cancelDownload(id: string): void
-    retryDownload(id: string): void
-    onPermissionAsk(cb: (a: BrowserPermissionAsk) => void): () => void
-    onPermissionRefused(cb: (r: BrowserPermissionRefusal) => void): () => void
-    onPermissionDrop(cb: (id: string) => void): () => void
-    answerPermission(id: string, granted: boolean): void
-    cancelPermission(id: string): void
-    onAudioState(cb: (s: BrowserAudioState) => void): () => void
-    setMuted(guestId: number, muted: boolean): void
-    copyText(text: string): void
-    onFullscreen(cb: (on: boolean) => void): () => void
-    onBlockedScheme(cb: (url: string) => void): () => void
-    onAuthChallenge(cb: (c: BrowserAuthChallenge) => void): () => void
-    answerAuthChallenge(id: string, answer: BrowserDialogAnswer): void
-    onJsDialog(cb: (d: BrowserJsDialog) => void): () => void
-    answerJsDialog(id: string, answer: BrowserDialogAnswer): void
-    onOverlayOpen(cb: (o: BrowserOverlayOpen) => void): () => void
-    overlayReady(): void
-    setOverlayGuest(guestId: number, on: boolean): void
-    setGuestOwner(guestId: number, ownerTabId: string): void
-    reportStrip(sessionId: string, targets: BrowserStripTarget[]): void
-    reportComposing(on: boolean): void
-    onCdpOp(cb: (op: BrowserCdpOp) => void): () => void
-    answerCdpOp(res: BrowserCdpOpResult): void
-    onCdpAttached(cb: (a: BrowserCdpAttached) => void): () => void
-    onMemoryCritical(cb: (inUse: BrowserPagesInUse) => void): () => void
-    certProceed(url: string): Promise<void>
-    clearData(): Promise<void>
-    openExternal(url: string): void
-    toggleDevTools(guestId: number): void
-    pickElement(guestId: number, sessionTabId: string): Promise<string | null>
-    stopPick(guestId: number): void
-  }
-  extensions: {
-    list(): Promise<ExtensionInfo[]>
-    setEnabled(id: string, enabled: boolean): Promise<void>
-    uninstall(id: string): Promise<void>
-    onChanged(cb: () => void): () => void
-    activeGuest(webContentsId: number, url: string): void
-    openDropped(url: string): void
-    // PLATFORM§15
-    anchorPopup(rect: ExtensionPopupAnchor): Promise<void>
-    dismissPopup(): void
-    onPermissionRequest(cb: (r: ExtensionPermissionRequest) => void): () => void
-    answerPermissionRequest(id: string, granted: boolean): void
-  }
-  fs: {
-    listDir(path: string, opts?: { showIgnored?: boolean }): Promise<DirEntry[]>
-    dirExists(path: string): Promise<boolean>
-    fileExists(path: string): Promise<boolean>
-    search(
-      path: string,
-      query: string,
-      opts?: { showIgnored?: boolean }
-    ): Promise<{ hits: SearchHit[]; truncated: boolean }>
-    gitChanges(root: string, base: BaseChoice): Promise<GitChanges>
-    gitHeadLog(root: string): Promise<string | null>
-    watchDir(root: string, reportsWhatChangedWhileUnwatched?: boolean): Promise<boolean>
-    unwatchDir(root: string): void
-    onDirChange(cb: DirChangeListener): () => void
-    watchFile(path: string): void
-    unwatchFile(path: string): void
-    // PLATFORM§28
-    onFileChange(cb: (path: string, fp?: EditFingerprint) => void): () => void
-    reveal(path: string): void
-    gitDiff(
-      root: string,
-      base?: string
-    ): Promise<{ text: string; truncated: boolean; notRepo: boolean; toplevel: string | null }>
-    gitFileDiff(
-      path: string,
-      base?: string,
-      untracked?: boolean
-    ): Promise<{ text: string; truncated: boolean }>
-    gitFileDiffFull(
-      path: string,
-      base?: string,
-      untracked?: boolean
-    ): Promise<{ text: string; truncated: boolean }>
-    searchContent(
-      root: string,
-      query: string,
-      opts?: { showIgnored?: boolean }
-    ): Promise<{ hits: ContentHit[]; truncated: boolean }>
-  }
-  // PLATFORM§6
-  edit: {
-    open(path: string): Promise<EditOpenResult>
-    write(
-      path: string,
-      text: string,
-      expect: EditFingerprint,
-      opts?: { force?: boolean; eol?: 'lf' | 'crlf' }
-    ): Promise<EditWriteResult>
-    create(dirPath: string, name: string): Promise<EditCreateResult>
-  }
-  notes: {
-    path(ws: string): Promise<string | null>
-  }
-  github: {
-    info(root: string, force?: boolean): Promise<GithubInfo | null>
-    target(root: string, what: GithubTarget): Promise<string | null>
-    onInfo(cb: (root: string, info: GithubInfo) => void): () => void
-    checks(root: string, pr: number): Promise<PrChecks>
-    failingChecksText(root: string, pr: number): Promise<string | null>
+  git: {
     commit(root: string, message: string): Promise<GitStepResult>
     push(root: string): Promise<GitStepResult>
-    openItems(root: string): Promise<GithubOpenItems>
-    prWorktree(root: string, pr: number, branch: string): Promise<PrWorktreeResult>
+    readiness(root: string): Promise<GitReadiness | null>
+  }
+  os: {
+    open(path: string): void
+    reveal(path: string): void
   }
   workspace: {
     pickFolder(): Promise<string | null>
@@ -1369,7 +1170,6 @@ export interface KoloftApi {
     remove(path: string): Promise<WorkspaceRemoveResult>
     removeConfirmed(path: string): Promise<void>
     move(path: string, before: string | null): Promise<void>
-    worktrees(path: string): Promise<WorktreeInfo[]>
     historyRows(path: string, opts?: { quiet: boolean }): Promise<SessionRow[]>
     rows(): Promise<WorkspaceRows[]>
     onRows(cb: (rows: WorkspaceRows[]) => void): () => void
@@ -1481,47 +1281,16 @@ export interface KoloftApi {
     // PLATFORM§20
     onRepair(cb: () => void): () => void
   }
-  cron: {
-    list(): Promise<CronState>
-    save(input: CronSaveInput): Promise<CronSaveResult>
-    delete(jobId: string): Promise<void>
-    setEnabled(jobId: string, on: boolean): Promise<void>
-    runNow(jobId: string): Promise<CronRunNowResult>
-    skills(workspacePath: string, backend: BackendId): Promise<SkillSuggestion[]>
-    // CC§9
-    trusted(workspacePath: string, backend: BackendId): Promise<boolean>
-    onState(cb: (s: CronState) => void): () => void
-    onToast(cb: (text: string) => void): () => void
-  }
-  sessionDefaults: {
-    read(workspacePath: string): Promise<SessionDefaultsRead>
-    write(
-      workspacePath: string,
-      defaults: SessionDefaults
-    ): Promise<{ ok: boolean; error?: string }>
+  toast: {
+    onShow(cb: (text: string) => void): () => void
   }
   machine: {
     onState(cb: (s: MachineState) => void): () => void
     now(): Promise<MachineState | null>
     free(tabId: string): Promise<boolean>
   }
-  conductors: {
-    bind(channel: DiscordChannel): Promise<ConductorSaveResult>
-    bindNewChannel(): Promise<ConductorSaveResult>
-    unbind(): Promise<void>
-    open(): Promise<ConductorOpenResult>
-    startFresh(): Promise<ConductorOpenResult>
-    fromPalette(request: PaletteRequest): Promise<ConductorOpenResult>
-  }
   palette: {
     savePicture(dataUrl: string): Promise<string | null>
-  }
-  discord: {
-    status(): Promise<DiscordStatus>
-    onStatus(cb: (s: DiscordStatus) => void): () => void
-    pair(isMe: boolean): Promise<void>
-    channels(): Promise<DiscordChannel[]>
-    setUpWithButler(ownerWords?: string): Promise<ConductorOpenResult>
   }
 }
 
@@ -1763,6 +1532,12 @@ export interface WorkspacePullSummary {
 export type WorkspacePullResult =
   { ok: true; summary: WorkspacePullSummary } | { ok: false; reason: string }
 
+export interface McpServer {
+  name: string
+  backend: BackendId
+  onlyIn?: string
+}
+
 export interface WorkspaceRows {
   workspace: {
     path: string
@@ -1770,19 +1545,13 @@ export interface WorkspaceRows {
     isGit: boolean
     hasHistory: boolean
     freshness?: WorkspaceFreshness
-    github?: WorkspaceGithub
+    plugins?: Readonly<Record<string, unknown>>
     gitAccount?: WorkspaceGitAccount
     gitPickable?: boolean
     remote?: { host: string; path: string; connected: boolean; problem?: string }
-    butler?: true
+    claim?: WorkspaceClaim
   }
   rows: SessionRow[]
-}
-
-export interface WorkspaceGithub {
-  repo: string
-  issues: number
-  prs: number
 }
 
 export interface WorktreeInfo {

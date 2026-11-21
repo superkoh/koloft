@@ -1,8 +1,8 @@
-import type { HintId, SessionStatus } from '@shared/types'
+import type { SessionStatus } from '@shared/types'
 
 export interface HintSnapshot {
   activeTabId: string | null
-  githubBtn: boolean
+  partsShown: Readonly<Record<string, boolean>>
   agentOpen: { ownerTabId: string; tabId: string; nonce: number } | null
   sessions: {
     tabId: string
@@ -18,12 +18,19 @@ export interface HintSnapshot {
 }
 
 export interface HintFire {
-  id: HintId
+  id: string
+  selector: string
+}
+
+export interface PartHintFire {
+  id: string
+  part: string
   selector: string
 }
 
 export interface ActiveHint extends HintFire {
   n: number
+  of: number
   onDone: () => void
   onOff: () => void
 }
@@ -60,7 +67,11 @@ function rowTabId(s: HintSnapshot, rowId: string): string {
   return s.sessions.find((x) => x.sessionId === rowId && x.alive)?.tabId ?? rowId
 }
 
-export function firedHints(prev: HintSnapshot, next: HintSnapshot): HintFire[] {
+export function firedHints(
+  prev: HintSnapshot,
+  next: HintSnapshot,
+  partHints: readonly PartHintFire[] = []
+): HintFire[] {
   const out: HintFire[] = []
 
   const active = next.sessions.find((s) => s.tabId === next.activeTabId)
@@ -76,9 +87,8 @@ export function firedHints(prev: HintSnapshot, next: HintSnapshot): HintFire[] {
     out.push({ id: 'agent-web', selector: wbTabSelector(opened.tabId) })
   }
 
-  if (next.githubBtn && !prev.githubBtn) {
-    out.push({ id: 'github', selector: '.wb-gh' })
-  }
+  for (const { id, part, selector } of partHints)
+    if (next.partsShown[part] && !prev.partsShown[part]) out.push({ id, selector })
 
   const amber = next.sessions.find(
     (s) =>

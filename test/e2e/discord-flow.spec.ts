@@ -59,12 +59,15 @@ import {
   REMOTE_WS_NAME
 } from './helpers/remote'
 import { codexAnswers, type CodexWireLine } from './helpers/codex'
-import { openSettings } from './helpers/extensions'
+import { openPluginPage } from './helpers/extensions'
 import type { BackendId, DiscordSettings, SessionInfo } from '../../src/shared/types'
 import { identityOf, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import { ownerSays } from '../../src/shared/agentGuide'
-import { crossSessionLine, writeLine } from '../../src/main/crossSessionMessage'
-import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS, ANSWER_NOT_TAKEN } from '../../src/main/discord/dialog'
+import { crossSessionLine, writeLine } from '../../src/plugins/sessions/main/crossSessionMessage'
+import {
+  A_TAKEN_ANSWER_SHOWS_WITHIN_MS,
+  ANSWER_NOT_TAKEN
+} from '../../src/plugins/sessions/main/dialog'
 
 test.setTimeout(120_000)
 
@@ -74,6 +77,7 @@ const CHANNEL = '222'
 const OFFLINE_REPLY = 'Koloft was offline, this message was not delivered.'
 const CONDUCTOR_STARTS_AND_ANSWERS_MS = 60_000
 const REMOTE_ANSWER_CASE_MS = 240_000
+const A_REMOTE_MUSE_TURN_END_REACHES_THE_ROW_LATE_MS = 4000
 const DISCORD_MESSAGE_LIMIT = 2000
 const RESUMED_SESSION_BINDS_AFTER_MS = 12_000
 const WAITING_TO_IDLE_MS = 1000
@@ -358,7 +362,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('while the owner is at the Mac, the butler’s reply to a helper is not posted and is marked in Koloft instead, its reply to a Discord message still is, and once the owner is away the next reply to a helper is posted', async ({
+  test('while the owner is at the Mac, the butler’s reply to a helper is not posted and is marked in Koloft instead, its reply to a Discord message still is and leaves no mark, and once the owner is away the next reply to a helper is posted and leaves none either', async ({
     env
   }) => {
     seedConductor(env, 'claude')
@@ -390,6 +394,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       await expect
         .poll(() => said(fake).join('\n'), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('helper note two')
+      expect(await turnDoneAt()).toBe(0)
     } finally {
       await quitAndClose(app)
       await fake.close()
@@ -448,7 +453,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         else await newSessionInWith(page, workspace, AGENT_NAME[reported])
         const reportedSession = async (): Promise<SessionInfo | undefined> =>
           (await page.evaluate(() => window.api.sessions.list())).find(
-            (s) => !s.butler && s.alive && s.sessionId
+            (s) => !s.overseer && s.alive && s.sessionId
           )
         await expect(centerTerm(page)).not.toBeEmpty({ timeout: 60_000 })
         if (reported === 'agy') await agyReady(page)
@@ -504,7 +509,8 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         await expect
           .poll(
             async () =>
-              (await page.evaluate(() => window.api.sessions.list())).find((s) => s.butler)?.status,
+              (await page.evaluate(() => window.api.sessions.list())).find((s) => s.overseer)
+                ?.status,
             { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }
           )
           .toBe('waiting')
@@ -1042,7 +1048,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('a channel Koloft cannot post to is reported as a toast and next to the butler’s channel in Settings ▸ Discord', async ({
+  test('a channel Koloft cannot post to is reported as a toast and next to the butler’s channel in Settings ▸ Plugins ▸ Discord', async ({
     env
   }) => {
     seedSettings(env, {
@@ -1054,7 +1060,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       }
     })
     const fake = await startFakeDiscord(env)
-    fake.refusePostsIn.push('333')
+    fake.failPostsIn['333'] = 'forbidden'
     const { app, page } = await connected(env, fake)
     try {
       fake.say(OWNER, 'hello', { channelId: '333' })
@@ -1062,8 +1068,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       await expect(page.locator('.toast')).toHaveText(report, {
         timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
       })
-      await openSettings(page)
-      await page.locator('.set-ni', { hasText: 'Discord' }).click()
+      await openPluginPage(page, 'Discord')
       await expect(page.locator('.set-main .acct-login-state.bad')).toHaveText(
         /^Cannot post here: Discord answered 403/
       )
@@ -1165,7 +1170,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('a Claude session’s question draws on its screen and never reaches Discord; the butler answers it with koloft session answer, and the reply that ends that turn is handed to the butler, whose answer reaches the owner in the channel unasked; koloft session keys picks the option of the next one; a dialog of two questions, the second taking several picks, is answered with one line per question', async ({
+  test('a Claude session’s question draws on its screen and never reaches Discord; the butler answers it with koloft session answer, and the reply that ends that turn is handed to the butler, whose answer reaches the owner in the channel unasked; koloft session keys picks the option of the next one; the butler’s own words answer the one after; a dialog of two questions, the second taking several picks, is answered with one line per question', async ({
     env
   }) => {
     seedConductor(env, 'claude')
@@ -1205,8 +1210,15 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         .poll(() => transcriptText(env, managed), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('Picked: Round')
 
-      await type('/ask Which colour?|Red|Green||+Which fruits?|Apple|Banana|Cherry')
+      await type('/ask Which size?|Small|Large')
       await expect.poll(dialogs).toBe(3)
+      fake.say(OWNER, `/koloft session answer ${managed} "Medium please"`)
+      await expect
+        .poll(() => transcriptText(env, managed), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('"Picked: Medium please"')
+
+      await type('/ask Which colour?|Red|Green||+Which fruits?|Apple|Banana|Cherry')
+      await expect.poll(dialogs).toBe(4)
       fake.say(OWNER, `/koloft session answer ${managed} "$(printf 'Purple\\n1, 3')"`)
       await expect
         .poll(() => transcriptText(env, managed), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
@@ -1256,7 +1268,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('the butler answers a Codex session’s approval with koloft session answer yes, and its one-question list once with koloft session answer and once with koloft session keys; each presses its key; once the owner pressed a key in a question, koloft session answer leaves it to the owner and presses nothing', async ({
+  test('the butler answers a Codex session’s approval with koloft session answer yes, and its one-question list once with koloft session answer, once with koloft session keys and once in the butler’s own words, which reach it as a note; each presses its keys; once the owner pressed a key in a question, koloft session answer leaves it to the owner and presses nothing', async ({
     env
   }) => {
     installCodex(env)
@@ -1318,6 +1330,18 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
 
       await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/)
       await page.evaluate((id) => window.api.terminal.write(id, 'please ask me\r'), codexTab)
+      await expect.poll(() => codexAsked(env, 'item/tool/requestUserInput')).toBe(3)
+      fake.say(OWNER, `/koloft session answer ${codexId} "Purple please"`)
+      await expect
+        .poll(answers, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toEqual([
+          { answers: { colour: { answers: ['Green'] } } },
+          { answers: { colour: { answers: ['Red'] } } },
+          { answers: { colour: { answers: ['None of the above', 'user_note: Purple please'] } } }
+        ])
+
+      await expect(wsRows(page, 'ws-a')).toHaveClass(/st-waiting/)
+      await page.evaluate((id) => window.api.terminal.write(id, 'please ask me\r'), codexTab)
       await expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-approval\b/, {
         timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
       })
@@ -1329,7 +1353,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
           timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
         })
         .toContain('alreadystartedonthisquestionintheterminal')
-      expect(answers()).toHaveLength(2)
+      expect(answers()).toHaveLength(3)
     } finally {
       await quitAndClose(app)
       await fake.close()
@@ -1385,7 +1409,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     }
   })
 
-  test('the butler answers a remote Codex session’s approval with koloft session answer yes, and the key reaches the app-server on the machine, which finishes the turn', async ({
+  test('the butler answers a remote Codex session’s approval with koloft session answer yes, and the key reaches the app-server on the machine, which finishes the turn; its one-question list is answered by an option’s name and then in the butler’s own words, which reach it as a note', async ({
     env
   }) => {
     test.setTimeout(REMOTE_ANSWER_CASE_MS)
@@ -1429,11 +1453,34 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         .poll(() => codexAnswers(wire()), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('Codex fixture answered: please approve')
       await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+
+      const answers = (): unknown[] =>
+        wire()
+          .filter(
+            (w) =>
+              w.direction === 'client' &&
+              (w.frame as { result?: { answers?: unknown } }).result?.answers
+          )
+          .map((w) => (w.frame as { result?: unknown }).result)
+      const expected: unknown[] = []
+      for (const [reply, answer] of [
+        ['Green', ['Green']],
+        ['"Purple please"', ['None of the above', 'user_note: Purple please']]
+      ] as const) {
+        await page.evaluate((id) => window.api.terminal.write(id, 'please ask me\r'), codex.tabId)
+        await expect(row).toHaveClass(/\bst-approval\b/, {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+        })
+        fake.say(OWNER, `/koloft session answer ${codex.id} ${reply}`)
+        expected.push({ answers: { colour: { answers: answer } } })
+        await expect.poll(answers, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS }).toEqual(expected)
+        await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+      }
     })
   })
 
   // MUSE§11 MUSE§17
-  test('the butler answers a remote Muse session’s approval with koloft session answer yes, and the key reaches muse on the machine through ssh and tmux, which runs the command', async ({
+  test('the butler answers a remote Muse session’s approval with koloft session answer yes, and the key reaches muse on the machine through ssh and tmux, which runs the command; its one-question list and a question that takes several picks are answered there the same way', async ({
     env
   }) => {
     test.setTimeout(REMOTE_ANSWER_CASE_MS)
@@ -1464,11 +1511,27 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         .poll(() => fileText(saved), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('Ran: ls -la')
       await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+
+      for (const [line, reply, picked] of [
+        ['/ask', 'Blue', 'Picked: Blue'],
+        ['/ask-several', 'cherry, 1', 'Picked: Apple, Cherry']
+      ] as const) {
+        await page.waitForTimeout(A_REMOTE_MUSE_TURN_END_REACHES_THE_ROW_LATE_MS)
+        await runIn(page, centerTerm(page), line)
+        await expect(row).toHaveClass(/\bst-approval\b/, {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+        })
+        fake.say(OWNER, `/koloft session answer ${muse.id} ${reply}`)
+        await expect
+          .poll(() => fileText(saved), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+          .toContain(picked)
+        await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+      }
     })
   })
 
   // AGY§14
-  test('the butler answers a remote Antigravity session’s approval with koloft session answer yes, the key reaches agy on the machine through ssh and tmux, and agy there writes the file; a question there that takes several picks is answered by naming them', async ({
+  test('the butler answers a remote Antigravity session’s approval with koloft session answer yes, the key reaches agy on the machine through ssh and tmux, and agy there writes the file; a question there that takes several picks is answered by naming them, and a one-question list by an option’s name', async ({
     env
   }) => {
     test.setTimeout(REMOTE_ANSWER_CASE_MS)
@@ -1505,7 +1568,54 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
       await expect
         .poll(() => terminalText(page, agy.tabId), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
         .toContain('Picked: Apple, Cherry')
+      await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+
+      await page.evaluate(
+        (t) => window.api.terminal.write(t, '/ask Which colour?|Red|Green\r'),
+        agy.tabId
+      )
+      await expect(row).toHaveClass(/\bst-approval\b/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+      fake.say(OWNER, `/koloft session answer ${agy.id} Green`)
+      await expect
+        .poll(() => terminalText(page, agy.tabId), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        .toContain('Picked: Green')
     })
+  })
+
+  // AGY§14
+  test('the butler answers a local Antigravity session’s one-question list by an option’s name and a question that takes several picks by naming them, with koloft session answer', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedConductor(env, 'claude')
+    seedSettings(env, { skipPermissions: false })
+    const fake = await startFakeDiscord(env)
+    const { app, page } = await connected(env, fake)
+    try {
+      await newSessionInWith(page, 'ws-a', 'Antigravity')
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'warm up')
+      const { tabId, id } = await agyConversationOnceFirstTurnEnded(page)
+      const row = wsRows(page, 'ws-a')
+      for (const [line, reply, picked] of [
+        ['/ask Which colour?|Red|Green', 'Green', 'Picked: Green'],
+        ['/ask +Which fruits?|Apple|Banana|Cherry', 'cherry, 1', 'Picked: Apple, Cherry']
+      ] as const) {
+        await expect(row).toHaveClass(/st-waiting/, { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+        await page.evaluate(([t, l]) => window.api.terminal.write(t, l + '\r'), [tabId, line])
+        await expect(row).toHaveClass(/\bst-approval\b/, {
+          timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
+        })
+        fake.say(OWNER, `/koloft session answer ${id} ${reply}`)
+        await expect
+          .poll(() => agyTranscriptOf(env, id), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
+          .toContain(picked)
+      }
+    } finally {
+      await quitAndClose(app)
+      await fake.close()
+    }
   })
 
   test('a send to a closed session answers the conductor at once and is delivered once the session is ready, even past the 8 s the koloft command waits', async ({
@@ -1599,7 +1709,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
           ).at(-1)?.pid
         const closedPid = conductorPid()!
         const conductorTab = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) => s.butler
+          (s) => s.overseer
         )!.tabId
         await page.evaluate((tab) => window.api.terminal.kill(tab), conductorTab)
         await expect
@@ -1607,13 +1717,16 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
           .toBe(false)
         await expect
           .poll(async () =>
-            (await page.evaluate(() => window.api.sessions.list())).some((s) => s.butler && s.alive)
+            (await page.evaluate(() => window.api.sessions.list())).some(
+              (s) => s.overseer && s.alive
+            )
           )
           .toBe(false)
 
         const liveChildTab = async (): Promise<string | undefined> =>
-          (await page.evaluate(() => window.api.sessions.list())).find((s) => s.alive && !s.butler)
-            ?.tabId
+          (await page.evaluate(() => window.api.sessions.list())).find(
+            (s) => s.alive && !s.overseer
+          )?.tabId
         await expect.poll(liveChildTab).toBeTruthy()
         const childTab = (await liveChildTab())!
         await expect.poll(() => terminalText(page, childTab)).not.toBe('')
