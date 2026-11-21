@@ -337,6 +337,7 @@ node="${REMOTE_NODE}"
 [ -x "$node" ] || exit 0
 # PLATFORM§36
 export NODE_COMPILE_CACHE="${REMOTE_COMPILE_CACHE}"
+[ -d "$(pwd -P 2>/dev/null)" ] || cd / 2>/dev/null
 [ -n "$COLUMNS" ] && export CCSTATUSLINE_WIDTH="$COLUMNS"
 exec "$node" "$D/agy.cjs" "$D/ccstatusline.js" "$D/theme.json"
 `
