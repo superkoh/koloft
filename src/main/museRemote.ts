@@ -9,7 +9,7 @@ import {
 import { REMOTE_HOOK_DIR } from './remote/paths'
 import { FIRST_RECORD_READ_BYTES, FORK_MARK, REMOTE_LOG_MARKS, SAID_MARKS } from './museSessionLog'
 import { museHookScript } from './museHooks'
-import { remoteDiscordSaidFile, remoteNoticeFile } from '@plugins/sessions/main/hooks'
+import { remoteNoticeFile, remoteSentWordsFile } from '@plugins/sessions/main/hooks'
 import { MUSE_STOPS_WHEN_THIS_LINK_DANGLES } from './museAccounts'
 import { skillsFromMachineLine } from './remote/launch'
 import { MUSE_SANDBOX_CANNOT_START } from './museSandbox'
@@ -274,7 +274,7 @@ export const REMOTE_MUSE_HOOK_SH = museHookScript(
   `f="${REMOTE_HOOK_DIR}/$1${MIRROR_SUFFIX}"
 event="$2"
 said="$HOME/.koloft/tabs/$1.said"
-discord_said="${remoteDiscordSaidFile('$1')}"
+sent_words="${remoteSentWordsFile('$1')}"
 notice="${remoteNoticeFile('$1')}"`,
   `p="$(mktemp 2>/dev/null)" || exit 0
 printf '{"t":"hook","event":"%s","input":%s}\\n' "$event" "$input" > "$p" && cat "$p" >> "$f"

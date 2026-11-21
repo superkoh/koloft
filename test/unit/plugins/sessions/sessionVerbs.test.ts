@@ -133,6 +133,7 @@ function harness(
   closeFails: ((text: string) => void)[]
   reads: { key: string; n: number }[]
   lines: { tabId: string; line: string }[]
+  noted: { tabId: string; text: string; id?: string }[]
   pressed: { tabId: string; keys: string[] }[]
   resumed: string[]
   stopped: string[]
@@ -155,6 +156,7 @@ function harness(
   const closeFails: ((text: string) => void)[] = []
   const reads: { key: string; n: number }[] = []
   const lines: { tabId: string; line: string }[] = []
+  const noted: { tabId: string; text: string; id?: string }[] = []
   const pressed: { tabId: string; keys: string[] }[] = []
   const resumed: string[] = []
   const stopped: string[] = []
@@ -237,6 +239,7 @@ function harness(
       pressed.push({ tabId, keys })
     },
     deliver: async () => false,
+    noteSent: async (tabId, text, id) => void noted.push({ tabId, text, id }),
     modeOf: (tabId) => (conducting.bypass?.includes(tabId) ? 'bypass' : 'prompting'),
     stop: (tabId) => {
       stopped.push(tabId)
@@ -283,6 +286,7 @@ function harness(
     closeFails,
     reads,
     lines,
+    noted,
     pressed,
     resumed,
     stopped,
@@ -1893,6 +1897,14 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     expect(asks.lines).toEqual([
       { tabId: 'fix', line: crossSessionLine('prompting', 'merge it', 'koloft-inbox-1') }
     ])
+  })
+
+  // ADR-0028
+  it('a card’s own words are never noted as Koloft’s, so a card that opens the way Koloft or its butler opens a message cannot pass as one', async () => {
+    const inbox = harness(live, {}, [], conducting())
+    await inbox.sendFromInbox('fix-id', ownerSays('merge it'), true)
+    expect(inbox.lines).toHaveLength(1)
+    expect(inbox.noted).toEqual([])
   })
 
   it('a message to a closed Claude session claims the class its sender had when it sent it, even if the sender’s tab runs another way by the time the receiver is ready (ADR-0028)', async () => {
