@@ -2253,12 +2253,27 @@ function liveSessionOf(ref: string): SessionInfo | undefined {
 
 function inboxSessionOfTab(tabId: string): AskedSession | undefined {
   const s = sessionOfTab(tabId)
-  if (!s?.sessionId) return undefined
+  if (!s?.sessionId) return endedInboxSessionOfTab(tabId)
   const ws = sessionBackends.workspaceOfTab(tabId)
   return {
     sessionId: s.sessionId,
     title: sidebarTitle(s) ?? BACKEND_LABEL[s.backendId],
     backend: s.backendId,
+    workspace: ws ? scopeName(ws) : undefined,
+    machine: ws ? parseRemoteKey(ws)?.host : undefined
+  }
+}
+
+function endedInboxSessionOfTab(tabId: string): AskedSession | undefined {
+  const m = attention.list().find((x) => x.tabId === tabId && x.kind === 'exited')
+  const sessionId = m?.sessionId
+  if (!sessionId) return undefined
+  const backend = identityOf(sessionId).backendId
+  const ws = workspaceMgr?.workspaceOf(sessionId)
+  return {
+    sessionId,
+    title: m.title ?? BACKEND_LABEL[backend],
+    backend,
     workspace: ws ? scopeName(ws) : undefined,
     machine: ws ? parseRemoteKey(ws)?.host : undefined
   }
