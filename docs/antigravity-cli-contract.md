@@ -1329,10 +1329,17 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
     `/compact` dropped the older copy and the hook put it back once. A `/fork` after a
     compaction carried the copy: the fork's own `transcript_full.jsonl` starts at the
     fork and holds no `CHECKPOINT`, and no `SessionStart` fires for it.
-  - Automatic compaction was not reached (a 1.26 MB injected text arrived cut, a 1 MB
-    pasted prompt was never sent), so that it writes the same `CHECKPOINT` step for the
-    hook to see is inferred from the bullet above, not checked. The Mac build was not
-    run.
+  - **Automatic compaction leaves one model call without them.** Reached when one turn's
+    `run_command` outputs (each cut by agy to about 14 KB) brought a request to about
+    1.03 MB, at the 69th call; one run held 16 automatic compactions. Each wrote the same
+    `CHECKPOINT` step, but inside a model call, after Koloft's `PreInvocation` for that
+    call had run: the summary request went out, the `CHECKPOINT` was written, and that
+    call's own request followed with only the `<CONTEXT_SUMMARY>` — no start text and no
+    `ephemeralMessage` (16 of 16). No hook fired in between. The next call's
+    `PreInvocation` saw the step and put the text back once; none of the 1,056 later
+    requests held it twice. A 1.26 MB injected text or a 1 MB pasted prompt did not get
+    there (the first arrived cut, the second was never sent).
+  - The Mac build was not run.
 
 ## §18 Fork
 
