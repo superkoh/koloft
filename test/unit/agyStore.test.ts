@@ -34,17 +34,55 @@ afterEach(() => {
 const uris = (...dirs: string[]): string => JSON.stringify(dirs.map((d) => pathToFileURL(d).href))
 
 describe('listAgyConversations (the summaries db, AGY§8)', () => {
-  it('lists only top-level conversations of the CLI that have at least one step', async () => {
+  it('lists only top-level conversations of the CLI that have at least one step, counting a written transcript as steps while the summaries row still says 0', async () => {
     writeSummaries(gemini, [
       { conversation_id: 'top', workspace_uris: uris('/w/a') },
       { conversation_id: 'child', workspace_uris: uris('/w/a'), parent_conversation_id: 'top' },
       { conversation_id: 'unused-new', workspace_uris: uris('/w/a'), step_count: 0 },
+      { conversation_id: 'no-transcript', workspace_uris: uris('/w/a'), step_count: 0 },
+      { conversation_id: 'stale-row', workspace_uris: uris('/w/a'), step_count: 0 },
       { conversation_id: 'desktop', workspace_uris: uris('/w/a'), app_data_dir: 'antigravity' },
       { conversation_id: 'cli', workspace_uris: uris('/w/a'), app_data_dir: 'antigravity-cli' },
       { conversation_id: 'nowhere', workspace_uris: '[]' }
     ])
+    appendTranscript(agyTranscript(gemini, 'stale-row'), [
+      { type: 'USER_INPUT', content: ownerTyped('hi') }
+    ])
+    appendTranscript(agyTranscript(gemini, 'unused-new'), [])
     const ids = (await listAgyConversations(gemini)).map((e) => e.id).sort()
-    expect(ids).toEqual(['cli', 'top'])
+    expect(ids).toEqual(['cli', 'stale-row', 'top'])
+  })
+
+  it('dates a conversation whose summaries row never caught up by its transcript, and names it from its annotations pbtxt', async () => {
+    writeSummaries(gemini, [
+      { conversation_id: 'stale', workspace_uris: uris('/w'), step_count: 0 }
+    ])
+    const file = agyTranscript(gemini, 'stale')
+    appendTranscript(file, [{ type: 'USER_INPUT', content: ownerTyped('hi') }])
+    const usedAt = new Date(Date.UTC(2026, 10, 20, 7, 48, 48))
+    fs.utimesSync(file, usedAt, usedAt)
+    fs.mkdirSync(path.dirname(annotationFile(gemini, 'stale')), { recursive: true })
+    fs.writeFileSync(annotationFile(gemini, 'stale'), 'title:"Fix the login"\n')
+    const [entry] = await listAgyConversations(gemini)
+    expect(entry).toMatchObject({
+      id: 'stale',
+      name: 'Fix the login',
+      updatedAt: usedAt.getTime() / 1000
+    })
+  })
+
+  it('names a conversation from its annotations pbtxt whenever the summaries row has no title, whatever its step count', async () => {
+    writeSummaries(gemini, [
+      { conversation_id: 'counted', workspace_uris: uris('/w'), step_count: 2 },
+      { conversation_id: 'titled', workspace_uris: uris('/w'), title: 'From the row' }
+    ])
+    for (const id of ['counted', 'titled']) {
+      fs.mkdirSync(path.dirname(annotationFile(gemini, id)), { recursive: true })
+      fs.writeFileSync(annotationFile(gemini, id), 'title:"From the pbtxt"\n')
+    }
+    const byId = Object.fromEntries((await listAgyConversations(gemini)).map((e) => [e.id, e]))
+    expect(byId.counted.name).toBe('From the pbtxt')
+    expect(byId.titled.name).toBe('From the row')
   })
 
   it('leaves out a conversation whose own db was deleted, though agy keeps its row in the summaries db', async () => {

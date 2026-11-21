@@ -63,6 +63,8 @@ import { mergeUse } from '@shared/firstRun'
 import { BackgroundFile } from '../../../main/backgroundFile'
 
 const RESCAN_DEBOUNCE_MS = 250
+// PLATFORM§40
+const RELIST_A_PROJECTS_ROOT_THE_WATCHER_MAY_HAVE_MISSED_EVERY_MS = 2000
 const PANEL_SAVE_DEBOUNCE_MS = 600
 // CC§2
 const A_RESCAN_FOR_APPENDS_ALONE_LOOKS_EVERYWHERE_AFTER_MS = 30_000
@@ -266,7 +268,8 @@ export class WorkspaceManager {
   private state: RescanState = { bucketDirs: [], workspaceSlugs: [] }
   private launches = new Map<string, PendingLaunch>()
   private leavingTheirWorktree = new Map<string, { tabId: string; tabEnded: boolean }>()
-  private rootWatchers = new Map<string, fs.FSWatcher>()
+  private rootWatchers = new Map<string, { close(): void }>()
+  private slugsListedByLastScan = new Map<string, Set<string>>()
   private bucketWatchers = new Map<string, fs.FSWatcher>()
   private timer?: NodeJS.Timeout
   private panelTimer?: NodeJS.Timeout
@@ -1039,6 +1042,9 @@ export class WorkspaceManager {
     for (const [id, leaving] of this.leavingTheirWorktree)
       if (leaving.tabEnded && !listed.has(id)) this.leavingTheirWorktree.delete(id)
     this.state = { bucketDirs, workspaceSlugs }
+    for (const [root, slugs] of slugsByRoot) {
+      this.slugsListedByLastScan.set(root, new Set(await slugs))
+    }
     this.reconcileBucketWatchers(wantedBucketDirs)
     for (const file of this.headScans.keys()) {
       if (this.headScansSeen.has(file)) continue
@@ -1225,21 +1231,39 @@ export class WorkspaceManager {
   private watchRoot(root: string): void {
     try {
       fs.mkdirSync(root, { recursive: true })
-      const watcher = fs.watch(root, (_event, filename) => {
-        if (!filename) return
-        if (
-          planRescan({ kind: 'projects-dir-added', dirName: filename.toString() }, this.state) ===
-          'rescan'
-        ) {
-          this.scheduleRescan()
-        }
-      })
-      watcher.on('error', () => {
-        watcher.close()
-        this.rootWatchers.delete(root)
-      })
-      this.rootWatchers.set(root, watcher)
     } catch {}
+    const onEntry = (name: string): void => {
+      if (planRescan({ kind: 'projects-dir-added', dirName: name }, this.state) === 'rescan') {
+        this.scheduleRescan()
+      }
+    }
+    // PLATFORM§40
+    const relist = (now: fs.Stats, before: fs.Stats): void => {
+      if (now.mtimeMs === before.mtimeMs) return
+      void this.listProjectSlugs(root).then((names) => {
+        const listed = this.slugsListedByLastScan.get(root)
+        for (const name of names) if (!listed?.has(name)) onEntry(name)
+      })
+    }
+    fs.watchFile(
+      root,
+      { persistent: false, interval: RELIST_A_PROJECTS_ROOT_THE_WATCHER_MAY_HAVE_MISSED_EVERY_MS },
+      relist
+    )
+    let watcher: fs.FSWatcher | undefined
+    try {
+      watcher = fs.watch(root, (_event, filename) => {
+        if (filename) onEntry(filename.toString())
+      })
+      watcher.on('error', () => watcher?.close())
+    } catch {}
+    this.rootWatchers.set(root, {
+      close: () => {
+        watcher?.close()
+        fs.unwatchFile(root, relist)
+        this.slugsListedByLastScan.delete(root)
+      }
+    })
   }
 
   private reconcileBucketWatchers(wanted: Set<string>): void {

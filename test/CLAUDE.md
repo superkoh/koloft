@@ -136,7 +136,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     `exit` and `/quit`; in a `-w` worktree with uncommitted files it first asks keep or
     remove, and a typed `2` removes; a removal prints what CC prints, CC§4),
     `/enter-worktree <name>`, `/exit-worktree`, `/bg-work`, `/bg-reported`,
-    `/bg-monitor`, `/bg-shell`. Any other line is a prompt answered by a Read and a
+    `/bg-monitor` (`/bg-monitor 2.1.329` lists it in Stop as that version does),
+    `/bg-shell`. Any other line is a prompt answered by a Read and a
     Stop, its UserPromptSubmit hook given the line as `prompt`. It reads its pty raw, as
     the real one does, and writes `ESC[?2004h` as it starts (CC§12): Enter (`\r`) sends
     the line (a line sent before it binds waits for the bind), Shift+Enter (`\n`) adds a
@@ -206,7 +207,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   installed whatever the developer's own login shell has. A Codex tab on the fake remote
   needs `installCodexOnFakeRemote` (helpers/remote.ts), which also puts fake-codex on
   the machine and gives the Mac account a token; what the machine's app-server did lands
-  in the machine home's `fake-codex-*.jsonl` (`machineCodexLog`).
+  in the machine home's `fake-codex-*.jsonl` (`machineCodexLog`). While
+  `<home>/fake-codex-renamed-elsewhere` holds a name, `thread/list` alone lists every
+  thread under that name and no event reaches an open tab — a name only Koloft's listing
+  sees.
 - Muse sessions: the `muse` is fixtures/fake-muse.js, installed per case by `installMuse`
   (helpers/env.ts, sets `KOLOFT_MUSE_CMD`); without it `KOLOFT_MUSE_CMD` is a bare name, so
   Muse reads as not installed. It asks Muse's trust question unless `trust.json` under

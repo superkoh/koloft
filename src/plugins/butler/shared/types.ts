@@ -24,6 +24,7 @@ export type PluginsOn = Readonly<Record<string, boolean>>
 export interface PluginsSeen {
   key: string
   on: PluginsOn
+  facts?: readonly string[]
 }
 
 export interface ButlerSession {

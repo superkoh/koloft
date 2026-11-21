@@ -21,6 +21,7 @@ const ESC = '\x1b'
 const BEL = '\x07'
 const ENTER = '\r'
 const BACKSPACE = '\x7f'
+const CLEAR_THE_LINE = '\x15'
 const UP = '\u0000up'
 const DOWN = '\u0000down'
 const LEFT = '\u0000left'
@@ -309,7 +310,8 @@ appendJsonl(sentinel('fake-agy-calls.jsonl'), {
             'AGY_CLI_OSC7501_MESSAGES',
             'AGY_CLI_DISABLE_AUTO_UPDATE',
             'GOOGLE_GEMINI_BASE_URL',
-            'TERM_PROGRAM'
+            'TERM_PROGRAM',
+            'ANT_ACCOUNT'
           ].includes(k)
       )
     ),
@@ -1680,6 +1682,8 @@ const SCENARIOS = {
 async function runTurn(text, origin = {}) {
   turnRunning = true
   turnCancelled = false
+  // AGY§10
+  term.idleOnNextKey = false
   review = null
   const c = ensureConversation()
   const turn = { conv: c, invocation: 0, origin }
@@ -2117,8 +2121,10 @@ function onKey(key) {
     typed = ''
     return submit(line)
   }
-  if (key === BACKSPACE) typed = typed.slice(0, -1)
   // AGY§15
+  if (key === BACKSPACE) typed = typed.slice(0, -1)
+  else if (key === CLEAR_THE_LINE)
+    typed = typed.endsWith('\n') ? typed.slice(0, -1) : typed.slice(0, typed.lastIndexOf('\n') + 1)
   else if (key === '\n' || (key.length === 1 && key >= ' ')) typed += key
 }
 function feed(chunk) {

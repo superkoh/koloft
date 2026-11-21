@@ -11,6 +11,7 @@ import {
 } from './helpers/app'
 import {
   E2E_CLAUDE_ACCOUNT,
+  agySessionCalls,
   installAgy,
   installCodex,
   installMuse,
@@ -592,6 +593,33 @@ test.describe('The butler: one global session at the top of the sessions list, k
       )
       await expectNoToastAtAnyMomentOfAWindow(page)
       await expect(butlerRow(page)).toHaveAttribute('data-tab-id', butlerTab)
+    } finally {
+      await close()
+    }
+  })
+
+  // AGY§21
+  test('an Antigravity butler set to Gemini 4 Carbon starts on Neon when the account has no Carbon, and says so under its name', async ({
+    env
+  }) => {
+    installAgy(env)
+    const { page, close } = await launched(env, {
+      assist: {
+        backend: 'agy',
+        rows: { butler: { backend: 'agy', model: 'gemini-4-carbon', effort: 'high' } }
+      }
+    })
+    try {
+      await butlerRow(page).click()
+      await expect(
+        page.locator('.toast-msg', {
+          hasText: 'Alfred: This account has no gemini-4-carbon model, so it runs on gemini-4-neon.'
+        })
+      ).toBeVisible({ timeout: 60_000 })
+      await expect.poll(() => agySessionCalls(env).length, { timeout: 60_000 }).toBe(1)
+      const { argv } = agySessionCalls(env)[0]
+      expect(argv[argv.indexOf('--model') + 1]).toBe('gemini-4-neon')
+      expect(argv[argv.indexOf('--effort') + 1]).toBe('high')
     } finally {
       await close()
     }

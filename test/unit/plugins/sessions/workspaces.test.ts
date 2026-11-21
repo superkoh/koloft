@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 import { execFileSync } from 'child_process'
+import { EventEmitter } from 'events'
 import {
   WorkspaceManager,
   scratchRootsAround,
@@ -306,6 +307,30 @@ describe('WorkspaceManager: owned-only sidebar (decided 2026-08-09)', () => {
     await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['first-1']), {
       timeout: 5000
     })
+  })
+
+  // PLATFORM§40
+  it('finds a transcript folder that appears while the projects folder watcher reports nothing', async () => {
+    const realWatch = fs.watch
+    vi.spyOn(fs, 'watch').mockImplementation(((dir: fs.PathLike, ...rest: never[]) =>
+      dir === projectsRoot
+        ? Object.assign(new EventEmitter(), { close: () => {} })
+        : realWatch(dir, ...rest)) as typeof fs.watch)
+    try {
+      own('missed-1')
+      bindings.set('missed-1', 'tab-1')
+      mgr.start()
+      await mgr.firstScan
+      await new Promise((r) => setTimeout(r, 200))
+      expect(latest(repo).rows).toEqual([])
+
+      writeJsonl(repo, 'missed-1')
+      await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['missed-1']), {
+        timeout: 8000
+      })
+    } finally {
+      vi.restoreAllMocks()
+    }
   })
 })
 

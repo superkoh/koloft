@@ -61,7 +61,12 @@ let gemini: string
 let sessions: AgySessions
 let pty: EventEmitter & { write: ReturnType<typeof vi.fn>; type: ReturnType<typeof vi.fn> }
 let runtime: SessionRuntime
-let created: { id: string; argv: string[]; env: NodeJS.ProcessEnv }[]
+let created: {
+  id: string
+  argv: string[]
+  env: NodeJS.ProcessEnv
+  setForTab: Record<string, string>
+}[]
 let agentTools: boolean
 let projectRules: string | undefined
 let browserEndpoint: string
@@ -134,7 +139,10 @@ const events = (type: SessionEvent['type']): SessionEvent[] =>
     .mock.calls.map(([, e]) => e)
     .filter((e) => e.type === type)
 
-const tabEnv = (tabId: string): NodeJS.ProcessEnv => created.find((c) => c.id === tabId)!.env
+const tabEnv = (tabId: string): NodeJS.ProcessEnv => {
+  const c = created.find((one) => one.id === tabId)!
+  return { ...c.env, ...c.setForTab }
+}
 const say = (tabId: string, data: string): void => {
   pty.emit('data', { id: tabId, data })
 }
@@ -226,10 +234,22 @@ beforeEach(() => {
   let tab = 0
   pty = Object.assign(new EventEmitter(), {
     nextId: vi.fn(() => `pty-${++tab}`),
-    create: vi.fn((args: { id: string; argv: string[]; processEnv: NodeJS.ProcessEnv }) => {
-      created.push({ id: args.id, argv: args.argv, env: args.processEnv })
-      return { id: args.id, startedAt: Date.now() }
-    }),
+    create: vi.fn(
+      (args: {
+        id: string
+        argv: string[]
+        processEnv: NodeJS.ProcessEnv
+        envSetForThisTab?: Record<string, string>
+      }) => {
+        created.push({
+          id: args.id,
+          argv: args.argv,
+          env: args.processEnv,
+          setForTab: args.envSetForThisTab ?? {}
+        })
+        return { id: args.id, startedAt: Date.now() }
+      }
+    ),
     pidOf: vi.fn(() => process.pid),
     write: vi.fn(),
     type: vi.fn(async () => undefined),
@@ -411,7 +431,7 @@ describe('AgySessions launch', () => {
 
   it("keeps playwright-cli's snapshots and screenshots in a folder of the tab under the temp folder, out of the workspace", async () => {
     await launch()
-    expect(created[0].env.PLAYWRIGHT_MCP_OUTPUT_DIR).toBe(
+    expect(created[0].setForTab.PLAYWRIGHT_MCP_OUTPUT_DIR).toBe(
       path.join(os.tmpdir(), 'koloft-playwright', created[0].id)
     )
   })
@@ -425,6 +445,38 @@ describe('AgySessions launch', () => {
     expect(created[1].env.GEMINI_API_KEY).toBe('key-1')
     const settings = path.join(picked!.home, 'antigravity-cli', 'settings.json')
     expect(JSON.parse(fs.readFileSync(settings, 'utf8')).modelProvider).toBe('gemini')
+  })
+
+  // AGY§9 AGY§25
+  it("strips an ancestor Antigravity tab's log, start file, owner title, notice, API key and ANTIGRAVITY_* variables from the environment before launching a new tab", async () => {
+    const ancestor = {
+      KOLOFT_AGY_LOG: '/ancestor/agy.jsonl',
+      KOLOFT_AGY_START: '/ancestor/agy-session-start.json',
+      KOLOFT_AGY_COST: '/ancestor/agy-cost',
+      KOLOFT_AGY_OWNER_TITLE: '/ancestor/title.sh',
+      KOLOFT_NOTICE: '/ancestor/tab.notice',
+      ANTIGRAVITY_AGENT: '1',
+      ANTIGRAVITY_CONVERSATION_ID: B,
+      GEMINI_API_KEY: 'ancestor-key'
+    }
+    mocks.runtime.mockResolvedValueOnce({
+      binary: '/fixture/agy',
+      env: { HOME: home, PATH: '/usr/bin:/bin', ...ancestor },
+      version: '1.4.0',
+      verified: true
+    })
+    sessions.forgetAvailability()
+    await sessions.availability({ force: true })
+    const { id } = await launch()
+    const env = tabEnv(id)
+    expect(env.KOLOFT_AGY_LOG).not.toBe(ancestor.KOLOFT_AGY_LOG)
+    expect(env.KOLOFT_AGY_COST).not.toBe(ancestor.KOLOFT_AGY_COST)
+    expect(env.KOLOFT_AGY_START).toBeUndefined()
+    expect(env.KOLOFT_AGY_OWNER_TITLE).toBeUndefined()
+    expect(env.KOLOFT_NOTICE).toBeUndefined()
+    expect(env.ANTIGRAVITY_AGENT).toBeUndefined()
+    expect(env.ANTIGRAVITY_CONVERSATION_ID).toBeUndefined()
+    expect(env.GEMINI_API_KEY).toBeUndefined()
   })
 
   it('does not start without a usable account', async () => {
@@ -604,7 +656,7 @@ describe('AgySessions launch', () => {
     browserEndpoint = 'ws://127.0.0.1:9/cdp/x'
     await launch()
     expect(allowHere()).toEqual({ allow: ['mcp(pw/*)'] })
-    expect(created.at(-1)!.env.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe(browserEndpoint)
+    expect(created.at(-1)!.setForTab.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe(browserEndpoint)
     browserEndpoint = ''
     await launch()
     expect(allowHere()).toBeUndefined()
@@ -1629,6 +1681,114 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
     expect(sessions.list()[0].background).toEqual([
       { id: 'teammates', kind: 'teammate', label: '1 idle', state: 'waiting' }
     ])
+  })
+
+  it('a turn that ended reaching the stream only after the terminal has started the next one leaves that next turn working until the stream shows it running and then idle', async () => {
+    apiAnswers = true
+    let pushStream!: (msg: unknown) => void
+    streamHandler = (res) => {
+      res.writeHead(200, { 'content-type': 'application/connect+json' })
+      pushStream = (msg) => res.write(streamFrame(msg))
+    }
+    const id = await boundTab()
+    await vi.waitFor(() => expect(pushStream).toBeDefined())
+    const running = { update: { conversationId: A, status: 'CASCADE_RUN_STATUS_RUNNING' } }
+    say(id, state('working'))
+    pushStream(running)
+    say(id, state('done'))
+    say(id, state('working'))
+    expect(runtime.statusOf(id)).toBe('working')
+
+    pushStream(running)
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        fullyIdle: true,
+        backgroundTasksUpdate: {
+          totalLength: 1,
+          backgroundTasks: [
+            {
+              taskSnapshot: {
+                taskId: `${A}/task-9`,
+                toolName: 'run_command',
+                description: 'vite dev',
+                isDaemon: true,
+                startTime: Date.now()
+              }
+            }
+          ]
+        }
+      }
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toMatchObject([{ id: `${A}/task-9` }])
+    )
+    expect(runtime.statusOf(id)).toBe('working')
+
+    pushStream(running)
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        fullyIdle: true,
+        backgroundTasksUpdate: { totalLength: 0, backgroundTasks: [] }
+      }
+    })
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('waiting'))
+  })
+
+  it('a next turn the stream shows running before the terminal has even ended the last one is still ended by its own stream IDLE', async () => {
+    apiAnswers = true
+    let pushStream!: (msg: unknown) => void
+    streamHandler = (res) => {
+      res.writeHead(200, { 'content-type': 'application/connect+json' })
+      pushStream = (msg) => res.write(streamFrame(msg))
+    }
+    const id = await boundTab()
+    await vi.waitFor(() => expect(pushStream).toBeDefined())
+    say(id, state('working'))
+    pushStream({ update: { conversationId: A, status: 'CASCADE_RUN_STATUS_RUNNING' } })
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        fullyIdle: true,
+        backgroundTasksUpdate: {
+          totalLength: 1,
+          backgroundTasks: [
+            {
+              taskSnapshot: {
+                taskId: `${A}/task-9`,
+                toolName: 'run_command',
+                description: 'vite dev',
+                isDaemon: true,
+                startTime: Date.now()
+              }
+            }
+          ]
+        }
+      }
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toMatchObject([{ id: `${A}/task-9` }])
+    )
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_RUNNING',
+        backgroundTasksUpdate: { totalLength: 0, backgroundTasks: [] }
+      }
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+    say(id, state('done'))
+    say(id, state('working'))
+    expect(runtime.statusOf(id)).toBe('working')
+
+    pushStream({
+      update: { conversationId: A, status: 'CASCADE_RUN_STATUS_IDLE', fullyIdle: true }
+    })
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('waiting'))
   })
 
   it('prunes declined or synchronous invoke_subagent pendingSpawns and unconfirmed non-daemon schedules on Stop(fullyIdle: true)', async () => {

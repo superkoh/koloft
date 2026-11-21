@@ -113,6 +113,7 @@ interface Listener {
   at: number
   plugin: string
   hear: Hears<never>
+  heardWhileOff: boolean
 }
 
 export class Moments {
@@ -127,7 +128,8 @@ export class Moments {
     pluginId: string,
     moment: Moment<T>,
     hear: Hears<T>,
-    afterPlugins: readonly string[] = []
+    afterPlugins: readonly string[] = [],
+    heardWhileOff = false
   ): () => void {
     const own = this.plugins.findIndex((p) => p.id === pluginId)
     if (own < 0) throw new Error(`"${pluginId}" is not on the list of plugins`)
@@ -145,7 +147,7 @@ export class Moments {
         return before + 0.5
       })
     )
-    const listener: Listener = { at, plugin: pluginId, hear }
+    const listener: Listener = { at, plugin: pluginId, hear, heardWhileOff }
     const all = [...(this.listeners.get(moment.name) ?? []), listener]
     this.listeners.set(
       moment.name,
@@ -162,7 +164,7 @@ export class Moments {
     if (!this.announcedNames.has(moment.name)) return Promise.reject(this.unannounced(moment))
     const failures: unknown[] = []
     const on = (this.listeners.get(moment.name) ?? []).filter(
-      (l) => moment.heardWhileOff || pluginStateOf(l.plugin).on
+      (l) => moment.heardWhileOff || l.heardWhileOff || pluginStateOf(l.plugin).on
     )
     const said = on.map(({ hear }) => {
       try {

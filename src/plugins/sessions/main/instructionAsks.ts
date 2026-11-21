@@ -25,7 +25,7 @@ export interface InstructionAskDeps {
   told(text: string): void
 }
 
-const A_CALLER_THAT_STOPPED_WAITING_IS_SEEN_WITHIN_MS = 2000
+const THE_CALLER_IS_ASKED_WHETHER_IT_STILL_WAITS_EVERY_MS = 2000
 
 type Given =
   | { how: 'agreed'; at: AnsweredAt }
@@ -73,9 +73,11 @@ export class InstructionAsks {
     this.d.owner.waitsOnTheOwner(ask.tabId)
     for (const l of this.listeners) l.asked(id, ask)
     const timer = setTimeout(() => this.end(id, { how: 'timeout' }), waitMs)
-    const watch = setInterval(() => {
+    const watchTheCaller = (): void => {
       if (!stillWaiting()) this.end(id, { how: 'stopped-waiting' })
-    }, A_CALLER_THAT_STOPPED_WAITING_IS_SEEN_WITHIN_MS)
+    }
+    watchTheCaller()
+    const watch = setInterval(watchTheCaller, THE_CALLER_IS_ASKED_WHETHER_IT_STILL_WAITS_EVERY_MS)
     const answered = await answer
     clearTimeout(timer)
     clearInterval(watch)

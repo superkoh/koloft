@@ -173,6 +173,8 @@ const COMMIT_THE_PROJECT_THEN_PUBLISH_TWO_MORE_TO_ITS_ORIGIN = [
 ].join('\n')
 
 const KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS = 45_000
+const KOLOFT_SEES_THE_WAITING_COMMAND_RUN_ON_THE_MACHINE_MS = 6000
+const A_STOPPED_COMMAND_CLOSES_ITS_ASK_MS = 20_000
 const ONE_COMMAND_CODEX_RUNS_ON_THE_MACHINE_MS = 30_000
 const REAL_CODEX = process.env.KOLOFT_SMOKE_CODEX ?? ''
 const REAL_CODEX_AUTH = process.env.KOLOFT_SMOKE_CODEX_AUTH ?? ''
@@ -769,6 +771,25 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         await expect(centerTerm(page)).toContainText('koloft exit=0', {
           timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
         })
+      }
+    })
+  })
+
+  test('E-SSH-53: koloft instructions add, run inside a session on the machine, asks the owner at the Mac; once that command stops waiting there, ended gently or killed outright, the ask closes', async ({
+    env
+  }) => {
+    await withLab(env, async ({ page, lab }) => {
+      await addMachine(page, 'kt-key', 'kuser')
+      await startSessionIn(page, 'kt-key', { remote: true })
+      const ask = page.getByRole('dialog', { name: 'Change the instructions?' })
+      for (const signal of ['TERM', 'KILL']) {
+        await runIn(page, centerTerm(page), `/koloft instructions add -- stopped by ${signal}`)
+        await expect(ask).toBeVisible({
+          timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS
+        })
+        await page.waitForTimeout(KOLOFT_SEES_THE_WAITING_COMMAND_RUN_ON_THE_MACHINE_MS)
+        runOnTarget(lab, 'kuser', `pkill -${signal} -f '[k]oloft instructions add -- stopped by'`)
+        await expect(ask).toHaveCount(0, { timeout: A_STOPPED_COMMAND_CLOSES_ITS_ASK_MS })
       }
     })
   })

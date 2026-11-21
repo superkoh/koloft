@@ -21,7 +21,8 @@ function claudeAssist(bin: string, env: NodeJS.ProcessEnv = {}) {
       accounts: []
     }),
     enabled: () => true,
-    target: async (backend) => (backend === 'claude' ? { binary: bin, env } : null)
+    target: async (backend) => (backend === 'claude' ? { binary: bin, env } : null),
+    onThisAccount: async (_backend, asked) => asked
   })
 }
 
@@ -79,7 +80,11 @@ describe('the title behind koloft session new', () => {
       '读取任务文件并执行，这一点即可概括。任务要求我实际操作，但我只负责起标题，不执行。\n\nWait—reviewing: I should just output the title. The task is "read /tmp/koloft-probe/task-a.md and do what it says." The title should be ≤16 Chinese characters.\n\n读取并执行task-a.md任务',
       '读取并执行task-a.md任务'
     ],
-    ['修侧栏\n\n(kept under 16 characters as asked)', '修侧栏']
+    ['修侧栏\n\n(kept under 16 characters as asked)', '修侧栏'],
+    ['<br>\n修侧栏', '修侧栏'],
+    ['- <br>\n修侧栏', '修侧栏'],
+    ['<p>修侧栏<br/></p>', '修侧栏'],
+    ['<SessionRow>', '<SessionRow>']
   ])(
     'a reply of several lines is named by its first line that reads like a title, not like a sentence: %#',
     async (reply, title) => {
@@ -90,6 +95,11 @@ describe('the title behind koloft session new', () => {
       expect(await titleForTask('读 /tmp/task-a.md，照它做完。', claudeAssist(bin))).toBe(title)
     }
   )
+
+  it('a reply whose every line is only HTML markup is never taken as a name — the task’s first line is', async () => {
+    const bin = fakeClaude('cat >/dev/null\nprintf "<br>\\n</p>\\n"')
+    expect(await titleForTask('研究侧栏标题\n背景：…', claudeAssist(bin))).toBe('研究侧栏标题')
+  })
 
   it('an error claude prints before exiting non-zero is never taken as a name — the task’s first line is', async () => {
     const bin = fakeClaude(

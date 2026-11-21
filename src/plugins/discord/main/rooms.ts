@@ -21,6 +21,7 @@ export interface RoomSubject {
 
 export interface RoomDeps {
   link: Pick<DiscordLink, 'card' | 'startThread' | 'addToThread' | 'archiveThread' | 'post'>
+  on(): boolean
   owner(): string | undefined
   lobby(): DiscordChannel | undefined
   rooms(): SessionRoom[]
@@ -140,7 +141,7 @@ export class Rooms {
     const carried = before ? this.ofKey(before) : undefined
     if (!carried || !(await newConversation()) || this.keyOfTab.get(tabId) !== key) return
     this.change(carried.threadId, { keys: [...carried.keys, key] })
-    if (!carried.putDown) void this.say(carried.threadId, STARTED_OVER_IN_ROOM)
+    if (!carried.putDown && this.d.on()) void this.say(carried.threadId, STARTED_OVER_IN_ROOM)
   }
 
   private say(threadId: string, text: string): Promise<unknown> {

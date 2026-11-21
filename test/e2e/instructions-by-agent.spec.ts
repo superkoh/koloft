@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { Locator, Page } from '@playwright/test'
@@ -30,7 +31,9 @@ import {
   REMOTE_WS_NAME,
   addRemoteWorkspace,
   killFakeRemote,
-  launchWithRemote
+  launchWithRemote,
+  machineHome,
+  sshCommands
 } from './helpers/remote'
 import { isRemoteKey } from '../../src/shared/remoteKey'
 import type { InstructionsVersion } from '../../src/core/ownerInstructions'
@@ -132,6 +135,29 @@ const EVERY_WORKSPACE: Block = {
     'wants to change the instructions for every workspace:',
     'Sessions started afterwards, in every workspace that does not leave them out, follow the new text.'
   ]
+}
+
+const machineHookDir = (env: E2EEnv): string =>
+  path.join(machineHome(env), '.koloft', 'hook-sessions')
+
+function waitingShimOnTheMachine(env: E2EEnv, line: string): { pid: number; file: string } {
+  for (const name of fs.readdirSync(machineHookDir(env))) {
+    if (!/^req-.+\.json$/.test(name)) continue
+    const file = path.join(machineHookDir(env), name)
+    const req = JSON.parse(fs.readFileSync(file, 'utf8')) as { argv: string[]; pid: number }
+    if (req.argv.join(' ').includes(line)) return { pid: req.pid, file }
+  }
+  throw new Error(`no koloft command on the machine waits with: ${line}`)
+}
+
+const callerChecks = (env: E2EEnv): number =>
+  sshCommands(env, 'end').filter((c) => c.includes('ps -o args=')).length
+
+function stopShim(env: E2EEnv, pid: number, signal: NodeJS.Signals): void {
+  const cmd = spawnSync('ps', ['-o', 'command=', '-p', String(pid)], { encoding: 'utf8' })
+  // PLATFORM§3
+  expect(cmd.stdout).toContain(env.home)
+  process.kill(pid, signal)
 }
 
 async function agentProposes(page: Page, line: string, block = OWN_WORKSPACE): Promise<void> {
@@ -256,6 +282,44 @@ test.describe('koloft instructions: an agent proposes a line for the owner’s i
       const kept = Object.keys(settingsOnDisk(env).sessionDefaults as object)
       expect(kept).toHaveLength(1)
       expect(isRemoteKey(kept[0])).toBe(true)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test("on a remote workspace, when a Claude Code, Codex, Muse or Antigravity session's koloft command stops waiting, ended gently or killed outright, its ask closes, its tab stops waiting on the owner, and nothing is written", async ({
+    env
+  }) => {
+    test.setTimeout(400_000)
+    seedSettings(env, { hintsOff: true })
+    for (const agent of OTHER_AGENTS_ON_THE_MACHINE) agent.install(env)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await ownerWrites(page, REMOTE_WS_NAME, WRITTEN)
+      const stops: [BackendId, NodeJS.Signals][] = [
+        ['claude', 'SIGTERM'],
+        ['codex', 'SIGKILL'],
+        ['muse', 'SIGTERM'],
+        ['agy', 'SIGKILL']
+      ]
+      for (const [backend, signal] of stops) {
+        const tab = await startIn(page, REMOTE_WS_NAME, backend)
+        const row = wsRows(page, REMOTE_WS_NAME).and(page.locator(`[data-tab-id="${tab}"]`))
+        const before = versionsOnDisk(env)
+        const line = `${backend} asked, then stopped waiting.`
+        const checksBefore = callerChecks(env)
+        await agentProposes(page, line)
+        await expect(row).toHaveClass(/\bst-approval\b/)
+        const shim = waitingShimOnTheMachine(env, line)
+        await expect.poll(() => callerChecks(env)).toBeGreaterThan(checksBefore)
+        stopShim(env, shim.pid, signal)
+
+        await expect(askDialog(page)).toHaveCount(0, { timeout: AN_ASK_SHOWS_WITHIN_MS })
+        await expect(row).not.toHaveClass(/\bst-approval\b/)
+        await expect.poll(() => fs.existsSync(shim.file)).toBe(false)
+        expect(versionsOnDisk(env)).toEqual(before)
+      }
     } finally {
       await quitAndClose(app)
     }
