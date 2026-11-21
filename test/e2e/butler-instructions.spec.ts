@@ -88,7 +88,7 @@ test.describe('The butler’s Instructions: written by the owner, placed last in
       await page.keyboard.press('Meta+Enter')
       await expect(editor).toHaveCount(0)
       await expect(page.locator('.toast-msg')).toContainText(
-        'Alfred uses it from the next fresh conversation (on Claude Code, also from its next compaction).'
+        'Alfred uses it from the next fresh conversation, or from the next compaction of the one it resumes.'
       )
       await expect
         .poll(() => (settingsOnDisk(env).butler as ButlerSetting).instructions?.at(-1)?.text)

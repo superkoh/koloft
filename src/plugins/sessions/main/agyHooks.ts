@@ -46,6 +46,16 @@ const LAST_REPLY_FN = `last_reply() {
     head -c ${QUOTED_NOTE_BYTES} | whole_chars
 }`
 
+const [START_BEFORE_TEXT, START_AFTER_TEXT] = sessionStartOutput('').split('""')
+
+// AGY§12 AGY§17
+const START_TEXT_ONCE_COMPACTED_FN = `start_text_once_compacted() {
+  [ -f "$${AGY_START_ENV}" ] && grep -q -F '"type":"CHECKPOINT"' "$tp" 2>/dev/null || return 0
+  st="$(cat "$${AGY_START_ENV}")"
+  st="\${st#${shq(START_BEFORE_TEXT + '"')}}"
+  printf '%s\\\\n\\\\n' "\${st%${shq('"' + START_AFTER_TEXT)}}"
+}`
+
 // AGY§12 AGY§16 ADR-0028 ADR-0031
 export const AGY_HOOK_SCRIPT = `#!/bin/sh
 : koloft agy hook
@@ -61,6 +71,7 @@ ${LANGUAGE_FNS}
 ${LAST_REPLY_FN}
 ${STALE_PR_STATUS_FN}
 ${SHELL_WRITES_FNS}
+${START_TEXT_ONCE_COMPACTED_FN}
 case "$event:$input" in
   PreToolUse:*'"name":"run_command"'*|PostToolUse:*'"name":"run_command"'*)
     where="$(printf '%s' "$input" | tr -d '\\n' | ${hookField('Cwd')})"
@@ -84,7 +95,7 @@ case "$event" in
       case "$(printf '%s' "$input" | tr -d ' \\n')" in *'"invocationNum":0'[,}]*) rm -f "$turn" ;; esac
       [ -f "$notice" ] && take_notice >> "$turn"
     fi
-    told="$([ -n "$turn" ] && cat "$turn" 2>/dev/null)$said"
+    told="$(start_text_once_compacted)$([ -n "$turn" ] && cat "$turn" 2>/dev/null)$said"
     [ -n "$told" ] && printf '{"injectSteps":[{"ephemeralMessage":"%s"}]}' "$told"
     ;;
   # AGY§12 PLATFORM§36

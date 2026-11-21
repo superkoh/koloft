@@ -7,6 +7,7 @@ import {
   agyLogLine,
   koloftHookEntry,
   runWithSh,
+  sessionStartOutput,
   writeAgyScripts,
   type AgyScripts
 } from '../../../../src/plugins/sessions/main/agyHooks'
@@ -270,6 +271,26 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
       env
     )
     expect(JSON.parse(nextTurn).injectSteps[0].ephemeralMessage).toMatch(/^The user's latest/)
+  })
+
+  // AGY§17
+  it('once agy has compacted the conversation, every model call gets the words the tab started with again, ahead of the rest, because the compaction drops them; before any compaction, or with no words to start with, it gets nothing more', () => {
+    const start = path.join(dir, 'start.json')
+    const words = 'Owner says: "always" use\ttabs.\nSecond line, 中文 $HOME `x` \\ end'
+    fs.writeFileSync(start, sessionStartOutput(words))
+    const compacted = transcriptOf(
+      ownerSays('hello'),
+      modelSays('ok'),
+      { source: 'SYSTEM', type: 'CHECKPOINT', status: 'DONE', content: '# Resuming' },
+      ownerSays('look around')
+    )
+    const ephemeral = (transcriptPath: string, env: Record<string, string>): string =>
+      JSON.parse(hook('PreInvocation', { conversationId: C1, transcriptPath }, env)).injectSteps[0]
+        .ephemeralMessage
+    const quote = `${REPLY_LANGUAGE_BEFORE_QUOTE}look around${REPLY_LANGUAGE_AFTER_QUOTE}`
+    expect(ephemeral(compacted, { KOLOFT_AGY_START: start })).toBe(`${words}\n\n${quote}`)
+    expect(ephemeral(transcriptWith('look around'), { KOLOFT_AGY_START: start })).toBe(quote)
+    expect(ephemeral(compacted, {})).toBe(quote)
   })
 
   // AGY§12
