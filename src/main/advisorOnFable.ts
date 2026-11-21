@@ -11,8 +11,8 @@ export const ADVISOR_OFF_ON_FABLE_FN = `advisor_off_on_fable() {
     esac
     case "$a" in
       --) break ;;
-      --model) aw=m ;;
-      --model=*) am="\${a#--model=}" ;;
+      --mode[l]) aw=m ;;
+      --mode[l]=*) am="\${a#*=}" ;;
       -r|--resume) aw=r; resumed=1 ;;
       --resume=*) ar="\${a#--resume=}"; resumed=1 ;;
       -c|--continue) resumed=1 ;;
