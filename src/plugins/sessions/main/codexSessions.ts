@@ -63,6 +63,7 @@ import {
   playwrightMcpOverrides,
   SANDBOX_NETWORK,
   STATUS_LINE_CONFIG,
+  TUI_FEATURES,
   trustedInPlace,
   type KoloftHook
 } from '../../../main/codexLaunchConfig'
@@ -1043,6 +1044,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         NO_UPDATE_NOTICE_AT_START,
         '-c',
         EVERY_KEY_SHOWS_AT_ONCE,
+        ...TUI_FEATURES,
         ...(opts.resumeSessionId ? [] : launchFlags),
         ...launchChoiceArgs(opts)
       ]

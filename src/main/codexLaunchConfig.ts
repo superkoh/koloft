@@ -34,6 +34,12 @@ export const NO_UPDATE_NOTICE_AT_START = 'check_for_update_on_startup=false'
 // CODEX§36
 export const EVERY_KEY_SHOWS_AT_ONCE = 'disable_paste_burst=true'
 
+// CODEX§35
+export const NO_FILE_SIDE_PANEL = 'features.tui_workspace=false'
+
+// CODEX§20 CODEX§35
+export const TUI_FEATURES = ['-c', NO_FILE_SIDE_PANEL, '-c', CODEX_ASKS_AND_WAITS]
+
 const stringList = (raw: unknown): string[] =>
   (Array.isArray(raw) ? raw : []).filter((v): v is string => typeof v === 'string')
 

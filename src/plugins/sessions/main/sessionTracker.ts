@@ -120,6 +120,8 @@ export function sessionEventFromHook(
 
 // CC§8
 const AGENT_TYPES = new Set(['subagent', 'workflow', 'mcp-task', 'cloud-session'])
+// CC§8
+const MONITOR_SCRIPT_ID_PREFIX = 'b'
 
 // CC§8
 function taskNotificationText(obj: TranscriptRecord): string | null {
@@ -471,6 +473,8 @@ interface Tracked {
   endingTurn?: { turn: TalkTurn; deadline: ReturnType<typeof setTimeout> }
   stopsBeforeTheirLines: number[]
   promptSinceLastStop: boolean
+  promptedSinceBind: boolean
+  historyTurnAwaitsItsStop: boolean
   inode?: number
   swept?: boolean
   relocatedCwd?: string
@@ -571,6 +575,8 @@ export class SessionTracker extends SessionRuntime {
       replyDone: false,
       stopsBeforeTheirLines: [],
       promptSinceLastStop: false,
+      promptedSinceBind: false,
+      historyTurnAwaitsItsStop: false,
       remote
     }
     this.tracked.set(tabId, t)
@@ -602,7 +608,11 @@ export class SessionTracker extends SessionRuntime {
       t.compactingFrom = undefined
       t.idleCompaction = false
     }
-    if (event.type === 'prompt' && t) t.promptSinceLastStop = true
+    if (event.type === 'prompt' && t) {
+      t.promptSinceLastStop = true
+      t.promptedSinceBind = true
+      if (t.caughtUp) t.historyTurnAwaitsItsStop = false
+    }
     if (event.type === 'stop') {
       const hasAPromptOfItsOwn = !!t?.promptSinceLastStop
       if (t) t.promptSinceLastStop = false
@@ -709,8 +719,11 @@ export class SessionTracker extends SessionRuntime {
     await this.parse(t).catch(() => {})
     if (this.tracked.get(tabId) !== t) return
     const turn = t.turns.open()
+    const itsTurnWasCaughtUpAsHistory = t.historyTurnAwaitsItsStop
+    t.historyTurnAwaitsItsStop = false
     if (turn) this.endOpenTurn(t, turn)
-    else if (t.remote && hasAPromptOfItsOwn) t.stopsBeforeTheirLines.push(Date.now())
+    else if (t.remote && hasAPromptOfItsOwn && !itsTurnWasCaughtUpAsHistory)
+      t.stopsBeforeTheirLines.push(Date.now())
   }
 
   private endOpenTurn(t: Tracked, turn: TalkTurn): void {
@@ -755,11 +768,15 @@ export class SessionTracker extends SessionRuntime {
     const teammatesFresh = now - t.teammateActiveMs < TEAMMATE_QUIET_MS
     let idleTeammates = 0
     for (const task of t.reported) {
-      if (task.type === 'shell') {
+      const isMonitor =
+        ((task.type === 'shell' || task.type === 'monitor') && t.ledger.isMonitor(task.id)) ||
+        (task.type === 'monitor' && task.id.startsWith(MONITOR_SCRIPT_ID_PREFIX))
+      if (isMonitor) {
         const label = t.ledger.labelOf(task.id) ?? task.id
-        if (t.ledger.isMonitor(task.id)) {
-          parked.push({ id: task.id, kind: 'monitor', label, state: 'waiting' })
-        } else if (!procs) {
+        parked.push({ id: task.id, kind: 'monitor', label, state: 'waiting' })
+      } else if (task.type === 'shell') {
+        const label = t.ledger.labelOf(task.id) ?? task.id
+        if (!procs) {
           trusted = true
           run(task, 'command', label)
         } else {
@@ -1114,7 +1131,11 @@ export class SessionTracker extends SessionRuntime {
     clearTimeout(t.endingTurn?.deadline)
     t.endingTurn = undefined
     t.stopsBeforeTheirLines = []
-    if (!keepBindMs) t.bindMs = Date.now()
+    if (!keepBindMs) {
+      t.bindMs = Date.now()
+      t.promptedSinceBind = false
+      t.historyTurnAwaitsItsStop = false
+    }
     t.resetMs = Date.now()
   }
 
@@ -1362,7 +1383,10 @@ export class SessionTracker extends SessionRuntime {
     else if (t.caughtUp) this.resumeWorkingIfStale(t, sawUserPrompt, sawAssistant)
     if (!t.caughtUp) {
       const history = t.turns.open()
-      if (history && history.at < t.bindMs) t.turns.end(history)
+      if (history && history.at < t.bindMs) {
+        t.turns.end(history)
+        t.historyTurnAwaitsItsStop = t.promptedSinceBind
+      }
       t.caughtUp = true
     }
     const open = t.turns.open()

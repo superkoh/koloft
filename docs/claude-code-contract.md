@@ -1692,7 +1692,8 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   (the filter, read from the 2.1.261 binary) — and `session_crons`. Each entry is
   `{id, type, status, description}` plus `command` (shells), `agent_type`
   (subagents), `server`/`tool` (MCP), `name` (workflows). **`type` is a friendly
-  label**: `shell`, `subagent`, `teammate`, `monitor` (MCP / live-update watchers),
+  label**: `shell`, `subagent`, `teammate`, `monitor` (MCP / live-update watchers,
+  and since 2.1.329 a Monitor's script — see below),
   `workflow`, `MCP task`, `cloud session`, `dream`, `auto-mode scan`. Nothing in the
   payload says whether a task is idle or ambient — the SDK stream's `ambient` flag
   ("hosts should exclude them from activity indicators") is not forwarded to hooks.
@@ -1739,9 +1740,22 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   `.meta.json` (`taskKind: 'in_process_teammate'`). ⚠️ A teammate's task id in the
   payload (`t…`) is NOT its agent id; a background Agent's task id (`a…`) IS the
   `agent-<id>.jsonl` name. `~/.claude/teams/<team>/config.json` has no status field.
-- **A Monitor is reported as `type: 'shell'`** (it is a `local_bash` with
-  `kind: 'monitor'`, and the label map flattens that). Its transcript ack —
-  `toolUseResult: {taskId, timeoutMs, persistent}` — is the only way to tell.
+- **A Monitor's script is reported as `type: 'shell'` up to 2.1.328 and as
+  `type: 'monitor'` since 2.1.329** (it is a `local_bash` with `kind: 'monitor'`;
+  up to 2.1.328 the label map flattened that). Up to 2.1.328 its transcript ack —
+  `toolUseResult: {taskId, timeoutMs, persistent}` — or a `Monitor event` notice is the
+  only way to tell it from a background command. Since 2.1.329 the entry says so
+  itself, under the same `b…` task id the ack's `taskId` carries; MCP and live-update
+  watchers, also `type: 'monitor'`, have ids starting `m` or `s` (the id split is from
+  the probe report, not rechecked here). A background Bash stays `type: 'shell'` on
+  both. Measured 2026-11-20, CC 2.1.328 and 2.1.329: the interactive TUI driven
+  through a pty against a fake Messages API, scratch `HOME`, the Stop hook's stdin
+  saved as is: the same Monitor call came back as `{"id":"bu8j8sul4","type":"shell",
+  "status":"running","description":"probe watcher","command":"perl -e 'sleep 400';
+  echo done"}` on 2.1.328 and `{"id":"b8qhp2tne","type":"monitor",…}` on 2.1.329.
+  The 2.1.329 changelog: "Changed Stop and SubagentStop hooks to list a Monitor's
+  script as monitor, not shell, in background_tasks". Not probed on 2.1.329: a
+  plugin's `monitors.json` monitor.
   **A Monitor the model arms always has a deadline since 2.1.271**: at most 30 minutes
   (10 in a single-prompt `-p` run), then CC tells the model to re-arm it — the
   changelog says this replaced the no-timeout persistent option. The 2.1.276 binary
@@ -1978,7 +1992,8 @@ inferred, not checked.
   written as the `queue-operation` enqueue, then a user record with `origin.kind:
   'task-notification'` and no `isMeta`, and the UserPromptSubmit `prompt` opens with
   `<task-notification>`; Stop's `background_tasks` entries hold `id`, `type`, `status`,
-  `description` and `command`, a Monitor as `type: "shell"`. (2026-11-10, CC 2.1.319 and
+  `description` and `command`, a Monitor as `type: "shell"` (`"monitor"` since 2.1.329,
+  above). (2026-11-10, CC 2.1.319 and
   2.1.322 darwin-arm64, interactive TUI in a Python pty, scratch `HOME` and
   `CLAUDE_CONFIG_DIR`, one 1,224-character background command, one short one and one
   Monitor; the 1,000 threshold is the 2.1.321 changelog's, only 1,224 was run. Not

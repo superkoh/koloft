@@ -1409,7 +1409,15 @@ tokens (input / cached input / output): `gpt-6-astra` 10 / 1 / 50, `gpt-6-sol` 2
 2026-10-11; Codex 0.161.0 made it the default model of the bundled catalog, so a fresh
 account home runs on it). **`gpt-6.1-terra` 1 / 0.05 / 5, long context 2 / 0.10 /
 7.5** (the same page, fetched 2026-10-28; `model/list` offered it on Codex 0.164.0 and
-0.165.0 alike that day, `isDefault: false`, efforts `low` … `ultra`). The page now also lists 30-minute and 12-hour
+0.165.0 alike that day, `isDefault: false`, efforts `low` … `ultra`). **`gpt-6.2-sol` 2 /
+0.10 / 10, long context (>272K input tokens) 4 / 0.20 / 15; `gpt-6.2-astra` 8 / 0.40 /
+40, long context (>272K) 16 / 0.80 / 60** (the same page, fetched 2026-11-18; its
+`gpt-6.1-sol` and `gpt-6-astra` rows still matched the table above). Both models are in
+the bundled model catalog from Codex 0.169.1 on. With a ChatGPT login, `model/list`
+returned them on 0.169.0 and on 0.170.0 alike (2026-11-18), with `gpt-6.2-sol` marked
+`isDefault: true` in place of `gpt-6.1-sol`, so a `thread/start` with no model runs on
+it. Both offer efforts `low` … `ultra`; the context window is 500000 for `gpt-6.2-sol`
+and 272000 for `gpt-6.2-astra`. The page now also lists 30-minute and 12-hour
 cache-write prices (about 1.25 and 2.5 times the input price), but Codex reported
 `cache_write_input_tokens` 0 in every record of a fresh home's turns on 0.164.0 and
 0.165.0 (2026-10-28), so Koloft prices cache writes at 0. The page lists
@@ -2758,6 +2766,23 @@ Koloft's (one TUI connection, one stdio app-server upstream, every frame logged)
   - No key was found that puts the highlight on a known row. So once the person pressed
     a key in a question since it was asked, Koloft leaves it to them and presses
     nothing.
+- **A `-c features.*` on the TUI's command line replaces the features the app-server's
+  own `-c` flags give the thread, so the TUI must carry
+  `default_mode_request_user_input=true` too; the app-server home's `config.toml`
+  `[features]` still hold.** 2026-11-20, codex-cli 0.170.0 and 0.171.0, the §35 setup
+  (fake Responses server, `codex --remote unix://<sock>` on an `app-server --listen
+  unix://<sock> -c features.default_mode_request_user_input=true`), 100×40. With only
+  `-c features.tui_workspace=false` added to the TUI, a model call to
+  `request_user_input` got back `request_user_input is unavailable in Default mode`, on
+  a new thread and on `resume <id>`; with `-c
+  features.default_mode_request_user_input=true` on the TUI as well, it drew "Question
+  1/1" and `2` sent `["Green"]`. With `[features] view_image = false` in the app-server
+  home's `config.toml`, the tools sent to the model lacked `view_image` with or without
+  both flags on the TUI, whether the TUI ran in that `CODEX_HOME` or in another one
+  holding no `[features]` (a remote tab's shape, §16: the TUI in the Mac's home, the
+  app-server in the machine's); without that line `view_image` was sent (0.171.0, 1 run
+  each; a real SSH machine not probed). Codex 0.161.0 starts with both flags on its TUI
+  and asks and takes the answer the same way (same setup, 2026-11-20, 1 run).
 - Not probed: `isSecret`, a form with several fields or a field that is not an enum, and
   an elicitation `mode` other than `form`.
 
@@ -3867,6 +3892,27 @@ brackets, made relative to the session folder. A path wider than the line is bro
 a `/` and goes on with `ESC[<row>;3H`, so the terminal holds two unwrapped lines.
 2026-11-14, codex-cli 0.166.0, `codex --no-daemon -C <ws>` in a python pty at 100×40,
 the setup above with no `TERM_PROGRAM`; 1 run.
+
+**From 0.171.0 a file link shows its label alone, and a click on it opens Codex's own
+file panel, unless the TUI runs with `-c features.tui_workspace=false`.** 0.171.0 turned
+the `tui_workspace` feature on by default (`codex features list`: 0.170.0 "under
+development false", 0.171.0 "stable true"). 2026-11-20, codex-cli 0.170.0 and 0.171.0,
+the launch Koloft's tabs use (`codex --remote unix://<sock> -C <ws>` with Koloft's `-c`
+settings) on an `app-server --listen unix://<sock>`, the fake Responses server above,
+a python pty with pyte at 100×40; a reply holding `[app.ts](<abs>/src/app.ts:42:5)`.
+
+- 0.170.0 draws `app.ts (src/app.ts:42:5)`; 0.171.0 draws `app.ts` alone (underlined,
+  blue, no OSC 8), on a new thread and on `resume <id>`.
+- An SGR mouse click (`ESC[<0;x;yM` then `…m`) on that `app.ts` opens a file panel on
+  the right (about 37 of 100 columns) showing the file. Keys then go to the panel:
+  typed words, Ctrl+E Ctrl+U, `/status`, Esc and `q` never reach the composer, and the
+  panel's lines sit where the composer's `›` line is read.
+- With `-c features.tui_workspace=false` on the TUI (the app-server's own `-c` list is
+  not enough), 0.171.0 draws `app.ts (src/app.ts:42:5)` again, a click opens nothing,
+  and typed words land in the composer, on a new thread and on `resume <id>`. That flag
+  alone breaks the model's questions (§20). A remote tab's TUI runs on the Mac with the
+  same flags (§16); one in another `CODEX_HOME` than its app-server's drew the same
+  (1 run); a real SSH machine was not probed.
 
 ## 36. The TUI holds fast keys back to tell a paste from typing (`disable_paste_burst`)
 

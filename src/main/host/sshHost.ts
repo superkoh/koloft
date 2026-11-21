@@ -611,6 +611,11 @@ const RESIZE_SETTLE_MS = 200
 
 const REMOTE_FILE_LIST_FRESH_MS = 30_000
 
+export type AgentCallerState = 'runs' | 'gone' | 'request-gone'
+const REQUEST_TAKEN_BACK_EXIT = 3
+const CALLER_GONE_EXIT = 4
+const A_CALLER_CHECK_ANSWERS_WITHIN_MS = 10_000
+
 // PLATFORM§35
 const NO_TAB_NAME_IS_ANOTHERS_PREFIX = '-t'
 
@@ -1011,6 +1016,19 @@ export class SshHost implements Host {
   async answerAgent(requestId: string, reply: string | null): Promise<void> {
     if (reply === null) await this.sh(TAKE_AWAY_AGENT_REQUEST, [requestId])
     else await this.sh(ANSWER_AGENT_REQUEST, [requestId], { input: Buffer.from(reply) })
+  }
+
+  async agentCallerWaits(requestId: string, pid: number): Promise<AgentCallerState | undefined> {
+    const r = await this.sh(
+      `[ -f "${REMOTE_HOOK_DIR}/req-$1.json" ] || exit ${REQUEST_TAKEN_BACK_EXIT}
+case "$(ps -o args= -p "$2" 2>/dev/null)" in */koloft[[:space:]]*) exit 0 ;; esac
+exit ${CALLER_GONE_EXIT}`,
+      [requestId, String(pid)],
+      { timeoutMs: A_CALLER_CHECK_ANSWERS_WITHIN_MS }
+    )
+    if (r.code === 0) return 'runs'
+    if (r.code === CALLER_GONE_EXIT) return 'gone'
+    return r.code === REQUEST_TAKEN_BACK_EXIT ? 'request-gone' : undefined
   }
 
   async savePick(name: string, png: Buffer): Promise<string> {
