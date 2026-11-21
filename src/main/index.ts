@@ -338,13 +338,6 @@ import {
   relayAttached
 } from '@plugins/browser-control/main/cdpRelay'
 import { CdpOps } from '@plugins/browser-control/main/cdpOps'
-import { WebPages } from '@plugins/workbench/main/webPages'
-import { SitePermissions } from '@plugins/workbench/main/sitePermissions'
-import { PageDialogs } from '@plugins/workbench/main/pageDialogs'
-import { PageDownloads } from '@plugins/workbench/main/pageDownloads'
-import { PageRouting } from '@plugins/workbench/main/pageRouting'
-import { PageTools } from '@plugins/workbench/main/pageTools'
-import { pagesInUse, type PagesInUseDeps } from '@plugins/workbench/main/pagesInUse'
 import { HTML_HEADERS, setupBrowserPartition } from '@plugins/workbench/main/browserPartition'
 import { PASTED_PICTURE_EXTENSIONS, pastedPicturesIn, withPictures } from '@shared/pastedPictures'
 import { compositionDone } from '@plugins/workbench/main/hostComposition'
@@ -3587,7 +3580,7 @@ app.whenReady().then(() => {
     koloftPid: process.pid,
     read: readTheMachine,
     log: signalLog(path.join(app.getPath('userData'), 'machine.log')),
-    memoryStaysCritical: () => pushToPages.memoryCritical(pagesInUse(pagesInUseDeps)),
+    memoryStaysCritical: () => pushToPages.memoryCritical(pagesInUse()),
     // ADR-0042
     agentTabsOnThisMac: () =>
       allSessions()
@@ -4681,22 +4674,6 @@ function watchOpenRequests(openDir: string): fs.FSWatcher | null {
   )
 }
 
-const sitePermissions = new SitePermissions({
-  push: pluginIpc.push,
-  isOverlay: (page) => webPages.isOverlay(page),
-  takeGesture: (page) => webPages.takeGesture(page),
-  openExternally: openUrlExternally,
-  allowFullscreen: allowPageFullscreenWithoutTheWindow
-})
-
-const pageDialogs = new PageDialogs({
-  push: pluginIpc.push,
-  isOverlay: (page) => webPages.isOverlay(page)
-})
-
-const webPages = new WebPages({ activeTab: () => uiActiveTabId, machineOfTab })
-webPages.start()
-
 function setupSecretLanding(): void {
   webPages.onEveryWebPage((contents) => {
     contents.on('did-start-navigation', (details) => {
@@ -4808,41 +4785,24 @@ const cdpOps = new CdpOps({
   }
 })
 
-const pageRouting = new PageRouting({
-  push: pluginIpc.push,
-  pages: webPages,
-  openFile: pushOpenRequest,
+const workbenchPages: PluginStartDeps['workbench']['pages'] = {
+  activeTab: () => uiActiveTabId,
+  machineOfTab,
   openExternally: openUrlExternally,
+  allowFullscreen: allowPageFullscreenWithoutTheWindow,
   driverOf: sessionDrivingGuest,
   drivenFromAnotherMachine: guestDrivenFromAnotherMachine,
   openAsDrivingAgentsTab: (guestId, url) => cdpOps.openAsDrivingAgentsTab(guestId, url),
   handsOn: handsOnKoloft,
   mainWindow: () => mainWindow,
   showMainWindow,
-  showSignInWindows: !BACKGROUND_TEST
-})
-
-const pageTools = new PageTools({
-  push: pluginIpc.push,
-  pages: webPages,
-  machineOfTab,
+  showSignInWindows: !BACKGROUND_TEST,
   savePickOn: (machine, name, png) => hosts.machine(machine).savePick(name, png),
   savePickOnThisMac,
-  handsOn: handsOnKoloft,
-  underTest: BACKGROUND_TEST
-})
-
-const pagesInUseDeps: PagesInUseDeps = {
-  pages: webPages,
-  held: () => [...pageDownloads.pagesDownloading(), ...sitePermissions.pagesHeld()],
-  modalPage: () => pageDialogs.modalPage(),
-  signInWindowOpeners: () => pageRouting.signInWindowOpeners(),
+  underTest: BACKGROUND_TEST,
   heldElsewhere: () => secretAsks?.pagesHeld() ?? [],
-  ownerDriven: relayAttached,
-  drivenFromAnotherMachine: guestDrivenFromAnotherMachine
+  ownerDriven: relayAttached
 }
-
-const pageDownloads = new PageDownloads({ push: pluginIpc.push })
 
 // PLATFORM§8
 function allowPageFullscreenWithoutTheWindow(callback: (granted: boolean) => void): void {
@@ -6696,17 +6656,9 @@ const startedPlugins: PluginsStarted = startPlugins(
       }
     },
     workbench: {
+      pages: workbenchPages,
       commands: workbenchCommands,
       readerDocs,
-      pageChannels: {
-        webPages,
-        sitePermissions,
-        pageDialogs,
-        pageDownloads,
-        pageRouting,
-        pageTools,
-        openExternal: openUrlExternally
-      },
       channels: {
         files: (p) => hosts.of(p),
         base: sanitizeBase,
@@ -6858,3 +6810,12 @@ const startedPlugins: PluginsStarted = startPlugins(
     }
   }
 )
+const {
+  webPages,
+  sitePermissions,
+  pageDialogs,
+  pageDownloads,
+  pageRouting,
+  pageTools,
+  pagesInUse
+} = startedPlugins.workbench
