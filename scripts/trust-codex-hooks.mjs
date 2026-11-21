@@ -55,15 +55,15 @@ function findCodex() {
 }
 
 function configFile() {
+  const given = argValue('--config')
+  if (given) return path.resolve(given)
+  if (process.env.CODEX_HOME) return path.join(process.env.CODEX_HOME, 'config.toml')
+  const localHome = path.join(os.homedir(), '.codex')
   const remoteHome = path.join(os.homedir(), '.koloft', 'codex-home')
-  const file =
-    argValue('--config') ??
-    (process.env.CODEX_HOME
-      ? path.join(process.env.CODEX_HOME, 'config.toml')
-      : fs.existsSync(remoteHome)
-        ? path.join(remoteHome, 'config.toml')
-        : path.join(os.homedir(), '.codex', 'config.toml'))
-  return path.resolve(file)
+  const homes = [localHome, remoteHome].filter((home) => fs.existsSync(home))
+  if (homes.length > 1)
+    fail(`both ${localHome} and ${remoteHome} exist; pass --config <home>/config.toml`)
+  return path.join(homes[0] ?? localHome, 'config.toml')
 }
 
 const tableHeader = (kind, key) => `[${kind}.${JSON.stringify(key)}]`
@@ -92,11 +92,10 @@ function folderTrustLevel(text, repo) {
   const lines = text.split('\n')
   const at = tableBody(lines, tableHeader('projects', repo))
   if (!at) return undefined
-  const level = lines
+  return lines
     .slice(at.start + 1, at.end)
-    .map((l) => /^\s*trust_level\s*=\s*"([^"]*)"/.exec(l)?.[1])
+    .map((l) => /^\s*trust_level\s*=\s*["']([^"']*)["']/.exec(l)?.[1])
     .find(Boolean)
-  return level ?? ''
 }
 
 function writeAtomically(file, text) {
@@ -111,8 +110,10 @@ function listProjectHooks(codex, codexHome, repo) {
     const child = spawn(codex, ['app-server'], {
       cwd: repo,
       env: { ...process.env, CODEX_HOME: codexHome },
-      stdio: ['pipe', 'pipe', 'pipe']
+      stdio: ['pipe', 'pipe', 'ignore']
     })
+    child.on('error', (e) => fail(`could not start ${codex} app-server (${e.message})`))
+    child.on('exit', (code) => fail(`codex app-server exited (${code}) before it listed the hooks`))
     const timer = setTimeout(() => {
       child.kill('SIGKILL')
       fail(`codex app-server gave no hook list in ${APP_SERVER_TIMEOUT_MS / 1000} s`)
@@ -124,7 +125,12 @@ function listProjectHooks(codex, codexHome, repo) {
       while ((newline = buffered.indexOf('\n')) >= 0) {
         const line = buffered.slice(0, newline)
         buffered = buffered.slice(newline + 1)
-        const message = line.trim() ? JSON.parse(line) : {}
+        let message
+        try {
+          message = JSON.parse(line)
+        } catch {
+          continue
+        }
         if (message.id === 1) {
           child.stdin.write(`${JSON.stringify({ method: 'initialized' })}\n`)
           child.stdin.write(
@@ -132,6 +138,7 @@ function listProjectHooks(codex, codexHome, repo) {
           )
         } else if (message.id === 2) {
           clearTimeout(timer)
+          child.removeAllListeners('exit')
           child.kill()
           const hooks = (message.result?.data ?? []).flatMap((entry) => entry.hooks ?? [])
           resolve(hooks.filter((hook) => hook.source === 'project'))
@@ -164,8 +171,8 @@ if (level !== undefined && level !== 'trusted')
 let saved = before
 function save(text) {
   if (text === saved) return
-  if (saved === before && before !== '')
-    fs.copyFileSync(config, `${config}.before-trust-codex-hooks`)
+  const backup = `${config}.before-trust-codex-hooks`
+  if (saved === before && before !== '' && !fs.existsSync(backup)) fs.copyFileSync(config, backup)
   writeAtomically(config, text)
   saved = text
 }

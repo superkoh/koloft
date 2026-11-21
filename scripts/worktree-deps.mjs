@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { depsState, worktreeOf } from './worktree-deps-state.mjs'
+import { claimInstall, depsState, worktreeOf } from './worktree-deps-state.mjs'
 
 const SETUP_STEPS = [
   ['npm', ['ci']],
@@ -16,15 +16,9 @@ const w = worktreeOf(cwd)
 if (!w.linked) process.exit(0)
 const state = depsState(w)
 if (state === 'installing' || (state === 'ready' && fs.existsSync(w.nodeModules))) process.exit(0)
-if (state === 'failed') {
-  fs.rmSync(w.lock, { force: true })
-  fs.rmSync(w.nodeModules, { recursive: true, force: true })
-}
-try {
-  fs.writeFileSync(w.lock, String(process.pid), { flag: 'wx' })
-} catch {
-  process.exit(0)
-}
+if (state === 'failed') fs.rmSync(w.lock, { force: true })
+if (!claimInstall(w)) process.exit(0)
+if (state === 'failed') fs.rmSync(w.nodeModules, { recursive: true, force: true })
 
 const out = fs.openSync(w.log, 'w')
 const failedStep = SETUP_STEPS.find(
