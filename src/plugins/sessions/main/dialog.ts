@@ -470,10 +470,8 @@ export function questionAnswers(q: Asked, reply: string): QuestionAnswer[] | und
 }
 
 export interface AnswerKeys {
-  pick(n: number): string[]
   ticks(q: Question, picks: number[]): string[]
   words(q: Question, text: string): string[]
-  submit(answers: QuestionAnswer[]): string[]
 }
 
 // CODEX§20
@@ -492,25 +490,21 @@ const codexAsksNoQuestionTakingSeveralPicks = (): string[] => []
 // CODEX§20 AGY§14
 export const ANSWER_KEYS: Record<Exclude<BackendId, 'claude'>, AnswerKeys> = {
   codex: {
-    pick: (n) => [String(n)],
     ticks: codexAsksNoQuestionTakingSeveralPicks,
-    words: noteUnderNoneOfTheAbove,
-    submit: () => []
+    words: noteUnderNoneOfTheAbove
   },
   agy: {
-    pick: (n) => [String(n)],
     ticks: agyTicks,
-    words: ownWordsAfterTheLastOption,
-    submit: () => []
+    words: ownWordsAfterTheLastOption
   }
 }
 
 function keysOf(keys: AnswerKeys, q: Question, a: QuestionAnswer): string[] {
-  if ('pick' in a) return keys.pick(a.pick)
+  if ('pick' in a) return [String(a.pick)]
   if ('picks' in a) return keys.ticks(q, a.picks)
   return keys.words(q, a.words)
 }
 
 export function answerKeys(keys: AnswerKeys, q: Asked, answers: QuestionAnswer[]): string[] {
-  return [...answers.flatMap((a, i) => keysOf(keys, q.questions[i]!, a)), ...keys.submit(answers)]
+  return answers.flatMap((a, i) => keysOf(keys, q.questions[i]!, a))
 }

@@ -77,7 +77,6 @@ import {
   backendIdOf,
   capabilitiesFor,
   identityOf,
-  messagingOf,
   reachedBySendMessage,
   effectiveBackend,
   turnedOffLine,
@@ -116,8 +115,6 @@ import {
   noticeFile,
   pruneStale,
   quotedPrompt,
-  saidFile,
-  seedOwnerWords,
   setupHooks,
   writeTabHookSettings,
   type NoticeFile
@@ -398,7 +395,6 @@ import type {
   AccountView,
   ArtifactView,
   BackendId,
-  CodexLimits,
   CodexResetOutcome,
   SignInResult,
   SignInFailure,
@@ -413,7 +409,6 @@ import type {
   ConductorOpenResult,
   PaletteRequest,
   ConductorSaveResult,
-  ProbeErrorKind,
   LeftoverProcess,
   ProjectInfo,
   SessionInfo,
@@ -428,16 +423,14 @@ import type {
   AdoptableTab,
   TabInventoryReply,
   OpenRequest,
-  UsageSnapshot,
   WindowCommand,
   Settings,
   HostId,
-  GitStepResult,
   WorkspaceAddResult
 } from '@shared/types'
 import { copyWorktreeIncludes } from './sessionWorktrees'
 import { AgentRequests, tabSpokenFor } from './agentRequests'
-import { answered, refused, type AgentReply, type AgentVerb } from '@core/command'
+import { answered, refused, type AgentReply } from '@core/command'
 import { errorText } from '@core/errorText'
 import { projectRulesForTheButler } from '@shared/agentGuide'
 import {
@@ -542,7 +535,7 @@ import {
 } from './claudeSessionRegistry'
 import { GLOBAL_SCOPE, scopeName } from '@shared/scope'
 import { asPeerName } from '@plugins/butler/shared/names'
-import { inviteLink, NEW_CHANNEL_NAME } from '@plugins/discord/shared/channels'
+import { inviteLink } from '@plugins/discord/shared/channels'
 import { Commands } from '@core/commands'
 import { PLUGINS } from '@plugins/list'
 import { PLUGIN_STARTS, type PluginStartDeps, type PluginsStarted } from '@plugins/starts'
@@ -610,11 +603,7 @@ import {
   type PlacedRow,
   type Recipient
 } from '@plugins/sessions/api'
-import {
-  A_HELPER_HAS_IT,
-  crossSessionLine,
-  writeLineInTurn
-} from '@plugins/sessions/main/crossSessionMessage'
+import { A_HELPER_HAS_IT, writeLineInTurn } from '@plugins/sessions/main/crossSessionMessage'
 import { TODO_NEWS } from '@plugins/todo/api'
 import { docsWritingOn } from '@plugins/docs-writing/api'
 import { StartedSessions } from '@plugins/sessions/main/startedSessions'
@@ -2564,6 +2553,12 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
   if (!/^[A-Za-z0-9-]+$/.test(id)) return
   const resPath = path.join(pickDir, `res-${id}.json`)
   const backend = backendIdOf(obj.backend)
+  if (obj.backend !== undefined && !backend) {
+    try {
+      writeWholeBeforeVisible(resPath, '{}')
+    } catch {}
+    return
+  }
   if (backend && backend !== 'claude') {
     let picked: UtilTerminalPick | undefined
     try {
@@ -3472,6 +3467,10 @@ app.whenReady().then(() => {
   pageTools.watchFullscreen()
 
   sweepStaleGitRequestDirs(pidAlive)
+  for (const old of ['muse-homes', 'muse-sessions.json', 'muse-open', 'muse-quota'])
+    void fs.promises
+      .rm(path.join(app.getPath('userData'), old), { recursive: true, force: true })
+      .catch(() => {})
   const gitRequestDir = newGitRequestDir()
   const { shimDir, regDir, openDir, pickDir, agentDir, gitHelper, ghWrapper } = setupShim(
     gitRequestDir,

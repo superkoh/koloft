@@ -619,6 +619,7 @@ export function setupShim(gitAuthDir: string, koloftGhFolder: string): ShimPaths
     )
     fs.chmodSync(guardPath, 0o755)
   }
+  fs.rmSync(path.join(shimDir, 'muse'), { force: true })
 
   const agentShimPath = path.join(shimDir, 'koloft')
   fs.writeFileSync(agentShimPath, CLAUDE_AGENT_SHIM, { mode: 0o755 })

@@ -1282,4 +1282,11 @@ describe('claude shim (Koloft browser endpoint)', () => {
     expect(utilityShell.realEnv?.PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS).toBeUndefined()
     expect(utilityShell.realEnv?.PLAYWRIGHT_MCP_OUTPUT_DIR).toBeUndefined()
   })
+
+  it('removes a retired muse guard left in the shim folder from an earlier Koloft', () => {
+    const retired = path.join(shimDir, 'muse')
+    fs.writeFileSync(retired, '#!/bin/sh\nexit 1\n', { mode: 0o755 })
+    setupShim(gitAuthDir, '/nonexistent-butler-folder')
+    expect(fs.existsSync(retired)).toBe(false)
+  })
 })

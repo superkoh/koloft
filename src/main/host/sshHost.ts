@@ -33,12 +33,11 @@ import { GIT_TIMEOUT_MS, gitOps, numstatFrom, statusFrom, type GitOps } from '..
 import { GithubRepos, type GithubReposOptions } from '../githubRepos'
 import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { parseLeftRight, type FreshnessRunner, type GitSnapshot } from '../gitFreshness'
-import { FINGERPRINT, remoteAnswerCommand, remoteShCommand } from '../remote/install'
+import { FINGERPRINT, remoteAnswerCommand } from '../remote/install'
 import { TRUSTED_JS } from '../remote/claudeTrustJs'
 import {
   claudeTabSpec,
   killSessionCmd,
-  machineToolProgram,
   renameSessionCmd,
   resizeStandInCmd,
   launchLine,
@@ -61,7 +60,6 @@ import {
 } from '../remote/paths'
 import { launchMode } from '../remote/sync'
 import {
-  backgroundOptions,
   ensureControlDir,
   machineOutOfReach,
   needsSignIn,
