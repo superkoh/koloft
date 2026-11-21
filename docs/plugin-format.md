@@ -757,7 +757,11 @@ announces.
   heard, `announce` rejects with its error, or with one that names every failure.
 - **Switches.** A plugin that is off hears no moment, except a tab's end (`tab-exited`,
   `tab-torn-down`, `tab-forgotten`, marked `heardWhileOff`), which every plugin hears so it can
-  let go of what it kept for that tab.
+  let go of what it kept for that tab, and except where one listener passes `true` as
+  `listen`'s fifth argument, `heardWhileOff`: that listener alone hears its moment while its
+  plugin is off. Discord passes it for the `session-bound` listener of its rooms, so a room
+  follows a tab to a new conversation started while Discord is off; its other listeners stay
+  quiet then.
 
 Sessions core announces every moment but `file-opened`, which Workbench announces from
 `koloft open`. This table says what each moment carries and who hears it.
@@ -804,7 +808,7 @@ This is what a plugin that is off loses, and where that happens:
 |---|---|---|
 | Text blocks | left out of prompts and help put together afterwards | `composePrompt` ([Text blocks](#text-blocks)) |
 | Commands | refused with one sentence | `Commands` ([Commands](#commands)) |
-| Moments | not heard, except a tab's end | `Moments` ([Moments](#moments)) |
+| Moments | not heard, except a tab's end and a listener that asks to be heard while off | `Moments` ([Moments](#moments)) |
 | UI parts | not placed, except a `settings-page` part | the window's `partsAt` |
 | Slot fills | not read, except those below | the window's `fillsOf` |
 | Tips | not fired or counted | `hintOn` ([Tips](#tips)) |

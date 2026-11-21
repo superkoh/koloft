@@ -138,4 +138,18 @@ describe('session moments', () => {
     }
     expect(heard).toEqual(['tab-1'])
   })
+
+  it('a listener that asks to be heard while its plugin is off hears the moment then, while the same plugin’s other listeners do not', async () => {
+    const heard: string[] = []
+    const { moments } = registry(['a'])
+    moments.listen('a', OPENED, (m) => void heard.push(`plain ${m}`))
+    moments.listen('a', OPENED, (m) => void heard.push(`kept ${m}`), [], true)
+    try {
+      knowPluginStates({ a: { on: false } })
+      await moments.announce(OPENED, 'one')
+    } finally {
+      knowPluginStates({})
+    }
+    expect(heard).toEqual(['kept one'])
+  })
 })
