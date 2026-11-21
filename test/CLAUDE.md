@@ -81,8 +81,8 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     `worktree-<name>`; `-- <text>` types `<text>` first, in place of the canned
     startup turn (ADR-0020); `setup-token` prints a login token the way the real one
     does (`KOLOFT_FAKE_SETUP_TOKEN`, `KOLOFT_FAKE_SETUP_URL`, its link OSC-8-wrapped
-    and split across two pty reads; a token of `none` prints the link and then waits
-    forever); `--version` prints a
+    and split across two pty reads; a token of `none` prints no token and waits
+    forever, after the link when there is one); `--version` prints a
     version above any minimum, so the shim's version check never updates it.
   - env: `KOLOFT_FAKE_PROGRAM_STATUS=1` makes it ask its terminal for OSC 7501 at start,
     as the real one does (CC§12), and, once answered, report `blocked` while a dialog

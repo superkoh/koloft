@@ -1111,11 +1111,13 @@ test('guided login: a sign-in that times out after setup-token printed its link 
   env
 }) => {
   test.setTimeout(120_000)
-  const TIMEOUT_LONG_ENOUGH_FOR_THE_LINK_TO_PRINT_MS = 8_000
+  const TIMEOUT_LONG_ENOUGH_FOR_THE_LINK_TO_PRINT_UNDER_LOAD_MS = 15_000
   const AUTH_URL = 'https://example.invalid/oauth/authorize?state=no-token'
   env.launchEnv.KOLOFT_FAKE_SETUP_URL = AUTH_URL
   env.launchEnv.KOLOFT_FAKE_SETUP_TOKEN = 'none'
-  env.launchEnv.KOLOFT_LOGIN_TIMEOUT_MS = String(TIMEOUT_LONG_ENOUGH_FOR_THE_LINK_TO_PRINT_MS)
+  env.launchEnv.KOLOFT_LOGIN_TIMEOUT_MS = String(
+    TIMEOUT_LONG_ENOUGH_FOR_THE_LINK_TO_PRINT_UNDER_LOAD_MS
+  )
   fs.writeFileSync(env.keychainFile, JSON.stringify({}))
   seedNoClaudeAccountButStillSetUp(env)
 
@@ -1130,9 +1132,9 @@ test('guided login: a sign-in that times out after setup-token printed its link 
     await expect(tail).toContainText('Sign-in timed out', {
       timeout: 45_000
     })
-    expect((await tail.textContent())?.split('\n').at(-1)).toBe(
-      `Browser didn't open? Visit: ${AUTH_URL}`
-    )
+    const shown = (await tail.textContent()) ?? ''
+    expect(shown.split('\n').at(-1)).toBe(`Browser didn't open? Visit: ${AUTH_URL}`)
+    expect(shown).not.toMatch(/[\x00-\x08\x0b-\x1f\x7f]|\]8;;/)
   } finally {
     await app.close().catch(() => {})
   }
