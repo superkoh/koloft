@@ -225,14 +225,14 @@ describe('injected hook script', () => {
   describe("a tab's name file already holds the new tmux name when the session is renamed, so a close landing between the two still finds the session", () => {
     let home: string
     const nameFile = (tab: string): string => path.join(home, '.koloft', 'tabs', `${tab}.tmux`)
-    const tmuxStub = (renameExit: number): string => {
+    const tmuxStub = (renameExit: number, sessionNamedNow = 'k-sess-old'): string => {
       const seen = path.join(stubBin, 'name-file-at-rename')
       fs.rmSync(seen, { force: true })
       fs.writeFileSync(
         path.join(stubBin, 'tmux'),
         `#!/bin/sh
 case "$1" in
-  display-message) echo k-sess-old ;;
+  display-message) echo ${sessionNamedNow} ;;
   rename-session) cat "$HOME/.koloft/tabs/"*.tmux > ${JSON.stringify(seen)}; exit ${renameExit} ;;
 esac
 `,
@@ -267,8 +267,7 @@ esac
       expect(fs.existsSync(nameFile('tabN4'))).toBe(false)
     })
 
-    it("Antigravity's title script, once the conversation has its id", () => {
-      const seen = tmuxStub(0)
+    const runAgyTitle = (tab: string): void => {
       const script = path.join(home, 'agy-title.sh')
       fs.writeFileSync(script, AGY_TITLE_SCRIPT)
       const res = spawnSync('sh', [script], {
@@ -277,11 +276,33 @@ esac
         env: hookEnv({
           ...inTmuxOnTheMachine,
           HOME: home,
-          KOLOFT_TAB_ID: 'tabN3'
+          KOLOFT_TAB_ID: tab
         })
       })
       expect(res.status).toBe(0)
+    }
+
+    it("Antigravity's title script, once the conversation has its id", () => {
+      const seen = tmuxStub(0)
+      runAgyTitle('tabN3')
       expect(fs.readFileSync(seen, 'utf8')).toBe('k-abc-123')
+      expect(fs.readFileSync(nameFile('tabN3'), 'utf8')).toBe('k-abc-123')
+    })
+
+    it("Antigravity's title script puts the name the session still has in the name file when the rename fails, so a reconnect and a close reach this tab's session, not the one that has the new name", () => {
+      tmuxStub(1)
+      runAgyTitle('tabN5')
+      expect(fs.readFileSync(nameFile('tabN5'), 'utf8')).toBe('k-sess-old')
+
+      tmuxStub(1, '')
+      runAgyTitle('tabN6')
+      expect(fs.existsSync(nameFile('tabN6'))).toBe(false)
+    })
+
+    it("Antigravity's title script keeps the conversation's name in the file once the session already has it", () => {
+      tmuxStub(1, 'k-abc-123')
+      runAgyTitle('tabN7')
+      expect(fs.readFileSync(nameFile('tabN7'), 'utf8')).toBe('k-abc-123')
     })
   })
 
