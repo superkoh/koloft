@@ -6890,6 +6890,7 @@ const startedPlugins: PluginsStarted = startPlugins(
           else answerableForAPlugin.delete(tabId)
           syncAnswerable()
         },
+        tellAs: (tabId, opening, text) => sessionCommand.tellAs(tabId, opening, text),
         startBeside: (tabId, spec) =>
           startBeside(
             {

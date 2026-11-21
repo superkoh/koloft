@@ -82,6 +82,7 @@ interface V1Manifest {
     defaults: Record<V1Agent, { model?: string; effort?: V1Effort }>
   }[]
   mcpServers?: readonly { name: string; command: string; args: readonly string[] }[]
+  openings?: readonly string[]
 }
 
 interface V1Reply {

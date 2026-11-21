@@ -33,6 +33,7 @@ export interface SessionTabs {
   waitsOnAnother(tabId: string): boolean
   butlerSide(tabId: string): boolean
   markAnswerable(tabId: string, on: boolean): void
+  tellAs(tabId: string, opening: string, text: string): Promise<boolean>
   startBeside(tabId: string, spec: BesideSpec): Promise<BesideResult>
 }
 
