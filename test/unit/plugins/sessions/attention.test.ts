@@ -31,7 +31,7 @@ describe('attention — raising events from status transitions', () => {
     const { t, changes } = makeTracker()
     const steps = new HeldSteps()
     discordTakesTheTurnsItCarries({ steps, carriedOnDiscord: (tabId) => tabId === 'tab-A' })
-    t.claim = (tabId, step) => steps.claim(tabId, step)
+    t.claim = (tabId, step) => steps.reached(tabId, step)
     t.onStatusChange('tab-A', 'working', 'waiting')
     expect(changes).toEqual([])
     t.onStatusChange('tab-B', 'working', 'waiting')
@@ -396,38 +396,61 @@ describe('attention — a step a plugin holds', () => {
     expect(t.awaitingVerdict('tab-A')).toBe(true)
   })
 
-  it('letting a held step go raises its mark then, with the note the plugin gave', () => {
+  it('letting a held step go raises its mark with the time it was reached and the note the plugin gave', () => {
+    vi.useFakeTimers({ now: 1000 })
     const { t, changes } = holding()
     t.onStatusChange('tab-A', 'working', 'approval', { title: 'A', sessionId: 's-A' })
-    t.letGo('tab-A', 'It checked the tests')
+    vi.setSystemTime(9000)
+    expect(t.letGo('tab-A', 'It checked the tests')).toBe(true)
+    vi.useRealTimers()
     expect(t.list()).toEqual([
       expect.objectContaining({
         tabId: 'tab-A',
         kind: 'approval',
         sessionId: 's-A',
+        at: 1000,
         note: 'It checked the tests'
       })
     ])
     expect(changes.at(-1)?.event).toMatchObject({ kind: 'approval' })
   })
 
-  it('a held turn judged only news goes up quiet when let go', () => {
-    const { t } = holding()
+  it('a held turn judged only news goes up quiet when let go, with no loud event first', () => {
+    const { t, changes, judged } = holding()
     t.onStatusChange('tab-A', 'working', 'waiting')
     t.markFyi('tab-A')
     t.letGo('tab-A')
     expect(t.list()).toEqual([expect.objectContaining({ kind: 'turn-done', fyi: true })])
+    expect(changes.map((c) => c.event?.fyi)).toEqual([true])
+    expect(judged).toEqual(['tab-A'])
   })
 
-  it('a taken step, or one whose session worked again, never raises its mark', () => {
+  it('a taken step, one whose session worked again, a question that closed, or one in a tab whose session changed never raises its mark', () => {
     const { t, changes } = holding()
     t.onStatusChange('tab-A', 'working', 'waiting')
     t.take('tab-A')
-    t.letGo('tab-A')
     t.onStatusChange('tab-B', 'working', 'approval')
     t.onStatusChange('tab-B', 'approval', 'working')
-    t.letGo('tab-B')
+    t.onStatusChange('tab-C', 'working', 'approval')
+    t.claim = () => 'take'
+    t.onStatusChange('tab-C', 'approval', 'waiting')
+    t.claim = () => 'hold'
+    t.onStatusChange('tab-D', 'working', 'waiting')
+    t.clear('tab-D')
+    expect(['tab-A', 'tab-B', 'tab-C', 'tab-D'].map((tab) => t.letGo(tab))).toEqual([
+      false,
+      false,
+      false,
+      false
+    ])
     expect(changes).toEqual([])
+  })
+
+  it('a held finished turn stays held while its row only goes idle', () => {
+    const { t } = holding()
+    t.onStatusChange('tab-A', 'working', 'waiting')
+    t.onStatusChange('tab-A', 'waiting', 'idle')
+    expect(t.letGo('tab-A')).toBe(true)
   })
 
   it('a step taken at once never holds a turn for judging', () => {

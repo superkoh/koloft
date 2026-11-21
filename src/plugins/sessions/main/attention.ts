@@ -62,8 +62,6 @@ export class AttentionTracker {
   }
 
   rehome(fromTabId: string, toTabId: string): void {
-    const held = this.held.get(fromTabId)
-    if (held && this.held.delete(fromTabId)) this.held.set(toTabId, { ...held, tabId: toTabId })
     const mark = this.pending.get(fromTabId)
     if (!mark) return
     this.pending.delete(fromTabId)
@@ -77,8 +75,11 @@ export class AttentionTracker {
     next: SessionStatus,
     subject: AttentionSubject = {}
   ): void {
+    const held = this.held.get(tabId)
+    const heldStepIsOver =
+      next === 'working' || (held?.kind === 'approval') !== (next === 'approval')
+    if (held && heldStepIsOver) this.held.delete(tabId)
     if (next === 'working') {
-      this.held.delete(tabId)
       const cur = this.pending.get(tabId)
       const mayAskAgain = cur?.wasAsking && !cur.stoppedByRestart && this.outlivesKoloft(tabId)
       if (!mayAskAgain || this.askKeptThroughWorking.has(tabId)) this.clear(tabId)
@@ -100,13 +101,17 @@ export class AttentionTracker {
     if (kind === 'turn-done' && !fyi) this.turnDone(tabId)
   }
 
-  letGo(tabId: string, note?: string): void {
+  letGo(tabId: string, note?: string): boolean {
     const held = this.held.get(tabId)
-    if (!held) return
+    if (!held) return false
     this.held.delete(tabId)
-    const subject = { title: held.title, sessionId: held.sessionId, ...(note && { note }) }
-    this.raise(tabId, held.kind, subject, true)
-    if (held.fyi) this.markFyi(tabId)
+    const { title, sessionId, at, fyi } = held
+    this.raise(tabId, held.kind, { title, sessionId, ...(note && { note }) }, true, { at, fyi })
+    return true
+  }
+
+  heldMarks(): AttentionEvent[] {
+    return [...this.held.values()]
   }
 
   take(tabId: string): void {
@@ -154,7 +159,9 @@ export class AttentionTracker {
   }
 
   clear(tabId: string): void {
-    if (!this.asleep(tabId)) this.drop(tabId)
+    if (this.asleep(tabId)) return
+    this.held.delete(tabId)
+    this.drop(tabId)
   }
 
   private drop(tabId: string): void {
@@ -178,8 +185,7 @@ export class AttentionTracker {
   }
 
   clearSession(sessionId: string): void {
-    for (const e of [...this.held.values()])
-      if (e.sessionId === sessionId) this.held.delete(e.tabId)
+    for (const e of this.held.values()) if (e.sessionId === sessionId) this.held.delete(e.tabId)
     const stale = this.list().filter((e) => e.sessionId === sessionId)
     for (const e of stale) this.pending.delete(e.tabId)
     if (stale.length) this.onChange(this.list(), null)
@@ -193,13 +199,14 @@ export class AttentionTracker {
     tabId: string,
     kind: AttentionKind,
     subject: AttentionSubject & Pick<AttentionEvent, 'note'>,
-    sameAsk = false
+    sameAsk = false,
+    held?: Pick<AttentionEvent, 'at' | 'fyi'>
   ): void {
-    const fyi = kind === 'turn-done' && this.waitsOnAnother(tabId)
+    const fyi = (kind === 'turn-done' && this.waitsOnAnother(tabId)) || !!held?.fyi
     const cur = this.pending.get(tabId)
     const sameAskAsBefore =
       kind === 'approval' && sameAsk && cur?.wasAsking && !cur.stoppedByRestart
-    const at = sameAskAsBefore ? cur.at : Date.now()
+    const at = sameAskAsBefore ? cur.at : (held?.at ?? Date.now())
     const event: AttentionEvent = { ...subject, tabId, kind, at, ...(fyi && { fyi }) }
     if (cur && cur.kind === 'approval' && kind === 'turn-done') return
     if (fyi && this.watching() === tabId) return this.drop(tabId)

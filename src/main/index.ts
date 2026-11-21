@@ -970,7 +970,7 @@ const attention = new AttentionTracker((pending, event) => {
 attention.asleep = (tabId) => sleepers.has(tabId)
 attention.watching = () => (windowFocused() ? uiActiveTabId : null)
 attention.turnDone = (tabId) => newsJudge.marked(tabId)
-attention.claim = (tabId, step) => heldSteps.claim(tabId, step)
+attention.claim = (tabId, step) => heldSteps.reached(tabId, step)
 // ADR-0039
 attention.outlivesKoloft = (tabId) => !!remoteHostOfTab(tabId)
 attention.waitsOnAnother = (tabId) => {
@@ -4791,6 +4791,8 @@ app.on('before-quit', (e) => {
     browserTunnels.cancelOnQuit()
     pageForwards.cancelOnQuit()
   }
+  const heldMarks = attention.heldMarks()
+  if (heldMarks.length) saveAttention([...attention.list(), ...heldMarks])
   quitCommitted = true
   guard?.liftAllBeforeQuitting()
   if (!storedQuitStopped && storedSessions().some((s) => s.hasProcesses())) {
@@ -6901,7 +6903,7 @@ const startedPlugins: PluginsStarted = startPlugins(
         tellAs: (tabId, opening, text) => sessionCommand.tellAs(tabId, opening, text),
         holdSteps: (holder) => heldSteps.hold(holder),
         letGo: (tabId, note) => {
-          attention.letGo(tabId, note)
+          if (!attention.letGo(tabId, note)) return
           newsJudge.letGo(tabId)
           announceNow(STEP_LET_GO, tabId)
         },
