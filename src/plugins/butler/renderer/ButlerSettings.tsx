@@ -3,13 +3,15 @@ import { AssistRow } from '@renderer/components/settings/AssistSection'
 import { useSettingsUpdate } from '@renderer/components/settings/useSettingsUpdate'
 import { useStore } from '@renderer/store'
 import { useAssistSetup } from '@renderer/useAssistSetup'
-import { BUTLER_DOES, butlerName, butlerTitle, renamedButler } from '../shared/names'
+import { useOwnerReach } from '@renderer/pluginUi'
+import { butlerDoes, butlerName, butlerTitle, renamedButler } from '../shared/names'
 
 export function ButlerSettings(): JSX.Element {
   const butler = useStore((s) => s.settings.butler)
   const name = butler.name
   const update = useSettingsUpdate()
   const setup = useAssistSetup()
+  const ownerReach = useOwnerReach()
   const [nameDraft, setNameDraft] = useState(name)
   useEffect(() => setNameDraft(name), [name])
 
@@ -22,7 +24,7 @@ export function ButlerSettings(): JSX.Element {
   return (
     <>
       <div className="set-grp">Butler</div>
-      <AssistRow row="butler" title={name} does={BUTLER_DOES} setup={setup} />
+      <AssistRow row="butler" title={name} does={butlerDoes(ownerReach)} setup={setup} />
       <div className="set-row stack">
         <div className="set-lab">
           <b>Name</b>
