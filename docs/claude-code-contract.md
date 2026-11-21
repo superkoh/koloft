@@ -4646,7 +4646,7 @@ servers `globalprobe` (top-level `mcpServers` of `~/.claude.json`), `localprobe`
 Koloft dependents: `claudeServers` in `src/main/mcpServers.ts`, which `koloft todo` lists,
 and `claudeProjectKey` in `src/main/claudeTrust.ts`, which picks the `projects` key it reads.
 
-## §23 A resumed conversation keeps its first system prompt
+## §23 A resumed conversation keeps its first system prompt, until its next compaction
 
 2026-10-23, CC 2.1.309, `claude -p` against a fake Anthropic API (`ANTHROPIC_BASE_URL`,
 `ANTHROPIC_API_KEY=fake`) that logged each request, throwaway `HOME`.
@@ -4675,11 +4675,39 @@ and `claudeProjectKey` in `src/main/claudeTrust.ts`, which picks the `projects` 
   --append-system-prompt <marker with a newline, Chinese, a quote and $HOME>`, then `-p
   secondturn --resume X` with no prompt flag at all. The resumed request held three
   messages and its last `system` block still ended with the marker, exactly. 2 of 2 runs.
+- **A compaction ends it: the next request builds the system prompt from the flags of
+  the launch it runs in.** 2026-11-19, CC 2.1.293, 2.1.327 and 2.1.328 darwin-arm64,
+  the same stand-in Messages API and scratch `HOME`/`CLAUDE_CONFIG_DIR`, one run per
+  cell. Started `-p firstturn --session-id X --append-system-prompt A`, then resumed with
+  no prompt flag, or with `--append-system-prompt B` on every resume:
+  - `/compact` as `-p` on a resume (all three versions, no flag; 2.1.327 and 2.1.328
+    with B): the requests before it held A (the summary request too, on 2.1.327 and
+    2.1.328, the two whose log shows it); the first request
+    after it held neither A nor B with no flag, and B alone with B.
+  - Compaction on its own (all three versions, no flag; 2.1.327 and 2.1.328 with B),
+    with `CLAUDE_CODE_AUTO_COMPACT_WINDOW=100000`, `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=50`
+    and the stand-in reporting 95,000 input tokens on the resumed turn: the same — A up
+    to the summary request, then nothing or B alone. The transcripts hold a
+    `compact_boundary` record.
+  - The same in the middle of a turn, the big usage reported on a tool call's answer,
+    under `-p` and in the interactive TUI (python pty), 2.1.327 and 2.1.328 with B: A up
+    to the summary request, B alone from the request that carried the tool result on.
+  - What the first turn after the compaction sends is kept from then on (2.1.328): a
+    resume with A after the compaction, then one with no flag, held A on both. A resume
+    with no flag right after a `/compact` given A held nothing.
 
 Koloft dependents: the butler's one-line notice about `koloft todo` on a resumed old
-conversation, and the owner's instructions for a Claude Code butler, handed only when a
-conversation starts, since a resume keeps those it started with
-(`src/plugins/butler/main/butler.ts`).
+conversation (`src/plugins/butler/main/butler.ts`), since a resume shows the old
+conversation its old system prompt until a compaction. The owner's instructions for a
+Claude Code butler on this Mac go on every launch, a resume too
+(`src/main/host/localHost.ts`): a resume sends the instructions it started with, and
+from its next compaction on the ones of the launch it compacts in, kept until the
+compaction after that. The butler's instructions editor says so
+(`src/plugins/butler/renderer/InstructionsStrip.tsx`). The same holds for the
+workspace's and every workspace's instructions, which every Claude Code launch hands
+too, and for Koloft's prompt file, which every launch but the butler's hands; the two
+instructions editors say so (`src/renderer/src/components/SessionDefaultsDialog.tsx`,
+`src/renderer/src/components/settings/SessionsPane.tsx`).
 
 ## §24 An MCP tool asks before every call; an allow rule in `--settings` stops it
 

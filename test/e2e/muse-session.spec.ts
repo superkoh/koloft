@@ -33,6 +33,7 @@ import {
   gitCommitAll,
   gitInit,
   newSessionInWith,
+  oneStillRunning,
   openMenu,
   openPicker,
   openWorktreeSession,
@@ -690,7 +691,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
   })
 
   // MUSE§9
-  test("a subagent and a command left running in the background show breathing green with ↻ only while Muse's hooks and session log say they run, and a rename in Muse retitles the row", async ({
+  test("a subagent, named by the role Muse gave it, and a command left running in the background show breathing green with ↻ only while Muse's hooks and session log say they run, and a rename in Muse retitles the row", async ({
     env
   }) => {
     installMuse(env)
@@ -704,8 +705,11 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       await waitBooted(page)
       await startMuse(page, env)
       const row = museRows(page)
-      await runIn(page, centerTerm(page), '/subagent')
+      await runIn(page, centerTerm(page), '/subagent Lint checker')
       await expect(row).toHaveClass(/\bst-bg-run\b/)
+      await oneStillRunning(row).click()
+      await expect(page.locator('.tbu-pop.parked')).toContainText('agent · Lint checker · working')
+      await page.keyboard.press('Escape')
       await expect(row).not.toHaveClass(/\bst-bg-run\b/, { timeout: 15_000 })
       await runIn(page, centerTerm(page), '/bg')
       await expect(row).toHaveClass(/\bst-bg-run\b/)
