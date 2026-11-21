@@ -4317,6 +4317,29 @@ Both passed again on 2.1.296 (Mac, and linux-arm64 in the lab), 2026-10-11, on
   - Started by Koloft with `--add-dir <userData>/palette-pictures -- "<prompt>"`: no ask,
     `Read`, `ZEBRA`. 1 run. `--add-dir` is variadic (§9's flag list), so it sits right
     before the `--`.
+- **A first prompt that starts with `/` still runs its command; the `Picture:` line
+  becomes the command's arguments.** Measured 2026-11-17, CC 2.1.326 on this Mac,
+  interactive in a python pty, a scratch `HOME` and `CLAUDE_CONFIG_DIR`, a fake Messages
+  API logging each request, started as `--session-id <uuid> --add-dir <pictures folder>
+  -- "<prompt>"`, the PNG outside the workspace; 1 run each, with and without
+  `\n\nPicture: <png>` after the words:
+  - `/probe-skill say hi` (a project skill whose body holds `ARGS=[$ARGUMENTS]`): the
+    body is sent both ways; with the picture the turn holds `<command-args>say
+    hi\n\nPicture: <png></command-args>` and the body `ARGS=[say hi\n\nPicture: <png>]`.
+  - `/init focus on the tests folder`: `/init`'s text is sent both ways, the `Picture:`
+    line inside `<command-args>`.
+  - `/nosuch do X`: no request both ways; the screen says `Unknown command: /nosuch` and
+    `Args from unknown skill: …`, with the `Picture:` line in that text.
+  - The path is never turned into an image block; the title request holds it as text.
+    Whether a real model opens a path that sits inside `<command-args>` was not run.
+- **`--add-dir` of a folder no trusted folder holds stops the start on a question.**
+  Same day and build: before any request the screen showed "Adding a new directory:
+  <pictures folder> … This session hasn't worked here before. Is this a directory you
+  created or one you trust?" with `❯ No, exit` / `Yes, add it`, with plain words too and
+  with `--dangerously-skip-permissions`. It did not show when the pictures folder, or a
+  folder above it (`HOME`, for `<HOME>/Library/Application Support/Koloft/
+  palette-pictures`), was trusted in `.claude.json`. Builds before 2.1.326 were not
+  checked.
 
 ## §19 The PostToolUse hook adds text after every tool result
 
