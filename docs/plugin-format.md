@@ -654,6 +654,7 @@ These are the slots core's window offers, in `src/renderer/src/slots.ts`:
 | `row-extras` | `{ row, useExtras }`: menu items and a status line for another plugin's sidebar row, named by that row's `ui` id | Discord, for `butler-row` |
 | `row-set-up` | `{ row, setUp(settings) }`: whether another plugin's sidebar row counts as set up | Discord, for `butler-row` |
 | `plugin-set-up` | `{ plugin, useLabel, run }`: a "Set up" button on the plugin's own row in Settings ▸ Plugins, shown while it was never set up | Discord ("Set up with Alfred") |
+| `owner-reach` | the name of a place outside this window where the owner talks to the butler. Settings ▸ Assist, the butler's row in Settings and its rename dialog name it while its plugin is on; the Welcome page's phone invites the owner to connect it unless the owner turned its plugin off | Discord ("Discord") |
 | `row-mark` | `{ at, useMarkOf, Mark }`: a mark at the start of a session row's title (`at: 'title'`) or second line (`at: 'sub'`) | Scheduled tasks (title), Butler (sub: "started by …") |
 | `owner-asks` | `{ useWatch, useAsked, useOverTerminal, usePageAsk, useHeldGuests }`: asks that hold a session tab until the owner answers. `useWatch` is called once from the app; a tab in `useAsked` shows its row as waiting on the owner; `useOverTerminal` gives the box drawn over that tab's terminal; `usePageAsk` gives the bar above a Workbench page; the pages in `useHeldGuests` stay loaded | Passwords and sign-in |
 | `workspace-line` | `{ useWatch, Line }`: a line under a workspace's head, above its rows | Scheduled tasks |
@@ -820,11 +821,15 @@ This is what a plugin that is off loses, and where that happens:
 | Main-process parts | stopped by the part itself | [Main-process parts](#main-process-parts) |
 | Settings and data | kept on disk; turning it on again finds them | — |
 
-The window reads slots in three ways, in `src/renderer/src/pluginUi.tsx`:
+The window reads slots in four ways, in `src/renderer/src/pluginUi.tsx`:
 
 - `fillsOf(slot)` gives only the fills of plugins that are on.
 - `fillsOfOnOrOff(slot)` gives every fill. A `plugin-set-up` fill and a `palette-route` fill
   are read this way, so they stay while their plugin is off.
+- `fillsOfNotTurnedOff(slot, settings)` also gives the fills of a plugin that is off only
+  because it was never set up, and leaves out one the owner turned off, or that is off
+  because a plugin it needs is. The Welcome page reads `owner-reach` this way, so its
+  invitation to connect Discord reaches someone who has not set it up yet.
 - `useFillsOf(slot, (fill, on) => …)` is for a slot whose fills are React hooks and that an
   optional plugin fills: `row-extras`, `owner-asks`, `worktree-items` and `workbench-part`.
   It calls every fill's hook on each draw, so a switch never changes how many hooks run. For
@@ -865,7 +870,9 @@ export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments,
   list of plugins, and returns what each gave back, keyed by plugin id (`PluginsStarted`).
   GitHub's start gives back its `GithubMain`, whose `followSwitch` and `sweepNow` the app
   calls. Sessions core's gives back `tookTheTurn`, which the butler's and the Inbox's deps read
-  when a turn ends.
+  when a turn ends. Workbench's gives back the web-page parts it builds (`WebPages`,
+  `SitePermissions`, `PageDialogs`, `PageDownloads`, `PageRouting`, `PageTools`) and
+  `pagesInUse`, which the app's own code calls from then on.
 - The app calls `startPlugins` as its main module finishes loading, after every part a deps
   object hands in exists, and before Electron is ready, so before any session runs, any
   `koloft` command arrives or the window opens.
@@ -883,8 +890,9 @@ export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments,
 A plugin's main-process code is a set of parts. A part is a class or function in `main/`
 that holds its own state. It takes what it needs from the rest of the app as a small `deps`
 object, which `src/main/index.ts` builds and hands in. A part built by the plugin's start
-function gets its deps through the start's `deps`; most parts are still built by
-`src/main/index.ts` itself, which imports them by name and hands them to the starts as deps. A part never imports another plugin
+function gets its deps through the start's `deps`, as Workbench's web-page parts do; most
+parts are still built by `src/main/index.ts` itself, which imports them by name and hands them
+to the starts as deps. A part never imports another plugin
 past its `api.ts`. When it needs something from a plugin that needs it in turn (Browser
 control needs Workbench), `src/main/index.ts` passes a function in. For example, Workbench's
 `PageRouting` gets `driverOf` and `openAsDrivingAgentsTab` as deps, which Browser control's

@@ -344,13 +344,6 @@ import {
   relayAttached
 } from '@plugins/browser-control/main/cdpRelay'
 import { CdpOps } from '@plugins/browser-control/main/cdpOps'
-import { WebPages } from '@plugins/workbench/main/webPages'
-import { SitePermissions } from '@plugins/workbench/main/sitePermissions'
-import { PageDialogs } from '@plugins/workbench/main/pageDialogs'
-import { PageDownloads } from '@plugins/workbench/main/pageDownloads'
-import { PageRouting } from '@plugins/workbench/main/pageRouting'
-import { PageTools } from '@plugins/workbench/main/pageTools'
-import { pagesInUse, type PagesInUseDeps } from '@plugins/workbench/main/pagesInUse'
 import { HTML_HEADERS, setupBrowserPartition } from '@plugins/workbench/main/browserPartition'
 import { PASTED_PICTURE_EXTENSIONS, pastedPicturesIn, withPictures } from '@shared/pastedPictures'
 import { compositionDone } from '@plugins/workbench/main/hostComposition'
@@ -1368,6 +1361,7 @@ const MENU_SHORTCUT_CHANNEL: {
   'new-session': CH.shortcut.newSession,
   'new-worktree-session': CH.shortcut.newWorktreeSession,
   'close-tab': CH.shortcut.closeTab,
+  'close-session': CH.shortcut.closeSession,
   find: CH.shortcut.find,
   'find-files': CH.shortcut.findFiles,
   'check-update': CH.shortcut.checkUpdate,
@@ -2160,11 +2154,7 @@ const sessionDeps: SessionVerbDeps = {
           tellTheOwner(text)
           tellStarter(target, text)
         }
-        const closed = await closeSessionFully(target, undefined, tell).catch((error) => {
-          tell(`${target.title}: ${String(error)}`)
-          return false
-        })
-        if (!closed) return
+        if (!(await closeOrTell(target, tell))) return
       }
     }, CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
   overseer: { is: isButlerNow, target: butlerTarget, folder: butlerFolderNow, ...butlersWords },
@@ -3599,7 +3589,7 @@ app.whenReady().then(() => {
     koloftPid: process.pid,
     read: readTheMachine,
     log: signalLog(path.join(app.getPath('userData'), 'machine.log')),
-    memoryStaysCritical: () => pushToPages.memoryCritical(pagesInUse(pagesInUseDeps)),
+    memoryStaysCritical: () => pushToPages.memoryCritical(pagesInUse()),
     // ADR-0042
     agentTabsOnThisMac: () =>
       allSessions()
@@ -4531,7 +4521,7 @@ app.whenReady().then(() => {
       if (
         pageRouting.keptBySignInWindow(
           from,
-          action === 'close-tab' ? 'closes-it' : 'acts-on-the-app'
+          action === 'close-tab' || action === 'close-session' ? 'closes-it' : 'acts-on-the-app'
         )
       )
         return
@@ -4693,22 +4683,6 @@ function watchOpenRequests(openDir: string): fs.FSWatcher | null {
   )
 }
 
-const sitePermissions = new SitePermissions({
-  push: pluginIpc.push,
-  isOverlay: (page) => webPages.isOverlay(page),
-  takeGesture: (page) => webPages.takeGesture(page),
-  openExternally: openUrlExternally,
-  allowFullscreen: allowPageFullscreenWithoutTheWindow
-})
-
-const pageDialogs = new PageDialogs({
-  push: pluginIpc.push,
-  isOverlay: (page) => webPages.isOverlay(page)
-})
-
-const webPages = new WebPages({ activeTab: () => uiActiveTabId, machineOfTab })
-webPages.start()
-
 function setupSecretLanding(): void {
   webPages.onEveryWebPage((contents) => {
     contents.on('did-start-navigation', (details) => {
@@ -4820,41 +4794,24 @@ const cdpOps = new CdpOps({
   }
 })
 
-const pageRouting = new PageRouting({
-  push: pluginIpc.push,
-  pages: webPages,
-  openFile: pushOpenRequest,
+const workbenchPages: PluginStartDeps['workbench']['pages'] = {
+  activeTab: () => uiActiveTabId,
+  machineOfTab,
   openExternally: openUrlExternally,
+  allowFullscreen: allowPageFullscreenWithoutTheWindow,
   driverOf: sessionDrivingGuest,
   drivenFromAnotherMachine: guestDrivenFromAnotherMachine,
   openAsDrivingAgentsTab: (guestId, url) => cdpOps.openAsDrivingAgentsTab(guestId, url),
   handsOn: handsOnKoloft,
   mainWindow: () => mainWindow,
   showMainWindow,
-  showSignInWindows: !BACKGROUND_TEST
-})
-
-const pageTools = new PageTools({
-  push: pluginIpc.push,
-  pages: webPages,
-  machineOfTab,
+  showSignInWindows: !BACKGROUND_TEST,
   savePickOn: (machine, name, png) => hosts.machine(machine).savePick(name, png),
   savePickOnThisMac,
-  handsOn: handsOnKoloft,
-  underTest: BACKGROUND_TEST
-})
-
-const pagesInUseDeps: PagesInUseDeps = {
-  pages: webPages,
-  held: () => [...pageDownloads.pagesDownloading(), ...sitePermissions.pagesHeld()],
-  modalPage: () => pageDialogs.modalPage(),
-  signInWindowOpeners: () => pageRouting.signInWindowOpeners(),
+  underTest: BACKGROUND_TEST,
   heldElsewhere: () => secretAsks?.pagesHeld() ?? [],
-  ownerDriven: relayAttached,
-  drivenFromAnotherMachine: guestDrivenFromAnotherMachine
+  ownerDriven: relayAttached
 }
-
-const pageDownloads = new PageDownloads({ push: pluginIpc.push })
 
 // PLATFORM§8
 function allowPageFullscreenWithoutTheWindow(callback: (granted: boolean) => void): void {
@@ -5192,10 +5149,15 @@ async function closeSessionFully(
   info?: ProjectInfo,
   tell = tellTheOwner
 ): Promise<boolean> {
-  await treeRemovals.settled(target.treeRoot)
-  const where = info ?? projectInfoFor(target.treeRoot)
-  const close = (): Promise<boolean> => endAndRemove(target, where, tell)
-  return where.worktreeName ? treeRemovals.run(where.treeRoot, close) : close()
+  workspaceMgr?.hideWhileClosing(target.sessionId)
+  try {
+    await treeRemovals.settled(target.treeRoot)
+    const where = info ?? projectInfoFor(target.treeRoot)
+    const close = (): Promise<boolean> => endAndRemove(target, where, tell)
+    return await (where.worktreeName ? treeRemovals.run(where.treeRoot, close) : close())
+  } finally {
+    workspaceMgr?.closingEnded(target.sessionId)
+  }
 }
 
 async function endAndRemove(
@@ -5268,6 +5230,27 @@ function cronRunTree(root: string, worktree?: string): ProjectInfo {
 }
 
 const NO_SESSION_FOR_THE_RUN = "Koloft cannot find this run's session."
+const NO_SESSION_TO_CLOSE = 'Koloft cannot find this session in the list.'
+const ON_ANOTHER_MACHINE =
+  'It runs on another machine, where Koloft cannot check what closing it would lose.'
+const THE_OWNERS_AI = 'It is your AI helper, which Koloft keeps open.'
+
+function closableInTab(sessionId: string, tabId: string): ClosableSession | string {
+  const live = sessionOfTab(tabId)
+  if (live?.sessionId && live.sessionId !== sessionId) return NO_SESSION_TO_CLOSE
+  const found = live?.sessionId ? live : closableSessions().find((s) => s.sessionId === sessionId)
+  if (!found || (found.tabId && found.tabId !== tabId)) return NO_SESSION_TO_CLOSE
+  if (hostOfTab(tabId) === 'ssh' || isRemoteKey(found.treeRoot)) return ON_ANOTHER_MACHINE
+  if (isButlerNow(tabId)) return THE_OWNERS_AI
+  return { ...found, sessionId, tabId }
+}
+
+function closeOrTell(target: ClosableSession, tell: (text: string) => void): Promise<boolean> {
+  return closeSessionFully(target, undefined, tell).catch((error) => {
+    tell(`${target.title}: ${String(error)}`)
+    return false
+  })
+}
 
 async function whatClosingTheRunWouldLose(
   tabId: string,
@@ -6672,6 +6655,29 @@ const startedPlugins: PluginsStarted = startPlugins(
         archive: archiveSession,
         setResident: (id, on) => workspaceMgr?.setResident(id, on),
         killTab: (tabId) => killTabPty(tabId),
+        closingLoses: async (id, tabId) => {
+          const found = closableInTab(id, tabId)
+          if (typeof found === 'string') return [found]
+          return whatClosingWouldLose(
+            found,
+            undefined,
+            Date.now() + A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS
+          )
+        },
+        closeFully: async (id, tabId) => {
+          const found = closableInTab(id, tabId)
+          if (typeof found === 'string') return tellTheOwner(found)
+          const left = await whatClosingWouldLose(
+            found,
+            undefined,
+            Date.now() + A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS
+          )
+          if (left.length)
+            return tellTheOwner(
+              `Koloft did not close ${found.title}: closing it now would lose this.\n${left.join('\n')}`
+            )
+          await closeOrTell(found, tellTheOwner)
+        },
         leftovers: () => leftovers,
         stopLeftover: async (sessionId, pid) => {
           const stopped = await stopLeftover(sessionId, pid)
@@ -6720,17 +6726,9 @@ const startedPlugins: PluginsStarted = startPlugins(
       }
     },
     workbench: {
+      pages: workbenchPages,
       commands: workbenchCommands,
       readerDocs,
-      pageChannels: {
-        webPages,
-        sitePermissions,
-        pageDialogs,
-        pageDownloads,
-        pageRouting,
-        pageTools,
-        openExternal: openUrlExternally
-      },
       channels: {
         files: (p) => hosts.of(p),
         base: sanitizeBase,
@@ -6882,3 +6880,12 @@ const startedPlugins: PluginsStarted = startPlugins(
     }
   }
 )
+const {
+  webPages,
+  sitePermissions,
+  pageDialogs,
+  pageDownloads,
+  pageRouting,
+  pageTools,
+  pagesInUse
+} = startedPlugins.workbench
