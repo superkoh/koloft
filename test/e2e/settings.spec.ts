@@ -98,3 +98,42 @@ test.describe('Settings ▸ Appearance: the terminal font size box', () => {
     await expect.poll(() => savedFontSize(page)).toBe(32)
   })
 })
+
+test.describe('Modal backdrop blur', () => {
+  test('opening a modal blurs #root and pauses background animations without backdrop-filter, and clears both on close', async ({
+    page
+  }) => {
+    await waitBooted(page)
+    await openSettings(page)
+
+    const openState = await page.evaluate(() => {
+      const root = document.getElementById('root')!
+      const backdrop = document.querySelector<HTMLElement>('.modal-backdrop')!
+      const side = document.querySelector<HTMLElement>('#root .side')!
+      return {
+        backdropFilter: getComputedStyle(backdrop).backdropFilter,
+        rootFilter: getComputedStyle(root).filter,
+        sideAnimation: getComputedStyle(side).animationPlayState
+      }
+    })
+    expect(openState.backdropFilter).toBe('none')
+    expect(openState.rootFilter).toMatch(/^blur\(/)
+    expect(openState.sideAnimation).toBe('paused')
+
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.modal-backdrop')).toHaveCount(0)
+
+    const closedState = await page.evaluate(() => {
+      const root = document.getElementById('root')!
+      const side = document.querySelector<HTMLElement>('#root .side')!
+      return {
+        rootFilter: getComputedStyle(root).filter,
+        sideAnimation: getComputedStyle(side).animationPlayState
+      }
+    })
+    expect(closedState).toEqual({
+      rootFilter: 'none',
+      sideAnimation: 'running'
+    })
+  })
+})
