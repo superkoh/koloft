@@ -44,8 +44,11 @@ function check(dir: string): { code: number | null; reported: string[] } {
 const lines = (...l: string[]): string => l.join('\n') + '\n'
 
 describe('check-plugin-imports', () => {
-  it('lets a plugin import core, its own folder and the api.ts or windowApi.ts of a plugin it needs, and lets the app import the list, the list of preload bridges, the list of UIs and the list of settings', () => {
+  it('lets a plugin import core, its own folder and the api.ts or windowApi.ts of a plugin it needs, and lets the app import the list, the list of preload bridges, the list of UIs, the list of settings and the list of starts', () => {
     const dir = fixtureRepo({
+      'src/plugins/starts.ts': "import { start } from './a/main/start'\n",
+      'src/plugins/a/main/start.ts': 'export const start = () => {}\n',
+      'src/main/index.ts': "import { PLUGIN_STARTS } from '@plugins/starts'\n",
       'src/plugins/settings.ts': "import { SETTINGS } from './a/shared/settings'\n",
       'src/plugins/a/shared/settings.ts': 'export const SETTINGS = {}\n',
       'src/shared/settingsOps.ts': "import { PLUGIN_SETTINGS } from '@plugins/settings'\n",

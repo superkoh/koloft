@@ -139,27 +139,20 @@ describe('IPC channels', () => {
     }
   })
 
-  it('main registers the channels of every plugin that has some, and the preload hands the window every plugin bridge', () => {
+  it('main starts every plugin with its IPC, each start registers its plugin’s channels, and the preload hands the window every plugin bridge', () => {
     const BRIDGES = read('plugins', 'bridges.ts')
+    const STARTS = read('plugins', 'starts.ts')
     expect(PRELOAD).toMatch(/\.\.\.pluginBridges\(pluginIpc\)/)
+    expect(MAIN).toMatch(/startPlugins\(\s*PLUGINS,\s*PLUGIN_STARTS,\s*\{[^}]*ipc: pluginIpc/)
     for (const p of PLUGIN_PARTS.filter((part) => part.manifest.length > 0)) {
-      const imported = [
-        ...MAIN.matchAll(
-          new RegExp(String.raw`import \{([^}]*)\} from '@plugins/${p.id}/main/`, 'g')
-        )
-      ]
-        .map((m) => m[1])
-        .join(',')
+      expect(STARTS).toContain(`from './${p.id}/main/start'`)
+      const start = read('plugins', p.id, 'main', 'start.ts')
       const registers = [...p.main.matchAll(/export function (register\w*)\(ipc: MainIpc/g)].map(
         (m) => m[1]
       )
       expect({ [p.id]: registers.length > 0 }).toEqual({ [p.id]: true })
-      for (const name of registers) {
-        const as = imported.match(new RegExp(String.raw`\b${name}(?: as (\w+))?\b`))
-        expect({ [name]: !!as && MAIN.includes(`${as[1] ?? name}(pluginIpc`) }).toEqual({
-          [name]: true
-        })
-      }
+      for (const name of registers)
+        expect({ [name]: start.includes(`${name}(ipc`) }).toEqual({ [name]: true })
       if (p.preload) expect(BRIDGES).toContain(`from './${p.id}/preload/bridge'`)
     }
   })

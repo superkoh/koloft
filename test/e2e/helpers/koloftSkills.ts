@@ -78,6 +78,8 @@ export function sessionPromptsHandedOut(home: string): Record<BackendId, string[
   }
 }
 
+export const PASSWORDS_IN_THE_SKILL = 'get a password, code or sign-in from the owner'
+
 export const agentPluginSays = (userData: string, words: string): boolean =>
   koloftSkillsUnder(path.join(userData, 'agent-plugin')).some((skill) => skill.includes(words))
 

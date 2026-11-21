@@ -328,6 +328,11 @@ export function installMuse(env: E2EEnv): void {
   addMuseAccount(env)
 }
 
+export const MUSE_SIGNED_IN_WITH_META = JSON.stringify({
+  schema_version: 1,
+  providers: { meta: { access_token: 'fake' } }
+})
+
 // MUSE§13
 export function addMuseAccount(
   env: E2EEnv,
@@ -344,11 +349,49 @@ export function addMuseAccount(
   })
 }
 
-export function installAgy(env: E2EEnv): void {
+export function installAgyWithNoAccount(env: E2EEnv): void {
   const binary = path.join(env.fakeBin, 'agy')
   fs.symlinkSync(path.join(__dirname, '..', 'fixtures', 'fake-agy.js'), binary)
   env.launchEnv.KOLOFT_AGY_CMD = binary
+}
+
+export function installAgy(env: E2EEnv): void {
+  installAgyWithNoAccount(env)
   addAgyAccount(env)
+}
+
+export function signInAgyWithGoogle(env: E2EEnv, name: string): void {
+  const appDir = path.join(env.userData, 'agy-homes', name, 'antigravity-cli')
+  fs.mkdirSync(path.join(appDir, 'cache'), { recursive: true })
+  fs.writeFileSync(
+    path.join(appDir, 'cache', 'onboarding.json'),
+    JSON.stringify({ onboardingComplete: true })
+  )
+  fs.writeFileSync(path.join(appDir, 'antigravity-oauth-token'), '{}')
+}
+
+export function writeAgyWeeklyUsage(env: E2EEnv, remaining: number): string {
+  const usage = path.join(env.home, 'fake-agy-usage.json')
+  fs.writeFileSync(
+    usage,
+    JSON.stringify({
+      groups: [
+        {
+          name: 'Gemini Models',
+          buckets: [
+            {
+              id: 'gemini-weekly',
+              name: 'Weekly Limit Remaining',
+              window: 'weekly',
+              remaining_fraction: remaining,
+              reset_time: new Date(Date.now() + 6 * 24 * 3600 * 1000).toISOString()
+            }
+          ]
+        }
+      ]
+    })
+  )
+  return usage
 }
 
 // AGY§5 AGY§6

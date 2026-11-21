@@ -56,7 +56,7 @@ export const linesCameNews = (lines: readonly string[]): string =>
   composePrompt('butler-lines-came', { values: { lines: lines.join('') } })
 
 export const GUIDE_MOVED_NEWS: OldConversationNews = {
-  knownBy: 'knowsItsOwnLines',
+  knownBy: 'knowsAllItsOwnLines',
   text: () => composePrompt('butler-guide-moved'),
   on: () => true
 }

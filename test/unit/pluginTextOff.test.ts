@@ -65,14 +65,18 @@ describe('the text an agent gets when optional plugins are turned off', () => {
     }
   )
 
-  it('with Todo off, koloft help, the koloft skill and the butler lose the to-dos, pinned, and every session prompt stays as it was', async () => {
-    const sessions = SESSION_BACKENDS.map((b) => koloftPrompt(b))
+  it('with Todo off, the butler and its helper lose the to-dos, pinned, and every session prompt, koloft help and the koloft skill stay as they were', async () => {
+    const before = {
+      sessions: SESSION_BACKENDS.map((b) => koloftPrompt(b)),
+      help: agentGuide(),
+      skill: agentPluginFiles()['skills/koloft/SKILL.md']
+    }
     turnOff(['todo'])
-    expect(SESSION_BACKENDS.map((b) => koloftPrompt(b))).toEqual(sessions)
-    await expect(agentGuide()).toMatchFileSnapshot('./prompt-text/todo-off/koloft-help.txt')
-    await expect(agentPluginFiles()['skills/koloft/SKILL.md']).toMatchFileSnapshot(
-      './prompt-text/todo-off/koloft-skill.md'
-    )
+    expect({
+      sessions: SESSION_BACKENDS.map((b) => koloftPrompt(b)),
+      help: agentGuide(),
+      skill: agentPluginFiles()['skills/koloft/SKILL.md']
+    }).toEqual(before)
     await expect(butlerRole(BUTLER, [DISCORD_BOUND])).toMatchFileSnapshot(
       './prompt-text/todo-off/butler-discord-bound.txt'
     )
@@ -119,13 +123,13 @@ describe('the text an agent gets when optional plugins are turned off', () => {
     )
   })
 
-  it('with Discord off, koloft help, the koloft skill, every session prompt and the butler lose Discord, pinned, and the butler bound to a channel reads as one with none', async () => {
-    const unbound = butlerRole(BUTLER)
-    const helper = butlerHelperRole(BUTLER)
+  it('with Discord off, koloft help, the koloft skill, every session prompt, the butler and its helper lose Discord, pinned, and the butler bound to a channel reads as one with none', async () => {
     turnOff(['discord'])
     expect(butlerRole(BUTLER, [DISCORD_BOUND])).toBe(butlerRole(BUTLER))
-    expect(butlerRole(BUTLER)).toBe(unbound)
-    expect(butlerHelperRole(BUTLER)).toBe(helper)
+    await expect(butlerRole(BUTLER)).toMatchFileSnapshot('./prompt-text/discord-off/butler.txt')
+    await expect(butlerHelperRole(BUTLER)).toMatchFileSnapshot(
+      './prompt-text/discord-off/helper.txt'
+    )
     await expect(agentGuide()).toMatchFileSnapshot('./prompt-text/discord-off/koloft-help.txt')
     const files = agentPluginFiles()
     await expect(files['skills/koloft/SKILL.md']).toMatchFileSnapshot(
