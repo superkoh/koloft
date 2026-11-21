@@ -118,6 +118,7 @@ function wrapperScript(p: WrapperParts): string {
 ${p.head}
 # PLATFORM§36
 export NODE_COMPILE_CACHE=${p.cacheDir}
+[ -d "$(pwd -P 2>/dev/null)" ] || cd / 2>/dev/null
 # CC§6 PLATFORM§36
 [ -n "$COLUMNS" ] && export CCSTATUSLINE_WIDTH="$COLUMNS"
 # CC§6 PLATFORM§2 PLATFORM§36
@@ -212,6 +213,11 @@ export const AGY_STATUSLINE_JS = `const fs = require('fs')
 const { Readable } = require('stream')
 const { pathToFileURL } = require('url')
 const [bundle, config] = process.argv.slice(2)
+try {
+  process.cwd()
+} catch {
+  process.chdir('/')
+}
 let input = {}
 try {
   input = JSON.parse(fs.readFileSync(0, 'utf8'))
@@ -224,6 +230,17 @@ try {
   cost = Number(fs.readFileSync(process.env.${AGY_COST_ENV}, 'utf8'))
 } catch {}
 if (Number.isFinite(cost)) input.cost = { ...(input.cost || {}), total_cost_usd: cost }
+if (!input.effort) {
+  const raw = typeof input.model?.effort === 'string' ? input.model.effort.trim() : ''
+  const name =
+    typeof input.model === 'object' ? input.model.display_name || input.model.id || '' : ''
+  const fromName =
+    typeof name === 'string'
+      ? /\\((low|medium|high|xhigh|max)\\)$/i.exec(name.trim())?.[1] || ''
+      : ''
+  const effort = /^(?=.*[a-z0-9])[a-z0-9-]{2,20}$/i.test(raw) ? raw : fromName
+  input.effort = { level: effort || null }
+}
 Object.defineProperty(process, 'stdin', {
   configurable: true,
   value: Readable.from([Buffer.from(JSON.stringify(input))], { objectMode: false })
@@ -244,6 +261,7 @@ ${EXEC_MARKER}${process.execPath}
 export ELECTRON_RUN_AS_NODE=1
 # PLATFORM§36
 export NODE_COMPILE_CACHE=${shq(compileCacheIn(dir))}
+[ -d "$(pwd -P 2>/dev/null)" ] || cd / 2>/dev/null
 [ -n "$COLUMNS" ] && export CCSTATUSLINE_WIDTH="$COLUMNS"
 exec ${shq(process.execPath)} ${shq(script)} ${shq(bundlePath())} ${shq(paths.config)}
 `,
