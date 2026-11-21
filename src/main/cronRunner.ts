@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from 'node:crypto'
+import type { AgentExit, LeftTab } from '@core/moment'
 import { isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
 import { CRON_SAVE_MESSAGES } from '@shared/cronMessages'
 import { takenEffort } from '@shared/cronModels'
@@ -13,7 +14,7 @@ import {
   worktreeBase,
   worktreeHomeOf
 } from '@shared/cronNames'
-import { BACKEND_LABEL, backendIdOf } from '@shared/sessionBackend'
+import { BACKEND_LABEL, backendIdOf, SKILL_PREFIX } from '@shared/sessionBackend'
 import {
   isStepKind,
   isValidSchedule,
@@ -22,7 +23,7 @@ import {
   parseHHMM,
   sameOnce
 } from '@shared/schedule'
-import { oncePassed } from '@shared/cronHistory'
+import { lastRunLine, oncePassed } from '@shared/cronHistory'
 import {
   endedRowNote,
   isCronEffort,
@@ -38,8 +39,7 @@ import {
   type LaunchPermission,
   type LiveRun,
   type Schedule,
-  type SessionStatus,
-  type TerminalExit
+  type SessionStatus
 } from '@shared/types'
 import {
   MISS_WINDOW_MS,
@@ -49,7 +49,7 @@ import {
   tick,
   type Due
 } from './cronScheduler'
-import type { TidyResult } from './sessionClose'
+import type { TidyResult } from '@core/worktree'
 
 const MAX_WORKTREE_NAME = 64
 const STAMP_LEN = 12
@@ -59,6 +59,13 @@ const LAUNCH_PERMISSION: Record<CronPermission, LaunchPermission> = {
   same: 'default',
   acceptEdits: 'acceptEdits',
   skipAll: 'bypass'
+}
+
+function firstPromptOf(job: CronJob): string {
+  const backend = cronBackend(job)
+  const opensWithACommand = ['/', SKILL_PREFIX[backend]].some((p) => job.task.startsWith(p))
+  const last = opensWithACommand ? null : lastRunLine(job.history, backend)
+  return last ? `${last}\n\n${job.task}` : job.task
 }
 
 function withSuffix(base: string, suffix: string): string {
@@ -87,14 +94,7 @@ export async function worktreeNameFor(
   return withSuffix(base, `-${randomBytes(2).toString('hex')}`)
 }
 
-export type LaunchResult = { ok: true; tabId: string } | { ok: false }
-
-export interface LeftTab {
-  treeRoot?: string
-  sessionId?: string
-}
-
-export type AgentExit = Pick<TerminalExit, 'exitCode' | 'signal' | 'unexpected'>
+export type LaunchResult = { ok: true; tabId: string; note?: string } | { ok: false }
 
 interface KeptTab {
   jobId: string
@@ -507,7 +507,7 @@ export class CronRunner {
         model: job.model,
         effort: takenEffort(backend, job.model, job.effort),
         permission: LAUNCH_PERMISSION[job.permission],
-        firstPrompt: job.task,
+        firstPrompt: firstPromptOf(job),
         name: job.name,
         manual
       })
@@ -525,7 +525,7 @@ export class CronRunner {
         ...mark
       }
       this.live.set(res.tabId, run)
-      this.launched(job, run)
+      this.launched(job, run, res.note)
       this.refreshFolders()
       this.push()
       return { ok: true }
@@ -583,8 +583,8 @@ export class CronRunner {
     this.timers.delete(tabId)
   }
 
-  private launched(job: CronJob, run: LiveRun): void {
-    this.d.toast(`⏰ ${job.name} started`)
+  private launched(job: CronJob, run: LiveRun, note?: string): void {
+    this.d.toast(`⏰ ${job.name} started${note ? `. ${note}` : ''}`)
     this.armTimer(run.tabId, this.d.bindDeadlineMs, () => this.onDeadline(run.tabId))
   }
 

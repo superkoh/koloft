@@ -1,0 +1,441 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import type { SessionStatus } from '../../../../src/shared/types'
+import {
+  A_CLAUDE_TURN_ENDS_AFTER_ITS_STOP_WITHIN_MS,
+  AN_ENTER_LANDS_WITHIN_MS,
+  MORE_OUTPUT_SETTLES_MS,
+  NOTHING_CAME_BACK_MS,
+  SCREEN_SHOWS_THE_OUTPUT_MS,
+  SlashCommands,
+  commandKeys,
+  toCaller,
+  type SlashDeps
+} from '../../../../src/plugins/sessions/main/slashCommands'
+
+const TAB = 'pty-child-1'
+const turnIsOver = (s: SessionStatus): boolean => s === 'waiting' || s === 'idle'
+let posts: string[] = []
+const CALLER = toCaller((text) => void posts.push(text))
+const RULE = '─'.repeat(40)
+
+function setup(over: Partial<SlashDeps> = {}) {
+  let status: SessionStatus = 'waiting'
+  let key = 'session-1'
+  const typed: string[] = []
+  posts = []
+  const deps: SlashDeps = {
+    backendOf: () => 'claude',
+    keyOf: () => key,
+    turnOver: () => turnIsOver(status),
+    asking: () => false,
+    takesTyping: () => turnIsOver(status),
+    panelOpen: async () => undefined,
+    screen: async () => undefined,
+    nextMirrorPull: () => undefined,
+    ready: async (_t, ready) => ready(),
+    exclusive: (_t, typing) => typing(),
+    typeNow: async (_t, keys) => void typed.push(...keys),
+    outputOnlyOnScreen: () => undefined,
+    ...over
+  }
+  const slash = new SlashCommands(deps)
+  return {
+    slash,
+    typed,
+    posts,
+    setStatus: (s: SessionStatus) => {
+      status = s
+      slash.turnOver(TAB, turnIsOver(s))
+    },
+    setKey: (k: string) => {
+      key = k
+    }
+  }
+}
+
+const child = { name: 'fix-login', tabId: TAB, overseer: false }
+
+beforeEach(() => vi.useFakeTimers())
+afterEach(() => vi.useRealTimers())
+
+describe('a slash command typed into a session', () => {
+  it('is typed, then Esc closes the command menu, so Enter runs exactly what was typed and not the menu’s first entry', async () => {
+    const { slash, typed } = setup()
+    await slash.typeWhenIdle(child, '/co', CALLER)
+    expect(typed).toEqual(['/co', '\x1b', '\r'])
+  })
+
+  it('in Codex, the box is emptied first, since an earlier unknown command stays in it', async () => {
+    const { slash, typed } = setup({ backendOf: () => 'codex' })
+    await slash.typeWhenIdle(child, '/compact', CALLER)
+    expect(typed).toEqual(['\x05\x15', '/compact', '\x1b', '\r'])
+  })
+
+  it.each([
+    ['claude', [RULE, '❯ /context', RULE, '  ⏵⏵ bypass permissions on']],
+    ['muse', [RULE, '❯ /context', RULE]],
+    ['muse', [RULE, '❯ /context', '', RULE]],
+    ['codex', ['› /context', '', '  GPT-6.1-Sol default']]
+  ] as const)(
+    'in %s, an Enter read together with the Esc before it is lost and leaves the command in the box, so Koloft presses Enter once more',
+    async (backend, screen) => {
+      const { slash, typed, posts } = setup({
+        backendOf: () => backend,
+        screen: async () => [...screen]
+      })
+      await slash.typeWhenIdle(child, '/context', CALLER)
+      const keys = [...commandKeys('/context', backend), '\r']
+      await vi.advanceTimersByTimeAsync(AN_ENTER_LANDS_WITHIN_MS)
+      expect(typed).toEqual(keys)
+      slash.output(TAB, { kind: 'details', text: '## Context Usage' })
+      await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS)
+      expect(typed).toEqual(keys)
+      expect(posts).toEqual(['⌨️ **fix-login** ran /context:\n## Context Usage'])
+    }
+  )
+
+  describe('in Antigravity, which keeps a command’s output only on screen', () => {
+    const DRAFT_SCREEN = [
+      '      ▄▀▀▄        Antigravity CLI 1.4.12',
+      '─'.repeat(60),
+      '> hello there',
+      '',
+      '  REPLY(hi)',
+      '',
+      RULE,
+      '> /usage',
+      RULE,
+      '> /usage  View model quota usage',
+      '',
+      '  ↑/↓ Navigate · enter Select · tab Complete'
+    ]
+    const OUTPUT_SCREEN = [
+      '      ▄▀▀▄        Antigravity CLI 1.4.12',
+      RULE,
+      '>',
+      RULE,
+      '└ Models & Quota',
+      '',
+      '  ⢿  Loading quota summary...'
+    ]
+
+    function agyWhoseEnterLandsOnThe(enterThatLands: number) {
+      let shown = DRAFT_SCREEN
+      let screenReads = 0
+      const typed: string[] = []
+      const { slash, posts } = setup({
+        backendOf: () => 'agy',
+        screen: async () => shown,
+        outputOnlyOnScreen: async () => {
+          screenReads++
+          return shown.join('\n')
+        },
+        typeNow: async (_t, keys) => {
+          typed.push(...keys)
+          if (typed.filter((k) => k === '\r').length === enterThatLands) shown = OUTPUT_SCREEN
+        }
+      })
+      return {
+        slash,
+        posts,
+        typed,
+        screenReads: () => screenReads,
+        land: () => {
+          shown = OUTPUT_SCREEN
+        }
+      }
+    }
+
+    it('a lost Enter leaves the command in the box under the completion menu, so Koloft presses Enter once more instead of posting that screen, and posts what the command then shows', async () => {
+      const { slash, posts, typed } = agyWhoseEnterLandsOnThe(2)
+      await slash.typeWhenIdle(child, '/usage', CALLER)
+      await vi.advanceTimersByTimeAsync(SCREEN_SHOWS_THE_OUTPUT_MS)
+      expect(typed).toEqual(['/usage', '\r'])
+      expect(posts).toEqual([])
+      await vi.advanceTimersByTimeAsync(AN_ENTER_LANDS_WITHIN_MS - SCREEN_SHOWS_THE_OUTPUT_MS)
+      expect(typed).toEqual(['/usage', '\r', '\r'])
+      await vi.advanceTimersByTimeAsync(SCREEN_SHOWS_THE_OUTPUT_MS + MORE_OUTPUT_SETTLES_MS)
+      expect(typed).toEqual(['/usage', '\r', '\r', '\x1b'])
+      expect(posts).toEqual([`⌨️ **fix-login** ran /usage:\n${OUTPUT_SCREEN.join('\n')}`])
+    })
+
+    it('an Enter that lands only after the first look at the screen gets no second Enter, and its output is posted from the next look', async () => {
+      const { slash, posts, typed, land } = agyWhoseEnterLandsOnThe(Infinity)
+      await slash.typeWhenIdle(child, '/usage', CALLER)
+      await vi.advanceTimersByTimeAsync(SCREEN_SHOWS_THE_OUTPUT_MS)
+      land()
+      await vi.advanceTimersByTimeAsync(
+        AN_ENTER_LANDS_WITHIN_MS + SCREEN_SHOWS_THE_OUTPUT_MS + MORE_OUTPUT_SETTLES_MS
+      )
+      expect(typed).toEqual(['/usage', '\r', '\x1b'])
+      expect(posts).toEqual([`⌨️ **fix-login** ran /usage:\n${OUTPUT_SCREEN.join('\n')}`])
+    })
+
+    it('when the second Enter is lost too, Koloft stops looking at the screen, then closes the menu and empties the box, since Esc alone leaves the command typed', async () => {
+      const { slash, posts, typed, screenReads } = agyWhoseEnterLandsOnThe(3)
+      await slash.typeWhenIdle(child, '/usage', CALLER)
+      await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS + MORE_OUTPUT_SETTLES_MS)
+      expect(screenReads()).toBe(2)
+      expect(typed).toEqual(['/usage', '\r', '\r', '\x1b', '\x05\x15'])
+      expect(posts).toHaveLength(1)
+      expect(posts[0]).toContain('here is its screen')
+    })
+  })
+
+  it('presses no second Enter into a panel the command opened, though the command’s echo still shows above it', async () => {
+    const { slash, typed } = setup({
+      screen: async () => ['❯ /config', RULE, '  Settings', '  Theme  dark']
+    })
+    await slash.typeWhenIdle(child, '/config', CALLER)
+    await vi.advanceTimersByTimeAsync(AN_ENTER_LANDS_WITHIN_MS)
+    expect(typed).toEqual(['/config', '\x1b', '\r'])
+  })
+
+  it('in Antigravity, which keeps no command output on disk, posts what its screen shows and presses Esc to close the panel', async () => {
+    const { slash, typed, posts } = setup({
+      backendOf: () => 'agy',
+      outputOnlyOnScreen: async () => 'Models & Quota\nGemini 3.1 Pro  42% left'
+    })
+    await slash.typeWhenIdle(child, '/usage', CALLER)
+    expect(typed).toEqual(['/usage', '\r'])
+    await vi.advanceTimersByTimeAsync(SCREEN_SHOWS_THE_OUTPUT_MS + MORE_OUTPUT_SETTLES_MS)
+    expect(typed).toEqual(['/usage', '\r', '\x1b'])
+    expect(posts).toEqual([
+      '⌨️ **fix-login** ran /usage:\nModels & Quota\nGemini 3.1 Pro  42% left'
+    ])
+  })
+
+  it('posts what the command printed once no more output follows, and counts as running until then', async () => {
+    const { slash, posts } = setup()
+    await slash.typeWhenIdle(child, '/cost', CALLER)
+    slash.output(TAB, { kind: 'printed', text: 'Total cost: $0.01' })
+    expect(posts).toEqual([])
+    expect(slash.running(TAB)).toBe(true)
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual(['⌨️ **fix-login** ran /cost:\nTotal cost: $0.01'])
+    expect(slash.running(TAB)).toBe(false)
+  })
+
+  it('prefers the clean details a command adds over what it printed on screen', async () => {
+    const { slash, posts } = setup()
+    await slash.typeWhenIdle(child, '/context', CALLER)
+    slash.output(TAB, { kind: 'printed', text: 'Context Usage ⛁ ⛁ ⛀' })
+    slash.output(TAB, { kind: 'details', text: '## Context Usage\n**Tokens:** 28.5k / 200k' })
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts[0]).toBe(
+      '⌨️ **fix-login** ran /context:\n## Context Usage\n**Tokens:** 28.5k / 200k'
+    )
+  })
+
+  it('waits for a turn the command started and posts its reply', async () => {
+    const { slash, posts, setStatus } = setup()
+    await slash.typeWhenIdle(child, '/review', CALLER)
+    setStatus('working')
+    await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS + MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual([])
+    slash.turnEnded(TAB, { said: [], reply: 'All good.', at: Date.now() })
+    setStatus('waiting')
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual(['⌨️ **fix-login** ran /review:\nAll good.'])
+  })
+
+  it('does not take the reply of the turn before it, whose end Koloft learns only after the command was typed', async () => {
+    const { slash, posts, setStatus } = setup()
+    const before = Date.now()
+    await vi.advanceTimersByTimeAsync(1000)
+    await slash.typeWhenIdle(child, '/compact', CALLER)
+    slash.output(TAB, { kind: 'printed', text: 'Compacted' })
+    slash.turnEnded(TAB, { said: [], reply: 'MANGO', at: before })
+    setStatus('working')
+    setStatus('waiting')
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual(['⌨️ **fix-login** ran /compact:\nCompacted'])
+  })
+
+  it('a turn with nothing said, like a Codex compaction, is reported as done', async () => {
+    const { slash, posts, setStatus } = setup({ backendOf: () => 'codex' })
+    await slash.typeWhenIdle(child, '/compact', CALLER)
+    setStatus('working')
+    setStatus('waiting')
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual(['⌨️ **fix-login** ran /compact:\nDone.'])
+  })
+
+  // CC§2
+  it('in Claude, a turn the command started that has printed nothing settles when that turn ends, whose reply can land after the Stop, and posts the reply, not Done.; with no turn end it says Done. at last', async () => {
+    const { slash, posts, setStatus } = setup()
+    await slash.typeWhenIdle(child, '/koloft session list', CALLER)
+    setStatus('working')
+    setStatus('waiting')
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual([])
+    slash.turnEnded(TAB, { said: [], reply: 'No sessions.', at: Date.now() })
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual(['⌨️ **fix-login** ran /koloft session list:\nNo sessions.'])
+
+    await slash.typeWhenIdle(child, '/review', CALLER)
+    setStatus('working')
+    setStatus('waiting')
+    await vi.advanceTimersByTimeAsync(A_CLAUDE_TURN_ENDS_AFTER_ITS_STOP_WITHIN_MS)
+    expect(posts.at(-1)).toBe('⌨️ **fix-login** ran /review:\nDone.')
+  })
+
+  it('in a remote tab, waits after the turn ends for one more mirror pull, so output the transcript brings late, like "Compacted", is in the card', async () => {
+    let pulled: () => void = () => undefined
+    const { slash, posts, setStatus } = setup({
+      nextMirrorPull: () => new Promise((done) => (pulled = done))
+    })
+    await slash.typeWhenIdle(child, '/compact', CALLER)
+    setStatus('working')
+    setStatus('waiting')
+    await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS + MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual([])
+    slash.output(TAB, { kind: 'printed', text: 'Compacted (ctrl+o to see full summary)' })
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual([])
+    pulled()
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual([
+      '⌨️ **fix-login** ran /compact:\nCompacted (ctrl+o to see full summary)'
+    ])
+  })
+
+  it('/clear reports the new conversation id', async () => {
+    const { slash, posts, setKey } = setup()
+    await slash.typeWhenIdle(child, '/clear', CALLER)
+    setKey('session-2')
+    slash.bound(TAB, 'session-2')
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual([
+      '⌨️ **fix-login** ran /clear:\nIt is a new conversation now, with the id session-2.'
+    ])
+  })
+
+  it('when nothing comes back, presses Esc once in Claude and then posts what closing printed', async () => {
+    const { slash, typed, posts } = setup()
+    await slash.typeWhenIdle(child, '/model', CALLER)
+    await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS)
+    expect(typed.slice(3)).toEqual(['\x1b'])
+    slash.output(TAB, { kind: 'printed', text: 'Kept model as Haiku 4.5' })
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts[0]).toMatch(
+      /^⌨️ \*\*fix-login\*\* ran \/model:\nKept model as Haiku 4\.5\n\nNothing came back/
+    )
+  })
+
+  it('in Codex, also closes a pager and empties the box, since Esc alone leaves an unknown command typed there, and posts the screen as it was before those keys', async () => {
+    const typed: string[] = []
+    const { slash, posts } = setup({
+      backendOf: () => 'codex',
+      typeNow: async (_t, keys) => void typed.push(...keys),
+      screen: async () => (typed.includes('q') ? ['›'] : ['', 'Model: gpt-5', '›', ''])
+    })
+    await slash.typeWhenIdle(child, '/stauts', CALLER)
+    await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS)
+    expect(typed.slice(4)).toEqual(['\x1b', 'q', '\x05\x15'])
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts[0]).toContain('here is its screen:\n```\nModel: gpt-5\n›\n```')
+  })
+
+  it('posts the screen of a session that printed nothing readable and opened no panel, as Muse draws a command’s output only on its screen', async () => {
+    const { slash, posts } = setup({
+      backendOf: () => 'muse',
+      panelOpen: async () => false,
+      screen: async () => ['Usage', '  5h  12%', '❯']
+    })
+    await slash.typeWhenIdle(child, '/usage', CALLER)
+    await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS + MORE_OUTPUT_SETTLES_MS)
+    expect(posts[0]).toContain('  5h  12%')
+    expect(posts[0]).not.toContain('Nothing came back')
+  })
+
+  it('a local Claude panel that one Esc does not close gets another, but Esc stops once Claude says nothing is open', async () => {
+    const open = [false, true, true, false]
+    const { slash, typed } = setup({ panelOpen: async () => open.shift() ?? false })
+    await slash.typeWhenIdle(child, '/config', CALLER)
+    await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS + 2000)
+    expect(typed.slice(3)).toEqual(['\x1b', '\x1b'])
+  })
+
+  it('no Esc at all when Claude says nothing is open, since a second Esc at an empty prompt opens the rewind menu', async () => {
+    const { slash, typed, posts } = setup({ panelOpen: async () => false })
+    await slash.typeWhenIdle(child, '/unknown-thing', CALLER)
+    await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS + MORE_OUTPUT_SETTLES_MS)
+    expect(typed).toEqual(['/unknown-thing', '\x1b', '\r'])
+    expect(posts[0]).not.toMatch(/Esc/)
+  })
+
+  it('is not typed into a panel left open at the Mac', async () => {
+    const { slash, typed } = setup({ panelOpen: async () => true })
+    await expect(slash.typeWhenIdle(child, '/compact', CALLER)).rejects.toThrow(
+      /shows a menu or a panel/
+    )
+    expect(typed).toEqual([])
+  })
+
+  it('does not press Esc while the session is busy with the command', async () => {
+    const { slash, typed, setStatus } = setup()
+    await slash.typeWhenIdle(child, '/compact', CALLER)
+    setStatus('working')
+    await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS)
+    expect(typed).toEqual(['/compact', '\x1b', '\r'])
+  })
+
+  it('in the butler itself, a reply is not posted again (its replies already reach the channel), nor the text of the command it ran', async () => {
+    const { slash, posts, setStatus } = setup()
+    await slash.typeWhenIdle({ ...child, overseer: true }, '/review', CALLER)
+    slash.output(TAB, { kind: 'details', text: 'Review the changes on this branch.' })
+    setStatus('working')
+    slash.turnEnded(TAB, { said: [], reply: 'All good.', at: Date.now() })
+    setStatus('waiting')
+    await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
+    expect(posts).toEqual([])
+  })
+
+  it('waits until the session takes typing, then types', async () => {
+    let wake: () => void = () => undefined
+    let ok = false
+    const { slash, typed } = setup({
+      takesTyping: () => ok,
+      ready: (_t, ready) =>
+        new Promise((resolve) => {
+          wake = () => resolve(ready())
+        })
+    })
+    const done = slash.typeWhenIdle(child, '/compact', CALLER)
+    expect(typed).toEqual([])
+    ok = true
+    wake()
+    await done
+    expect(typed).toEqual(['/compact', '\x1b', '\r'])
+  })
+
+  it('a session showing a question is refused at once, by every way in, without waiting for its turn', async () => {
+    const ready = vi.fn(async () => true)
+    const { slash, typed } = setup({ takesTyping: () => false, asking: () => true, ready })
+    await expect(slash.typeWhenIdle(child, '/compact', CALLER)).rejects.toThrow(
+      /waiting for an answer/
+    )
+    expect(slash.run(child, '/compact', CALLER)).toMatch(/waiting for an answer/)
+    expect(ready).not.toHaveBeenCalled()
+    expect(typed).toEqual([])
+  })
+
+  it('answers a calling session, word for word, whether it types now or once the turn ends, and where the output goes', () => {
+    expect(setup().slash.run(child, '/compact', CALLER)).toBe(
+      'Typing /compact into fix-login; Koloft will hand you what it prints.'
+    )
+    const busy = setup({ takesTyping: () => false, ready: () => new Promise(() => undefined) })
+    expect(busy.slash.run(child, '/compact', CALLER)).toBe(
+      'fix-login is busy; Koloft will type /compact once its turn ends, and hand you what it prints.'
+    )
+  })
+
+  it('a session closed before the result says so and no longer counts as running a command', async () => {
+    const { slash, posts } = setup()
+    await slash.typeWhenIdle(child, '/compact', CALLER)
+    slash.closed(TAB)
+    expect(posts).toEqual(['⌨️ fix-login closed before /compact printed anything.'])
+    expect(slash.running(TAB)).toBe(false)
+  })
+})

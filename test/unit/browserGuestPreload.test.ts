@@ -5,6 +5,20 @@ import path from 'path'
 const SRC = path.join(__dirname, '..', '..', 'src')
 const GUEST = path.join(SRC, 'preload', 'guest.ts')
 const MAIN = path.join(SRC, 'main', 'index.ts')
+const PARTITION = path.join(SRC, 'plugins', 'workbench', 'main', 'browserPartition.ts')
+
+function pluginMains(): string[] {
+  const plugins = path.join(SRC, 'plugins')
+  return fs
+    .readdirSync(plugins, { withFileTypes: true })
+    .filter((d) => d.isDirectory() && fs.existsSync(path.join(plugins, d.name, 'main')))
+    .flatMap((d) =>
+      fs
+        .readdirSync(path.join(plugins, d.name, 'main'))
+        .filter((f) => f.endsWith('.ts'))
+        .map((f) => code(path.join(plugins, d.name, 'main', f)))
+    )
+}
 
 function code(file: string): string {
   return fs
@@ -40,13 +54,16 @@ describe('the guest preload', () => {
 
   it('is registered on the browser partition alone, once', () => {
     const main = code(MAIN)
-    expect(main.match(/registerPreloadScript/g)).toHaveLength(1)
-    const partitionSetup = main.slice(
-      main.indexOf('function setupBrowserPartition'),
-      main.indexOf('function handleOpenRequest')
+    const mainSide = [main, ...pluginMains()].join('\n')
+    expect(main).not.toMatch(/registerPreloadScript/)
+    const partition = code(PARTITION)
+    expect(partition.match(/registerPreloadScript/g)).toHaveLength(1)
+    const partitionSetup = partition.slice(partition.indexOf('function setupBrowserPartition'))
+    expect(partitionSetup).toMatch(/registerPreloadScript\(\{[^}]*filePath: d\.guestPreload/)
+    expect(mainSide.match(/preload\/guest\.js/g)).toHaveLength(1)
+    const handedIn = main.slice(main.indexOf('setupBrowserPartition({'))
+    expect(handedIn.slice(0, handedIn.indexOf('})'))).toContain(
+      "guestPreload: path.join(__dirname, '../preload/guest.js')"
     )
-    expect(partitionSetup).toContain('registerPreloadScript')
-    expect(partitionSetup).toContain("'../preload/guest.js'")
-    expect(main.match(/preload\/guest\.js/g)).toHaveLength(1)
   })
 })

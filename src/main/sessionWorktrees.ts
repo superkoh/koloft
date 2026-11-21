@@ -5,7 +5,7 @@ import { promisify } from 'util'
 import { randomUUID } from 'crypto'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import { barePath, isRemoteKey } from '@shared/remoteKey'
-import { SessionStore, type WorktreeResource } from './sessionStore'
+import { SessionStore, type WorktreeResource } from '@plugins/sessions/main/sessionStore'
 import { gitIgnoredAmong } from './gitIgnored'
 import { worktreeHomeRoot } from './resumePlan'
 

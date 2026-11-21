@@ -16,6 +16,7 @@ import {
   installCodex,
   addMuseAccount,
   installMuse,
+  MUSE_SIGNED_IN_WITH_META,
   museCalls,
   museSaid,
   seedSettings,
@@ -25,6 +26,7 @@ import {
 } from './helpers/env'
 import {
   agentRow,
+  museLimitWindows,
   centerTerm,
   chooseBackend,
   dialogPrimary,
@@ -40,6 +42,9 @@ import {
   runIn,
   seedWorktreeInterruptedBeforeAnySessionBound,
   sendShortcut,
+  ERASED_BY_COMMAND_BACKSPACE,
+  KEPT_AFTER_COMMAND_BACKSPACE,
+  sendALineErasedByCommandBackspaceThenAnother,
   sendTwoLinesJoinedByShiftEnter,
   startSessionIn,
   staysOnTheFolderPageNotTheButler,
@@ -193,6 +198,30 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     }
   })
 
+  // MUSE§17
+  test('⌘⌫ in a Muse tab reaches Muse as Ctrl-U, so what was typed on the line before it never reaches the prompt', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const call = await startMuse(page, env)
+      await sendALineErasedByCommandBackspaceThenAnother(page, centerTerm(page))
+      await expect
+        .poll(() => museSaid(env, call.sessionId))
+        .toContain(`echo: ${KEPT_AFTER_COMMAND_BACKSPACE}`)
+      expect(JSON.stringify(museSaid(env, call.sessionId))).not.toContain(
+        ERASED_BY_COMMAND_BACKSPACE
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // MUSE§10
   test("answering 2 Quit to Muse's trust question before any session opened puts you back on the folder page, and never opens the butler", async ({
     env
@@ -223,7 +252,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     seedSettings(env, { hintsOff: true })
     fs.writeFileSync(
       path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT, 'muse', 'auth.json'),
-      JSON.stringify({ schema_version: 1, providers: { meta: { access_token: 'fake' } } })
+      MUSE_SIGNED_IN_WITH_META
     )
     fs.writeFileSync(
       path.join(env.home, 'fake-muse-quota.json'),
@@ -258,12 +287,8 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     installMuse(env)
     trustInMuse(env, env.workspaces.a)
     seedSettings(env, { hintsOff: true })
-    const signedInWithMeta = JSON.stringify({
-      schema_version: 1,
-      providers: { meta: { access_token: 'fake' } }
-    })
     const configOf = (name: string) => path.join(env.userData, 'muse-homes', name, 'muse')
-    fs.writeFileSync(path.join(configOf(E2E_MUSE_ACCOUNT), 'auth.json'), signedInWithMeta)
+    fs.writeFileSync(path.join(configOf(E2E_MUSE_ACCOUNT), 'auth.json'), MUSE_SIGNED_IN_WITH_META)
     const quota = path.join(env.home, 'fake-muse-quota.json')
     fs.writeFileSync(quota, JSON.stringify({ current: 100, weekly: 100 }))
     const lastOpen = await launchApp(env)
@@ -271,19 +296,13 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       const page = await lastOpen.firstWindow()
       await waitBooted(page)
       await expect
-        .poll(
-          async () =>
-            (await page.evaluate(() => window.api.accounts.probe())).find(
-              (a) => a.kind === 'muse-home'
-            )?.limits?.windows.length,
-          { timeout: OUTLASTS_A_MUSE_USAGE_READ_MS }
-        )
+        .poll(() => museLimitWindows(page), { timeout: OUTLASTS_A_MUSE_USAGE_READ_MS })
         .toBe(2)
     } finally {
       await quitAndClose(lastOpen)
     }
 
-    addMuseAccount(env, 'roomy', signedInWithMeta)
+    addMuseAccount(env, 'roomy', MUSE_SIGNED_IN_WITH_META)
     fs.writeFileSync(quota, JSON.stringify({ current: 'unread', weekly: 'unread' }))
     const app = await launchApp(env)
     try {
@@ -304,7 +323,7 @@ test.describe('Muse Code sessions through the real method chooser, status signal
     seedSettings(env, { hintsOff: true })
     fs.writeFileSync(
       path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT, 'muse', 'auth.json'),
-      JSON.stringify({ schema_version: 1, providers: { meta: { access_token: 'fake' } } })
+      MUSE_SIGNED_IN_WITH_META
     )
     const quota = path.join(env.home, 'fake-muse-quota.json')
     fs.writeFileSync(quota, JSON.stringify({ current: 40, weekly: 7 }))

@@ -11,6 +11,7 @@ import {
   type EditFingerprint,
   type EditWriteResult,
   type GitChanges,
+  type GitHead,
   type SkillSuggestion
 } from '@shared/types'
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
@@ -27,15 +28,9 @@ import {
   isFingerprint,
   looksBinary
 } from '../fileEdit'
-import {
-  GIT_TIMEOUT_MS,
-  coalesce,
-  gitOps,
-  numstatFrom,
-  statusFrom,
-  type GitOps
-} from '../gitStatus'
-import { GithubLookup, type GithubOptions } from '../github'
+import { coalesce } from '@core/coalesce'
+import { GIT_TIMEOUT_MS, gitOps, numstatFrom, statusFrom, type GitOps } from '../gitStatus'
+import { GithubRepos, type GithubReposOptions } from '../githubRepos'
 import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { parseLeftRight, type FreshnessRunner, type GitSnapshot } from '../gitFreshness'
 import { FINGERPRINT, remoteAnswerCommand, remoteShCommand } from '../remote/install'
@@ -53,6 +48,7 @@ import {
   writeTabPackage,
   type MachinePackage
 } from '../remote/launch'
+import { ownerTextOver } from '../launchPrompt'
 import { claudeProjectPrompt } from '../agentPlugin'
 import {
   mirrorHookDir,
@@ -84,14 +80,15 @@ import {
   remoteDiscordSaidFile,
   remoteNoticeFile,
   type NoticeFile
-} from '../hooks'
+} from '@plugins/sessions/main/hooks'
 import { claudeArgv } from '../claudeArgs'
-import type { SummaryRow } from '../agyStore'
+import { parseAnnotationTitle, type SummaryRow } from '../agyStore'
 import {
   AGY_HELD_ELSEWHERE_EXIT,
   AGY_SEND_SSH_OUTLASTS_THE_SCRIPT_MS,
   agyHeldCmd,
   agySendCmd,
+  agyTitleCmd,
   listAgyCmd,
   parseAgyConfig,
   readAgyConfigCmd,
@@ -100,8 +97,10 @@ import {
   type RemoteAgyConfig
 } from '../remote/agyTab'
 import { listSkills, skillFolders, type SkillFs, type SkillPlaces } from '../skillList'
-import { worktreeNameAround, type GitOut } from '../resumePlan'
+import { worktreeNameAround } from '../resumePlan'
+import type { GitOut } from '@core/worktree'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
+import { docsWritingOn } from '@plugins/docs-writing/api'
 
 export interface MachineAccount {
   env: Record<string, string>
@@ -133,7 +132,7 @@ export interface MuseMachineLaunch {
   sandboxed: boolean
   trust: string[]
   trustIf?: string
-  context?: string
+  contexts?: string[]
   koloftSkill: boolean
   portOffset?: number
   ownerWords?: string
@@ -156,7 +155,7 @@ export interface SshHostDeps {
     reportsWhatChangedWhileUnwatched?: boolean
   ): void
   unwatch(path: string): void
-  github: GithubOptions
+  github: GithubReposOptions
   claude: MachineClaudeDeps
 }
 
@@ -411,6 +410,9 @@ exit 0`
 const CHANGES_GONE = 'gone'
 const CHANGES_NOT_A_REPO = 'norepo'
 const CHANGES_REPO = 'repo'
+const HEAD_ON_BRANCH = 'branch '
+const HEAD_DETACHED = 'detached'
+const HEAD_UNREAD = 'unread'
 
 // PLATFORM§37
 const CHANGES = `r=$1
@@ -423,6 +425,8 @@ o=$(mktemp) || exit 1
 trap 'rm -f "$o"' EXIT
 part() { n=$1; shift; "$@" >"$o"; c=$?; printf '%s %s %s\\n' "$n" "$c" "$(wc -c <"$o")"; cat "$o"; }
 printf '${CHANGES_REPO}\\n%s\\n%s\\n' "$b" "$top"
+h=$(g symbolic-ref --quiet --short HEAD); hc=$?
+if [ "$hc" = 0 ]; then printf '${HEAD_ON_BRANCH}%s\\n' "$h"; elif [ "$hc" = 1 ]; then echo ${HEAD_DETACHED}; else echo ${HEAD_UNREAD}; fi
 ns=1 nb=1
 if [ -n "$b" ]; then
   part nameStatus g diff --name-status -z "$b" --; ns=$c
@@ -434,17 +438,23 @@ part unmerged g -C "$top" ls-files -u -z --full-name
 [ "$nb" = 0 ] || { part cached g diff --cached --numstat -z --; part unstaged g diff --numstat -z --; }
 exit 0`
 
-const CHANGES_GIT_QUERIES_IN_A_ROW = 9
+const CHANGES_GIT_QUERIES_IN_A_ROW = 10
 
 function parseChanges(stdout: Buffer): GitChanges | null {
   const [state, afterState] = lineAt(stdout, 0)
   if (state === CHANGES_GONE || state === CHANGES_NOT_A_REPO)
-    return { base: null, status: {}, numstat: {}, missing: state === CHANGES_GONE }
+    return { base: null, head: null, status: {}, numstat: {}, missing: state === CHANGES_GONE }
   if (state !== CHANGES_REPO) return null
   const [base, afterBase] = lineAt(stdout, afterState)
   const [toplevel, afterTop] = lineAt(stdout, afterBase)
+  const [headLine, afterHead] = lineAt(stdout, afterTop)
+  const head: GitHead | null = headLine.startsWith(HEAD_ON_BRANCH)
+    ? { branch: headLine.slice(HEAD_ON_BRANCH.length) }
+    : headLine === HEAD_DETACHED
+      ? { detached: true }
+      : null
   const parts = new Map<string, string | null>()
-  for (let at = afterTop; at < stdout.length;) {
+  for (let at = afterHead; at < stdout.length;) {
     const [header, body] = lineAt(stdout, at)
     const [name, code, bytes] = header.split(/\s+/)
     const end = body + Number(bytes)
@@ -455,6 +465,7 @@ function parseChanges(stdout: Buffer): GitChanges | null {
   const out = (name: string): string | null => parts.get(name) ?? null
   return {
     base: base || null,
+    head,
     status: statusFrom(toplevel, {
       nameStatus: out('nameStatus'),
       others: out('others'),
@@ -599,11 +610,16 @@ const RESIZE_SETTLE_MS = 200
 
 const REMOTE_FILE_LIST_FRESH_MS = 30_000
 
+export type AgentCallerState = 'runs' | 'gone' | 'request-gone'
+const REQUEST_TAKEN_BACK_EXIT = 3
+const CALLER_GONE_EXIT = 4
+const A_CALLER_CHECK_ANSWERS_WITHIN_MS = 10_000
+
 // PLATFORM§35
 const NO_TAB_NAME_IS_ANOTHERS_PREFIX = '-t'
 
 export class SshHost implements Host {
-  readonly github: GithubLookup
+  readonly github: GithubRepos
   private git: GitOps
   private killedSessions = new Set<string>()
   private kills = new Map<string, Promise<unknown>>()
@@ -647,7 +663,7 @@ export class SshHost implements Host {
         return r.stdout.toString('utf8').trim() || null
       }
     })
-    this.github = new GithubLookup({
+    this.github = new GithubRepos({
       ...deps.github,
       git: (root, args, network) =>
         network
@@ -1001,6 +1017,19 @@ export class SshHost implements Host {
     else await this.sh(ANSWER_AGENT_REQUEST, [requestId], { input: Buffer.from(reply) })
   }
 
+  async agentCallerWaits(requestId: string, pid: number): Promise<AgentCallerState | undefined> {
+    const r = await this.sh(
+      `[ -f "${REMOTE_HOOK_DIR}/req-$1.json" ] || exit ${REQUEST_TAKEN_BACK_EXIT}
+case "$(ps -o args= -p "$2" 2>/dev/null)" in */koloft[[:space:]]*) exit 0 ;; esac
+exit ${CALLER_GONE_EXIT}`,
+      [requestId, String(pid)],
+      { timeoutMs: A_CALLER_CHECK_ANSWERS_WITHIN_MS }
+    )
+    if (r.code === 0) return 'runs'
+    if (r.code === CALLER_GONE_EXIT) return 'gone'
+    return r.code === REQUEST_TAKEN_BACK_EXIT ? 'request-gone' : undefined
+  }
+
   async savePick(name: string, png: Buffer): Promise<string> {
     const r = await this.sh(SAVE_PICK, [name], { input: png })
     if (r.code !== 0) throw new Error(problemOf(r))
@@ -1067,11 +1096,16 @@ export class SshHost implements Host {
       tmuxName,
       launchCommand: (tabId) => {
         const tabDir = tabPackageDir(d.userData, tabId)
-        const contextFile = spec.context ? `$HOME/.koloft/tabs/${tabId}.ctx.json` : undefined
+        const contextName = (i: number): string => `${tabId}.ctx${i === 0 ? '' : i + 1}.json`
+        const contexts = spec.contexts ?? []
         const files: Record<string, string> = {
-          [`${tabId}.hooks.json`]: remoteMuseHooks(hookScript, tabId, contextFile)
+          [`${tabId}.hooks.json`]: remoteMuseHooks(
+            hookScript,
+            tabId,
+            contexts.map((_, i) => `$HOME/.koloft/tabs/${contextName(i)}`)
+          )
         }
-        if (spec.context) files[`${tabId}.ctx.json`] = sessionStartContext(spec.context)
+        contexts.forEach((text, i) => (files[contextName(i)] = sessionStartContext(text)))
         if (auth !== undefined) files[`${tabId}.auth.json`] = auth
         writeTabPackage(tabDir, {
           tabId,
@@ -1199,6 +1233,20 @@ export class SshHost implements Host {
     return r.code === 0
   }
 
+  async agyConversationTitle(conversationId: string): Promise<string | undefined> {
+    const r = await this.deps.run(agyTitleCmd(conversationId))
+    if (r.code !== 0) return undefined
+    const text = r.stdout.toString('utf8').trim()
+    if (!text) return undefined
+    try {
+      const parsed = JSON.parse(text) as { title?: unknown; pbtxt?: unknown }
+      if (typeof parsed.title === 'string' && parsed.title) return parsed.title
+      if (typeof parsed.pbtxt === 'string' && parsed.pbtxt)
+        return parseAnnotationTitle(parsed.pbtxt)
+    } catch {}
+    return undefined
+  }
+
   async agyConversations(): Promise<SummaryRow[]> {
     const r = await this.deps.run(listAgyCmd(this.deps.claude.machinePackage().name))
     if (r.code !== 0) throw new Error(problemOf(r))
@@ -1293,7 +1341,9 @@ export class SshHost implements Host {
             {
               settings: d.hookSettings(tabId, machineDir, agentTools),
               agentPlugin: agentTools,
+              docsPlugin: docsWritingOn(),
               projectPrompt,
+              ownerText: ownerTextOver(spec.ownerText, !!spec.conductor, spec.workspaceParts),
               claudeArgs,
               trustFolder: spec.trustFolder
             }

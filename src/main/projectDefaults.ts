@@ -1,5 +1,5 @@
 import type { SessionDefaults } from '@shared/types'
-import { NO_DEFAULTS, sanitizeDefaults } from '@shared/sessionDefaults'
+import { NO_DEFAULTS } from '@shared/sessionDefaults'
 
 export const SET_ONCE_CONNECTED =
   'Koloft cannot reach this machine now, so it cannot tell which repository this is. Set these once it is connected.'
@@ -18,7 +18,10 @@ export interface ProjectDefaultsDeps {
 export interface ProjectDefaults {
   of(dir: string): Promise<SessionDefaults | undefined>
   read(dir: string): Promise<SessionDefaults>
-  write(dir: string, raw: unknown): Promise<void>
+  write(
+    dir: string,
+    next: (saved: SessionDefaults | undefined) => SessionDefaults | undefined
+  ): Promise<void>
 }
 
 export function projectDefaults(d: ProjectDefaultsDeps): ProjectDefaults {
@@ -55,10 +58,10 @@ export function projectDefaults(d: ProjectDefaultsDeps): ProjectDefaults {
       }
     },
     read: async (dir) => d.saved()[await checkedKeyOf(dir)] ?? NO_DEFAULTS,
-    write: async (dir, raw) => {
+    write: async (dir, next) => {
       const key = await checkedKeyOf(dir)
       const all = { ...d.saved() }
-      const kept = sanitizeDefaults(raw)
+      const kept = next(all[key])
       if (kept) all[key] = kept
       else delete all[key]
       d.save(all)

@@ -1,6 +1,7 @@
 import { worktreeBase } from './cronNames'
 import { ROUTABLE_FEATURES } from './paletteFeatures'
 import { isValidWorktreeName } from './worktreeName'
+import { composePrompt } from '@core/prompt'
 
 export interface RouteSession {
   id: string
@@ -32,6 +33,10 @@ export type SessionRoute =
   | (RouteText & { kind: 'feature'; key: string })
   | (RouteText & { kind: 'session'; path: string; id: string })
 
+export const PLUGIN_ROUTE_KINDS = ['discord'] as const
+
+export type PluginRouteKind = (typeof PLUGIN_ROUTE_KINDS)[number]
+
 export const LOCAL_MACHINE = 'local'
 
 const SESSIONS_SENT_PER_WORKSPACE = 5
@@ -44,6 +49,18 @@ const CHECK_IN_RULE = 1
 const NEW_PROJECT_RULE = 7
 
 const ROUTE_SYSTEM = 'You decide who in the Koloft app should take what a person typed.'
+
+export const ROUTE_WORKTREE_PICKS = 'route-worktree-picks'
+
+const ISSUE_PICK = 'issue'
+
+const issueWasOffered = (): boolean =>
+  composePrompt(ROUTE_WORKTREE_PICKS).includes(`"${ISSUE_PICK}"`)
+
+function worktreePicks(): string {
+  const picks = composePrompt(ROUTE_WORKTREE_PICKS)
+  return picks ? `${picks}  or ` : '  '
+}
 
 const sessionsSent = (w: RouteWorkspace): RouteSession[] =>
   w.sessions.slice(0, SESSIONS_SENT_PER_WORKSPACE)
@@ -102,8 +119,7 @@ ${NEW_PROJECT_RULE}. It wants something new built (a new program, tool or projec
 8. Anything else: a question not about one project, a translation, something to write that no workspace is for, a fact to look up (like whether a pull request is merged), a scheduled job, work across several workspaces, work that could fit more than one workspace ("fix the tests", "tidy the README"), or a Koloft setting not in the features above: {"hand": "koloft"}
 
 "worktree" (rule 6 only): "main" for a folder that is not git; a git folder never works in its main checkout, even to read, ask or release, and never in a worktree that already exists, so for one:
-  {"issue": <number>} when the message names an issue number,
-  or {"new": "<short kebab-case English name, at most 30 chars, not a listed one>"}
+${worktreePicks()}{"new": "<short kebab-case English name, at most 30 chars, not a listed one>"}
 
 Reply with that one JSON object and nothing else, adding to it:
  "title": <a very short title, at most 6 words, or 16 characters in a language written without spaces, in the language of the text the person typed between <<< and >>>, even when the session titles and examples above are in another language>,
@@ -169,8 +185,9 @@ function worktreeOf(raw: unknown, ws: RouteWorkspace): RouteWorktree | null {
   if (!ws.git) return { kind: 'main' }
   if (!raw || typeof raw !== 'object') return null
   const o = raw as Record<string, unknown>
-  if (typeof o.issue === 'number' && Number.isInteger(o.issue) && o.issue > 0)
-    return { kind: 'issue', number: o.issue }
+  const issue = o[ISSUE_PICK]
+  if (typeof issue === 'number' && Number.isInteger(issue) && issue > 0 && issueWasOffered())
+    return { kind: 'issue', number: issue }
   if (typeof o.new === 'string') {
     const name = o.new.trim()
     if (!isValidWorktreeName(name) || name.toLowerCase() === 'main') return null

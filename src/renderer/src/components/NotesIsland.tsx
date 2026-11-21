@@ -1,6 +1,6 @@
 import { useEffect, useState, type JSX, type Ref } from 'react'
 import { IconChevronDown, IconChevronUp, IconCopy, IconNotes } from '../icons'
-import { GLOBAL_SCOPE, scopeName } from '@shared/conductors'
+import { GLOBAL_SCOPE, scopeName } from '@shared/scope'
 import { NOTES_TAB, notesOwner } from '@shared/cwdKey'
 import { editRefusal, EditPane } from './EditPane'
 import { beginEdit, getEntry } from '../editRegistry'

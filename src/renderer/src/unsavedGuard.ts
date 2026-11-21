@@ -13,6 +13,7 @@ import { NOTES_OWNER_PREFIX, notesOwner } from '@shared/cwdKey'
 import { relOf } from './components/filesModel'
 import { sessionEndedBody } from './closeSession'
 import { activateTab } from './components/workbenchTabs'
+import type { WorkspaceRemovalLoss } from './slots'
 import { useStore } from './store'
 
 export type { DirtyTab }
@@ -53,9 +54,9 @@ export function removeUnsavedNote(count: number): string {
   return `${count} ${s} unsaved changes in these sessions and will be lost.`
 }
 
-export function removeJobsNote(jobs: number): string {
-  if (jobs === 0) return ''
-  return `${jobs} scheduled job${jobs === 1 ? '' : 's'} will be deleted. Jobs do not come back.`
+export function removalLossNote(lost: number, loss: WorkspaceRemovalLoss | undefined): string {
+  if (lost === 0 || !loss) return ''
+  return `${loss.willGo(lost)}. ${loss.goneForGood}`
 }
 
 export type RemovePlan = 'remove' | 'confirm-running' | 'confirm-unsaved'

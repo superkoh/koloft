@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { describe, it, expect } from 'vitest'
 import {
   buildResetPatch,
@@ -7,9 +9,10 @@ import {
   WORKBENCH_WIDTH_FLOOR,
   sanitizeNotesHeight,
   NOTES_HEIGHT_FLOOR,
-  sanitizeLoadedSettings
+  sanitizeLoadedSettings,
+  DEFAULT_SETTINGS
 } from '@shared/settingsOps'
-import { DEFAULT_SETTINGS, HINT_IDS } from '@shared/types'
+import { GLOBAL_SCOPE } from '@shared/scope'
 
 describe('buildResetPatch (FR-12)', () => {
   it('excludes the whole account domain: accounts, skipPermissions, fablePriority', () => {
@@ -48,6 +51,7 @@ describe('buildResetPatch (FR-12)', () => {
         'notifyApprovalSound',
         'notifyExited',
         'notifyTurnDone',
+        'pluginsOn',
         'sidebarHidden',
         'sidebarWidth',
         'statuslineBuiltin',
@@ -82,6 +86,14 @@ describe('sanitizeSettingsPatch (FR-13)', () => {
   it('strips the Discord block, which only the main process writes', () => {
     const patch = { discord: { bindings: [] }, fontSize: 20 } as never
     expect(sanitizeSettingsPatch(patch)).toEqual({ fontSize: 20 })
+  })
+
+  it('strips the butler’s conversation, which only the main process writes, and lets his name through', () => {
+    const patch = {
+      butlerSession: { sessionIds: ['s'] },
+      butler: { name: 'Jeeves', formerNames: [] }
+    } as never
+    expect(sanitizeSettingsPatch(patch)).toEqual({ butler: { name: 'Jeeves', formerNames: [] } })
   })
 
   it('lets the git auto-fetch switch through untouched (no whitelist to extend)', () => {
@@ -179,7 +191,7 @@ describe('U-OB-03: sanitizeLoadedSettings and the onboarding keys', () => {
   it('treats a document without onboardingSeen as an upgrade: welcome and tips seen', () => {
     const loaded = sanitizeLoadedSettings({ fontSize: 14 })
     expect(loaded.onboardingSeen).toBe(true)
-    expect(loaded.hintsSeen).toEqual([...HINT_IDS])
+    expect(loaded.hintsSeen).toEqual(['workbench', 'approval', 'agent-web', 'worktree', 'github'])
   })
 
   it('keeps the first-run defaults for an empty document', () => {
@@ -435,5 +447,257 @@ describe('session methods', () => {
         sessionMethods: { defaultBackend: 'muse', enabled: off }
       }).assist
     ).toEqual({ backend: 'agy' })
+  })
+})
+
+describe('loading settings written before the butler', () => {
+  const channel = (channelId: string) => ({ guildId: '100', channelId, name: `ch-${channelId}` })
+  const oldBinding = (id: string, scope: string, channelId: string) => ({
+    id,
+    scope,
+    backend: 'claude',
+    channel: channel(channelId),
+    touched: []
+  })
+  const v038 = {
+    discord: {
+      userId: '555',
+      bindings: [
+        {
+          ...oldBinding('g', GLOBAL_SCOPE, '1'),
+          sessionIds: ['old-1', 'old-2'],
+          lastSessionKey: 'old-2'
+        },
+        { ...oldBinding('a', '/ws/a', '2'), backend: 'codex', sessionIds: ['ws-1'] }
+      ]
+    }
+  }
+
+  it('the global Assist’s conversation becomes the butler’s, and a workspace Assist’s is left behind', () => {
+    const s = sanitizeLoadedSettings(v038)
+    expect(s.butlerSession).toEqual({ sessionIds: ['old-1', 'old-2'], lastSessionKey: 'old-2' })
+    expect(s.discord).toEqual({ userId: '555', channel: channel('1') })
+  })
+
+  it('the Assist records of the release before this one become the butler’s conversation, and are not written back', () => {
+    const s = sanitizeLoadedSettings({
+      ...v038,
+      assistSessions: [
+        { scope: GLOBAL_SCOPE, sessionIds: ['new-1'], lastSessionKey: 'new-1' },
+        { scope: '/ws/a', sessionIds: ['ws-2'], lastSessionKey: 'ws-2' }
+      ]
+    })
+    expect(s.butlerSession).toEqual({
+      sessionIds: ['new-1', 'old-1', 'old-2'],
+      lastSessionKey: 'new-1'
+    })
+    expect(s).not.toHaveProperty('assistSessions')
+  })
+
+  it('reading the file it writes back changes nothing', () => {
+    const once = JSON.parse(JSON.stringify(sanitizeLoadedSettings(v038)))
+    const twice = sanitizeLoadedSettings(once)
+    expect(twice.butlerSession).toEqual(once.butlerSession)
+    expect(twice.discord).toEqual(once.discord)
+  })
+
+  it('which plugins the butler’s conversation knows to be on or off survives a restart, without what is not a switch; a damaged record is dropped', () => {
+    const loaded = (pluginsSeen: unknown): unknown =>
+      sanitizeLoadedSettings({
+        butlerSession: { sessionIds: ['s1'], lastSessionKey: 's1', pluginsSeen }
+      }).butlerSession
+    expect(loaded({ key: 's1', on: { todo: false, passwords: true, github: 'off' } })).toEqual({
+      sessionIds: ['s1'],
+      lastSessionKey: 's1',
+      pluginsSeen: { key: 's1', on: { todo: false, passwords: true } }
+    })
+    expect(loaded({ on: { todo: false } })).toEqual({ sessionIds: ['s1'], lastSessionKey: 's1' })
+    expect(loaded('todo')).toEqual({ sessionIds: ['s1'], lastSessionKey: 's1' })
+  })
+
+  it('the tool Assist ran on is kept, so the owner is not asked to agree to skipping permissions again', () => {
+    const s = sanitizeLoadedSettings({
+      ...v038,
+      assist: { on: false, backend: 'codex' },
+      skipPermissions: true
+    })
+    expect(s.assist).toEqual({ backend: 'codex' })
+    expect(s.skipPermissionsAgreed).toBe(true)
+  })
+
+  it('the butler’s conversation is left out of a settings reset and of what the window may write', () => {
+    expect(buildResetPatch()).not.toHaveProperty('butlerSession')
+    expect(sanitizeSettingsPatch({ butlerSession: { sessionIds: [] }, fontSize: 12 })).toEqual({
+      fontSize: 12
+    })
+  })
+})
+
+describe('a settings file an older Koloft wrote', () => {
+  const older = JSON.parse(
+    fs.readFileSync(path.join(__dirname, 'settings-older-koloft', 'settings.json'), 'utf8')
+  )
+
+  it('loads the butler’s name, his conversation and the Discord block exactly as before', () => {
+    const { butler, butlerSession, discord } = sanitizeLoadedSettings(older)
+    expect({ butler, butlerSession, discord }).toMatchInlineSnapshot(`
+      {
+        "butler": {
+          "formerNames": [
+            "Alfred",
+            "A name far longer than the forty charact",
+          ],
+          "name": "Jeeves the butler",
+        },
+        "butlerSession": {
+          "carried": {
+            "effort": "high",
+            "model": "opus",
+          },
+          "knowsTodo": [
+            "todo-1",
+            "todo-2",
+            "todo-3",
+          ],
+          "lastSessionKey": "key-butler",
+          "sessionIds": [
+            "s-butler",
+            "s-assist",
+            "s-binding",
+          ],
+        },
+        "discord": {
+          "category": {
+            "channelId": "300",
+            "guildId": "100",
+            "name": "Koloft",
+          },
+          "channel": {
+            "channelId": "200",
+            "guildId": "100",
+            "name": "global",
+          },
+          "lastMessageId": "800",
+          "oldThreadsArchived": true,
+          "rooms": [
+            {
+              "keys": [
+                "claude:abc",
+                "claude:def",
+              ],
+              "lastMessageId": "510",
+              "name": "fix login",
+              "putDown": true,
+              "threadId": "500",
+            },
+            {
+              "keys": [
+                "codex:jkl",
+              ],
+              "name": "plain room",
+              "threadId": "502",
+            },
+          ],
+          "userId": "4242",
+          "userName": "owner",
+        },
+      }
+    `)
+  })
+
+  it('loads every key exactly as before: each key the file holds cleaned as before, retired keys dropped, a key Koloft does not know kept, every other key at its default', () => {
+    const loaded = sanitizeLoadedSettings(older) as unknown as Record<string, unknown>
+    const fromFile = Object.fromEntries(
+      Object.keys(older)
+        .filter((k) => k in loaded)
+        .map((k) => [k, loaded[k]])
+    )
+    expect(fromFile).toMatchInlineSnapshot(`
+      {
+        "aKeyANewerKoloftWrote": {
+          "kept": true,
+        },
+        "assist": {
+          "backend": "claude",
+        },
+        "butler": {
+          "formerNames": [
+            "Alfred",
+            "A name far longer than the forty charact",
+          ],
+          "name": "Jeeves the butler",
+        },
+        "butlerSession": {
+          "carried": {
+            "effort": "high",
+            "model": "opus",
+          },
+          "knowsTodo": [
+            "todo-1",
+            "todo-2",
+            "todo-3",
+          ],
+          "lastSessionKey": "key-butler",
+          "sessionIds": [
+            "s-butler",
+            "s-assist",
+            "s-binding",
+          ],
+        },
+        "discord": {
+          "category": {
+            "channelId": "300",
+            "guildId": "100",
+            "name": "Koloft",
+          },
+          "channel": {
+            "channelId": "200",
+            "guildId": "100",
+            "name": "global",
+          },
+          "lastMessageId": "800",
+          "oldThreadsArchived": true,
+          "rooms": [
+            {
+              "keys": [
+                "claude:abc",
+                "claude:def",
+              ],
+              "lastMessageId": "510",
+              "name": "fix login",
+              "putDown": true,
+              "threadId": "500",
+            },
+            {
+              "keys": [
+                "codex:jkl",
+              ],
+              "name": "plain room",
+              "threadId": "502",
+            },
+          ],
+          "userId": "4242",
+          "userName": "owner",
+        },
+        "fontSize": 13,
+        "skipPermissions": true,
+      }
+    `)
+    expect(Object.keys(loaded).sort()).toEqual(
+      [...Object.keys(DEFAULT_SETTINGS), 'aKeyANewerKoloftWrote'].sort()
+    )
+    for (const [k, v] of Object.entries(DEFAULT_SETTINGS))
+      if (
+        !(k in older) &&
+        k !== 'skipPermissionsAgreed' &&
+        k !== 'onboardingSeen' &&
+        k !== 'hintsSeen'
+      )
+        expect(loaded[k], k).toEqual(v)
+  })
+
+  it('loads the same again from what it writes back', () => {
+    const loaded = sanitizeLoadedSettings(older)
+    expect(sanitizeLoadedSettings(JSON.parse(JSON.stringify(loaded)))).toStrictEqual(loaded)
   })
 })

@@ -13,9 +13,10 @@ import {
   gitFileDiff,
   gitFileDiffFull
 } from '../gitStatus'
-import type { GithubLookup } from '../github'
+import type { GithubRepos } from '../githubRepos'
 import { LocalRunner, networkGit } from '../gitFreshness'
-import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
+import { GIT_STEP_TIMEOUT_MS, readHead, type GitRunResult } from '../gitSteps'
+import { coalesce } from '@core/coalesce'
 import { resolveSpawnCwd } from '../projectInfo'
 import { leaveForOS, osOpenFallback } from '../osOpen'
 import { aboveItsTools } from '../agentLift'
@@ -31,8 +32,13 @@ import { portOffset } from '@shared/worktreeName'
 import { pictureFolderIn } from '@shared/pastedPictures'
 import { listSkills, type SkillFs } from '../skillList'
 import { AGENT_PROMPT_FILE, projectPromptFile } from '../agentPlugin'
-import { saidFile, seedHandedOverOwnerWords, writeConductorMarker } from '../hooks'
+import {
+  saidFile,
+  seedHandedOverOwnerWords,
+  writeConductorMarker
+} from '@plugins/sessions/main/hooks'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host } from './host'
+import { ownerTextOver } from '../launchPrompt'
 
 const skillFs: SkillFs = {
   readdir: (p) => fs.readdirSync(p),
@@ -121,6 +127,8 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
   const assist = d.assistOf(cwd, spec.resumeSessionId)
   const conductor = !!spec.conductor || !!assist
   const role = spec.role ?? assist?.role
+  // CC§23
+  const ownerText = ownerTextOver(spec.ownerText, conductor, spec.workspaceParts)
   const agentPlugin = d.agentPlugin()
   const prompt =
     agentPlugin && !conductor
@@ -149,6 +157,8 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
         : {}),
       ...(worktree ? { KOLOFT_PORT_OFFSET: String(portOffset(worktree)) } : {}),
       KOLOFT_DOCS_PLUGIN: d.docsPlugin(),
+      // CC§13
+      ...(ownerText ? { KOLOFT_OWNER_TEXT: ownerText } : {}),
       // CC§12
       CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1',
       CLAUDE_CODE_DECSTBM: '1',
@@ -185,7 +195,7 @@ async function readText(p: string): Promise<string> {
   return buf.toString('utf8')
 }
 
-export function localHost(github: GithubLookup, claude: LocalClaudeDeps): Host {
+export function localHost(github: GithubRepos, claude: LocalClaudeDeps): Host {
   return {
     listDir,
     dirExists,
@@ -205,12 +215,15 @@ export function localHost(github: GithubLookup, claude: LocalClaudeDeps): Host {
     gitChanges: async (root, choice) => {
       const base = choice === 'head' ? 'HEAD' : await diffBase(root).catch(() => null)
       const arg = base ?? undefined
-      const [status, numstat, exists] = await Promise.all([
+      const [status, numstat, exists, head] = await Promise.all([
         gitStatus(root, arg),
         gitNumstat(root, arg),
-        dirExists(root)
+        dirExists(root),
+        coalesce(['local', 'head', root].join('\0'), () =>
+          readHead((args) => localGitRun(root, args))
+        )
       ])
-      return { base, status, numstat, missing: !exists }
+      return { base, head, status, numstat, missing: !exists }
     },
     gitDiff,
     gitFileDiff,
