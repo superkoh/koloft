@@ -2542,6 +2542,15 @@ sentence, then `ls`, then `DONE`; turn 2 was sent with `thread/queue/add`.
   on the wire — Koloft reads the text of every `agentMessage` whatever its phase.
 - **`turn/completed`'s `turn.items` is a summary** (`itemsView: "summary"`) holding only
   the `final_answer` message, not the commentary nor the user message.
+- **The saved rollout marks a turn's end with `{type: "event_msg", payload: {type:
+  "task_complete", turn_id, last_agent_message}}`**, written after the turn's last
+  `agentMessage`; `last_agent_message` is that message's text. Seen in this Mac's own
+  rollouts from 0.153.0 and 0.153.4 (2026-09) and in a real e2e turn on 0.170.0
+  (2026-11-18). On that 0.170.0 turn the model (`gpt-6.2-sol`, the server's default that
+  day for 0.169.0 and 0.170.0 with a ChatGPT login; which model 0.161.0 got is not
+  checked) sent a `commentary`
+  message ("I’ll read the Koloft skill.") before one shell call and the `final_answer` 2.5 s
+  later, so the first `agentMessage` of a turn is not its answer.
 - **`clientId` on a `userMessage` is the `clientUserMessageId` given to
   `thread/queue/add`** (`"koloft-probe-1"`); a message typed in the turn's own
   `turn/start` has `clientId: null`.
