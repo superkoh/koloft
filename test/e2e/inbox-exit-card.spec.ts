@@ -213,8 +213,12 @@ test.describe(() => {
         ).toHaveCount(1)
 
         await expect(wsRows(page, ws)).toHaveCount(2)
+        await expect
+          .poll(async () => (await aliveSessions(page)).map((s) => s.backendId), {
+            timeout: A_RESUMED_SESSION_TAKES_A_MESSAGE_MS
+          })
+          .toEqual([kind.backend])
         const [started] = await aliveSessions(page)
-        expect((await aliveSessions(page)).map((s) => s.backendId)).toEqual([kind.backend])
         if (kind.remote)
           expect(started.remote?.host ?? identityOf(started.sessionId).sourceId).toBe(REMOTE_HOST)
         else expect(kind.launches(env)[2].cwd).toBe(env.workspaces.a)
