@@ -42,6 +42,7 @@ import {
   killSession,
   museLimitWindows,
   newSessionInWith,
+  oneStillRunning,
   openMenu,
   openWorktreeSession,
   processAlive,
@@ -359,6 +360,28 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
       await runIn(page, centerTerm(page), 'slow turn')
       await expect(row).toHaveClass(/\bst-working\b/, { timeout: 30_000 })
       await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 30_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§9
+  test('a subagent a Muse session there leaves running shows on its row breathing green with ↻, named by the role Muse gave it, until it ends', async ({
+    env
+  }) => {
+    const { app, page } = await launchWithMuseThere(env)
+    try {
+      machineFile(env, 'fake-muse-subagent-ms', '8000')
+      await addRemoteWorkspace(page, env)
+      await startRemoteMuse(page, env)
+      const row = remoteRows(page)
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: ON_THE_MACHINE_WITHIN_MS })
+      await runIn(page, centerTerm(page), '/subagent Lint checker')
+      await expect(row).toHaveClass(/\bst-bg-run\b/, { timeout: 30_000 })
+      await oneStillRunning(row).click()
+      await expect(page.locator('.tbu-pop.parked')).toContainText('agent · Lint checker · working')
+      await page.keyboard.press('Escape')
+      await expect(row).not.toHaveClass(/\bst-bg-run\b/, { timeout: 30_000 })
     } finally {
       await quitAndClose(app)
     }

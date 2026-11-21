@@ -586,11 +586,20 @@ function tui() {
         }
       )
     }
-    if (text === '/subagent') {
+    if (text === '/subagent' || text.startsWith('/subagent ')) {
       const turnId = turn(text)
       const child = crypto.randomUUID()
       const sub = crypto.randomUUID()
+      const role = text.slice('/subagent '.length).trim()
       fire('SubagentStart', { session_id: child, child_session_id: child, subagent_id: sub })
+      // MUSE§9
+      if (role)
+        fire('PostToolUse', {
+          turn_id: turnId,
+          tool_name: 'subagent_spawn',
+          tool_input: { command_id: sub, role, objective: role },
+          tool_response: JSON.stringify({ status: 'accepted', subagent_id: sub })
+        })
       say(turnId, 'A subagent is on it', text)
       return setTimeout(
         () => {

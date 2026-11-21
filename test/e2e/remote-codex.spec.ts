@@ -21,6 +21,7 @@ import {
   killSession,
   menuItemTexts,
   newSessionInWith,
+  oneStillRunning,
   openMenu,
   openWorktreeSession,
   processAlive,
@@ -323,6 +324,28 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
           { timeout: 60_000 }
         )
         .toEqual([made])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§4
+  test('a child agent a Codex session there leaves running shows on its row breathing green with ↻, named by the task name Codex gave it, until it ends', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    fs.writeFileSync(path.join(machineHome(env), 'fake-codex-child-ms'), '8000')
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startRemoteCodex(page, env)
+      const row = wsRows(page, REMOTE_WS_NAME)
+      await runIn(page, centerTerm(page), 'spawn task lint_checker')
+      await expect(row).toHaveClass(/\bst-bg-run\b/, { timeout: 30_000 })
+      await oneStillRunning(row).click()
+      await expect(page.locator('.tbu-pop.parked')).toContainText('agent · lint_checker · working')
+      await page.keyboard.press('Escape')
+      await expect(row).not.toHaveClass(/\bst-bg-run\b/, { timeout: 30_000 })
     } finally {
       await quitAndClose(app)
     }
