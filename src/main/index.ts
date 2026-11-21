@@ -1207,7 +1207,7 @@ const ownerAsleep = new OwnerAsleep({
     const tab = butler?.liveTab()
     return tab ? [tab] : []
   },
-  tabs: ptyTabIds,
+  tabs: agentTabIds,
   asked: async (tabId) => {
     const stored = await pendingAskOf(tabId)
     if (stored) {
@@ -5060,6 +5060,10 @@ function ptyTabIds(): string[] {
           capabilitiesFor(p.kind, remoteHostOfTab(p.id) ? 'ssh' : 'local').browserControl === true)
     )
     .map((p) => p.id)
+}
+
+function agentTabIds(): string[] {
+  return ptyMgr.list().flatMap((p) => (p.alive && !p.util && p.kind !== 'shell' ? [p.id] : []))
 }
 
 const cdpOps = new CdpOps({
