@@ -19,6 +19,7 @@ import { resolveCliRuntime, type CliRuntime, type CliSpec } from '../../../main/
 import { AGY_UPDATE_TIMEOUT_MS, MIN_AGY_VERSION, TESTED_AGY_LINE } from '../../../main/cliMinimums'
 import { startToolShim } from '../../../main/toolShim'
 import { browserControlEnv } from '../../../main/browserControlEnv'
+import { BACKGROUND_LABEL_CHARS, scheduleLabel } from './scheduleLabel'
 import {
   PROGRAM_STATUS_REPLY,
   ProgramStatusParser,
@@ -352,7 +353,6 @@ const HELD_ELSEWHERE =
   'This Antigravity session is open in another agy window. Close it there first: two windows on one conversation lose each other’s turns.'
 // AGY§13
 const WRITING_TOOLS = new Set(['write_to_file', 'replace_file_content', 'write_file', 'edit_file'])
-const COMMAND_LABEL_CHARS = 160
 // AGY§13
 const TASK_LINE_MARKS = [
   '"schedule"',
@@ -530,33 +530,15 @@ function schedulesOf(run: AgyRun, conversationId: string): [string, AgySchedule]
   return [...(run.schedules ?? [])].filter(([id]) => id.startsWith(`${conversationId}/`))
 }
 
-function formatSeconds(seconds: number): string {
-  if (seconds < 60) return `${Math.max(0, Math.round(seconds))}s`
-  if (seconds < 3600) {
-    const mins = Math.floor(seconds / 60)
-    const rem = Math.round(seconds % 60)
-    return rem ? `${mins}m${rem}s` : `${mins}m`
-  }
-  const hrs = Math.floor(seconds / 3600)
-  const mins = Math.round((seconds % 3600) / 60)
-  return mins ? `${hrs}h${mins}m` : `${hrs}h`
-}
-
-function scheduleLabel(args: Record<string, unknown>): string {
-  const prompt = argOf(args, 'Prompt')?.replace(/\s+/g, ' ').trim()
-  const cron = argOf(args, 'CronExpression')?.trim()
-  const secs =
-    typeof args.DurationSeconds === 'number' && Number.isFinite(args.DurationSeconds)
-      ? args.DurationSeconds
-      : undefined
-  const prefix =
-    secs !== undefined
-      ? `Timer (${formatSeconds(secs)})`
-      : cron
-        ? `Cron (${cron})`
-        : 'Scheduled task'
-  const text = prompt ? `${prefix}: ${prompt}` : prefix
-  return text.slice(0, COMMAND_LABEL_CHARS)
+function agyScheduleLabel(args: Record<string, unknown>): string {
+  return scheduleLabel({
+    seconds:
+      typeof args.DurationSeconds === 'number' && Number.isFinite(args.DurationSeconds)
+        ? args.DurationSeconds
+        : undefined,
+    cron: argOf(args, 'CronExpression'),
+    prompt: argOf(args, 'Prompt')
+  })
 }
 
 // AGY§13
@@ -570,7 +552,7 @@ function subagentSpecs(args: Record<string, unknown>, stepIdx: unknown): { label
   if (!list.length) {
     const summary = argOf(args, 'toolSummary')?.replace(/\s+/g, ' ').trim()
     return [
-      { label: summary?.slice(0, COMMAND_LABEL_CHARS) || `Subagent (${String(stepIdx ?? '')})` }
+      { label: summary?.slice(0, BACKGROUND_LABEL_CHARS) || `Subagent (${String(stepIdx ?? '')})` }
     ]
   }
   return list.map((raw) => {
@@ -583,7 +565,7 @@ function subagentSpecs(args: Record<string, unknown>, stepIdx: unknown): { label
         ? `${typeName}: ${role}`
         : role
       : (typeName && typeName !== 'self' ? typeName : undefined) || prompt || 'Subagent'
-    return { label: label.slice(0, COMMAND_LABEL_CHARS) }
+    return { label: label.slice(0, BACKGROUND_LABEL_CHARS) }
   })
 }
 
@@ -603,7 +585,7 @@ function titleSubagentLabel(sub: { name?: string; role?: string }): string {
       : undefined
   const cleanName = sub.name && sub.name !== 'self' ? sub.name.trim() : undefined
   const fallbackRole = sub.role?.replace(/\s+/g, ' ').trim()
-  return (shortRole || cleanName || fallbackRole || 'Subagent').slice(0, COMMAND_LABEL_CHARS)
+  return (shortRole || cleanName || fallbackRole || 'Subagent').slice(0, BACKGROUND_LABEL_CHARS)
 }
 
 function swarmMentions(text: string): { all: boolean; names: Set<string> } {
@@ -1329,7 +1311,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   ): void {
     const live = new Set(tasks.map((t) => t.taskId))
     for (const task of tasks) {
-      const richLabel = (task.description || task.toolSummary || '').slice(0, COMMAND_LABEL_CHARS)
+      const richLabel = (task.description || task.toolSummary || '').slice(
+        0,
+        BACKGROUND_LABEL_CHARS
+      )
       if (task.toolName === 'schedule') {
         const existing = run.schedules?.get(task.taskId)
         if (existing) {
@@ -2411,7 +2396,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (name === 'run_command') {
       if (event === 'PreToolUse' && belongs) {
         const label =
-          argOf(args, 'CommandLine')?.slice(0, COMMAND_LABEL_CHARS) ?? 'Background command'
+          argOf(args, 'CommandLine')?.slice(0, BACKGROUND_LABEL_CHARS) ?? 'Background command'
         const existing = run.commands?.get(taskId)
         if (existing) {
           existing.item.label = label
@@ -2456,7 +2441,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
             id: `${conversationId}/swarm-${stepIdx}-${i}`,
             parentId: conversationId,
             stepIdx,
-            label: member.slice(0, COMMAND_LABEL_CHARS),
+            label: member.slice(0, BACKGROUND_LABEL_CHARS),
             isSwarm: true,
             swarmGroup: teammate
           })
@@ -2472,7 +2457,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (name === 'schedule') {
       if (event === 'PreToolUse' && belongs) {
         const isDaemon = args.IsDaemon === true
-        const label = scheduleLabel(args)
+        const label = agyScheduleLabel(args)
         const existing = schedules.get(taskId)
         if (existing) {
           existing.item.label = label

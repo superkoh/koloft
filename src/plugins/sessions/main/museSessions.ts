@@ -16,7 +16,7 @@ import { koloftPrompt } from '../api'
 import { portOffset } from '@shared/worktreeName'
 import { resolveCliRuntime, type CliRuntime, type CliSpec } from '../../../main/cliRuntime'
 import { MIN_MUSE_VERSION, TESTED_MUSE_LINE } from '../../../main/cliMinimums'
-import { jsonRecord, record } from './codexObservation'
+import { jsonRecord, nonEmptyString, record } from './codexObservation'
 import { writeWholeBeforeVisible } from '../../../main/jsonDrops'
 import { startToolShim } from '../../../main/toolShim'
 import {
@@ -29,6 +29,7 @@ import { mapAtMost } from '@core/mapAtMost'
 import { pidAlive } from '../../../main/leftovers'
 import { inputBoxDraft } from '../../../main/inputBox'
 import { browserControlEnv } from '../../../main/browserControlEnv'
+import { BACKGROUND_LABEL_CHARS, wakeupItem } from './scheduleLabel'
 import {
   PROGRAM_STATUS_REPLY,
   ProgramStatusParser,
@@ -174,7 +175,7 @@ interface MuseRun extends StoredRun {
   subagentRoles: Map<string, string>
   background: Map<string, BackgroundItem>
   commands: Map<string, string>
-  jobs: Map<string, boolean>
+  jobs: Map<string, { recurring: boolean; item: BackgroundItem }>
   touched: Map<string, FileAcc>
   liveWrites: number
   log?: { sessionId: string; tail: SessionLogTail }
@@ -1016,7 +1017,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       run.background.set(response.work_id, {
         id: response.work_id,
         kind: 'command',
-        label: typeof command === 'string' ? command.slice(0, 160) : 'Background command',
+        label:
+          typeof command === 'string'
+            ? command.slice(0, BACKGROUND_LABEL_CHARS)
+            : 'Background command',
         state: 'working'
       })
       this.publishBackground(run)
@@ -1026,7 +1030,10 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
       run.background.set(id, {
         id,
         kind: 'monitor',
-        label: String(what.description ?? what.command ?? 'Monitor').slice(0, 160),
+        label: String(what.description ?? what.command ?? 'Monitor').slice(
+          0,
+          BACKGROUND_LABEL_CHARS
+        ),
         state: 'waiting'
       })
       this.publishBackground(run)
@@ -1036,7 +1043,17 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
         }, response.timeout_ms).unref?.()
     } else if (tool === 'cron_create') {
       const job = SCHEDULED_JOB.exec(String(input.tool_response))?.[1]
-      if (job) run.jobs.set(job, record(input.tool_input).recurring === true)
+      const what = record(input.tool_input)
+      const recurring = what.recurring === true
+      if (job)
+        run.jobs.set(job, {
+          recurring,
+          item: wakeupItem(job, {
+            cron: nonEmptyString(what.cron),
+            once: what.recurring === false,
+            prompt: nonEmptyString(what.prompt)
+          })
+        })
       this.holdForJobs(run)
     } else if (tool === 'cron_delete') {
       run.jobs.delete(String(record(input.tool_input).id))
@@ -1047,10 +1064,15 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
   // MUSE§9
   private holdForJobs(run: MuseRun): void {
     this.deps.runtime.setWakeupPending(run.tabId, run.jobs.size > 0)
+    this.publishBackground(run)
   }
 
   private publishBackground(run: MuseRun): void {
-    this.deps.events(run.tabId, { type: 'background-changed', items: [...run.background.values()] })
+    const jobs = [...run.jobs.values()].map((job) => job.item)
+    this.deps.events(run.tabId, {
+      type: 'background-changed',
+      items: [...run.background.values(), ...jobs]
+    })
   }
 
   // MUSE§2
@@ -1091,7 +1113,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     if (prompt?.reply && turnEndedIn(r) === prompt.turnId)
       this.endTurn(run, prompt.turnId, prompt.reply)
     const job = firedJob(r)
-    if (job && run.jobs.get(job) === false) {
+    if (job && run.jobs.get(job)?.recurring === false) {
       run.jobs.delete(job)
       this.holdForJobs(run)
     }
@@ -1282,7 +1304,7 @@ export class MuseSessions extends StoredSessions<MuseRun, MuseHistoryEntry, Muse
     run.background.clear()
     run.commands.clear()
     run.jobs.clear()
-    this.holdForJobs(run)
+    this.deps.runtime.setWakeupPending(run.tabId, false)
     run.endedTurns.clear()
     run.touched.clear()
     run.liveWrites = 0

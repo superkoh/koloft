@@ -716,7 +716,7 @@ export class ClaudeBackend implements SessionBackend {
       tabId?: string
       message?: string
       bgl?: string
-      wake?: number
+      crons?: unknown
       ask?: unknown
       trigger?: string
       wrote?: unknown
@@ -733,7 +733,7 @@ export class ClaudeBackend implements SessionBackend {
       return
     }
     // CC§8
-    if (typeof obj.wake === 'number') this.d.tracker.setWakeupPending(obj.tabId, obj.wake === 1)
+    if (Array.isArray(obj.crons)) this.d.tracker.setSessionCrons(obj.tabId, obj.crons)
     if (obj.event === SHELL_WROTE_EVENT) return this.d.tracker.noteShellWrites(obj.tabId, obj.wrote)
     const event = sessionEventFromHook(obj.event, obj.message, obj.bgl, obj.ask, obj.trigger)
     if (event) this.d.events(obj.tabId, event)

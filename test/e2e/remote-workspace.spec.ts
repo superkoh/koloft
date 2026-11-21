@@ -1441,6 +1441,32 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
     }
   })
 
+  // CC§8
+  test('a wakeup Claude on the machine scheduled for itself (a /loop) shows on the row as its schedule and prompt, and goes once a turn-end lists none', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      expect(await addRemoteWorkspace(page, env)).toEqual({ code: 'added', path: remoteKey(env) })
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const row = wsRows(page, REMOTE_WS_NAME).first()
+      await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
+      await runIn(page, centerTerm(page), '/loop check the build')
+      const badge = row.locator('.ws-tab-parked')
+      await expect(badge).toHaveText('⏸ 1', { timeout: 60_000 })
+      await badge.click()
+      await expect(page.locator('.tbu-pop.parked')).toContainText(
+        'monitor · Once (4 15 * * *): /loop check the build'
+      )
+      await page.keyboard.press('Escape')
+      await runIn(page, centerTerm(page), '/loop-stop')
+      await expect(badge).toHaveCount(0, { timeout: 60_000 })
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   test('E-RW-27: when Claude Code moves a remote conversation to a new session id (a phantom start, then continued-in), the tab follows it: one live row, bound to the new id, and ⌘W still ends its tmux session on the machine', async ({
     env
   }) => {
