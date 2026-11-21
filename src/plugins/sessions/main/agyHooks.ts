@@ -178,7 +178,7 @@ export function koloftHookEntry(runScript: string): Record<string, unknown> {
 
 // AGY§12
 export function sessionStartOutput(text: string): string {
-  return JSON.stringify({ injectSteps: [{ systemMessage: { systemMessage: text } }] })
+  return `${INJECT_STEPS_OPEN}${JSON.stringify({ systemMessage: { systemMessage: text } })}${INJECT_STEPS_CLOSE}`
 }
 
 export interface AgyHook {
