@@ -46,6 +46,7 @@ function deps(s: SessionInfo | undefined, pinned: string[] = []): BesideDeps {
       return 'tab-helper'
     },
     pinnedWorkspaces: () => pinned.map((p) => ({ path: p })),
+    turnedOff: (backend) => (backend === 'muse' ? 'Muse is turned off in Settings' : null),
     shownUnder
   }
 }
@@ -114,9 +115,24 @@ describe('startBeside', () => {
     expect(launched).toEqual([])
   })
 
-  it('says so when the session could not start, and shows nothing under the session', async () => {
-    const failing = { ...deps(session()), launch: async () => null }
-    expect(await startBeside(failing, 'tab-watched', spec)).toMatchObject({ ok: false })
+  it('starts no agent the owner turned off, and says why', async () => {
+    expect(await startBeside(deps(session()), 'tab-watched', { ...spec, backend: 'muse' })).toEqual(
+      { ok: false, why: 'Muse is turned off in Settings' }
+    )
+    expect(launched).toEqual([])
+  })
+
+  it('says why when the session could not start, and shows nothing under the session', async () => {
+    const failing = {
+      ...deps(session()),
+      launch: async () => {
+        throw new Error('ssh: lab is not reachable')
+      }
+    }
+    expect(await startBeside(failing, 'tab-watched', spec)).toEqual({
+      ok: false,
+      why: 'ssh: lab is not reachable'
+    })
     expect(shownUnder.parentOfRow('tab-helper')).toBeUndefined()
   })
 })

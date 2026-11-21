@@ -48,33 +48,38 @@ async function contentHashes(git: GitOut, dir: string, paths: string[]): Promise
   return hashed.join('')
 }
 
+const READS: readonly (readonly string[])[] = [
+  ['rev-parse', '--show-cdup'],
+  ['rev-parse', '--verify', '--quiet', 'HEAD'],
+  ['for-each-ref', '--format=%(objectname) %(refname)', 'refs/heads', 'refs/tags'],
+  ['stash', 'list', '--format=%H'],
+  [
+    '--no-optional-locks',
+    'status',
+    '--porcelain=v1',
+    '-z',
+    '--untracked-files=all',
+    '--ignore-submodules'
+  ],
+  ['--no-optional-locks', 'diff', '--cached', '--raw', '-z', '--no-abbrev', '--ignore-submodules'],
+  ['--no-optional-locks', 'diff', '--raw', '-z', '--no-abbrev', '--ignore-submodules']
+]
+
 export async function folderFingerprint(git: GitOut, dir: string): Promise<string | null> {
-  const [toTop, head, refs, status] = await Promise.all([
-    git(dir, ['rev-parse', '--show-cdup']),
-    git(dir, ['rev-parse', '--verify', '--quiet', 'HEAD']),
-    git(dir, [
-      'for-each-ref',
-      '--format=%(objectname) %(refname)',
-      'refs/heads',
-      'refs/tags',
-      'refs/stash'
-    ]),
-    git(dir, [
-      '--no-optional-locks',
-      'status',
-      '--porcelain=v1',
-      '-z',
-      '--untracked-files=all',
-      '--ignore-submodules'
-    ])
-  ])
-  if (toTop === null || refs === null || status === null) return null
-  const top = toTop.trim()
-  const present = entriesOf(status)
+  const [toTop, head, refs, stashes, status, staged, modes] = await mapAtMost(
+    [...READS],
+    GIT_CALLS_AT_ONCE_UNDER_SSHS_CHANNEL_LIMIT,
+    (args) => git(dir, [...args])
+  )
+  const read = [toTop, refs, stashes, status, staged, modes]
+  if (read.some((out) => out === null)) return null
+  if (head === null && refs!.includes('refs/heads/')) return null
+  const top = toTop!.trim()
+  const present = entriesOf(status!)
     .filter(hasContentToHash)
     .map((e) => `${top}${e.path}`)
   const contents = await contentHashes(git, dir, present)
   return createHash('sha256')
-    .update([head ?? NO_COMMIT_YET, refs, status, contents].join('\0'))
+    .update([head ?? NO_COMMIT_YET, ...read.slice(1), contents].join('\0'))
     .digest('hex')
 }

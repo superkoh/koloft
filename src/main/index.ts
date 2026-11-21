@@ -1091,6 +1091,7 @@ function sleepTab(tabId: string): void {
 
 function forgetSleeper(tabId: string): void {
   sleepers.forget(tabId)
+  answerableForAPlugin.delete(tabId)
   attention.clearKeepingExit(tabId)
   sendToRenderer(CH.tab.killedByMain, tabId)
   tabLifecycle.emit('forgotten', tabId)
@@ -3789,7 +3790,7 @@ app.whenReady().then(() => {
     if (!restarting) earlierTabIds.delete(e.id)
     ownerTouchedAt.delete(e.id)
     questionSeen.delete(e.id)
-    if (!restarting) answerableForAPlugin.delete(e.id)
+    if (!restarting && !asleep) answerableForAPlugin.delete(e.id)
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     guard?.forget(e.id)
@@ -6894,9 +6895,10 @@ const startedPlugins: PluginsStarted = startPlugins(
         startBeside: (tabId, spec) =>
           startBeside(
             {
-              sessionOfTab,
+              sessionOfTab: (tab) => sessionDeps.allSessions().find((s) => s.tabId === tab),
               launch: sessionDeps.launch,
               pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
+              turnedOff: sessionDeps.turnedOff,
               shownUnder
             },
             tabId,

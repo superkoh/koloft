@@ -5,6 +5,7 @@ import { execFileSync } from 'child_process'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { localGitOut } from '../../src/main/host/localHost'
 import { folderFingerprint } from '../../src/core/folderFingerprint'
+import type { GitOut } from '../../src/core/worktree'
 
 let directory: string
 let repo: string
@@ -85,6 +86,37 @@ describe('folderFingerprint', () => {
     git('commit', '-q', '-m', 'notes')
     seen.add(await fingerprint())
     expect(seen.size).toBe(5)
+  })
+
+  it('changes when only what is staged changes, or only a file’s mode', async () => {
+    write('src/app.ts', 'staged once\n')
+    git('add', 'src/app.ts')
+    write('src/app.ts', 'in the folder\n')
+    const before = await fingerprint()
+    write('src/app.ts', 'staged twice\n')
+    git('add', 'src/app.ts')
+    write('src/app.ts', 'in the folder\n')
+    const restaged = await fingerprint()
+    expect(restaged).not.toBe(before)
+    fs.chmodSync(path.join(repo, 'src/app.ts'), 0o755)
+    expect(await fingerprint()).not.toBe(restaged)
+  })
+
+  it('changes when an older stash is dropped', async () => {
+    git('stash', 'push', '-q', '--', 'src/app.ts')
+    write('src/app.ts', 'again\n')
+    git('stash', 'push', '-q', '--', 'src/app.ts')
+    const before = await fingerprint()
+    git('stash', 'drop', '-q', 'stash@{1}')
+    expect(await fingerprint()).not.toBe(before)
+  })
+
+  it('answers nothing when reading the commit fails in a repository that has one', async () => {
+    const failsOnHead: GitOut = (dir, args, ...rest) =>
+      args.includes('HEAD') && args[0] === 'rev-parse'
+        ? Promise.resolve(null)
+        : localGitOut(dir, args, ...rest)
+    expect(await folderFingerprint(failsOnHead, repo)).toBeNull()
   })
 
   it('does not change when a file git ignores changes', async () => {

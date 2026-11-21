@@ -1187,24 +1187,27 @@ export function sessionVerb(d: SessionVerbDeps): {
     opening: string,
     sender: string,
     tabId: string,
-    text: string
+    text: string,
+    undelivered: (to: Target, why: string) => void
   ): Promise<boolean> => {
     const session = d.allSessions().find((s) => s.tabId === tabId)
     if (!session) return false
     const to = openTarget(session)
     const said = `${opening}${text}`
-    const mode = messagingOf(to.backend, !!to.remote) === 'peerLine' ? d.modeOf(tabId) : undefined
+    const route = messagingOf(to.backend, !!to.remote)
+    if (route === 'peerLine' && !fitsACrossSessionMessage(said)) return false
+    const mode = route === 'peerLine' ? d.modeOf(tabId) : undefined
     const peer = mode ? peerLineFrom(() => mode, said, sender)(tabId) : undefined
     try {
       await sendInto(to, tabId, said, peer, Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS, true)
       return true
     } catch (error) {
-      d.undelivered(tabId, to, errorText(error))
+      undelivered(to, errorText(error))
       return false
     }
   }
   const tellFromKoloft = (tabId: string, text: string): Promise<boolean> =>
-    tellWith(FROM_KOLOFT, 'koloft', tabId, text)
+    tellWith(FROM_KOLOFT, 'koloft', tabId, text, (to, why) => d.undelivered(tabId, to, why))
 
   const commandFrom = (caller: AgentCaller, text: string, into?: Target): Promise<string> => {
     const overseer = d.overseer.target(caller.session.sessionId)
@@ -1556,7 +1559,8 @@ export function sessionVerb(d: SessionVerbDeps): {
     tellFromKoloft,
     startForReply,
     tellAs: async (tabId, opening, text) =>
-      PLUGIN_OPENINGS.includes(opening) && tellWith(opening, 'plugin', tabId, text),
+      PLUGIN_OPENINGS.includes(opening) &&
+      tellWith(opening, 'plugin', tabId, text, () => undefined),
     ownerWordsIn: async (tabId) => {
       const s = d.allSessions().find((s) => s.tabId === tabId)
       return s?.sessionId ? ownerWordsOf(s) : undefined

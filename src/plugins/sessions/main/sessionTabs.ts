@@ -2,6 +2,7 @@ import type { BackendId, CreateTabOptions, SessionInfo } from '@shared/types'
 import { PEER_TRAITS, namedAtLaunch } from '@shared/sessionBackend'
 import { formatRemoteKey, isRemoteKey } from '@shared/remoteKey'
 import type { KoloftAsk } from './dialog'
+import { errorText } from '@core/errorText'
 import { withHandover } from './handoverPreamble'
 import type { StartedSessions } from './startedSessions'
 
@@ -41,6 +42,7 @@ export interface BesideDeps {
   sessionOfTab(tabId: string): SessionInfo | undefined
   launch(options: CreateTabOptions & { kind: BackendId }): Promise<string | null>
   pinnedWorkspaces(): { path: string }[]
+  turnedOff(backend: BackendId): string | null
   shownUnder: Pick<StartedSessions, 'started'>
 }
 
@@ -70,6 +72,9 @@ export async function startBeside(
     return { ok: false, why: 'There is no open session in that tab' }
   const folder = folderOf(beside)
   const backend = spec.backend ?? beside.backendId
+  const off = d.turnedOff(backend)
+  if (off) return { ok: false, why: off }
+  let why = 'Koloft could not start the session'
   const tab = await d
     .launch({
       kind: backend,
@@ -82,8 +87,11 @@ export async function startBeside(
       trustFolder: inAWorkspace(folder, d.pinnedWorkspaces()),
       ...roleAndTask(backend, spec.role, spec.task)
     })
-    .catch(() => null)
-  if (!tab) return { ok: false, why: 'Koloft could not start the session' }
+    .catch((error: unknown) => {
+      why = errorText(error)
+      return null
+    })
+  if (!tab) return { ok: false, why }
   d.shownUnder.started(tab, beside.sessionId)
   return { ok: true, tabId: tab }
 }
