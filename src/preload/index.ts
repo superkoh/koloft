@@ -2,23 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { injectBrowserAction } from 'electron-chrome-extensions/browser-action'
 import type {
   WorkbenchShortcut,
-  BrowserAuthChallenge,
   BrowserCommand,
-  BrowserAudioState,
-  BrowserDownload,
-  BrowserDownloadEvent,
-  BrowserPermissionAsk,
-  BrowserPermissionRefusal,
-  BrowserCdpAttached,
-  BrowserPagesInUse,
-  BrowserCdpOp,
-  BrowserJsDialog,
-  BrowserOverlayOpen,
-  BrowserOpenRequest,
-  EditFingerprint,
-  ExtensionPermissionRequest,
-  GithubInfo,
-  KoloftApi,
   CreateTabOptions,
   TerminalData,
   TerminalExit,
@@ -26,16 +10,9 @@ import type {
   ScreenRequest,
   ScreenSize,
   TerminalProcessTitle,
-  LeftoverProcess,
-  SessionInfo,
-  SessionSearchHits,
   SpawnedTab,
   UsageRead,
-  CronState,
   MachineState,
-  DiscordStatus,
-  AttentionEvent,
-  SecretAskView,
   AccountView,
   GitAccountView,
   GitLoginProgress,
@@ -44,18 +21,29 @@ import type {
   Settings,
   UpdateProgress,
   UpdateCheckResult,
-  OpenRequest,
-  WorkspaceRows,
-  DirChanges
+  WorkspaceRows
 } from '@shared/types'
 import { CH } from '@shared/ipcChannels'
-import type { InboxSnapshot } from '@shared/inbox'
+import type { PreloadIpc } from '@core/ipc'
+import { pluginBridges, type KoloftApi } from '@plugins/bridges'
 import { TerminalDataSinks } from './terminalDataSinks'
 
 const terminalDataSinks = new TerminalDataSinks()
 ipcRenderer.on(CH.terminal.data, (_e, d: TerminalData) => terminalDataSinks.deliver(d.id, d.data))
 
+const pluginIpc: PreloadIpc = {
+  invoke: (channel, ...args) => ipcRenderer.invoke(channel, ...args),
+  send: (channel, ...args) => ipcRenderer.send(channel, ...args),
+  sendSync: (channel, ...args) => ipcRenderer.sendSync(channel, ...args),
+  listen: (channel, listener) => {
+    const handler = (_e: unknown, ...args: Parameters<typeof listener>): void => listener(...args)
+    ipcRenderer.on(channel, handler)
+    return () => ipcRenderer.removeListener(channel, handler)
+  }
+}
+
 const api: KoloftApi = {
+  ...pluginBridges(pluginIpc),
   isDev: ipcRenderer.sendSync(CH.app.isDev) as boolean,
   domRenderer: process.env.KOLOFT_DOM_RENDERER === '1',
   testMode: process.env.KOLOFT_TEST_BACKGROUND === '1',
@@ -111,15 +99,6 @@ const api: KoloftApi = {
     answerScreen: (a) => ipcRenderer.send(CH.terminal.screenDone, a),
     logUnexpectedExit: (s) => ipcRenderer.send(CH.terminal.unexpectedExit, s)
   },
-  workbench: {
-    get: (sessionId) => ipcRenderer.invoke(CH.workbench.get, sessionId),
-    setState: (sessionId, state) => ipcRenderer.send(CH.workbench.setState, sessionId, state),
-    setAvailable: (available, terminal) =>
-      ipcRenderer.send(CH.workbench.available, available, terminal),
-    setFindAvailable: (available) => ipcRenderer.send(CH.workbench.findAvailable, available),
-    setSaveAvailable: (available) => ipcRenderer.send(CH.workbench.saveAvailable, available),
-    setDirtyTabs: (ids) => ipcRenderer.send(CH.workbench.dirtyTabs, ids)
-  },
   tabs: {
     list: () => ipcRenderer.invoke(CH.tabs.list),
     moved: (oldTabId, newTabId) => ipcRenderer.send(CH.tabs.moved, oldTabId, newTabId),
@@ -134,72 +113,12 @@ const api: KoloftApi = {
       return () => ipcRenderer.removeListener(CH.tab.slept, handler)
     }
   },
-  sessions: {
-    backends: (recheck) => ipcRenderer.invoke(CH.sessions.backends, recheck === true),
-    installTool: (backend) => ipcRenderer.invoke(CH.sessions.installTool, backend),
-    onToolsChanged: (cb) => {
-      const handler = (): void => cb()
-      ipcRenderer.on(CH.sessions.toolsChanged, handler)
-      return () => ipcRenderer.removeListener(CH.sessions.toolsChanged, handler)
-    },
-    onUpdate: (cb) => {
-      const handler = (_e: unknown, s: SessionInfo[]): void => cb(s)
-      ipcRenderer.on(CH.sessions.update, handler)
-      return () => ipcRenderer.removeListener(CH.sessions.update, handler)
-    },
-    onRelocated: (cb) => {
-      const handler = (_e: unknown, x: { tabId: string; dir: string }): void => cb(x)
-      ipcRenderer.on(CH.session.relocated, handler)
-      return () => ipcRenderer.removeListener(CH.session.relocated, handler)
-    },
-    noteActivity: (tabId) => ipcRenderer.send(CH.sessions.activity, tabId),
-    list: () => ipcRenderer.invoke(CH.sessions.list),
-    resumePlan: (id) => ipcRenderer.invoke(CH.sessions.resumePlan, id),
-    resume: (req) => ipcRenderer.invoke(CH.sessions.resume, req),
-    archive: (id) => ipcRenderer.invoke(CH.sessions.archive, id),
-    setResident: (id, on) => ipcRenderer.send(CH.sessions.setResident, id, on),
-    forceClose: (id) => ipcRenderer.invoke(CH.sessions.forceClose, id),
-    transcriptExists: (id) => ipcRenderer.invoke(CH.sessions.transcriptExists, id),
-    noAccountToResume: (id) => ipcRenderer.invoke(CH.sessions.noAccountToResume, id),
-    leftovers: () => ipcRenderer.invoke(CH.sessions.leftovers),
-    onLeftovers: (cb) => {
-      const handler = (_e: unknown, l: Record<string, LeftoverProcess[]>): void => cb(l)
-      ipcRenderer.on(CH.sessions.leftovers, handler)
-      return () => ipcRenderer.removeListener(CH.sessions.leftovers, handler)
-    },
-    stopLeftover: (sessionId, pid) => ipcRenderer.invoke(CH.sessions.stopLeftover, sessionId, pid),
-    ports: (tabId) => ipcRenderer.invoke(CH.sessions.ports, tabId),
-    search: (searchId, term) => ipcRenderer.send(CH.sessions.search, searchId, term),
-    onSearchHits: (cb) => {
-      const handler = (_e: unknown, found: SessionSearchHits): void => cb(found)
-      ipcRenderer.on(CH.sessions.searchHits, handler)
-      return () => ipcRenderer.removeListener(CH.sessions.searchHits, handler)
-    }
-  },
-  cron: {
-    list: () => ipcRenderer.invoke(CH.cron.list),
-    save: (input) => ipcRenderer.invoke(CH.cron.save, input),
-    delete: (jobId) => ipcRenderer.invoke(CH.cron.delete, jobId),
-    setEnabled: (jobId, on) => ipcRenderer.invoke(CH.cron.setEnabled, { jobId, on }),
-    runNow: (jobId) => ipcRenderer.invoke(CH.cron.runNow, jobId),
-    skills: (workspacePath, backend) => ipcRenderer.invoke(CH.cron.skills, workspacePath, backend),
-    trusted: (workspacePath, backend) =>
-      ipcRenderer.invoke(CH.cron.trusted, workspacePath, backend),
-    onState: (cb) => {
-      const handler = (_e: unknown, s: CronState): void => cb(s)
-      ipcRenderer.on(CH.cron.state, handler)
-      return () => ipcRenderer.removeListener(CH.cron.state, handler)
-    },
-    onToast: (cb) => {
+  toast: {
+    onShow: (cb) => {
       const handler = (_e: unknown, text: string): void => cb(text)
-      ipcRenderer.on(CH.cron.toast, handler)
-      return () => ipcRenderer.removeListener(CH.cron.toast, handler)
+      ipcRenderer.on(CH.toast.show, handler)
+      return () => ipcRenderer.removeListener(CH.toast.show, handler)
     }
-  },
-  sessionDefaults: {
-    read: (workspacePath) => ipcRenderer.invoke(CH.sessionDefaults.read, workspacePath),
-    write: (workspacePath, defaults) =>
-      ipcRenderer.invoke(CH.sessionDefaults.write, workspacePath, defaults)
   },
   machine: {
     onState: (cb) => {
@@ -210,255 +129,19 @@ const api: KoloftApi = {
     now: () => ipcRenderer.invoke(CH.machine.now),
     free: (tabId) => ipcRenderer.invoke(CH.machine.free, tabId)
   },
-  conductors: {
-    bind: (channel) => ipcRenderer.invoke(CH.conductors.bind, channel),
-    bindNewChannel: () => ipcRenderer.invoke(CH.conductors.bindNewChannel),
-    unbind: () => ipcRenderer.invoke(CH.conductors.unbind),
-    open: () => ipcRenderer.invoke(CH.conductors.open),
-    startFresh: () => ipcRenderer.invoke(CH.conductors.startFresh),
-    fromPalette: (request) => ipcRenderer.invoke(CH.conductors.fromPalette, request)
-  },
   palette: {
     savePicture: (dataUrl) => ipcRenderer.invoke(CH.palette.savePicture, dataUrl)
   },
-  discord: {
-    status: () => ipcRenderer.invoke(CH.discord.status),
-    onStatus: (cb) => {
-      const handler = (_e: unknown, s: DiscordStatus): void => cb(s)
-      ipcRenderer.on(CH.discord.status, handler)
-      return () => ipcRenderer.removeListener(CH.discord.status, handler)
-    },
-    pair: (isMe) => ipcRenderer.invoke(CH.discord.pair, isMe),
-    channels: () => ipcRenderer.invoke(CH.discord.channels),
-    setUpWithButler: (ownerWords) => ipcRenderer.invoke(CH.discord.setUpWithButler, ownerWords)
-  },
-  inbox: {
-    list: () => ipcRenderer.invoke(CH.inbox.list),
-    onChanged: (cb) => {
-      const handler = (_e: unknown, snapshot: InboxSnapshot): void => cb(snapshot)
-      ipcRenderer.on(CH.inbox.changed, handler)
-      return () => ipcRenderer.removeListener(CH.inbox.changed, handler)
-    },
-    press: (cardId, actionId, answers) =>
-      ipcRenderer.send(CH.inbox.press, cardId, actionId, answers),
-    confirm: (cardId) => ipcRenderer.send(CH.inbox.confirm, cardId),
-    undo: (cardId) => ipcRenderer.send(CH.inbox.undo, cardId),
-    retry: (cardId) => ipcRenderer.send(CH.inbox.retry, cardId),
-    dismiss: (cardId) => ipcRenderer.send(CH.inbox.dismiss, cardId),
-    level: (cardId, level) => ipcRenderer.send(CH.inbox.level, cardId, level),
-    top: (cardId) => ipcRenderer.send(CH.inbox.top, cardId),
-    clearNotes: () => ipcRenderer.send(CH.inbox.clearNotes)
-  },
-  secret: {
-    list: () => ipcRenderer.invoke(CH.secret.list),
-    onAsks: (cb) => {
-      const handler = (_e: unknown, asks: SecretAskView[]): void => cb(asks)
-      ipcRenderer.on(CH.secret.asks, handler)
-      return () => ipcRenderer.removeListener(CH.secret.asks, handler)
-    },
-    answer: (id, value) => ipcRenderer.send(CH.secret.answer, id, value),
-    done: (id) => ipcRenderer.send(CH.secret.done, id),
-    decline: (id) => ipcRenderer.send(CH.secret.decline, id)
-  },
-  attention: {
-    list: () => ipcRenderer.invoke(CH.attention.list),
-    activeTab: (id) => ipcRenderer.send(CH.attention.activeTab, id),
-    onActivateTab: (cb) => {
-      const handler = (_e: unknown, p: { tabId: string }): void => cb(p.tabId)
-      ipcRenderer.on(CH.attention.activateTab, handler)
-      return () => ipcRenderer.removeListener(CH.attention.activateTab, handler)
-    },
-    onChanged: (cb) => {
-      const handler = (_e: unknown, pending: AttentionEvent[]): void => cb(pending)
-      ipcRenderer.on(CH.attention.changed, handler)
-      return () => ipcRenderer.removeListener(CH.attention.changed, handler)
-    }
-  },
-  preview: {
-    readText: (p) => ipcRenderer.invoke(CH.preview.readText, p),
-    openFileDialog: () => ipcRenderer.invoke(CH.preview.openFileDialog),
-    osOpen: (p) => ipcRenderer.send(CH.preview.osOpen, p),
-    onOpenRequest: (cb) => {
-      const handler = (_e: unknown, r: OpenRequest): void => cb(r)
-      ipcRenderer.on(CH.preview.openFile, handler)
-      return () => ipcRenderer.removeListener(CH.preview.openFile, handler)
-    }
-  },
-  browserGuestLimit: ipcRenderer.sendSync(CH.browser.guestLimit) as number,
   sessionScreenAtLoad: ipcRenderer.sendSync(CH.terminal.sessionScreen) as ScreenSize | null,
   browserTabCap: Number(process.env.KOLOFT_BROWSER_TAB_CAP) || 0,
-  browser: {
-    onOpenRequest: (cb) => {
-      const handler = (_e: unknown, r: BrowserOpenRequest): void => cb(r)
-      ipcRenderer.on(CH.browser.open, handler)
-      return () => ipcRenderer.removeListener(CH.browser.open, handler)
-    },
-    onDownload: (cb) => {
-      const handler = (_e: unknown, d: BrowserDownload): void => cb(d)
-      ipcRenderer.on(CH.browser.download, handler)
-      return () => ipcRenderer.removeListener(CH.browser.download, handler)
-    },
-    onDownloadEvent(cb: (e: BrowserDownloadEvent) => void) {
-      const handler = (_e: unknown, ev: BrowserDownloadEvent): void => cb(ev)
-      ipcRenderer.on(CH.browser.downloadEvent, handler)
-      return () => ipcRenderer.removeListener(CH.browser.downloadEvent, handler)
-    },
-    cancelDownload: (id: string) => ipcRenderer.send(CH.browser.downloadCancel, id),
-    retryDownload: (id: string) => ipcRenderer.send(CH.browser.downloadRetry, id),
-    onPermissionAsk(cb: (a: BrowserPermissionAsk) => void) {
-      const handler = (_e: unknown, a: BrowserPermissionAsk): void => cb(a)
-      ipcRenderer.on(CH.browser.permissionAsk, handler)
-      return () => ipcRenderer.removeListener(CH.browser.permissionAsk, handler)
-    },
-    onPermissionRefused(cb: (r: BrowserPermissionRefusal) => void) {
-      const handler = (_e: unknown, r: BrowserPermissionRefusal): void => cb(r)
-      ipcRenderer.on(CH.browser.permissionRefused, handler)
-      return () => ipcRenderer.removeListener(CH.browser.permissionRefused, handler)
-    },
-    onPermissionDrop(cb: (id: string) => void) {
-      const handler = (_e: unknown, id: string): void => cb(id)
-      ipcRenderer.on(CH.browser.permissionDrop, handler)
-      return () => ipcRenderer.removeListener(CH.browser.permissionDrop, handler)
-    },
-    answerPermission: (id: string, granted: boolean) =>
-      ipcRenderer.send(CH.browser.permissionAnswer, id, granted),
-    cancelPermission: (id: string) => ipcRenderer.send(CH.browser.permissionCancel, id),
-    onAudioState(cb: (s: BrowserAudioState) => void) {
-      const handler = (_e: unknown, st: BrowserAudioState): void => cb(st)
-      ipcRenderer.on(CH.browser.audioState, handler)
-      return () => ipcRenderer.removeListener(CH.browser.audioState, handler)
-    },
-    setMuted: (guestId: number, muted: boolean) =>
-      ipcRenderer.send(CH.browser.setMuted, guestId, muted),
-    copyText: (text: string) => ipcRenderer.send(CH.browser.copyText, text),
-    onFullscreen(cb: (on: boolean) => void) {
-      const handler = (_e: unknown, on: boolean): void => cb(on)
-      ipcRenderer.on(CH.browser.fullscreen, handler)
-      return () => ipcRenderer.removeListener(CH.browser.fullscreen, handler)
-    },
-    onBlockedScheme: (cb) => {
-      const handler = (_e: unknown, url: string): void => cb(url)
-      ipcRenderer.on(CH.browser.blockedScheme, handler)
-      return () => ipcRenderer.removeListener(CH.browser.blockedScheme, handler)
-    },
-    onAuthChallenge: (cb) => {
-      const handler = (_e: unknown, c: BrowserAuthChallenge): void => cb(c)
-      ipcRenderer.on(CH.browser.authChallenge, handler)
-      return () => ipcRenderer.removeListener(CH.browser.authChallenge, handler)
-    },
-    answerAuthChallenge: (id, answer) => ipcRenderer.send(CH.browser.authAnswer, id, answer),
-    onJsDialog: (cb) => {
-      const handler = (_e: unknown, d: BrowserJsDialog): void => cb(d)
-      ipcRenderer.on(CH.browser.jsDialog, handler)
-      return () => ipcRenderer.removeListener(CH.browser.jsDialog, handler)
-    },
-    answerJsDialog: (id, answer) => ipcRenderer.send(CH.browser.jsDialogAnswer, id, answer),
-    overlayReady: () => ipcRenderer.send(CH.browser.overlayReady),
-    onOverlayOpen: (cb) => {
-      const handler = (_e: unknown, o: BrowserOverlayOpen): void => cb(o)
-      ipcRenderer.on(CH.browser.overlayOpen, handler)
-      return () => ipcRenderer.removeListener(CH.browser.overlayOpen, handler)
-    },
-    setOverlayGuest: (guestId, on) => ipcRenderer.send(CH.browser.overlayGuest, guestId, on),
-    setGuestOwner: (guestId, ownerTabId) =>
-      ipcRenderer.send(CH.browser.guestOwner, guestId, ownerTabId),
-    reportStrip: (sessionId, targets) => ipcRenderer.send(CH.browser.strip, sessionId, targets),
-    reportComposing: (on) => ipcRenderer.send(CH.browser.hostComposing, on),
-    onCdpOp: (cb) => {
-      const handler = (_e: unknown, op: BrowserCdpOp): void => cb(op)
-      ipcRenderer.on(CH.browser.cdpOp, handler)
-      return () => ipcRenderer.removeListener(CH.browser.cdpOp, handler)
-    },
-    answerCdpOp: (res) => ipcRenderer.send(CH.browser.cdpOpDone, res),
-    onCdpAttached: (cb) => {
-      const handler = (_e: unknown, a: BrowserCdpAttached): void => cb(a)
-      ipcRenderer.on(CH.browser.cdpAttached, handler)
-      return () => ipcRenderer.removeListener(CH.browser.cdpAttached, handler)
-    },
-    onMemoryCritical: (cb) => {
-      const handler = (_e: unknown, inUse: BrowserPagesInUse): void => cb(inUse)
-      ipcRenderer.on(CH.browser.memoryCritical, handler)
-      return () => ipcRenderer.removeListener(CH.browser.memoryCritical, handler)
-    },
-    certProceed: (url) => ipcRenderer.invoke(CH.browser.certProceed, url),
-    clearData: () => ipcRenderer.invoke(CH.browser.clearData),
-    openExternal: (url) => ipcRenderer.send(CH.browser.openExternal, url),
-    toggleDevTools: (guestId) => ipcRenderer.send(CH.browser.devtools, guestId),
-    pickElement: (guestId, sessionTabId) =>
-      ipcRenderer.invoke(CH.browser.pickElement, guestId, sessionTabId),
-    stopPick: (guestId) => ipcRenderer.send(CH.browser.pickStop, guestId)
+  git: {
+    commit: (root, message) => ipcRenderer.invoke(CH.git.commit, root, message),
+    push: (root) => ipcRenderer.invoke(CH.git.push, root),
+    readiness: (root) => ipcRenderer.invoke(CH.git.readiness, root)
   },
-  extensions: {
-    list: () => ipcRenderer.invoke(CH.ext.list),
-    setEnabled: (id, enabled) => ipcRenderer.invoke(CH.ext.setEnabled, id, enabled),
-    uninstall: (id) => ipcRenderer.invoke(CH.ext.uninstall, id),
-    onChanged: (cb) => {
-      const handler = (): void => cb()
-      ipcRenderer.on(CH.ext.changed, handler)
-      return () => ipcRenderer.removeListener(CH.ext.changed, handler)
-    },
-    activeGuest: (webContentsId, url) => ipcRenderer.send(CH.ext.activeGuest, webContentsId, url),
-    openDropped: (url) => ipcRenderer.send(CH.ext.openDropped, url),
-    anchorPopup: (rect) => ipcRenderer.invoke(CH.ext.popupAnchor, rect),
-    dismissPopup: () => ipcRenderer.send(CH.ext.dismissPopup),
-    onPermissionRequest: (cb) => {
-      const handler = (_e: unknown, r: ExtensionPermissionRequest): void => cb(r)
-      ipcRenderer.on(CH.ext.permissionRequest, handler)
-      return () => ipcRenderer.removeListener(CH.ext.permissionRequest, handler)
-    },
-    answerPermissionRequest: (id, granted) => ipcRenderer.send(CH.ext.permissionAnswer, id, granted)
-  },
-  fs: {
-    listDir: (p, opts) => ipcRenderer.invoke(CH.fs.listDir, p, opts),
-    dirExists: (p) => ipcRenderer.invoke(CH.fs.dirExists, p),
-    fileExists: (p) => ipcRenderer.invoke(CH.fs.fileExists, p),
-    search: (root, q, opts) => ipcRenderer.invoke(CH.fs.search, root, q, opts),
-    gitChanges: (root, base) => ipcRenderer.invoke(CH.fs.gitChanges, root, base),
-    gitHeadLog: (root) => ipcRenderer.invoke(CH.fs.gitHeadLog, root),
-    watchDir: (root, reportsWhatChangedWhileUnwatched) =>
-      ipcRenderer.invoke(CH.fs.watchDir, root, reportsWhatChangedWhileUnwatched),
-    unwatchDir: (root) => ipcRenderer.send(CH.fs.unwatchDir, root),
-    onDirChange: (cb) => {
-      const handler = (_e: unknown, root: string, changes?: DirChanges): void => cb(root, changes)
-      ipcRenderer.on(CH.fs.dirChanged, handler)
-      return () => ipcRenderer.removeListener(CH.fs.dirChanged, handler)
-    },
-    watchFile: (p) => ipcRenderer.send(CH.fs.watchFile, p),
-    unwatchFile: (p) => ipcRenderer.send(CH.fs.unwatchFile, p),
-    onFileChange: (cb) => {
-      const handler = (_e: unknown, p: string, fp?: EditFingerprint): void => cb(p, fp)
-      ipcRenderer.on(CH.fs.fileChanged, handler)
-      return () => ipcRenderer.removeListener(CH.fs.fileChanged, handler)
-    },
-    reveal: (p) => ipcRenderer.send(CH.fs.reveal, p),
-    gitDiff: (root, base) => ipcRenderer.invoke(CH.fs.gitDiff, root, base),
-    gitFileDiff: (p, base, untracked) => ipcRenderer.invoke(CH.fs.gitFileDiff, p, base, untracked),
-    gitFileDiffFull: (p, base, untracked) =>
-      ipcRenderer.invoke(CH.fs.gitFileDiffFull, p, base, untracked),
-    searchContent: (root, q, opts) => ipcRenderer.invoke(CH.fs.searchContent, root, q, opts)
-  },
-  edit: {
-    open: (p) => ipcRenderer.invoke(CH.edit.open, p),
-    write: (p, text, expect, opts) => ipcRenderer.invoke(CH.edit.write, p, text, expect, opts),
-    create: (dirPath, name) => ipcRenderer.invoke(CH.edit.create, dirPath, name)
-  },
-  notes: {
-    path: (ws) => ipcRenderer.invoke(CH.notes.path, ws)
-  },
-  github: {
-    info: (root, force) => ipcRenderer.invoke(CH.github.info, root, force),
-    target: (root, what) => ipcRenderer.invoke(CH.github.target, root, what),
-    onInfo: (cb) => {
-      const handler = (_e: unknown, root: string, info: GithubInfo): void => cb(root, info)
-      ipcRenderer.on(CH.github.info, handler)
-      return () => ipcRenderer.removeListener(CH.github.info, handler)
-    },
-    checks: (root, pr) => ipcRenderer.invoke(CH.github.checks, root, pr),
-    failingChecksText: (root, pr) => ipcRenderer.invoke(CH.github.failingChecksText, root, pr),
-    commit: (root, message) => ipcRenderer.invoke(CH.github.commit, root, message),
-    push: (root) => ipcRenderer.invoke(CH.github.push, root),
-    openItems: (root) => ipcRenderer.invoke(CH.github.openItems, root),
-    prWorktree: (root, pr, branch) => ipcRenderer.invoke(CH.github.prWorktree, root, pr, branch)
+  os: {
+    open: (p) => ipcRenderer.send(CH.os.open, p),
+    reveal: (p) => ipcRenderer.send(CH.os.reveal, p)
   },
   workspace: {
     pickFolder: () => ipcRenderer.invoke(CH.workspace.pickFolder),
@@ -466,7 +149,6 @@ const api: KoloftApi = {
     remove: (p) => ipcRenderer.invoke(CH.workspace.remove, p),
     removeConfirmed: (p) => ipcRenderer.invoke(CH.workspace.removeConfirmed, p),
     move: (p, before) => ipcRenderer.invoke(CH.workspace.move, p, before),
-    worktrees: (p) => ipcRenderer.invoke(CH.workspace.worktrees, p),
     historyRows: (p, opts) => ipcRenderer.invoke(CH.workspace.historyRows, p, opts),
     rows: () => ipcRenderer.invoke(CH.workspace.rows),
     onRows: (cb) => {

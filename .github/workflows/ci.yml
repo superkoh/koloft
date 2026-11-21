@@ -36,6 +36,8 @@ jobs:
 
       - run: npm run check:comments
 
+      - run: npm run check:plugin-imports
+
       - run: npm run typecheck
 
       - run: npm run test:unit

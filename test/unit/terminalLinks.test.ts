@@ -10,7 +10,7 @@ const fileExists = vi.fn((_file: string) => Promise.resolve(true))
 vi.stubGlobal('window', {
   api: {
     workbench: { setState },
-    preview: { osOpen },
+    os: { open: osOpen },
     settings: { set: vi.fn() },
     terminal: { kill: vi.fn() },
     fs: { fileExists }

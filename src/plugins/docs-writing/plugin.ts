@@ -4,6 +4,7 @@ export const plugin: PluginManifest = {
   formatVersion: PLUGIN_FORMAT_VERSION,
   id: 'docs-writing',
   name: 'Docs writing',
+  does: 'The koloft-docs skill: how agents write documents for you to read.',
   mandatory: false,
   needs: []
 }

@@ -9,7 +9,7 @@ import {
 import { REMOTE_HOOK_DIR } from './remote/paths'
 import { FIRST_RECORD_READ_BYTES, FORK_MARK, REMOTE_LOG_MARKS, SAID_MARKS } from './museSessionLog'
 import { museHookScript } from './museHooks'
-import { remoteDiscordSaidFile, remoteNoticeFile } from './hooks'
+import { remoteDiscordSaidFile, remoteNoticeFile } from '@plugins/sessions/main/hooks'
 import { MUSE_STOPS_WHEN_THIS_LINK_DANGLES } from './museAccounts'
 import { skillsFromMachineLine } from './remote/launch'
 import { MUSE_SANDBOX_CANNOT_START } from './museSandbox'

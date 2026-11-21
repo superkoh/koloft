@@ -394,10 +394,7 @@ export function LoginDialog(): JSX.Element | null {
             Finish the authorization in your browser — the token is collected automatically.
           </div>
           {progress.url && (
-            <button
-              className="mini"
-              onClick={() => window.api.preview.osOpen(progress.url as string)}
-            >
+            <button className="mini" onClick={() => window.api.os.open(progress.url as string)}>
               Open authorization page
             </button>
           )}

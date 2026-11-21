@@ -30,6 +30,49 @@ export class StallWatch {
   }
 }
 
+export const STUCK_AFTER_MS = 5000
+
+export interface StuckWatchData {
+  beats: SharedArrayBuffer
+  pid: number
+  samplesDir: string
+  stuckAfterMs: number
+}
+
+export type AskedForABeatAt = number
+export type WhatTheMainThreadWasIn = string
+
+interface StuckWatch {
+  on(event: 'message', listener: (said: AskedForABeatAt | WhatTheMainThreadWasIn) => void): unknown
+  on(event: 'error', listener: (error: unknown) => void): unknown
+  unref(): void
+}
+
+// PLATFORM§70
+export function answerTheStuckWatch(
+  startWatch: (data: StuckWatchData) => StuckWatch,
+  data: Omit<StuckWatchData, 'beats'>,
+  log: (line: string) => void
+): void {
+  const beats = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT)
+  const beat = new Int32Array(beats)
+  let theLastAskWaitedMs = 0
+  const watch = startWatch({ ...data, beats })
+  watch.on('message', (said: AskedForABeatAt | WhatTheMainThreadWasIn) => {
+    if (typeof said === 'number') {
+      theLastAskWaitedMs = Date.now() - said
+      Atomics.add(beat, 0, 1)
+      Atomics.notify(beat, 0)
+      return
+    }
+    log(
+      `main thread took no new work for at least ${theLastAskWaitedMs} ms; what it was in ${data.stuckAfterMs} ms into that: ${said}`
+    )
+  })
+  watch.on('error', (error) => log(`the watch for a stuck main thread stopped: ${error}`))
+  watch.unref()
+}
+
 function mainThreadCpuMs(): number {
   const { user, system } = process.threadCpuUsage()
   return (user + system) / 1000

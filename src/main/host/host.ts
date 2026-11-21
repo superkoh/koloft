@@ -15,10 +15,10 @@ import type {
 } from '@shared/types'
 import type { FreshnessRunner } from '../gitFreshness'
 import type { DiffResult, GitDiffResult } from '../gitStatus'
-import type { GithubLookup } from '../github'
+import type { GithubRepos } from '../githubRepos'
 import type { GitRunResult } from '../gitSteps'
-import type { GitOut } from '../resumePlan'
-import type { RemoteTab } from '../sessionTracker'
+import type { GitOut } from '@core/worktree'
+import type { RemoteTab } from '@plugins/sessions/main/sessionTracker'
 
 export interface ShowIgnored {
   showIgnored?: boolean
@@ -45,9 +45,11 @@ export interface ClaudeLaunch {
   ownerWords?: string
   name?: string
   role?: string
+  ownerText?: string
   conductor?: boolean
   trustFolder?: boolean
   projectRules?: string
+  workspaceParts?: string[]
 }
 
 export interface MachineTab {
@@ -77,6 +79,7 @@ export type ClaudeLaunchPlan =
         KOLOFT_PORT_OFFSET?: string
         KOLOFT_AGENT_PLUGIN?: string
         KOLOFT_AGENT_PROMPT?: string
+        KOLOFT_OWNER_TEXT?: string
         KOLOFT_DOCS_PLUGIN?: string
         CLAUDE_CODE_FORCE_SYNC_OUTPUT?: string
         CLAUDE_CODE_DECSTBM?: string
@@ -134,6 +137,6 @@ export interface Host {
   gitRun(root: string, args: string[], network?: boolean): Promise<GitRunResult>
   reveal(p: string): void
   osOpen(p: string): void
-  github: GithubLookup
+  github: GithubRepos
   freshness: FreshnessRunner
 }

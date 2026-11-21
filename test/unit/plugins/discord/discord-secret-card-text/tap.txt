@@ -1,0 +1,78 @@
+card with 1 file(s):
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# Koloft taps the middle of each square you name, then sends a new picture.
+  buttons: Tap squares [primary] secret:<id> | New picture [secondary] secret:<id>:picture | It passed [success] secret:<id>:passed | Give up [secondary] secret:<id>:give-up
+reply: {"type":9,"data":{"custom_id":"secret:<id>","title":"Koloft","components":[{"type":1,"components":[{"type":4,"custom_id":"value","label":"LABEL","style":1,"required":true,"max_length":4000,"placeholder":"B5 H4 F8"}]}]}}
+reply: {"type":4,"data":{"content":"Koloft taps them and sends a new picture.","flags":64}}
+reply: {"type":4,"data":{"content":"Koloft is still at the last taps: wait for the new picture.","flags":64}}
+reply: {"type":4,"data":{"content":"Koloft is still at the last taps: wait for the new picture.","flags":64}}
+card with 1 file(s):
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# Tapped A1. This is the page now.
+  buttons: Tap squares [primary] secret:<id> | New picture [secondary] secret:<id>:picture | It passed [success] secret:<id>:passed | Give up [secondary] secret:<id>:give-up
+card edited:
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# Tapped A1.
+  buttons: 
+reply: {"type":4,"data":{"content":"Koloft sends a new picture.","flags":64}}
+card with 0 file(s):
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# New picture. This is the page now.
+-# Koloft could not take the page's picture: the page is gone.
+  buttons: Tap squares [primary] secret:<id> | New picture [secondary] secret:<id>:picture | It passed [success] secret:<id>:passed | Give up [secondary] secret:<id>:give-up
+card edited:
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# New picture.
+  buttons: 
+reply: {"type":4,"data":{"content":"Koloft taps them and sends a new picture.","flags":64}}
+card with 1 file(s):
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# Koloft could not tap: Z9 is off the page. This is the page now.
+  buttons: Tap squares [primary] secret:<id> | New picture [secondary] secret:<id>:picture | It passed [success] secret:<id>:passed | Give up [secondary] secret:<id>:give-up
+card edited:
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# Koloft could not tap: Z9 is off the page.
+  buttons: 
+card edited:
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# ✅ The owner said it passed.
+  buttons: 
+reply: {"type":4,"data":{"content":"✅ The owner said it passed.","flags":64}}
+# given up
+card with 1 file(s):
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# Koloft taps the middle of each square you name, then sends a new picture.
+  buttons: Tap squares [primary] secret:<id> | New picture [secondary] secret:<id>:picture | It passed [success] secret:<id>:passed | Give up [secondary] secret:<id>:give-up
+card edited:
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# ⏹ The owner gave up.
+  buttons: 
+reply: {"type":4,"data":{"content":"⏹ The owner gave up.","flags":64}}
+# Discord does not take the new picture
+card with 1 file(s):
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# Koloft taps the middle of each square you name, then sends a new picture.
+  buttons: Tap squares [primary] secret:<id> | New picture [secondary] secret:<id>:picture | It passed [success] secret:<id>:passed | Give up [secondary] secret:<id>:give-up
+reply: {"type":4,"data":{"content":"Koloft taps them and sends a new picture.","flags":64}}
+card with 0 file(s):
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# Tapped A1. This is the page now.
+-# Discord did not take the page's picture: press New picture.
+  buttons: Tap squares [primary] secret:<id> | New picture [secondary] secret:<id>:picture | It passed [success] secret:<id>:passed | Give up [secondary] secret:<id>:give-up
+card edited:
+  header: HEADER(fix-login)
+  body: BODY
+  footer: -# Tapped A1.
+  buttons: 

@@ -1,111 +1,87 @@
 import {
-  DEFAULT_SETTINGS,
-  HINT_IDS,
+  APP_DEFAULT_SETTINGS,
   WORLD_CLOCK_MAX,
   sanitizeAccountList,
-  type ButlerSetting,
+  type AppSettings,
   type Settings
 } from './types'
 import { sanitizeGitAccounts, sanitizeGitMachines, sanitizeGitPicks } from './gitAccountOps'
 import { assistOnMethodsThatAreOn, sanitizeAssist } from './assistPicks'
 import { backendIdOf, normalizeSessionMethods } from './sessionBackend'
-import { butlerName, butlerSetting, sanitizeButlerSession, sanitizeDiscord } from './conductors'
-import { isRecord } from './workbenchState'
 import { sanitizeSessionDefaults } from './sessionDefaults'
+import { stringsIn, textsIn } from './workbenchState'
+import { registerSettings } from '@core/settings'
+import { cleanVersions } from '@core/ownerInstructions'
+import { cleanSwitches } from '@core/switches'
+import { HINT_IDS } from '@core/hints'
+import { PLUGINS } from '@plugins/list'
+import { PLUGIN_SETTINGS, type PluginSettingValues } from '@plugins/settings'
+
+const PLUGIN_KEYS = registerSettings(PLUGINS, PLUGIN_SETTINGS)
+
+export const DEFAULT_SETTINGS: Settings = {
+  ...APP_DEFAULT_SETTINGS,
+  ...(PLUGIN_KEYS.defaults as PluginSettingValues)
+}
+
+const APP_KEPT_ON_RESET: readonly (keyof AppSettings)[] = [
+  'accounts',
+  'skipPermissions',
+  'skipPermissionsAgreed',
+  'fablePriority',
+  'sessionMethods',
+  'assist',
+  'newProjectFolders',
+  'gitAccounts',
+  'gitPicks',
+  'gitSuggestionsDismissed',
+  'gitMachines',
+  'sessionDefaults',
+  'everyWorkspaceInstructions'
+]
+
+const APP_WRITTEN_BY_MAIN_ONLY: readonly (keyof AppSettings)[] = [
+  'accounts',
+  'gitAccounts',
+  'gitPicks',
+  'gitSuggestionsDismissed',
+  'gitMachines',
+  'sessionDefaults',
+  'everyWorkspaceInstructions'
+]
+
+const KEPT_ON_RESET = [...APP_KEPT_ON_RESET, ...PLUGIN_KEYS.keptOnReset]
+const WRITTEN_BY_MAIN_ONLY = [...APP_WRITTEN_BY_MAIN_ONLY, ...PLUGIN_KEYS.writtenByMainOnly]
+const RETIRED_KEYS = ['lastSeenVersion', 'showUsage', ...PLUGIN_KEYS.retired]
+
+const without = <T extends object>(from: T, keys: readonly string[]): Partial<T> =>
+  Object.fromEntries(Object.entries(from).filter(([key]) => !keys.includes(key))) as Partial<T>
 
 export function buildResetPatch(): Partial<Settings> {
-  const {
-    accounts,
-    skipPermissions,
-    skipPermissionsAgreed,
-    fablePriority,
-    sessionMethods,
-    discord,
-    assist,
-    butler,
-    butlerSession,
-    newProjectFolders,
-    gitAccounts,
-    gitPicks,
-    gitSuggestionsDismissed,
-    gitMachines,
-    todoNotes,
-    sessionDefaults,
-    ...rest
-  } = DEFAULT_SETTINGS
-  void todoNotes
-  void sessionDefaults
-  void butler
-  void gitAccounts
-  void gitPicks
-  void gitSuggestionsDismissed
-  void gitMachines
-  void assist
-  void butlerSession
-  void newProjectFolders
-  void accounts
-  void skipPermissions
-  void skipPermissionsAgreed
-  void fablePriority
-  void sessionMethods
-  void discord
-  return rest
+  return without(DEFAULT_SETTINGS, KEPT_ON_RESET)
 }
 
 export function sanitizeSettingsPatch(patch: Partial<Settings>): Partial<Settings> {
-  const {
-    accounts,
-    discord,
-    butlerSession,
-    gitAccounts,
-    gitPicks,
-    gitSuggestionsDismissed,
-    gitMachines,
-    todoNotes,
-    sessionDefaults,
-    ...rest
-  } = patch
-  void todoNotes
-  void sessionDefaults
-  void gitAccounts
-  void gitPicks
-  void gitSuggestionsDismissed
-  void gitMachines
-  void accounts
-  void discord
-  void butlerSession
-  return rest
+  return without(patch, WRITTEN_BY_MAIN_ONLY)
 }
 
 export function sanitizeLoadedSettings(raw: unknown): Settings {
-  const doc: Partial<Settings> = raw && typeof raw === 'object' ? (raw as Partial<Settings>) : {}
-  const {
-    assistSessions,
-    lastSeenVersion: _retired,
-    showUsage: _retiredShowUsage,
-    ...kept
-  } = doc as Partial<Settings> & {
-    assistSessions?: unknown
-    lastSeenVersion?: unknown
-    showUsage?: unknown
-  }
-  const merged: Settings = { ...DEFAULT_SETTINGS, ...kept }
+  const doc: Record<string, unknown> =
+    raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+  const merged = { ...DEFAULT_SETTINGS, ...without(doc, RETIRED_KEYS) } as Settings
   merged.sessionMethods = normalizeSessionMethods(merged.sessionMethods)
   merged.accounts = sanitizeAccountList(merged.accounts)
   merged.gitAccounts = sanitizeGitAccounts(merged.gitAccounts)
   merged.gitPicks = sanitizeGitPicks(merged.gitPicks, merged.gitAccounts)
-  merged.gitSuggestionsDismissed = Array.isArray(merged.gitSuggestionsDismissed)
-    ? merged.gitSuggestionsDismissed.filter((r): r is string => typeof r === 'string')
-    : []
+  merged.gitSuggestionsDismissed = stringsIn(merged.gitSuggestionsDismissed)
   merged.gitMachines = sanitizeGitMachines(merged.gitMachines)
-  merged.butlerSession = sanitizeButlerSession(doc.butlerSession, assistSessions, merged.discord)
-  merged.discord = sanitizeDiscord(merged.discord)
+  merged.pluginsOn = cleanSwitches(PLUGINS, merged.pluginsOn)
+  Object.assign(merged, PLUGIN_KEYS.clean(doc))
   const pickedAssistBefore = backendIdOf((doc.assist as { backend?: unknown } | null)?.backend)
   merged.assist = assistOnMethodsThatAreOn(sanitizeAssist(merged.assist), merged.sessionMethods)
-  merged.butler = sanitizeButler(merged.butler)
-  merged.newProjectFolders = sanitizeTextMap(merged.newProjectFolders)
-  merged.todoNotes = sanitizeTextMap(merged.todoNotes)
+  merged.newProjectFolders = textsIn(merged.newProjectFolders)
   merged.sessionDefaults = sanitizeSessionDefaults(merged.sessionDefaults)
+  merged.everyWorkspaceInstructions = cleanVersions(merged.everyWorkspaceInstructions)
   merged.workbenchWidth = sanitizeWorkbenchWidth(
     'workbenchWidth' in doc
       ? merged.workbenchWidth
@@ -129,24 +105,6 @@ export function sanitizeLoadedSettings(raw: unknown): Settings {
       ? merged.hintsSeen
       : []
   return merged
-}
-
-function sanitizeButler(raw: unknown): ButlerSetting {
-  const doc = isRecord(raw) ? raw : {}
-  const former = Array.isArray(doc.formerNames) ? doc.formerNames : []
-  return butlerSetting(
-    butlerName(doc.name),
-    former.filter((n): n is string => typeof n === 'string').map(butlerName)
-  )
-}
-
-function sanitizeTextMap(raw: unknown): Record<string, string> {
-  if (!raw || typeof raw !== 'object') return {}
-  return Object.fromEntries(
-    Object.entries(raw).filter(
-      (e): e is [string, string] => typeof e[1] === 'string' && e[1].length > 0
-    )
-  )
 }
 
 function isZoneId(z: unknown): z is string {

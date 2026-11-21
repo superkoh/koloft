@@ -1,0 +1,78 @@
+{
+  "fontSize": 13,
+  "skipPermissions": true,
+  "assist": { "backend": "claude" },
+  "lastSeenVersion": "0.40.0",
+  "showUsage": true,
+  "aKeyANewerKoloftWrote": { "kept": true },
+  "butler": {
+    "name": "  Jeeves   the\n butler  ",
+    "formerNames": [
+      "Alfred",
+      "Alfred",
+      7,
+      "A name far longer than the forty characters a butler may have"
+    ]
+  },
+  "butlerSession": {
+    "sessionIds": ["s-butler", 3],
+    "lastSessionKey": "key-butler",
+    "knowsTodo": ["todo-1"],
+    "carried": { "model": "opus", "effort": "high" }
+  },
+  "assistSessions": [
+    {
+      "scope": "global",
+      "sessionIds": ["s-assist"],
+      "lastSessionKey": "key-assist",
+      "knowsTodo": ["todo-2"]
+    },
+    {
+      "scope": "/Users/you/project",
+      "sessionIds": ["s-workspace-assist"],
+      "lastSessionKey": "key-ws"
+    }
+  ],
+  "discord": {
+    "userId": "4242",
+    "userName": "owner",
+    "category": { "guildId": "100", "channelId": "300", "name": "Koloft" },
+    "oldThreadsArchived": true,
+    "rooms": [
+      {
+        "threadId": "500",
+        "keys": ["claude:abc", "claude:def"],
+        "name": "fix login",
+        "lastMessageId": "510",
+        "putDown": true
+      },
+      { "threadId": "501", "keys": [], "name": "no keys" },
+      { "threadId": "not-an-id", "keys": ["claude:ghi"], "name": "bad thread" },
+      { "threadId": "502", "keys": ["codex:jkl"], "name": "plain room" }
+    ],
+    "bindings": [
+      {
+        "id": "b1",
+        "scope": "/Users/you/project",
+        "channel": { "guildId": "100", "channelId": "201", "name": "project" },
+        "lastMessageId": "900",
+        "sessionIds": ["s-project"]
+      },
+      {
+        "id": "b2",
+        "scope": "global",
+        "channel": { "guildId": "100", "channelId": "200", "name": "global" },
+        "lastMessageId": "800",
+        "sessionIds": ["s-binding"],
+        "lastSessionKey": "key-binding",
+        "knowsTodo": ["todo-3"]
+      },
+      {
+        "id": "b3",
+        "scope": "global",
+        "channel": { "guildId": "100", "channelId": "202" },
+        "sessionIds": ["s-channel-without-name"]
+      }
+    ]
+  }
+}

@@ -1,10 +1,11 @@
 import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { DEFAULT_SETTINGS, type Settings } from '@shared/types'
-import { sanitizeLoadedSettings } from '@shared/settingsOps'
+import type { Settings } from '@shared/types'
+import { DEFAULT_SETTINGS, sanitizeLoadedSettings } from '@shared/settingsOps'
 import { assistOnMethodsThatAreOn, sanitizeAssist } from '@shared/assistPicks'
 import { normalizeSessionMethods } from '@shared/sessionBackend'
+import { knowSwitchesIn } from '@shared/pluginSwitches'
 import { BackgroundFile } from './backgroundFile'
 
 function settingsFile(): string {
@@ -28,9 +29,20 @@ function readSettingsFile(): Settings {
   }
 }
 
+let switchesChanged = (): void => {}
+
+export function onSwitchesChanged(then: () => void): void {
+  switchesChanged = then
+}
+
+function keep(settings: Settings): Settings {
+  cached = settings
+  if (knowSwitchesIn(settings)) switchesChanged()
+  return settings
+}
+
 export function loadSettings(): Settings {
-  cached ??= readSettingsFile()
-  return structuredClone(cached)
+  return structuredClone(cached ?? keep(readSettingsFile()))
 }
 
 export function rereadSettingsOnNextLoad(): void {
@@ -43,6 +55,6 @@ export function saveSettings(patch: Partial<Settings>): Settings {
   merged.assist = assistOnMethodsThatAreOn(sanitizeAssist(merged.assist), merged.sessionMethods)
   const text = JSON.stringify(merged, null, 2)
   settingsOnDisk.write(text)
-  cached = sanitizeLoadedSettings(JSON.parse(text))
+  keep(sanitizeLoadedSettings(JSON.parse(text)))
   return merged
 }
