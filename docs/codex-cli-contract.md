@@ -289,6 +289,23 @@ No `collabAgentToolCall` item came at all. The wire, in order:
 The 0.166.0 schema's `SubAgentActivityKind` is `started`, `interacted`, `interrupted`,
 `completed`.
 
+**`agentPath` is the child's name: `/root/<task_name>` (measured 2026-11-19, codex-cli
+0.169.0 and 0.161.0, `codex app-server` driven by a Node script in a throwaway
+`CODEX_HOME` whose model was a fake Responses-API server on localhost, no login, 1 run
+each).** With `[features] multi_agent_v2 = true` the model got a `collaboration`
+namespace whose `spawn_agent` takes `{task_name, message, fork_turns?, model?,
+reasoning_effort?}` (`task_name`: lowercase letters, digits and underscores; a child of
+`/root/a` named `b` is `/root/a/b`). The fake model called it with `task_name:
+"lint_checker"`; on both versions every `subAgentActivity` item for that child, `started`
+and `completed`, carried `agentPath: "/root/lint_checker"`. The 0.169.0 schema marks
+`agentPath` required. No `thread/started` came for the child on that connection, and the
+root thread's `agentNickname` and `agentRole` were `null`. Without `multi_agent_v2`
+(0.169.0's defaults, and 0.161.0 with `multi_agent = true`), this fake model was offered no
+spawn tool at all, so no
+`collabAgentToolCall` item could be made; that item's 0.169.0 schema has no name field
+(`prompt`, `model` and `reasoningEffort` only), so a child it announces is still named by
+its thread ID.
+
 ### No Monitor; a server left in a background terminal
 
 **Measured 2026-10-28, codex-cli 0.162.0 (`~/.codex/packages/standalone/current/bin/codex`),

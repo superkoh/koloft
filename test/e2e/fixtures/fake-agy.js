@@ -17,6 +17,7 @@ process.emitWarning = function (warning, ...rest) {
 const { DatabaseSync } = require('node:sqlite')
 
 const VERSION = '1.4.0'
+const ASK_LATER_CHECKED_EVERY_MS = 200
 const ESC = '\x1b'
 const BEL = '\x07'
 const ENTER = '\r'
@@ -1483,6 +1484,17 @@ async function bashScenario(turn, command) {
   return endToolTurn(turn, result, `Ran: ${cmd}`, cmd)
 }
 async function askScenario(turn, spec) {
+  const shownFirst = readSentinel('fake-agy-open-before-ask')
+  if (shownFirst) {
+    fs.unlinkSync(sentinel('fake-agy-open-before-ask'))
+    const quoted = `'${shownFirst.replace(/'/g, `'\\''`)}'`
+    const opened = await runShell(
+      modelShell(),
+      `koloft open ${quoted}`,
+      runCommandEnv(turn.conv, 0, null)
+    )
+    say(opened.output.replace(/\n$/, ''))
+  }
   const parts = (spec || '')
     .split('|')
     .map((s) => s.trim())
@@ -2630,8 +2642,14 @@ function main() {
     process.stderr.write(model.error + '\n')
     process.exit(1)
   }
-  if (printMode) headless().catch(crash)
-  else startTui().catch(crash)
+  if (printMode) return headless().catch(crash)
+  startTui().catch(crash)
+  setInterval(() => {
+    if (!fs.existsSync(sentinel('fake-agy-ask-later'))) return
+    fs.rmSync(sentinel('fake-agy-ask-later'), { force: true })
+    queue.push({ text: '/ask Ship it?|Yes|No', origin: {} })
+    drainQueue()
+  }, ASK_LATER_CHECKED_EVERY_MS).unref()
 }
 
 if (argv[0] === '--version') {
