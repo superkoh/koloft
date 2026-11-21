@@ -58,15 +58,16 @@ const markOn = async (page: Page, tabId: string) =>
 const activeTab = async (page: Page): Promise<string> =>
   (await page.locator('.ws .ws-tab.active').getAttribute('data-tab-id'))!
 
+const sessionAsMainSeesIt = async (page: Page, tabId: string) =>
+  (await page.evaluate(() => window.api.sessions.list())).find((s) => s.tabId === tabId)
+
 async function messageSocketOf(page: Page, home: string, tabId: string): Promise<string> {
   const registry = path.join(home, '.claude', 'sessions')
   let socket: string | undefined
   await expect
     .poll(
       async () => {
-        const s = (await page.evaluate(() => window.api.sessions.list())).find(
-          (x) => x.tabId === tabId
-        )
+        const s = await sessionAsMainSeesIt(page, tabId)
         const id = s?.nativeSessionId ?? s?.sessionId
         socket = (fs.existsSync(registry) ? fs.readdirSync(registry) : [])
           .filter((f) => f.endsWith('.json'))
@@ -357,15 +358,22 @@ test.describe('attention markers come from real session-status transitions (shim
         const typeToHelper = (line: string): Promise<void> =>
           page.evaluate(([id, l]) => window.api.terminal.write(id, l + '\r'), [helperTab, line])
 
-        const helperBefore = await markAt(helperTab)
-        await typeToHelper('/answer the report it owes')
+        const hasEndedATurn = async (tab: string): Promise<boolean> => (await markAt(tab)) > 0
+        await expect.poll(() => hasEndedATurn(helperTab), { timeout: 60_000 }).toBe(true)
+        const starter = (await sessionAsMainSeesIt(page, parentTab))!
+        const beforeTheReport = await markAt(parentTab)
+        await typeToHelper(
+          `/koloft session send ${starter.nativeSessionId ?? starter.sessionId} the report it owes`
+        )
         await expect
-          .poll(() => markAt(helperTab), { timeout: 60_000 })
-          .toBeGreaterThan(helperBefore)
-        const reported = await markAt(helperTab)
-        await expect.poll(() => markAt(parentTab), { timeout: 60_000 }).toBeGreaterThan(reported)
+          .poll(() => markAt(parentTab), { timeout: 60_000 })
+          .toBeGreaterThan(beforeTheReport)
         await typeToHelper('/hold')
-        await expect(helper).toHaveClass(/\bst-working\b/, { timeout: 30_000 })
+        await expect
+          .poll(async () => (await sessionAsMainSeesIt(page, helperTab))?.status, {
+            timeout: 30_000
+          })
+          .toBe('working')
 
         const before = await markAt(parentTab)
         await expect(parentAt).toHaveClass(/\bactive\b/)
