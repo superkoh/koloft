@@ -83,15 +83,14 @@ export function codexEditTarget(item: Record<string, unknown>): string | undefin
 // CODEX§12
 function codexWebSearchDid(item: Record<string, unknown>): string | undefined {
   const action = (item.action ?? {}) as Record<string, unknown>
-  if (action.type === 'findInPage') {
-    const pattern = str(action.pattern)
-    return pattern && searched(pattern)
-  }
-  if (action.type === 'openPage') {
+  if (action.type === 'findInPage' || action.type === 'openPage') {
     const url = str(action.url) ?? str(item.query)
+    const pattern = action.type === 'findInPage' ? str(action.pattern) : undefined
+    if (url && pattern) return `Searched ${oneLine(url)} for ${oneLine(pattern)}`
     return url && opened(url)
   }
-  const query = str(action.query) ?? str(item.query)
+  const queries = Array.isArray(action.queries) ? action.queries : []
+  const query = str(action.query) ?? str(item.query) ?? str(queries[0])
   return query && searchedTheWeb(query)
 }
 
@@ -103,7 +102,10 @@ export function codexTaskName(agentPath: unknown): string | undefined {
 // CODEX§4
 function codexHelperDid(item: Record<string, unknown>): string | undefined {
   if (item.type === 'collabAgentToolCall') {
-    const spawned = item.tool === 'spawnAgent' && records(item.receiverThreadIds).length > 0
+    const spawned =
+      item.tool === 'spawnAgent' &&
+      Array.isArray(item.receiverThreadIds) &&
+      item.receiverThreadIds.length > 0
     return spawned ? startedAHelper(str(item.prompt) ?? 'helper') : undefined
   }
   if (item.kind !== 'started') return undefined

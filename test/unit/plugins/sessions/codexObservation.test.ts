@@ -836,7 +836,7 @@ describe('CodexObservation', () => {
       'Searched the web for vitest workspaces',
       'Opened https://example.com/page',
       'Started a helper: Check the lint config',
-      'Searched for timeout',
+      'Searched https://example.com/page for timeout',
       'Started a helper: lint_checker'
     ])
   })
