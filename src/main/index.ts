@@ -55,7 +55,13 @@ import {
 import { agyBackend } from '@plugins/sessions/main/backends/agy'
 import { homeKeyOnDisk } from './homeKeyOnDisk'
 import { watchHistoryOf } from './historyWatch'
-import { MARK_OUTPUT_START, SignInOutput, afterOutputStart, outputStartCarry } from './signInOutput'
+import {
+  MARK_OUTPUT_START,
+  SignInOutput,
+  afterOutputStart,
+  outputStartCarry,
+  plainTerminalTail
+} from './signInOutput'
 import type { SessionsWithStore } from '@plugins/sessions/main/storedSessions'
 import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
 import { claudeAskLine, storedAskLine } from './rowActivity'
@@ -2609,9 +2615,14 @@ const INSTALL_STALLED = `The Claude Code install did not finish: it printed noth
 const LOGIN_BUF_MAX = 8192
 const LOGIN_PTY_COLS_WIDER_THAN_TOKEN = 800
 const ACCOUNT_PROBE_TIMEOUT_MS = 10_000
-const AUTH_URL_RE = /https?:\/\/[^\s'"`<>]+/
+// CC§7
+const AUTH_URL_RE = /https?:\/\/[^\s'"`<>\x00-\x1f\x7f]+(?=[\s'"`<>\x00-\x1f\x7f])/
 // CC§7
 const TOKEN_RE = /sk-ant-[A-Za-z0-9]{2,12}-[A-Za-z0-9_-]{24,}/
+
+function loginTimeoutMs(): number {
+  return cronTestMs('KOLOFT_LOGIN_TIMEOUT_MS', LOGIN_TIMEOUT_MS)
+}
 
 function sendLoginProgress(p: LoginProgress): void {
   sendToRenderer(CH.accounts.loginProgress, p)
@@ -2630,7 +2641,7 @@ function feedLoginWatcher(tabId: string, data: string): void {
       return
     }
     clearTimeout(w.giveUp)
-    w.giveUp = giveUpLoginAfter(tabId, LOGIN_TIMEOUT_MS, LOGIN_TIMED_OUT)
+    w.giveUp = giveUpLoginAfter(tabId, loginTimeoutMs(), LOGIN_TIMED_OUT)
     w.installing = undefined
     w.buf = ''
     data = rest
@@ -2661,7 +2672,7 @@ function failLogin(tabId: string, why: string, terminalKept = true): void {
   const w = loginWatchers.get(tabId)
   if (!w || w.done) return
   endLoginWatch(tabId, w)
-  const tail = w.buf.split('\n').filter(Boolean).slice(-8).join('\n')
+  const tail = plainTerminalTail(w.buf)
   sendLoginProgress({
     phase: 'failed',
     name: w.name,
@@ -2719,7 +2730,7 @@ function startGuidedLogin(name: string, installFirst: boolean): string {
           ),
           INSTALL_STALLED
         )
-      : giveUpLoginAfter(handle.id, LOGIN_TIMEOUT_MS, LOGIN_TIMED_OUT),
+      : giveUpLoginAfter(handle.id, loginTimeoutMs(), LOGIN_TIMED_OUT),
     ...(installFirst && { installing: { carry: '' } })
   })
   loginPtys.add(handle.id)
