@@ -3,7 +3,6 @@ import {
   SESSION_BOUND,
   SESSION_STARTING,
   STATE_CHANGED,
-  STEP_LET_GO,
   TAB_EXITED,
   TAB_FORGOTTEN,
   TAB_TORN_DOWN,
@@ -67,7 +66,6 @@ export function butlerFollowsEachTurn(
   moments.listen(plugin.id, STATE_CHANGED, ({ tabId, next }) => {
     if (next === 'approval') void d.asleep.asks(tabId)
   })
-  moments.listen(plugin.id, STEP_LET_GO, (tabId) => void d.asleep.asks(tabId))
   moments.listen(plugin.id, ATTENTION_CHANGED, () => d.digest()?.marked())
 }
 

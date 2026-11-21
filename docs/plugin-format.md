@@ -184,8 +184,6 @@ the types a plugin registers with.
 | `src/core/webPage.ts` | `WebPage`: one Workbench web page a plugin may run a script in |
 | `src/core/gh.ts` | what running `gh` gives back, for core and plugins alike: `GhResult`, `Gh`, `GH_SIGNED_OUT`, `slug`, `ghJsonArray`, and the shape of the GitHub fixture that Koloft's end-to-end tests use (`GithubFixture`) |
 | `src/core/worktree.ts` | `GitOut`, `branchExists` and `TidyResult`, for the worktree git helpers |
-| `src/core/openings.ts` | `PLUGIN_OPENINGS`, every plugin's `openings` in list order, on or off |
-| `src/core/folderFingerprint.ts` | `folderFingerprint(git, folder)`: one text that changes when anything git does not ignore changes in the folder's repository (the commit it is on, its branches, tags and stashes, what is staged, file modes, and the content of every changed or new file); what changes inside a submodule or inside another git checkout in it does not count; `null` when git cannot read it, as in a folder that is no git repository. It runs only git commands that change nothing, through the `GitOut` it is given, so it works on the machine the folder is on |
 | `src/core/typeKeys.ts` | `typeKeys`, `pressesAKey`, `clicksTheMouse` and their helpers: what Koloft types into a session's terminal |
 | `src/core/transcriptPlaces.ts` | `TranscriptPlaces`: where a session's transcript is, on this Mac or on its machine |
 | `src/core/privateFile.ts` | `PrivateRecordFile`: a JSON record file only the owner can read |
@@ -210,7 +208,7 @@ today.
 | `plugin.ts` | the plugin's manifest | all |
 | `prompts/` | its text blocks for prompts | sessions, browser-control, butler, github, discord, todo |
 | `skill/` | its text blocks for `koloft help` and the `koloft` skill | all but butler and docs-writing |
-| `api.ts` | what other plugins may import | all |
+| `api.ts` | what other plugins may import | all but inbox and scheduled-tasks |
 | `windowApi.ts` | what other plugins' window code may import: the part of its public surface with no main-process code and no text for agents. It may not import its own `main/` or `prompts/` | butler |
 | `main/` | code that runs in the main process; `start.ts` there is its start function | all but docs-writing |
 | `preload/` | `bridge.ts`, its part of `window.api` | all but todo and docs-writing |
@@ -286,7 +284,6 @@ what reads the field today.
 | `assistJobs` | list of `{ id, name, does, defaults }` | its Assist jobs ([Assist jobs](#assist-jobs)) | `ASSIST_JOBS` |
 | `skills` | list of strings | names of whole skills the plugin owns, such as `koloft-docs` (Koloft's skill for writing documents) | nothing yet; no manifest fills it |
 | `mcpServers` | list of `{ name, command, args }` | MCP servers the plugin adds to sessions; a place kept for later, which no step plans to fill yet | nothing; no manifest fills it |
-| `openings` | list of strings | the fixed words each message the plugin sends into a session starts with, through Sessions core's `tellAs` ([Starting](#starting)). A session never takes a message that starts with one for the owner's own words, and a Claude Code or Codex session's hook flags one Koloft did not send. An opening holds no name the owner can change, such as the butler's, and no `"`, `\` or line break, which the hooks would not find in the escaped text they read; it stays known while its plugin is off, for the messages already in transcripts | `PLUGIN_OPENINGS`; no manifest fills it yet |
 
 ## How a plugin plugs in
 
@@ -796,7 +793,6 @@ Sessions core announces every moment but `file-opened`, which Workbench announce
 | `attention-changed` | the attention marks | the attention marks changed | Butler, Inbox |
 | `tab-stopping` | `TabStopping` | a tab's process is being stopped, to close, restart or sleep | Browser control |
 | `dialog-closed` | a tab id | a Claude Code dialog closed on screen | Sessions core, Discord |
-| `step-let-go` | a tab id | a plugin let go of a step it held (`letGo`, [Starting](#starting)), so what waited on it runs now | Butler (answers a question while the owner sleeps), Discord (posts the question's card) |
 
 ### Switches
 
@@ -873,44 +869,7 @@ export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments,
   list of plugins, and returns what each gave back, keyed by plugin id (`PluginsStarted`).
   GitHub's start gives back its `GithubMain`, whose `followSwitch` and `sweepNow` the app
   calls. Sessions core's gives back `tookTheTurn`, which the butler's and the Inbox's deps read
-  when a turn ends. Scheduled tasks' gives back `runStartedIn(tabId)`: whether a scheduled run
-  started in that tab (`ScheduledRuns`, from its `api.ts`). No plugin uses the next two yet:
-  - The Inbox's gives back `InboxSources` (from its `api.ts`). `register({ id, name })` makes
-    a source of the Inbox's, as Koloft's own cards have one (`koloft`; an id is the
-    source's, so no two plugins share one), and gives back its `InboxSource`: `add(card)`,
-    `update(key, patch)` and `move(key, to, why)` work on that source's own cards, under
-    the Inbox's rules for every card. An opened card whose `dismissButton` is `true` shows
-    the Inbox's own Dismiss as a button beside its others, where a card with buttons
-    otherwise keeps it in its ⋯ menu. The Inbox presses a card's
-    button only while its source is registered, so a plugin registers its source in its
-    start, which runs on every launch, on or off
-    ([ADR-0049](adr/0049-inbox-holds-no-source-logic.md)).
-  - The butler's gives back `addToMorningReport(lines)` (`ButlerStarted`, from its `api.ts`).
-    When the owner wakes, the butler is handed one report of the night; `lines(sleptAt)`,
-    called then with the time the owner fell asleep, gives sentences that end that report,
-    and a night with nothing else but them still has one.
-- Sessions core's start also gives back what another plugin may know about, and do with, a
-  session tab (`SessionTabs`, typed in its `api.ts`). The app builds these from its own parts
-  and hands them in as the start's `tabs` deps, and the start gives them back as they are, so
-  another plugin's deps take them from `PluginsStarted` like `tookTheTurn`. Only Discord's
-  start uses one, `holdSteps`, through the same `HeldSteps` its deps hand in:
-
-  | Name | What it answers or does |
-  |---|---|
-  | `askOf(tabId)` | the question or approval the tab shows, one shape for every agent (`KoloftAsk`), or nothing |
-  | `answer(tabId, reply, byTheOverseer)` | answers it as `koloft session answer` does; the reply is a sentence when it could not |
-  | `placeOf(tabId)` | its workspace, the folder its session runs in (a remote key on another machine) and that machine |
-  | `ownerWordsOf(tabId)` | the owner's last words to it, as a session it starts would be handed them |
-  | `lookedAt()` | the tab the owner has in front of them in a focused Koloft window, or nothing |
-  | `ownerTypedSince(tabId, at)` | whether the owner typed or pasted into it since `at` |
-  | `waitsOnAnother(tabId)` | whether it waits on other work: a session it started, a reply it is owed, or a monitor |
-  | `butlerSide(tabId)` | whether it is the butler or a session in the butler's folder |
-  | `markAnswerable(tabId, on)` | asks a Claude Code tab on this Mac to hold its question for Koloft's answer, as it does while the owner sleeps; the mark goes when the tab ends. On any other tab it does nothing |
-  | `tellAs(tabId, opening, text)` | sends `opening` and then `text` into the session open in that tab, claiming the session's own permission class ([ADR-0028](adr/0028-conductor-claims-its-real-permission-mode.md)), and notes it as sent by Koloft; `false`, sending nothing, when no plugin's manifest lists `opening`, or when it could not be sent. An Antigravity session has no hook that checks such a message (#2329) |
-  | `startBeside(tabId, spec)` | starts a session in that session's own folder, on its machine, with the role, task, agent, model, effort and permission the plugin gives, and shows its row under that session's; it starts no agent the owner turned off, and gives the reason in `why` when it starts nothing. When that folder is a sidebar workspace or lies inside one, the new session's agent is told to trust it ([ADR-0026](adr/0026-worktree-launch-accepts-claude-trust.md)). It is no session that session started: it owes it no reply, does not count as work that session waits on, and is not closed with it. It announces neither `session-starting` nor `session-started`, so it gets no Discord room of its own. With `own: true` it is the plugin's own session, kept so through a `/clear` in its tab and a restart of Koloft: its finished turns, its questions and its exit raise no attention mark, so no dock badge, notification, Inbox card, line in the away digest or holder hears of them (Koloft's own asks, such as a password, still do); a sleeping owner's rules neither answer it nor push it on; it is no second session in its folder for the "Two sessions on one folder?" tip; and once closed it is not in Restore session… or Past sessions (session search still finds it), while an Inbox card's link to its session id opens it again. With `commands`, a list such as `['watch decide', 'session read']`, every `koloft` command it or its Workbench shell runs is refused unless its first words are one entry's words; a `--help` is the `help` command, so it needs `help` on the list. Koloft knows which tab a `koloft` request comes from by the tab id the request names, so a session that names another tab's id is not held to its list. Both marks belong to the tab: a session resumed in it takes them too |
-  | `holdSteps(holder)` | adds a `StepHolder`. When a tab's run state turns to asking (`approval`) or its turn ends (`turn-done`), Sessions core asks each holder in the order they were added whether it `claims` that step, and the first answer counts: `'take'` means the step is the plugin's, and no attention mark goes up; `'hold'` means the plugin may take it, and the mark waits, with no dock badge, notification, Inbox card or line in the away digest, until the plugin calls `letGo` or `take`. A held finished turn is still judged as every turn is: the verdict goes to the `judged` of the holder that held it, and to the Inbox only once the step is let go. While a holder claims a tab's question, Koloft neither answers it for a sleeping owner nor posts its card to Discord; what the owner writes to that tab on Discord still answers it. A held step ends with no mark when the tab works again, its question closes, a new session takes the tab, or the tab stops; Koloft quitting saves it as a plain mark, as it would have been. Discord's start adds one that takes a finished turn it carries to the owner's phone. A holder answers from what it knows now, every time it is asked, and stops claiming a step before it lets it go. Koloft's own asks (an Instructions change, a password) and a tab's exit are never held |
-  | `letGo(tabId, note)` | puts up now the mark a holder held, dated when the step was reached, with its notification, card and digest line; a turn judged only news goes up as a quiet mark. It puts up nothing when no mark is held there. `note`, when given, shows in the Inbox card's suggestion line. When it put up a mark, or a holder had claimed the tab's question (a Claude Code question on this Mac can reach Koloft before its tab's run state turns to asking), it then announces `step-let-go`, once, so a sleeping owner's question is answered and its Discord card posted |
-  | `take(tabId)` | drops the mark a holder held, and the held turn's verdict with it |
+  when a turn ends.
 - The app calls `startPlugins` as its main module finishes loading, after every part a deps
   object hands in exists, and before Electron is ready, so before any session runs, any
   `koloft` command arrives or the window opens.
@@ -1030,13 +989,13 @@ parts it builds and hands to the starts as deps, and the types and helpers they 
 
 `npm run check:plugin-imports` lists each import under `src/` that breaks the rule; it does
 not read the tests. It only reports and never fails the build. On `main` at the commit this
-page was last checked against, it listed 658 imports, in five kinds:
+page was last checked against, it listed 649 imports, in five kinds:
 
 | Kind | Count | What it is |
 |---|---|---|
-| names a plugin outside the lists | 147 | app code, mostly `src/main/`, that imports a plugin's `api.ts`, `main/` or `shared/` files directly |
-| imports `src/shared/` | 276 | plugin code that imports `src/shared/`, which is not core |
-| imports app code outside `src/core` | 225 | plugin code that imports the app's own code, such as `src/main/` modules or the window's store, icons and slots |
+| names a plugin outside the lists | 144 | app code, mostly `src/main/`, that imports a plugin's `api.ts`, `main/` or `shared/` files directly |
+| imports `src/shared/` | 271 | plugin code that imports `src/shared/`, which is not core |
+| imports app code outside `src/core` | 224 | plugin code that imports the app's own code, such as `src/main/` modules or the window's store, icons and slots |
 | imports the `api.ts` of a plugin not in its needs | 6 | Discord's code using Sessions core's `api.ts`, and Sessions core's hook scripts using Discord's and the Butler's |
 | imports a plugin past its `api.ts` and `windowApi.ts` | 4 | Discord's code that imports Sessions core's `main/` files for its question cards |
 

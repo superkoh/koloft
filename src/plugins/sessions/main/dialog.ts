@@ -514,27 +514,3 @@ function keysOf(keys: AnswerKeys, q: Question, a: QuestionAnswer): string[] {
 export function answerKeys(keys: AnswerKeys, q: Asked, answers: QuestionAnswer[]): string[] {
   return [...answers.flatMap((a, i) => keysOf(keys, q.questions[i]!, a)), ...keys.submit(answers)]
 }
-
-export type KoloftAsk =
-  | { kind: 'question'; questions: Question[] }
-  | { kind: 'approval'; command?: string; plan?: string }
-
-export function askFromClaude(p: AskPayload): KoloftAsk {
-  if (p.tool_name === 'AskUserQuestion') return { kind: 'question', questions: questionsOf(p) }
-  const plan = planOf(p)
-  if (plan !== undefined) return { kind: 'approval', plan }
-  const command = p.tool_input?.command
-  return {
-    kind: 'approval',
-    command:
-      typeof command === 'string'
-        ? command
-        : `${p.tool_name ?? 'A tool'} ${JSON.stringify(p.tool_input ?? {})}`
-  }
-}
-
-export function askFromCodex(a: CodexApproval | CodexQuestion): KoloftAsk {
-  if ('questions' in a) return { kind: 'question', questions: a.questions }
-  if (a.plan) return { kind: 'approval', plan: a.reason ?? 'Open the session to read the plan.' }
-  return { kind: 'approval', command: a.command ?? a.file ?? a.reason }
-}

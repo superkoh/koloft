@@ -4,7 +4,6 @@ import {
   SESSION_BOUND,
   STATE_CHANGED,
   SESSION_STARTING,
-  STEP_LET_GO,
   TAB_EXITED,
   TAB_FORGOTTEN,
   TAB_TORN_DOWN,
@@ -48,8 +47,7 @@ export const plugin: PluginManifest = {
       TURN_ENDED.name,
       SESSION_BOUND.name,
       STATE_CHANGED.name,
-      ATTENTION_CHANGED.name,
-      STEP_LET_GO.name
+      ATTENTION_CHANGED.name
     ]
   },
   ui: [

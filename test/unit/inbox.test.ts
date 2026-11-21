@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { Inbox, type InboxHost } from '../../src/main/inbox'
-import { inboxSources } from '../../src/plugins/inbox/main/sources'
 import {
   DONE_KEPT_MS,
   UNDO_MS,
@@ -382,36 +381,6 @@ describe('inbox — a press waits 5 seconds, then goes to the session', () => {
     release()
     await vi.advanceTimersByTimeAsync(10)
     expect(inbox.all()[0]).toMatchObject({ state: 'closed', status: 'Merged' })
-  })
-})
-
-describe("inbox — another plugin's source", () => {
-  it('a plugin registers its source and adds, changes and moves only its own cards through it', () => {
-    const inbox = new Inbox(makeHost())
-    inbox.register({ id: 'koloft', name: 'Koloft' })
-    inbox.add({ source: 'koloft' }, question)
-    const watch = inboxSources(inbox).register({ id: 'watch', name: 'Alfred' })
-    watch.add({ ...done, key: 'check-1', state: 'in-progress' })
-    watch.update('check-1', { title: 'Alfred answered' })
-    watch.move('check-1', { state: 'needs-you', status: 'Look at it' }, 'a big one')
-    expect(() => watch.update('ask-1', { title: 'mine now' })).toThrow(/no card/)
-    expect(inbox.all().map((c) => [c.source, c.sourceName, c.key, c.title, c.state])).toEqual([
-      ['koloft', 'Koloft', 'ask-1', 'It asks', 'needs-you'],
-      ['watch', 'Alfred', 'check-1', 'Alfred answered', 'needs-you']
-    ])
-  })
-
-  it('a card that asks for its Dismiss as a button keeps asking through a change, until a change or a new post says otherwise', () => {
-    const inbox = new Inbox(makeHost())
-    const watch = inboxSources(inbox).register({ id: 'watch', name: 'Alfred' })
-    watch.add({ ...done, dismissButton: true })
-    watch.update('done-1', { title: 'Changed' })
-    expect(inbox.all()[0].dismissButton).toBe(true)
-    watch.update('done-1', { dismissButton: undefined })
-    expect(inbox.all()[0].dismissButton).toBeUndefined()
-    watch.add({ ...done, dismissButton: true })
-    watch.add(done)
-    expect(inbox.all()[0].dismissButton).toBeUndefined()
   })
 })
 

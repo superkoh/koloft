@@ -82,7 +82,6 @@ interface V1Manifest {
     defaults: Record<V1Agent, { model?: string; effort?: V1Effort }>
   }[]
   mcpServers?: readonly { name: string; command: string; args: readonly string[] }[]
-  openings?: readonly string[]
 }
 
 interface V1Reply {
@@ -253,11 +252,9 @@ interface PinnedFormats {
         fyi?: boolean
         wasAsking?: boolean
         stoppedByRestart?: boolean
-        note?: string
       }[]
       TAB_STOPPING: { tabId: string; restarting: boolean }
       DIALOG_CLOSED: string
-      STEP_LET_GO: string
     }
     heardWhileOff: Readonly<Record<string, boolean>>
   }
@@ -314,8 +311,7 @@ const PINNED_MOMENT_NAMES: Record<keyof PinnedFormats, Pinned['heardWhileOff']> 
     'turn-over': false,
     'attention-changed': false,
     'tab-stopping': false,
-    'dialog-closed': false,
-    'step-let-go': false
+    'dialog-closed': false
   }
 }
 
