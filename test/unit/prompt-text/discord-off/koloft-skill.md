@@ -1,6 +1,6 @@
 ---
 name: koloft
-description: "Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, close this session and its worktree for good, read or change the owner's instructions for this workspace, gather what waits on the owner (butler only), or get a password, code or sign-in from the owner (sudo, a web page field, a sign-in that ends on localhost). Also says how to click, type in and read the Workbench web pages with the playwright-cli command. Read this before running any koloft or playwright-cli command."
+description: "Use the koloft command to ask Koloft, the app this session runs in, to show a file, web page or git diff in the Workbench, read or add to the note, list, add, change or run scheduled tasks, list, start, message, run slash commands in, see the screen of, press keys in, answer, resume and stop sessions, read what a session said, close this session and its worktree for good, read or change the owner's instructions for this workspace, or get a password, code or sign-in from the owner (sudo, a web page field, a sign-in that ends on localhost). Also says how to click, type in and read the Workbench web pages with the playwright-cli command. Read this before running any koloft or playwright-cli command."
 ---
 
 koloft lets you ask Koloft, the app this session runs in, to do things for its owner (the person you work for). Run it in your shell. Each command prints its answer; exit code 0 means it worked.
@@ -168,21 +168,6 @@ koloft inbox delete <key>
 
 koloft inbox list [<state>]
     List your cards.
-
-TO-DOS
-
-Only for the butler and the helpers it starts in its own folder.
-
-koloft todo
-    Gather what waits on the owner in every workspace, and print how to sort it out with the owner: each workspace with its to-do note, the sessions asking the owner, done with their turn or closed with work left, the open pull requests (whose they are, checks, size, which issues they close), and the tools (MCP servers) each agent can reach.
-
-koloft todo note <workspace> [-- "<note>"]
-    Print a workspace's to-do note, or save it: where its to-dos are kept and which count. Workspaces of one GitHub repository share one note. An empty note removes it.
-    Example: koloft todo note koloft -- "To-dos are GitHub issues assigned to octo. Pull requests: opened by octo or asking octo to review."
-
-koloft todo file <workspace> <file>
-    Print one of the instruction or TODO files koloft todo lists for a workspace, also from a workspace on another machine.
-    Example: koloft todo file koloft CLAUDE.md
 
 PASSWORDS, CODES, SIGN-INS AND ROBOT CHECKS
 
