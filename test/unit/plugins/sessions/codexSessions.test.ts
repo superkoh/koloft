@@ -283,6 +283,19 @@ describe('CodexSessions', () => {
     expect(argv[argv.indexOf('disable_paste_burst=true') - 1]).toBe('-c')
   })
 
+  it("starts and resumes the Codex TUI with its file side panel off, so a file in a reply shows its whole path and a click on it opens no panel, and with the model's questions still on, which the TUI's own feature flags would otherwise turn off", async () => {
+    const first = await sessions.launch({ kind: 'codex', cwd: repo })
+    bind()
+    await sessions.stop(first.id)
+    await sessions.resume({ sessionId: codexSessionKey(A), cwd: repo })
+    const launches = vi.mocked(deps.pty.create).mock.calls.map(([c]) => c.argv!)
+    expect(launches).toHaveLength(2)
+    for (const argv of launches) {
+      expect(argv[argv.indexOf('features.tui_workspace=false') - 1]).toBe('-c')
+      expect(argv[argv.indexOf(CODEX_ASKS_AND_WAITS) - 1]).toBe('-c')
+    }
+  })
+
   it('replaces membership on native new while keeping the former history available', async () => {
     await sessions.launch({ kind: 'codex', cwd: repo })
     bind()

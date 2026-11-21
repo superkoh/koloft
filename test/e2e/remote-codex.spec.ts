@@ -5,7 +5,11 @@ import type { Locator, Page } from '@playwright/test'
 import { test, expect, osOutlets, pendingAttention, quitAndClose } from './helpers/app'
 import { portOffset } from '../../src/shared/worktreeName'
 import { barePath } from '../../src/shared/remoteKey'
-import { CODEX_ASKS_AND_WAITS, STATUS_LINE_CONFIG } from '../../src/main/codexLaunchConfig'
+import {
+  CODEX_ASKS_AND_WAITS,
+  NO_FILE_SIDE_PANEL,
+  STATUS_LINE_CONFIG
+} from '../../src/main/codexLaunchConfig'
 import {
   agentRow,
   centerTerm,
@@ -460,6 +464,10 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       await expect.poll(() => tuiCalls(env).length, { timeout: 60_000 }).toBe(2)
       const resumed = tuiCalls(env)[1]
       expect(resumed).toMatchObject({ method: 'thread/resume', sessionId: threadId })
+      for (const { argv } of tuiCalls(env)) {
+        expect(argv[argv.indexOf(NO_FILE_SIDE_PANEL) - 1]).toBe('-c')
+        expect(argv[argv.indexOf(CODEX_ASKS_AND_WAITS) - 1]).toBe('-c')
+      }
       const tabId = machineServers(env)[1].tabId!
       expect(tabId).not.toBe(first.tabId)
       await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/st-waiting|st-idle/, {
