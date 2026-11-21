@@ -414,6 +414,7 @@ test.describe('a file path an agent printed in its terminal opens in the Workben
       await startSessionIn(page, 'ws-a')
       await waitStartupTurnOver(page, 'ws-a')
       const tabId = await shownTabId(page)
+      await waitTerminalRefittedBesideTheOpenWorkbench(page, tabId)
       await writeTo(
         page,
         tabId,
