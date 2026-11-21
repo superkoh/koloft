@@ -813,6 +813,23 @@ export async function expectNoCodexWhileTheCheckIsOutNorAfter(
   expect(samples.filter((n) => n > 0).length, `samples with ${what}`).toBe(0)
 }
 
+export async function agyQuotaUsed(page: Page): Promise<number | undefined> {
+  return (await page.evaluate(() => window.api.accounts.probe())).find((a) => a.kind === 'agy-home')
+    ?.quota?.[0]?.used
+}
+
+export async function museLimitWindows(page: Page): Promise<number | undefined> {
+  return (await page.evaluate(() => window.api.accounts.probe())).find(
+    (a) => a.kind === 'muse-home'
+  )?.limits?.windows.length
+}
+
+export async function codexAccountsWithLimits(page: Page): Promise<number> {
+  return (await page.evaluate(() => window.api.accounts.probe())).filter(
+    (a) => a.kind === 'codex-home' && a.limits
+  ).length
+}
+
 export async function waitBooted(page: Page): Promise<void> {
   await page.waitForFunction(
     () =>

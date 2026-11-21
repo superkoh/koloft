@@ -7,10 +7,15 @@ import {
   E2E_AGY_ACCOUNT,
   agyTranscriptOf,
   installAgy,
+  installAgyWithNoAccount,
+  seededAccount,
   seedSettings,
+  signInAgyWithGoogle,
+  writeAgyWeeklyUsage,
   type E2EEnv
 } from './helpers/env'
 import {
+  agyQuotaUsed,
   centerTerm,
   chooseBackend,
   closeActiveTab,
@@ -64,8 +69,8 @@ const MODEL_CALL_THAT_NEVER_ANSWERS_ON_ITS_OWN_MS = '600000'
 const WAITING_TO_IDLE_MS = 1000
 const IDLE_TO_SLEEP_MS = 3000
 
-const accountFolder = (env: E2EEnv): string =>
-  path.join(machineHome(env), '.koloft', 'agy', E2E_AGY_ACCOUNT)
+const accountFolder = (env: E2EEnv, name = E2E_AGY_ACCOUNT): string =>
+  path.join(machineHome(env), '.koloft', 'agy', name)
 
 function setUp(env: E2EEnv): void {
   installAgy(env)
@@ -623,6 +628,42 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await expect(row).not.toHaveClass(/\bcold\b/)
       expect(liveTmuxSessions(env)).toContain(`k-${id}`)
       expect(machineAgyCalls(env)).toHaveLength(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('after Koloft is reopened, the first remote Antigravity session started while no quota can be read runs on the machine in the account added since, not the one that was full when Koloft was last open', async ({
+    env
+  }) => {
+    installAgyWithNoAccount(env)
+    installFakeRemote(env)
+    installRemoteAgy(env)
+    seedRemoteWorkspace(env)
+    signInAgyWithGoogle(env, E2E_AGY_ACCOUNT)
+    seedSettings(env, { hintsOff: true, accounts: [seededAccount(E2E_AGY_ACCOUNT, 'agy-home')] })
+    const usage = writeAgyWeeklyUsage(env, 0)
+    const lastOpen = await launchApp(env)
+    try {
+      const page = await lastOpen.firstWindow()
+      await waitBooted(page)
+      await expect.poll(() => agyQuotaUsed(page), { timeout: 30_000 }).toBe(1)
+    } finally {
+      await quitAndClose(lastOpen)
+    }
+
+    signInAgyWithGoogle(env, 'roomy')
+    seedSettings(env, {
+      accounts: [seededAccount(E2E_AGY_ACCOUNT, 'agy-home'), seededAccount('roomy', 'agy-home')]
+    })
+    fs.writeFileSync(usage, '{"groups":"unread"}')
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
+      await expect.poll(() => machineAgyCalls(env).length, { timeout: 90_000 }).toBe(1)
+      expect(machineAgyCalls(env)[0].argv[0]).toBe(`--gemini_dir=${accountFolder(env, 'roomy')}`)
     } finally {
       await quitAndClose(app)
     }
