@@ -17,8 +17,7 @@ export {
   type SlashResult
 } from './main/slashCommands'
 export { RepliesOwed, type ReplyListener } from './main/repliesOwed'
-export { ANSWER_NOT_TAKEN, type KoloftAsk } from './main/dialog'
-export type { BesideResult, BesideSpec, SessionTabs, TabPlace } from './main/sessionTabs'
+export { ANSWER_NOT_TAKEN } from './main/dialog'
 export { HandOver, type HandOverDeps, type HandingMarks, type Recipient } from './main/handOver'
 export type { SendResult, StartResult, StartSpec } from './main/sendAndStart'
 export {

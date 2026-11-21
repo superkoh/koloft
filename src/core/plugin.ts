@@ -90,5 +90,4 @@ export interface PluginManifest {
   hints?: readonly string[]
   assistJobs?: readonly PluginAssistJob[]
   mcpServers?: readonly PluginMcpServer[]
-  openings?: readonly string[]
 }

@@ -76,8 +76,6 @@ import type { Assist } from '@core/assistModels'
 import type { SessionsAssistJobId } from '../shared/assistJobs'
 import { keysFor } from '@core/typeKeys'
 import type { StartedSessions } from './startedSessions'
-import { roleAndTask } from './sessionTabs'
-import { PLUGIN_OPENINGS } from '@core/openings'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
 
 export const helpVerb =
@@ -638,6 +636,7 @@ async function launchSibling(
   helper: boolean
 ): Promise<{ tabId: string; name: string | undefined } | null> {
   const backend = args.backend ?? me.backendId
+  const traits = PEER_TRAITS[backend]
   const caller: SessionCaller = {
     name: (await d.peerNames()(me)) ?? (reachedBySendMessage(me.backendId) ? me.title : undefined),
     id: idToReach(me),
@@ -678,7 +677,10 @@ async function launchSibling(
       ownerWords,
       // ADR-0026
       trustFolder: !worktree && (helper || d.pinnedWorkspaces().some((w) => w.path === workspace)),
-      ...roleAndTask(backend, preamble, args.prompt)
+      // CODEX§17
+      ...(traits.handoverAsRole
+        ? { role: preamble, firstPrompt: args.prompt }
+        : { firstPrompt: withHandover(preamble, args.prompt) })
     })
   } finally {
     if (held) names.launched(held, tabId)
@@ -953,8 +955,7 @@ const KOLOFT_ENVELOPES = [
   SESSION_SAYS_OPENING,
   ASSIST_SAYS_OPENING_IN_OLDER_TRANSCRIPTS,
   FROM_KOLOFT,
-  A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
-  ...PLUGIN_OPENINGS
+  A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS
 ]
 
 type OwnerWordsHolder = Pick<SessionInfo, 'sessionId' | 'backendId'> & { tabId?: string }
@@ -999,8 +1000,6 @@ export function sessionVerb(d: SessionVerbDeps): {
     permission: 'bypass' | 'default',
     onReply: ReplyListener
   ): Promise<StartResult>
-  tellAs(tabId: string, opening: string, text: string): Promise<boolean>
-  ownerWordsIn(tabId: string): Promise<string | undefined>
 } {
   const opening = new Map<string, Promise<string | null>>()
   const names = launchNames(d)
@@ -1183,31 +1182,21 @@ export function sessionVerb(d: SessionVerbDeps): {
       .then((reply) => reply.exit === 0 || d.undelivered(from.tabId, to, reply.text))
       .catch((error: unknown) => d.undelivered(from.tabId, to, errorText(error)))
 
-  const tellWith = async (
-    opening: string,
-    sender: string,
-    tabId: string,
-    text: string,
-    undelivered: (to: Target, why: string) => void
-  ): Promise<boolean> => {
+  const tellFromKoloft = async (tabId: string, text: string): Promise<boolean> => {
     const session = d.allSessions().find((s) => s.tabId === tabId)
     if (!session) return false
     const to = openTarget(session)
-    const said = `${opening}${text}`
-    const route = messagingOf(to.backend, !!to.remote)
-    if (route === 'peerLine' && !fitsACrossSessionMessage(said)) return false
-    const mode = route === 'peerLine' ? d.modeOf(tabId) : undefined
-    const peer = mode ? peerLineFrom(() => mode, said, sender)(tabId) : undefined
+    const said = `${FROM_KOLOFT}${text}`
+    const mode = messagingOf(to.backend, !!to.remote) === 'peerLine' ? d.modeOf(tabId) : undefined
+    const peer = mode ? peerLineFrom(() => mode, said, 'koloft')(tabId) : undefined
     try {
       await sendInto(to, tabId, said, peer, Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS, true)
       return true
     } catch (error) {
-      undelivered(to, errorText(error))
+      d.undelivered(tabId, to, errorText(error))
       return false
     }
   }
-  const tellFromKoloft = (tabId: string, text: string): Promise<boolean> =>
-    tellWith(FROM_KOLOFT, 'koloft', tabId, text, (to, why) => d.undelivered(tabId, to, why))
 
   const commandFrom = (caller: AgentCaller, text: string, into?: Target): Promise<string> => {
     const overseer = d.overseer.target(caller.session.sessionId)
@@ -1557,14 +1546,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     tabMoved,
     sendFrom,
     tellFromKoloft,
-    startForReply,
-    tellAs: async (tabId, opening, text) =>
-      PLUGIN_OPENINGS.includes(opening) &&
-      tellWith(opening, 'plugin', tabId, text, () => undefined),
-    ownerWordsIn: async (tabId) => {
-      const s = d.allSessions().find((s) => s.tabId === tabId)
-      return s?.sessionId ? ownerWordsOf(s) : undefined
-    }
+    startForReply
   }
 }
 

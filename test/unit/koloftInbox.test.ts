@@ -9,9 +9,9 @@ import {
   SHOW_PLAN_AGAIN,
   KoloftInbox,
   replyFor,
+  type KoloftAsk,
   type KoloftInboxDeps
 } from '../../src/main/koloftInbox'
-import type { KoloftAsk } from '../../src/plugins/sessions/main/dialog'
 import { inboxVerb } from '../../src/plugins/inbox/main/inboxVerb'
 import { ANSWER_NOT_TAKEN } from '../../src/plugins/sessions/main/dialog'
 import { SHOWS_NO_DIALOG } from '../../src/plugins/sessions/main/sessionAsks'

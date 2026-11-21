@@ -509,23 +509,19 @@ import { roomLink, Rooms, whereOf, type RoomSubject } from '@plugins/discord/mai
 import { accentOf } from '@plugins/discord/main/cards'
 import { AskButtons } from '@plugins/discord/main/buttons'
 import { SlashCommands, toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
-import { folderOf, startBeside } from '@plugins/sessions/main/sessionTabs'
 import { toChannel } from '@plugins/discord/main/slash'
 import { TabLifecycle, subscribeTabSubsystems } from '@plugins/sessions/main/tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from '@plugins/discord/main/interactions'
 import { clicksTheMouse, pressesAKey, typeKeys } from '@core/typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import {
-  askFromClaude,
-  askFromCodex,
   claudeDialog,
   codexDialog,
   isAskedCall,
   questionsOf,
   type CodexApproval,
   type CodexQuestion,
-  type DialogView,
-  type KoloftAsk
+  type DialogView
 } from '@plugins/sessions/main/dialog'
 import { sleep } from '@core/sleep'
 import {
@@ -595,7 +591,15 @@ import { pushAsks as pushSecretAsks } from '@plugins/passwords/main/channels'
 import { pushOpenFile } from '@plugins/workbench/main/channels'
 import { INBOX_SENDER, Inbox } from './inbox'
 import { flushInbox, loadInbox, saveInbox } from './inboxFile'
-import { inboxFooter, where, KoloftInbox, type AskedSession } from './koloftInbox'
+import {
+  askFromClaude,
+  askFromCodex,
+  inboxFooter,
+  where,
+  KoloftInbox,
+  type AskedSession,
+  type KoloftAsk
+} from './koloftInbox'
 import { ClaudeDialogWatch } from './claudeDialogWatch'
 import {
   A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS,
@@ -743,7 +747,6 @@ function storedOwnerOf(tabId: string): SessionsWithStore | undefined {
 const startedSessions = new StartedSessions(() =>
   path.join(app.getPath('userData'), 'started-sessions.json')
 )
-const shownUnder = new StartedSessions(() => path.join(app.getPath('userData'), 'shown-under.json'))
 const readerDocs = new ReaderDocs({
   file: () => path.join(app.getPath('userData'), 'doc-verdicts.json'),
   assist: (job) => assist(job),
@@ -763,7 +766,6 @@ const sessionBackends = new SessionBackends({
     if (!idleCompaction) attention.bound(tabId, key)
     announceNow(SESSION_BOUND, { tabId, key, idleCompaction })
     startedSessions.bound(tabId, key)
-    shownUnder.bound(tabId, key)
     ptyMgr.agentBound(tabId)
     ptyMgr.wakeReady(tabId)
   },
@@ -1022,7 +1024,7 @@ function openTabOf(s: SessionInfo): OpenTab {
     sessionId: s.sessionId,
     kind: s.backendId,
     title: sidebarTitle(s) ?? s.title,
-    cwd: folderOf(s),
+    cwd: s.remote ? formatRemoteKey(s.remote.host, s.cwd) : s.cwd,
     tabIds: tabIdsOf(s.tabId)
   }
 }
@@ -1091,7 +1093,6 @@ function sleepTab(tabId: string): void {
 
 function forgetSleeper(tabId: string): void {
   sleepers.forget(tabId)
-  answerableForAPlugin.delete(tabId)
   attention.clearKeepingExit(tabId)
   sendToRenderer(CH.tab.killedByMain, tabId)
   tabLifecycle.emit('forgotten', tabId)
@@ -1535,7 +1536,6 @@ type OwnerAsk = SecretAsk & { taps?: TapRounds }
 let secretAsks: SecretAsks<OwnerAsk> | null = null
 let instructionAsks: InstructionAsks | null = null
 const answerable = new Set<string>()
-const answerableForAPlugin = new Set<string>()
 let hookRegDir: string | undefined
 let guard: ResourceGuard | undefined
 let writeHookSettings:
@@ -1633,9 +1633,7 @@ function syncAnswerable(): void {
   for (const s of allSessions()) {
     if (!s.alive || capabilitiesFor(s.backendId, s.host).askHookWaitsForDiscord !== true) continue
     const on =
-      ownerAsleep.answersFor(s.tabId) ||
-      (discordConnected && !!binding.channelOfTab(s.tabId)) ||
-      answerableForAPlugin.has(s.tabId)
+      ownerAsleep.answersFor(s.tabId) || (discordConnected && !!binding.channelOfTab(s.tabId))
     if (on === answerable.has(s.tabId)) continue
     if (on) answerable.add(s.tabId)
     else answerable.delete(s.tabId)
@@ -3790,7 +3788,6 @@ app.whenReady().then(() => {
     if (!restarting) earlierTabIds.delete(e.id)
     ownerTouchedAt.delete(e.id)
     questionSeen.delete(e.id)
-    if (!restarting && !asleep) answerableForAPlugin.delete(e.id)
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     guard?.forget(e.id)
@@ -4109,7 +4106,7 @@ app.whenReady().then(() => {
     killRemoteSession: (host, sessionId) =>
       claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
     hiddenRow: (id) => sessionBackends.isOverseerSession(id),
-    parentOf: (rowId) => startedSessions.parentOfRow(rowId) ?? shownUnder.parentOfRow(rowId),
+    parentOf: (rowId) => startedSessions.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
     scratchRoots: scratchRootsAround(os.homedir(), os.tmpdir()),
     claimedFolder: butlersFolderClaim(userData),
@@ -5262,7 +5259,6 @@ function archiveSession(id: string): boolean {
     koloftInbox.sessionGone(id, 'Its session was deleted')
     attention.clearSession(id)
     startedSessions.forget(id)
-    shownUnder.forget(id)
     readerDocs.forget(id)
   }
   return archived
@@ -6374,11 +6370,6 @@ function registerIpc(): void {
     if (typeof oldTabId !== 'string' || typeof newTabId !== 'string') return
     ptyMgr.moveOwner(oldTabId, newTabId)
     startedSessions.moved(oldTabId, newTabId)
-    shownUnder.moved(oldTabId, newTabId)
-    if (answerableForAPlugin.delete(oldTabId)) {
-      answerableForAPlugin.add(newTabId)
-      syncAnswerable()
-    }
     sessionCommand.tabMoved(oldTabId, newTabId)
     koloftInbox.rebound(oldTabId, newTabId)
     cronRunner?.tabMoved(oldTabId, newTabId)
@@ -6871,40 +6862,6 @@ const startedPlugins: PluginsStarted = startPlugins(
         worktrees: async (p) => (await workspaceMgr?.worktrees(p)) ?? [],
         storedSessions,
         dirExists: (dir) => hosts.of(dir).dirExists(dir)
-      },
-      tabs: {
-        askOf: inboxAskOf,
-        answer: answerSession,
-        placeOf: (tabId) => {
-          const s = sessionOfTab(tabId)
-          const workspace = sessionBackends.workspaceOfTab(tabId)
-          return s && workspace
-            ? { workspace, folder: folderOf(s), machine: s.remote?.host }
-            : undefined
-        },
-        ownerWordsOf: (tabId) => sessionCommand.ownerWordsIn(tabId),
-        lookedAt: () => attention.watching(),
-        ownerTypedSince: (tabId, at) => (touchedAt.get(tabId) ?? 0) >= at,
-        waitsOnAnother: (tabId) => attention.waitsOnAnother(tabId),
-        butlerSide,
-        markAnswerable: (tabId, on) => {
-          if (on) answerableForAPlugin.add(tabId)
-          else answerableForAPlugin.delete(tabId)
-          syncAnswerable()
-        },
-        tellAs: (tabId, opening, text) => sessionCommand.tellAs(tabId, opening, text),
-        startBeside: (tabId, spec) =>
-          startBeside(
-            {
-              sessionOfTab: (tab) => sessionDeps.allSessions().find((s) => s.tabId === tab),
-              launch: sessionDeps.launch,
-              pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
-              turnedOff: sessionDeps.turnedOff,
-              shownUnder
-            },
-            tabId,
-            spec
-          )
       }
     },
     workbench: {

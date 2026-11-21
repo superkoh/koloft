@@ -10,8 +10,16 @@ import {
   type InboxCardInput,
   type InboxQuestion
 } from '@shared/inbox'
+import type { AskPayload } from '@shared/sessionEvent'
 import type { AnswerResult, Inbox, InboxCaller } from './inbox'
-import { ANSWER_NOT_TAKEN, type KoloftAsk, type Question } from '@plugins/sessions/main/dialog'
+import {
+  planOf,
+  questionsOf,
+  type CodexApproval,
+  type CodexQuestion,
+  ANSWER_NOT_TAKEN,
+  type Question
+} from '@plugins/sessions/main/dialog'
 import { SHOWS_NO_DIALOG } from '@plugins/sessions/main/sessionAsks'
 
 export const KOLOFT_SOURCE = { id: 'koloft', name: 'Koloft' }
@@ -23,6 +31,10 @@ export const CARRY_ON =
   'Koloft started you again after you stopped unexpectedly. Carry on where you left off.'
 export const CLOSE_YOURSELF =
   'Wrap up and close this session: commit what is still open, then run koloft session close as your very last step. If Koloft refuses, say why and stop.'
+
+export type KoloftAsk =
+  | { kind: 'question'; questions: Question[] }
+  | { kind: 'approval'; command?: string; plan?: string }
 
 export interface AskedSession {
   sessionId: string
@@ -41,6 +53,26 @@ export interface KoloftInboxDeps {
   answer(tabId: string, reply: string): Promise<string | undefined>
   butlerSide(tabId: string): boolean
   watching(): string | null
+}
+
+export function askFromClaude(p: AskPayload): KoloftAsk {
+  if (p.tool_name === 'AskUserQuestion') return { kind: 'question', questions: questionsOf(p) }
+  const plan = planOf(p)
+  if (plan !== undefined) return { kind: 'approval', plan }
+  const command = p.tool_input?.command
+  return {
+    kind: 'approval',
+    command:
+      typeof command === 'string'
+        ? command
+        : `${p.tool_name ?? 'A tool'} ${JSON.stringify(p.tool_input ?? {})}`
+  }
+}
+
+export function askFromCodex(a: CodexApproval | CodexQuestion): KoloftAsk {
+  if ('questions' in a) return { kind: 'question', questions: a.questions }
+  if (a.plan) return { kind: 'approval', plan: a.reason ?? 'Open the session to read the plan.' }
+  return { kind: 'approval', command: a.command ?? a.file ?? a.reason }
 }
 
 export const ASKED_BEFORE_IT_STOPPED =

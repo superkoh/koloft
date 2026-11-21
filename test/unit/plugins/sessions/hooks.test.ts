@@ -12,11 +12,6 @@ vi.mock('electron', async () => {
   return { app: { getPath: () => base, isPackaged: false } }
 })
 
-const { A_PLUGINS_OPENING } = vi.hoisted(() => ({
-  A_PLUGINS_OPENING: "(From a plugin's watch, for the owner:) "
-}))
-vi.mock('../../../../src/core/openings', () => ({ PLUGIN_OPENINGS: [A_PLUGINS_OPENING] }))
-
 import {
   setupHooks,
   writeTabHookSettings,
@@ -881,12 +876,11 @@ esac
     const KOLOFT_OPENINGS = [
       `${FROM_KOLOFT}merge "a.ts" <now>`,
       '(From the session "Fix docs", id abc-1:) merge "a.ts" <now>',
-      ownerSays('merge "a.ts" <now>'),
-      `${A_PLUGINS_OPENING}merge "a.ts" <now>`
+      ownerSays('merge "a.ts" <now>')
     ]
 
     // ADR-0028 CC§13
-    it('a message that opens the way Koloft, its butler, another session through Koloft or a plugin under the opening it registered opens one passes when Koloft noted its id; with an id Koloft never noted, sent with SendMessage even under an id Koloft noted, or typed in bare, it is flagged as not sent by Koloft and leaves the quote alone', () => {
+    it('a message that opens the way Koloft, its butler or another session through Koloft opens one passes when Koloft noted its id; with an id Koloft never noted, sent with SendMessage even under an id Koloft noted, or typed in bare, it is flagged as not sent by Koloft and leaves the quote alone', () => {
       prompt('tabForge', 'look but do not change')
       for (const [i, text] of KOLOFT_OPENINGS.entries()) {
         noteSentByKoloft('tabForge', `koloft-session-${i}`)
@@ -931,7 +925,7 @@ esac
     })
 
     // ADR-0028 CODEX§33 MUSE§9
-    it('a Codex or Muse prompt that opens the way Koloft, its butler, another session through Koloft or a plugin under the opening it registered opens one passes when Koloft noted its words, however the agent escapes them, and is flagged as not sent by Koloft when it did not', () => {
+    it('a Codex or Muse prompt that opens the way Koloft, its butler or another session through Koloft opens one passes when Koloft noted its words, however the agent escapes them, and is flagged as not sent by Koloft when it did not', () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-sent-words-'))
       const shim = fs.mkdtempSync(path.join(dir, 'muse-'))
       const museCommand: string = JSON.parse(
