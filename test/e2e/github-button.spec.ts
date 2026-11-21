@@ -510,7 +510,8 @@ test.describe('Workbench · GitHub button against the REAL gh and GitHub: opt-in
       await test.info().attach('the-pasted-checks', { body: prompt })
       expect(prompt).toContain(`\n${PR_3_NPM_ERROR}\n`)
       expect(prompt).toContain(`\n${PR_3_FIRST_ERROR_LINE}\n\n`)
-      expect(prompt).not.toMatch(/\t\d{4}-\d\d-\d\dT|\x1b\[|﻿/)
+      expect(prompt).not.toMatch(/\t\d{4}-\d\d-\d\dT|\x1b\[|\^\[\[|﻿/)
+      expect(prompt).not.toContain('Post job cleanup.')
     } finally {
       await app.close().catch(() => {})
     }

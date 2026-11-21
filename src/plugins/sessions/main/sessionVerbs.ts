@@ -384,6 +384,7 @@ export interface SessionVerbDeps {
   sendLine(tabId: string, line: string, ms: number): Promise<void>
   press(tabId: string, keys: string[]): Promise<void>
   deliver(tabId: string, text: string): Promise<boolean>
+  noteSent(tabId: string, text: string, id: string | undefined): Promise<void>
   modeOf(tabId: string): ModeClass
   stop(tabId: string): void
   answer(tabId: string, reply: string, byTheOverseer: boolean): Promise<string | undefined>
@@ -937,6 +938,11 @@ function readsItAfterTheQuestion(name: string): string {
   return `But ${name} is asking the owner a question, so it reads your message only once that is answered. See the question with koloft session screen ${arg} and pass it on to the owner.`
 }
 
+interface PeerLine {
+  line: string
+  id: string
+}
+
 const SESSION_SAYS_OPENING = `${FROM_A_SESSION}"`
 
 export function sessionSays(from: SessionInfo, text: string): string {
@@ -1003,9 +1009,9 @@ export function sessionVerb(d: SessionVerbDeps): {
     modeFor: (tab: string) => ModeClass,
     text: string,
     sender: string
-  ): ((tab: string) => string) => {
+  ): ((tab: string) => PeerLine) => {
     const id = `koloft-${sender}-${++lined}`
-    return (tab) => crossSessionLine(modeFor(tab), text, id)
+    return (tab) => ({ line: crossSessionLine(modeFor(tab), text, id), id })
   }
   const repliesOwed = new RepliesOwed()
   const messagedBy = new Map<string, Set<string>>()
@@ -1048,21 +1054,24 @@ export function sessionVerb(d: SessionVerbDeps): {
   const sendNow = async (
     t: Target,
     text: string,
-    lineFor: ((tab: string) => string) | undefined,
+    lineFor: ((tab: string) => PeerLine) | undefined,
     until: number,
     from: string,
+    wroteTheOpening: boolean,
     assist?: string
   ): Promise<string> => {
     const tab = t.tabId ?? (await openReady(t, until))
     if (!tab) throw new Error(`${t.name} was resumed but did not get ready in time.`)
-    const line = lineFor?.(tab)
+    const peer = lineFor?.(tab)
     const owed = assist
       ? {
           owner: assist,
           asked: messagingOf(t.backend, !!t.remote) === 'queue' ? text : undefined
         }
       : undefined
-    const sent = await repliesOwed.owing(tab, owed, () => sendInto(t, tab, text, line, until))
+    const sent = await repliesOwed.owing(tab, owed, () =>
+      sendInto(t, tab, text, peer, until, wroteTheOpening)
+    )
     messaged(tab, from)
     return sent
   }
@@ -1071,15 +1080,18 @@ export function sessionVerb(d: SessionVerbDeps): {
     t: Target,
     tab: string,
     text: string,
-    line: string | undefined,
-    until: number
+    peer: PeerLine | undefined,
+    until: number,
+    wroteTheOpening: boolean
   ): Promise<string> => {
+    // ADR-0028
+    if (wroteTheOpening) await d.noteSent(tab, text, peer?.id)
     if (messagingOf(t.backend, !!t.remote) === 'queue') {
       await d.queue(tab, text, `koloft-conductor-${++queued}`)
       return `Sent to ${t.name}.`
     }
-    if (line) {
-      await d.sendLine(tab, line, until - Date.now())
+    if (peer) {
+      await d.sendLine(tab, peer.line, until - Date.now())
       return `Sent to ${t.name}.`
     }
     if (await d.deliver(tab, text)) return `Sent to ${t.name}.`
@@ -1122,6 +1134,7 @@ export function sessionVerb(d: SessionVerbDeps): {
         lineFor,
         Date.now() + REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS,
         caller.session.sessionId,
+        true,
         assist
       )
       return answered(asking ? `${sent} ${readsItAfterTheQuestion(t.name)}` : sent)
@@ -1132,6 +1145,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       lineFor,
       Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS,
       caller.session.sessionId,
+      true,
       assist
     ).catch((error: unknown) => d.undelivered(caller.tabId, t, errorText(error)))
     return answered(`Will deliver when ${t.name} is ready.`)
@@ -1174,9 +1188,9 @@ export function sessionVerb(d: SessionVerbDeps): {
     const to = openTarget(session)
     const said = `${FROM_KOLOFT}${text}`
     const mode = messagingOf(to.backend, !!to.remote) === 'peerLine' ? d.modeOf(tabId) : undefined
-    const line = mode && peerLineFrom(() => mode, said, 'koloft')(tabId)
+    const peer = mode ? peerLineFrom(() => mode, said, 'koloft')(tabId) : undefined
     try {
-      await sendInto(to, tabId, said, line, Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS)
+      await sendInto(to, tabId, said, peer, Date.now() + WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS, true)
       return true
     } catch (error) {
       d.undelivered(tabId, to, errorText(error))
@@ -1459,7 +1473,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       Date.now() +
       (busy || woke ? WAITS_FOR_A_CLOSED_OR_BUSY_TARGET_MS : REPLY_INSIDE_THE_KOLOFT_SHIM_WAIT_MS)
     try {
-      await sendNow(t, text, lineFor, until, sender)
+      await sendNow(t, text, lineFor, until, sender, false)
       return {
         ok: true,
         session: t.key,

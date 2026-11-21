@@ -26,10 +26,12 @@ import { hookStateHeader } from '../codexTrust'
 import {
   CODEX_REPLY_LANGUAGE_ENV,
   CODEX_SAID_ENV,
+  CODEX_SENT_WORDS_ENV,
   CODEX_SHELL_WROTE_ENV,
   handedOverOwnerWordsFiles,
   NOTICE_ENV,
   remoteNoticeFile,
+  remoteSentWordsFile,
   SHELL_WROTE_SUFFIX
 } from '@plugins/sessions/main/hooks'
 import { OWNING_TAB_ENV } from '../owningTabEnv'
@@ -142,8 +144,8 @@ ${ownerWords}${loginPathToo}
 (
 ${exports}  CODEX_HOME="$H"; PATH="$M/bin:$PATH"; export CODEX_HOME PATH
   ${CODEX_REPLY_LANGUAGE_ENV}="$M/${REPLY_LANGUAGE_FILE}"; ${CODEX_SAID_ENV}="$S.said"; ${NOTICE_ENV}="${remoteNoticeFile(s.tabId)}"
-  ${CODEX_SHELL_WROTE_ENV}="${REMOTE_HOOK_DIR}/${s.tabId}${SHELL_WROTE_SUFFIX}"
-  export ${CODEX_REPLY_LANGUAGE_ENV} ${CODEX_SAID_ENV} ${NOTICE_ENV} ${CODEX_SHELL_WROTE_ENV}
+  ${CODEX_SHELL_WROTE_ENV}="${REMOTE_HOOK_DIR}/${s.tabId}${SHELL_WROTE_SUFFIX}"; ${CODEX_SENT_WORDS_ENV}="${remoteSentWordsFile(s.tabId)}"
+  export ${CODEX_REPLY_LANGUAGE_ENV} ${CODEX_SAID_ENV} ${NOTICE_ENV} ${CODEX_SHELL_WROTE_ENV} ${CODEX_SENT_WORDS_ENV}
   ${OWNING_TAB_ENV}=${s.tabId}; export ${OWNING_TAB_ENV}
   command -v setsid >/dev/null 2>&1 && exec setsid nohup ${serve}
   exec nohup ${serve}

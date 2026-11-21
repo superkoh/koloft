@@ -17,6 +17,7 @@ function setup(more: Partial<HandOverDeps> = {}) {
     queue: async (_t, text) => void typed.push(text),
     sendLine: async () => undefined,
     modeOf: () => 'bypass',
+    noteSent: async () => undefined,
     ...more
   }
   const to: Recipient = {
