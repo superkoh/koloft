@@ -649,7 +649,8 @@ async function launchSibling(
     const gitWorkspace = d
       .sidebar()
       .some((w) => w.workspace.path === workspace && w.workspace.isGit)
-    const [, handover, told, namedWorktree] = await Promise.all([
+    const wantsWorktree = gitWorkspace && (!!args.worktree || caller.assist)
+    const [, handover, told, assistNamed] = await Promise.all([
       !namedAtLaunch(backend, isRemoteKey(workspace))
         ? undefined
         : args.name !== undefined
@@ -657,17 +658,17 @@ async function launchSibling(
           : titleForTask(args.prompt, d.assist, ownerWords).then((t) => (held = names.pick(t))),
       handoverInOwnersLanguage(caller, d.assist),
       d.announceStarting({ helper }),
-      gitWorkspace && !args.worktree && caller.assist
-        ? worktreeNameForTask(args.prompt, d.assist)
-        : args.worktree
+      wantsWorktree && !args.worktree ? worktreeNameForTask(args.prompt, d.assist) : null
     ])
     const name = held?.name
     const preamble = [...told, handover].join('\n\n')
-    const wished = namedWorktree ?? undefined
-    const worktree =
-      gitWorkspace && (wished || caller.assist)
-        ? freshWorktreeName(await d.worktrees(workspace), Date.now(), wished)
-        : wished
+    const worktree = wantsWorktree
+      ? freshWorktreeName(
+          await d.worktrees(workspace),
+          Date.now(),
+          args.worktree ?? assistNamed ?? undefined
+        )
+      : args.worktree
     tabId = await d.launch({
       kind: backend,
       cwd: workspace,

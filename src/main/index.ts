@@ -6304,30 +6304,32 @@ function registerIpc(): void {
   ipcMain.handle(CH.app.version, () => app.getVersion())
   ipcMain.handle(CH.settings.set, (_e, patch) => commitSettings(sanitizeSettingsPatch(patch)))
 
+  const cancellableAssist = async <T>(
+    id: number,
+    ask: (signal: AbortSignal) => Promise<T>
+  ): Promise<T> => {
+    const run = new AbortController()
+    assistRuns.set(id, run)
+    try {
+      return await ask(run.signal)
+    } finally {
+      assistRuns.delete(id)
+    }
+  }
   ipcMain.handle(CH.assist.route, async (_e, id: unknown, message: unknown) => {
     if (typeof id !== 'number' || typeof message !== 'string' || !workspaceMgr) return null
     const mgr = workspaceMgr
-    const run = new AbortController()
-    assistRuns.set(id, run)
-    try {
-      return await routeSession(
+    return cancellableAssist(id, (signal) =>
+      routeSession(
         { rows: projectRows, worktrees: (p) => mgr.worktrees(p), assist },
         message,
-        run.signal
+        signal
       )
-    } finally {
-      assistRuns.delete(id)
-    }
+    )
   })
   ipcMain.handle(CH.assist.nameWorktree, async (_e, id: unknown, task: unknown) => {
     if (typeof id !== 'number' || typeof task !== 'string') return null
-    const run = new AbortController()
-    assistRuns.set(id, run)
-    try {
-      return await worktreeNameForTask(task, assist, run.signal)
-    } finally {
-      assistRuns.delete(id)
-    }
+    return cancellableAssist(id, (signal) => worktreeNameForTask(task, assist, signal))
   })
   ipcMain.on(CH.assist.cancel, (_e, id: unknown) => {
     if (typeof id === 'number') assistRuns.get(id)?.abort()

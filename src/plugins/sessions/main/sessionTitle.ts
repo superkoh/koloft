@@ -1,6 +1,6 @@
 import type { Assist } from '@core/assistModels'
 import type { SessionsAssistJobId } from '../shared/assistJobs'
-import { isValidWorktreeName } from '@shared/worktreeName'
+import { isUsableNewWorktreeName, NEW_WORKTREE_NAME_MAX_CHARS } from '@shared/worktreeName'
 
 const NAME_MAX_CHARS = 40
 const TASK_MAX_CHARS_SENT_FOR_A_TITLE = 4000
@@ -67,11 +67,11 @@ export function distinctTitle(name: string, taken: Set<string>): string {
 }
 
 const WORKTREE_NAME_SYSTEM = 'You name git worktrees.'
-const WORKTREE_NAME_MAX_CHARS = 30
+const WAIT_FOR_A_WORKTREE_NAME_BEFORE_THE_TIME_STAMP_MS = 8_000
 
 const worktreeNameInstructions =
   'Give the task below a short kebab-case English name for the git worktree it will be done in, ' +
-  `at most ${WORKTREE_NAME_MAX_CHARS} characters, saying what the work is. ` +
+  `at most ${NEW_WORKTREE_NAME_MAX_CHARS} characters, saying what the work is. ` +
   'Reply with the name alone.\n\nTask:\n'
 
 const NAME_LIKE_LINE = /^[`"'“‘]*([A-Za-z0-9][A-Za-z0-9_-]*)[`"'”’.]*$/
@@ -79,13 +79,13 @@ const NAME_LIKE_LINE = /^[`"'“‘]*([A-Za-z0-9][A-Za-z0-9_-]*)[`"'”’.]*$/
 function worktreeNameFromReply(reply: string): string | null {
   const bare = nonEmptyLines(reply)
     .map((line) => NAME_LIKE_LINE.exec(line)?.[1])
-    .findLast((name) => name !== undefined)
+    .find((name) => name !== undefined)
   const name = (bare ?? '')
     .toLowerCase()
     .replace(/_+/g, '-')
-    .slice(0, WORKTREE_NAME_MAX_CHARS)
+    .slice(0, NEW_WORKTREE_NAME_MAX_CHARS)
     .replace(/-+$/, '')
-  return isValidWorktreeName(name) && name !== 'main' ? name : null
+  return isUsableNewWorktreeName(name) ? name : null
 }
 
 export async function worktreeNameForTask(
@@ -93,13 +93,14 @@ export async function worktreeNameForTask(
   assist: Assist<SessionsAssistJobId>,
   signal?: AbortSignal
 ): Promise<string | null> {
+  const waited = AbortSignal.timeout(WAIT_FOR_A_WORKTREE_NAME_BEFORE_THE_TIME_STAMP_MS)
   const reply = await assist({
     row: 'title',
     system: WORKTREE_NAME_SYSTEM,
     prompt: worktreeNameInstructions + task.slice(0, TASK_MAX_CHARS_SENT_FOR_A_TITLE),
-    signal
+    signal: signal ? AbortSignal.any([signal, waited]) : waited
   })
-  return reply && worktreeNameFromReply(reply)
+  return reply ? worktreeNameFromReply(reply) : null
 }
 
 export async function titleForTask(

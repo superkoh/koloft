@@ -2277,28 +2277,28 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     ])
   })
 
-  it('a session the butler starts in a git workspace without -w is named for its task by Assist, the next free -N when that name is taken; another session’s start never asks it', async () => {
-    const { verb, launched } = harness(
-      live,
-      {},
-      [],
-      conducting({ worktrees: ['docs'], worktreeNameReply: '`fix-sidebar-title`\n' })
-    )
-    await verb(['new', ...PICKED, '--workspace', WS, '--', '修侧栏标题'], from('butler'))
-    await verb(['new', ...PICKED, '--', 'go'], from('fix'))
-    const taken = harness(
-      live,
-      {},
-      [],
-      conducting({ worktrees: ['docs'], worktreeNameReply: 'Docs' })
-    )
-    await taken.verb(['new', ...PICKED, '--workspace', WS, '--', 'tidy the docs'], from('butler'))
-    expect([...launched, ...taken.launched].map((l) => l.worktree)).toEqual([
-      'fix-sidebar-title',
-      undefined,
-      'docs-2'
-    ])
-  })
+  it.each([
+    ['`fix-sidebar-title`\n', 'fix-sidebar-title'],
+    ['Docs', 'docs-2'],
+    ['', 'session-261013-2321']
+  ])(
+    'a session the butler starts in a git workspace without -w gets the worktree Assist names for its task (reply %j → %s): the next free -N when that name is taken, the time stamp when it names none',
+    async (reply, worktree) => {
+      const { verb, launched } = harness(
+        live,
+        {},
+        [],
+        conducting({ worktrees: ['docs'], worktreeNameReply: reply })
+      )
+      vi.useFakeTimers({ now: new Date(2026, 9, 13, 23, 21), toFake: ['Date'] })
+      try {
+        await verb(['new', ...PICKED, '--workspace', WS, '--', '修侧栏标题'], from('butler'))
+      } finally {
+        vi.useRealTimers()
+      }
+      expect(launched.map((l) => l.worktree)).toEqual([worktree])
+    }
+  )
 
   it('a session another session starts gets its starter’s own permission, so its report back is not held: bypass under a bypass butler or session, the default otherwise', async () => {
     const { verb, launched } = harness(live, {}, [], conducting({ bypass: ['butler', 'fix'] }))

@@ -16,7 +16,7 @@ import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { basename } from '@shared/preview'
 import { hostOf, parseRemoteKey } from '@shared/remoteKey'
 import type { PastedPicture } from '@shared/pastedPictures'
-import { askPinnedRoute, askRoute } from '../aiStart'
+import { askPinnedRoute, askRoute, pinnedRoute } from '../aiStart'
 import { isComposing } from '../keys'
 import {
   completeMention,
@@ -173,7 +173,7 @@ export function CommandPalette({
   const pin = pinnedWorkspace(query, named)
   const choice = choices[pin ? hostOf(pin.wsPath) : 'local']
   const twoNamed = new Set(named.map((n) => n.wsPath)).size > 1
-  const asksAssist = !pin
+  const routedByAssist = !pin
   const typed = (pin ? pin.prompt : query).trim()
   const startable = !!typed && !twoNamed && !saving
   const tagging = mode === 'ask' ? mentionTyping(query, caret) : null
@@ -224,14 +224,8 @@ export function CommandPalette({
 
   const start = (backend: BackendId = choice.lead): void => {
     if (mode !== 'ask' || !startable) return
-    const pinnedGit = pin && rows.some((w) => w.workspace.path === pin.wsPath && w.workspace.isGit)
-    if (pin && !pinnedGit) {
-      onRouted(
-        typed,
-        backend,
-        { title: '', kind: 'workspace', path: pin.wsPath, worktree: null },
-        pictures
-      )
+    if (pin && !rows.some((w) => w.workspace.path === pin.wsPath && w.workspace.isGit)) {
+      onRouted(typed, backend, pinnedRoute(pin.wsPath, null), pictures)
       return
     }
     setMode('thinking')
@@ -564,7 +558,7 @@ export function CommandPalette({
                   <>
                     <IconAiStart size={12} className="pal-pill-glyph" />{' '}
                     {startLabel(
-                      asksAssist,
+                      routedByAssist,
                       choice.listed.length > 1 ? BACKEND_LABEL[backend] : undefined
                     )}
                   </>

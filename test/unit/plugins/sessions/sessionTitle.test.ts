@@ -108,12 +108,14 @@ describe('the title behind koloft session new', () => {
     ['fix-cmdp-worktree-names', 'fix-cmdp-worktree-names'],
     ['`Fix_Login_Bug`.', 'fix-login-bug'],
     ['The task asks to rename worktrees.\n\nworktree-names', 'worktree-names'],
+    ['fix-login-bug\n\nDone.', 'fix-login-bug'],
+    ['', null],
     ['a-name-far-longer-than-thirty-characters-allows', 'a-name-far-longer-than-thirty'],
     ['{"workspace": 1, "worktree": "main"}', null],
     ['修侧栏标题', null],
     ['main', null]
   ])(
-    'a worktree name reply %j is taken as %j: the last line that is a bare name, kebab-cased and cut to 30 characters, else none',
+    'a worktree name reply %j is taken as %j: the first line that is a bare name, kebab-cased and cut to 30 characters, else none',
     async (reply, name) => {
       expect(await worktreeNameForTask('修侧栏标题', async () => reply)).toBe(name)
     }
