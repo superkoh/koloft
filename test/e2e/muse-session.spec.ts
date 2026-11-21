@@ -42,6 +42,9 @@ import {
   runIn,
   seedWorktreeInterruptedBeforeAnySessionBound,
   sendShortcut,
+  ERASED_BY_COMMAND_BACKSPACE,
+  KEPT_AFTER_COMMAND_BACKSPACE,
+  sendALineErasedByCommandBackspaceThenAnother,
   sendTwoLinesJoinedByShiftEnter,
   startSessionIn,
   staysOnTheFolderPageNotTheButler,
@@ -190,6 +193,30 @@ test.describe('Muse Code sessions through the real method chooser, status signal
       const call = await startMuse(page, env)
       await sendTwoLinesJoinedByShiftEnter(page, centerTerm(page))
       await expect.poll(() => museSaid(env, call.sessionId)).toContain(`echo: ${TWO_LINE_PROMPT}`)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§17
+  test('⌘⌫ in a Muse tab reaches Muse as Ctrl-U, so what was typed on the line before it never reaches the prompt', async ({
+    env
+  }) => {
+    installMuse(env)
+    trustInMuse(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const call = await startMuse(page, env)
+      await sendALineErasedByCommandBackspaceThenAnother(page, centerTerm(page))
+      await expect
+        .poll(() => museSaid(env, call.sessionId))
+        .toContain(`echo: ${KEPT_AFTER_COMMAND_BACKSPACE}`)
+      expect(JSON.stringify(museSaid(env, call.sessionId))).not.toContain(
+        ERASED_BY_COMMAND_BACKSPACE
+      )
     } finally {
       await quitAndClose(app)
     }

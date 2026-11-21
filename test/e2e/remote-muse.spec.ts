@@ -47,6 +47,9 @@ import {
   processAlive,
   runIn,
   sendShortcut,
+  ERASED_BY_COMMAND_BACKSPACE,
+  KEPT_AFTER_COMMAND_BACKSPACE,
+  sendALineErasedByCommandBackspaceThenAnother,
   sendTwoLinesJoinedByShiftEnter,
   startSessionIn,
   switchToRow,
@@ -312,6 +315,31 @@ test.describe('Muse Code in a remote workspace, through fake ssh and fake tmux w
           timeout: ON_THE_MACHINE_WITHIN_MS
         })
         .toContain(`echo: ${TWO_LINE_PROMPT}`)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // MUSE§17
+  test('E-RM-18: ⌘⌫ in a remote Muse tab reaches Muse through ssh and tmux as Ctrl-U, so what was typed on the line before it never reaches the prompt', async ({
+    env
+  }) => {
+    const { app, page } = await launchWithMuseThere(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      const call = await startRemoteMuse(page, env)
+      await expect(remoteRows(page)).toHaveClass(/\bst-waiting\b/, {
+        timeout: ON_THE_MACHINE_WITHIN_MS
+      })
+      await sendALineErasedByCommandBackspaceThenAnother(page, centerTerm(page))
+      await expect
+        .poll(() => museSaid(env, call.sessionId, machineHome(env)), {
+          timeout: ON_THE_MACHINE_WITHIN_MS
+        })
+        .toContain(`echo: ${KEPT_AFTER_COMMAND_BACKSPACE}`)
+      expect(JSON.stringify(museSaid(env, call.sessionId, machineHome(env)))).not.toContain(
+        ERASED_BY_COMMAND_BACKSPACE
+      )
     } finally {
       await quitAndClose(app)
     }

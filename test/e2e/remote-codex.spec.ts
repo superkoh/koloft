@@ -27,6 +27,9 @@ import {
   readCalls,
   runIn,
   sendShortcut,
+  ERASED_BY_COMMAND_BACKSPACE,
+  KEPT_AFTER_COMMAND_BACKSPACE,
+  sendALineErasedByCommandBackspaceThenAnother,
   sendTwoLinesJoinedByShiftEnter,
   settingsOnDisk,
   startSessionIn,
@@ -274,6 +277,25 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       await expect
         .poll(() => codexPromptsSent(machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl')))
         .toContain(TWO_LINE_PROMPT)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§16 CODEX§25
+  test('E-RC-21: ⌘⌫ in a remote Codex tab reaches the TUI as Ctrl-U, so what was typed on the line before it never reaches the app-server on the machine', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startRemoteCodex(page, env)
+      await sendALineErasedByCommandBackspaceThenAnother(page, centerTerm(page))
+      const sent = (): unknown[] =>
+        codexPromptsSent(machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl'))
+      await expect.poll(sent).toContain(KEPT_AFTER_COMMAND_BACKSPACE)
+      expect(JSON.stringify(sent())).not.toContain(ERASED_BY_COMMAND_BACKSPACE)
     } finally {
       await quitAndClose(app)
     }
