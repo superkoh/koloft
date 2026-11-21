@@ -871,8 +871,16 @@ export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments,
   GitHub's start gives back its `GithubMain`, whose `followSwitch` and `sweepNow` the app
   calls. Sessions core's gives back `tookTheTurn`, which the butler's and the Inbox's deps read
   when a turn ends. Workbench's gives back the web-page parts it builds (`WebPages`,
-  `SitePermissions`, `PageDialogs`, `PageDownloads`, `PageRouting`, `PageTools`) and
-  `pagesInUse`, which the app's own code calls from then on.
+  `SitePermissions`, `PageDialogs`, `PageDownloads`, `PageRouting`, `PageTools`),
+  `pagesInUse`, and the two ways it pushes to the window (an open file request, and
+  `pagePushes`), which the app's own code calls from then on. Browser control's gives back
+  the `CdpOps` it builds and the CDP relay's functions the app calls (`startRelay`,
+  `setRelayEnabled`, `writeRelayEnv`, `relayEndpoint`, `sessionDrivingGuest`, …). Todo's
+  gives back `TODO_NEWS`, which the app hands the butler.
+- What a start gives back exists only once `startPlugins` returns. A deps object built
+  before that, or a start that runs before the one that gives it, reads it through a
+  function (Workbench's `driverOf` calls Browser control's `sessionDrivingGuest`), never as a
+  value.
 - The app calls `startPlugins` as its main module finishes loading, after every part a deps
   object hands in exists, and before Electron is ready, so before any session runs, any
   `koloft` command arrives or the window opens.
@@ -890,7 +898,8 @@ export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments,
 A plugin's main-process code is a set of parts. A part is a class or function in `main/`
 that holds its own state. It takes what it needs from the rest of the app as a small `deps`
 object, which `src/main/index.ts` builds and hands in. A part built by the plugin's start
-function gets its deps through the start's `deps`, as Workbench's web-page parts do; most
+function gets its deps through the start's `deps`, as Workbench's web-page parts and
+Browser control's `CdpOps` do; most
 parts are still built by `src/main/index.ts` itself, which imports them by name and hands them
 to the starts as deps. A part never imports another plugin
 past its `api.ts`. When it needs something from a plugin that needs it in turn (Browser
@@ -926,7 +935,7 @@ either:
   `(From Koloft:) `, and the key is added; a new conversation is added to every list whose
   `on()` holds when it binds, as it already knows. The plugin that hands in a news names its own
   list, so the saved record keeps that name. `src/main/index.ts` hands in Todo's `TODO_NEWS`
-  (`knownBy: 'knowsTodo'`) and the butler's `GUIDE_MOVED_NEWS` (`knownBy: 'knowsAllItsOwnLines'`).
+  (`knownBy: 'knowsTodo'`, given back by Todo's start) and the butler's `GUIDE_MOVED_NEWS` (`knownBy: 'knowsAllItsOwnLines'`).
 
 ## Format version
 

@@ -4,7 +4,7 @@ import { pushOpenFile, registerChannels } from './channels'
 import { PageDialogs } from './pageDialogs'
 import { PageDownloads } from './pageDownloads'
 import { PageRouting, type PageRoutingDeps } from './pageRouting'
-import { registerPageChannels } from './pageChannels'
+import { pagePushes, registerPageChannels } from './pageChannels'
 import { pagesInUse, type PagesInUseDeps } from './pagesInUse'
 import { PageTools, type PageToolsDeps } from './pageTools'
 import { pickDocsOfEachTurn } from './sessionHooks'
@@ -45,7 +45,8 @@ function buildPages(ipc: MainIpc, d: WorkbenchPagesDeps) {
     takeGesture: (page) => webPages.takeGesture(page)
   })
   const pageDialogs = new PageDialogs({ push, isOverlay: (page) => webPages.isOverlay(page) })
-  const pageRouting = new PageRouting({ ...d, push, pages: webPages, openFile: pushOpenFile(ipc) })
+  const pushOpenRequest = pushOpenFile(ipc)
+  const pageRouting = new PageRouting({ ...d, push, pages: webPages, openFile: pushOpenRequest })
   const pageTools = new PageTools({ ...d, push, pages: webPages })
   const pageDownloads = new PageDownloads({ push })
   const inUse: PagesInUseDeps = {
@@ -62,7 +63,9 @@ function buildPages(ipc: MainIpc, d: WorkbenchPagesDeps) {
     pageDownloads,
     pageRouting,
     pageTools,
-    pagesInUse: () => pagesInUse(inUse)
+    pagesInUse: () => pagesInUse(inUse),
+    pushOpenRequest,
+    pushToPages: pagePushes(ipc)
   }
 }
 

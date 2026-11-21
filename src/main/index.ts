@@ -326,24 +326,6 @@ import {
   type RouteDecision,
   type RouteSource
 } from '@shared/browserRoute'
-import {
-  cdpEnvDir,
-  relayClientEvicted,
-  relayEndpoint,
-  relayEndpointOnMachine,
-  renewRelayEndpointOnMachine,
-  guestDrivenFromAnotherMachine,
-  originDrivenFromAnotherMachine,
-  notePageOpenedForAMachine,
-  relayStripChanged,
-  relayTabRebound,
-  sessionDrivingGuest,
-  setRelayEnabled,
-  startRelay,
-  writeRelayEnv,
-  relayAttached
-} from '@plugins/browser-control/main/cdpRelay'
-import { CdpOps } from '@plugins/browser-control/main/cdpOps'
 import { HTML_HEADERS, setupBrowserPartition } from '@plugins/workbench/main/browserPartition'
 import { PASTED_PICTURE_EXTENSIONS, pastedPicturesIn, withPictures } from '@shared/pastedPictures'
 import { compositionDone } from '@plugins/workbench/main/hostComposition'
@@ -510,7 +492,6 @@ import {
   withDiscordAsBefore,
   withDiscordOn
 } from '@plugins/discord/main/switchOn'
-import { listTodoPulls } from '@plugins/todo/main/pulls'
 import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
 import {
   AGY_PROJECT_MCP_FILE,
@@ -567,7 +548,6 @@ import { pushState as pushCronState } from '@plugins/scheduled-tasks/main/channe
 import { pushChanged as pushInboxChanged } from '@plugins/inbox/main/channels'
 import { pushStatus as pushStatusToDiscordPane } from '@plugins/discord/main/channels'
 import { pushAsks as pushSecretAsks } from '@plugins/passwords/main/channels'
-import { pushOpenFile } from '@plugins/workbench/main/channels'
 import { INBOX_SENDER, Inbox } from './inbox'
 import { flushInbox, loadInbox, saveInbox } from './inboxFile'
 import {
@@ -603,7 +583,6 @@ import {
   type Recipient
 } from '@plugins/sessions/api'
 import { A_HELPER_HAS_IT, writeLineInTurn } from '@plugins/sessions/main/crossSessionMessage'
-import { TODO_NEWS } from '@plugins/todo/api'
 import { docsWritingOn } from '@plugins/docs-writing/api'
 import { StartedSessions } from '@plugins/sessions/main/startedSessions'
 import { worktreeNameForTask } from '@plugins/sessions/main/sessionTitle'
@@ -635,7 +614,6 @@ import {
 } from './agentPlugin'
 import { installThen, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
 import { pushes as sessionsPushes } from '@plugins/sessions/main/channels'
-import { pagePushes } from '@plugins/workbench/main/pageChannels'
 
 const pluginIpc: MainIpc = {
   handle: (channel, handler) =>
@@ -646,10 +624,8 @@ const pluginIpc: MainIpc = {
   push: (channel, ...args) => sendToRenderer(channel as Channel, ...args)
 }
 const pushInbox = pushInboxChanged(pluginIpc)
-const pushOpenRequest = pushOpenFile(pluginIpc)
 const pushDiscordStatus = pushStatusToDiscordPane(pluginIpc)
 const pushToSessions = sessionsPushes(pluginIpc)
-const pushToPages = pagePushes(pluginIpc)
 
 // PLATFORM§4
 if (!app.isPackaged) app.setName('koloft-dev')
@@ -1403,8 +1379,8 @@ const browserTunnels = new BrowserTunnels({
     masterCommandOutlivingKoloft(host, op, { controlDir: remoteControlDir }),
   run: (host, cmd) => runSsh(host, cmd, { controlDir: remoteControlDir }),
   forwardFile: (host) => browserForwardFile(app.getPath('userData'), host),
-  endpointOnMachine: relayEndpointOnMachine,
-  renewEndpointOnMachine: renewRelayEndpointOnMachine
+  endpointOnMachine: (tabId) => relayEndpointOnMachine(tabId),
+  renewEndpointOnMachine: (tabId) => renewRelayEndpointOnMachine(tabId)
 })
 const pageForwards = new PageForwards({
   master: (host, op) => runMasterCommand(host, op, { controlDir: remoteControlDir }),
@@ -2455,10 +2431,7 @@ const todoCommand: PluginStartDeps['todo'] = {
   deleting: (row) => treeRemovals.has(row.cwd),
   worktrees: sessionDeps.worktrees,
   repoOf: (wsPath) => hosts.of(wsPath).github.ownerSlashName(wsPath),
-  pulls: async (wsPath) => {
-    const at = await hosts.of(wsPath).github.ghOfRepo(wsPath)
-    return at && listTodoPulls(at.gh, at.repo)
-  },
+  ghOfRepo: (wsPath) => hosts.of(wsPath).github.ghOfRepo(wsPath),
   mergedHeadsByBranch: (wsPath) => hosts.of(wsPath).github.mergedHeadsByBranch(wsPath),
   mergedHeads: (dir, branch) => mergedHeads(dir, branch),
   settings: { load: loadSettings, commit: commitSettings },
@@ -4783,8 +4756,7 @@ function agentTabIds(): string[] {
   return ptyMgr.list().flatMap((p) => (p.alive && !p.util && p.kind !== 'shell' ? [p.id] : []))
 }
 
-const cdpOps = new CdpOps({
-  push: pluginIpc.push,
+const browserControlOps: PluginStartDeps['browser-control']['cdpOps'] = {
   anotherLiveKoloftOwns: (tabId) => anotherLiveInstanceOwns(tabId, pidAlive),
   sessionForTab: (tabId) =>
     claudeBackend.sessionIdOf(tabId) ?? storedOwnerOf(tabId)?.sessionIdOf(tabId) ?? null,
@@ -4792,15 +4764,15 @@ const cdpOps = new CdpOps({
     const port = loopbackPortOf(url)
     return port !== null && pageForwards.carries(guestId, port)
   }
-})
+}
 
 const workbenchPages: PluginStartDeps['workbench']['pages'] = {
   activeTab: () => uiActiveTabId,
   machineOfTab,
   openExternally: openUrlExternally,
   allowFullscreen: allowPageFullscreenWithoutTheWindow,
-  driverOf: sessionDrivingGuest,
-  drivenFromAnotherMachine: guestDrivenFromAnotherMachine,
+  driverOf: (guestId) => sessionDrivingGuest(guestId),
+  drivenFromAnotherMachine: (guestId) => guestDrivenFromAnotherMachine(guestId),
   openAsDrivingAgentsTab: (guestId, url) => cdpOps.openAsDrivingAgentsTab(guestId, url),
   handsOn: handsOnKoloft,
   mainWindow: () => mainWindow,
@@ -4810,7 +4782,7 @@ const workbenchPages: PluginStartDeps['workbench']['pages'] = {
   savePickOnThisMac,
   underTest: BACKGROUND_TEST,
   heldElsewhere: () => secretAsks?.pagesHeld() ?? [],
-  ownerDriven: relayAttached
+  ownerDriven: (tabId) => relayAttached(tabId)
 }
 
 // PLATFORM§8
@@ -6763,12 +6735,7 @@ const startedPlugins: PluginsStarted = startPlugins(
         }
       }
     },
-    'browser-control': {
-      channels: {
-        cdpOps,
-        stripChanged: relayStripChanged
-      }
-    },
+    'browser-control': { cdpOps: browserControlOps },
     butler: {
       helperRole: () => helperRoleOf(loadSettings().butler),
       eachTurn: {
@@ -6887,5 +6854,25 @@ const {
   pageDownloads,
   pageRouting,
   pageTools,
-  pagesInUse
+  pagesInUse,
+  pushOpenRequest,
+  pushToPages
 } = startedPlugins.workbench
+const {
+  cdpOps,
+  cdpEnvDir,
+  guestDrivenFromAnotherMachine,
+  notePageOpenedForAMachine,
+  originDrivenFromAnotherMachine,
+  relayAttached,
+  relayClientEvicted,
+  relayEndpoint,
+  relayEndpointOnMachine,
+  relayTabRebound,
+  renewRelayEndpointOnMachine,
+  sessionDrivingGuest,
+  setRelayEnabled,
+  startRelay,
+  writeRelayEnv
+} = startedPlugins['browser-control']
+const { TODO_NEWS } = startedPlugins.todo
