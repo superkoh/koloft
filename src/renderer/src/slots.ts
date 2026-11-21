@@ -64,6 +64,24 @@ export interface RowMark {
 
 export const ROW_MARK = slot<RowMark>('row-mark')
 
+export type OverTerminal = (shown: boolean) => ReactNode
+
+export interface PageAsk {
+  id: string
+  guestId: number | undefined
+  bar: ReactNode
+}
+
+export interface OwnerAsks {
+  useWatch: () => void
+  useAsked: () => readonly { tabId: string }[]
+  useOverTerminal: () => (tabId: string) => OverTerminal | undefined
+  usePageAsk: (ownerTab: string | null) => PageAsk | undefined
+  useHeldGuests: () => readonly number[]
+}
+
+export const OWNER_ASKS = slot<OwnerAsks>('owner-asks')
+
 export interface WorkspaceLine {
   useWatch: () => void
   Line: ComponentType<{ wsPath: string; now: Date; dismissMenu: () => void }>
@@ -101,8 +119,9 @@ export interface WorkbenchPartContext {
   onReturnFocus: () => void
   reread: () => void
   openWeb: (url: string) => void
-  closeNewTabMenu: () => void
-  closeDownloads: () => void
+  closeOtherMenus: () => void
+  gitSteps: number
+  push: () => Promise<boolean>
 }
 
 export interface WorkbenchPartView {
@@ -155,3 +174,19 @@ export const PALETTE_ROUTE = slot<PaletteRoute>('palette-route')
 export type PaletteHandOff = (request: PaletteRequest) => Promise<ConductorOpenResult>
 
 export const PALETTE_HAND_OFF = slot<PaletteHandOff>('palette-hand-off')
+
+export type WindowFeed = (adopted: Promise<void>) => () => void
+
+export const WINDOW_FEED = slot<WindowFeed>('window-feed')
+
+export type StartedBeforeExit = (tabId: string) => boolean
+
+export const STARTED_BEFORE_EXIT = slot<StartedBeforeExit>('started-before-exit')
+
+export interface WorkspaceRemovalLoss {
+  countIn: (wsPath: string) => number
+  willGo: (count: number) => string
+  goneForGood: string
+}
+
+export const WORKSPACE_REMOVAL_LOSS = slot<WorkspaceRemovalLoss>('workspace-removal-loss')

@@ -20,24 +20,24 @@ import { anotherLiveInstanceOwns, PtyManager, type PtyHandle } from './ptyManage
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { TerminalOutput } from './flowControl'
-import { SleepingTabs } from './sleepingTabs'
-import { SessionTracker, type ToolCall } from './sessionTracker'
+import { SleepingTabs } from '@plugins/sessions/main/sleepingTabs'
+import { SessionTracker, type ToolCall } from '@plugins/sessions/main/sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
-import type { StatusEdge, TurnOverEdge } from './sessionRuntime'
-import { CodexSessions } from './codexSessions'
+import type { StatusEdge, TurnOverEdge } from '@plugins/sessions/main/sessionRuntime'
+import { CodexSessions } from '@plugins/sessions/main/codexSessions'
 import { codexShowsAPanel } from './inputBox'
 import {
   MuseSessions,
   museShowsItsInputBox,
   type MuseHomePick,
   type MuseRemoteDeps
-} from './museSessions'
+} from '@plugins/sessions/main/museSessions'
 import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from './museRemote'
 import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from './remote/statusRelay'
 import type { TreeIo } from './sessionWorktrees'
 import { museServersAmong } from './taskProcs'
 import { sharedProcessTable, type ProcessTable } from './processTable'
-import { AgySessions, type AgyHomePick } from './agySessions'
+import { AgySessions, type AgyHomePick } from '@plugins/sessions/main/agySessions'
 import {
   agyAccountEnv,
   agyApiKeyRoute,
@@ -50,7 +50,7 @@ import {
   setAgyApiKeyRoute
 } from './agyAccounts'
 import { AGY_APP_DIR, AGY_LIST_JS, ownersGeminiDir } from './agyStore'
-import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from './agyHooks'
+import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from '@plugins/sessions/main/agyHooks'
 import {
   AGY_BRAIN_FLAGS,
   AGY_HOOK_FILE,
@@ -60,7 +60,7 @@ import {
   AGY_TITLE_FILE,
   agyStatuslineScript
 } from './remote/agyTab'
-import { agyBackend } from './backends/agy'
+import { agyBackend } from '@plugins/sessions/main/backends/agy'
 import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { homeKeyOnDisk } from './homeKeyOnDisk'
 import { museConfigHome, museHome } from './museSessionLog'
@@ -68,10 +68,10 @@ import { watchHistoryOf } from './historyWatch'
 import { museSignIn, storeMuseKey } from './museServe'
 import { MARK_OUTPUT_START, SignInOutput, afterOutputStart, outputStartCarry } from './signInOutput'
 import { readMuseQuota } from './museQuota'
-import type { SessionsWithStore } from './storedSessions'
+import type { SessionsWithStore } from '@plugins/sessions/main/storedSessions'
 import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
 import { claudeAskLine, storedAskLine } from './rowActivity'
-import type { WorktreeResource } from './sessionStore'
+import type { WorktreeResource } from '@plugins/sessions/main/sessionStore'
 import {
   OpenTabsFile,
   openTabsNow,
@@ -83,7 +83,7 @@ import {
 import { SessionAccounts } from './sessionAccounts'
 import { SavedUsage } from './savedUsage'
 import { saveHomeUsage, type HomeUsage } from './savedHomeUsage'
-import { SessionBackends } from './sessionBackends'
+import { SessionBackends } from '@plugins/sessions/main/sessionBackends'
 import {
   BACKEND_LABEL,
   backendIdOf,
@@ -99,27 +99,29 @@ import {
   familyEfforts,
   resolveOwnPick,
   listsModels,
+  needsTheAccountsModels,
   type ListedModel,
   type OwnPickResolved
 } from '@shared/sessionPicks'
 import { BUTLER_OFF_ITS_AGENT_LOG, butlerStart } from '@shared/butlerStart'
 import { assistBackendsFor, assistLaunchOn, assistRowBackend } from '@shared/assistPicks'
 import type { Turn } from '@shared/turns'
-import { AttentionTracker } from './attention'
+import { AttentionTracker } from '@plugins/sessions/main/attention'
 import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
 import { route, dockBadgeText } from './notifyRouter'
 import { setupShim, utilTerminalGuard } from './shim'
-import { openDropTarget, type OpenDrop } from './openDrop'
+import { openDropTarget, type OpenDrop } from '@core/openDrop'
 import { leaveForOS, openUrlExternally, osOpenFallback } from './osOpen'
-import { enforceGuestAttach, isAppNavigation, isUnderAnyRoot } from './browserSecurity'
+import { enforceGuestAttach, isAppNavigation } from './browserSecurity'
 import { fileNotFoundHtml } from '@plugins/workbench/main/dirListing'
 import { stripTerminalCodes } from '@core/terminalCodes'
+import type { InstructionsVersion } from '@core/ownerInstructions'
 import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
   HOOK_SCRIPT,
   forgetAssistMarkers,
-  noteDiscordId,
-  noteDiscordSaid,
+  noteOfWhatKoloftSends,
+  noteSent,
   localNotice,
   markAnswerable,
   markOwnerAsleep,
@@ -131,7 +133,7 @@ import {
   setupHooks,
   writeTabHookSettings,
   type NoticeFile
-} from './hooks'
+} from '@plugins/sessions/main/hooks'
 import { formatRemoteKey, isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import {
   defaultControlDir,
@@ -190,7 +192,12 @@ import { RemoteSync } from './remote/sync'
 import { machineUsageDirs, usagePulls } from './remote/usageMirror'
 import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
 import { REMOTE_OPEN_SHIM } from './openShimScript'
-import { SUDO_SHIM_FILES } from '@plugins/passwords/main/sudoShim'
+import {
+  SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS,
+  SUDO_SHIM_FILES,
+  writeSudoShims
+} from '@plugins/passwords/main/sudoShim'
+import { passwordsOn } from '@plugins/passwords/api'
 import { agentsInLoginShell, sshEnvFromLogin } from './loginShell'
 import { oncePerName, watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import {
@@ -251,7 +258,11 @@ import {
 } from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
-import { WorkspaceManager, scratchRootsAround, type LiveSession } from './workspaces'
+import {
+  WorkspaceManager,
+  scratchRootsAround,
+  type LiveSession
+} from '@plugins/sessions/main/workspaces'
 import { rowsToAdopt } from '@shared/firstRun'
 import {
   isWorkspaceWorkbenchKey,
@@ -266,9 +277,13 @@ import {
   type ResumeProbes
 } from './resumePlan'
 import { branchExists, type GitOut, type TidyResult } from '@core/worktree'
-import { ClaudeBackend, machineHookSettings, pickMachineAccount } from './backends/claude'
-import { codexBackend, trustCodexFolder } from './backends/codex'
-import { museBackend } from './backends/muse'
+import {
+  ClaudeBackend,
+  machineHookSettings,
+  pickMachineAccount
+} from '@plugins/sessions/main/backends/claude'
+import { codexBackend, trustCodexFolder } from '@plugins/sessions/main/backends/codex'
+import { museBackend } from '@plugins/sessions/main/backends/muse'
 import { codexConfigFile } from './codexTrust'
 import {
   HomeAccountPicker,
@@ -283,20 +298,18 @@ import { ResourceGuard, ownerTyped } from './resourceGuard'
 import { readTheMachine, signalLog } from './machineRoom'
 import { STUCK_AFTER_MS, StallWatchWhileFocused, answerTheStuckWatch } from './mainThreadStalls'
 import createMainThreadStuckWorker from './mainThreadStuckWorker?nodeWorker'
-import { envMs } from './sessionRuntime'
+import { envMs } from '@plugins/sessions/main/sessionRuntime'
 import { giveWay, readTaggedTable } from './machineTrees'
 import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { GitFreshnessEngine } from './gitFreshness'
 import { COMMON_GIT_DIR, GitRepoKeys } from './gitRepoKey'
-import { SessionSync, type SyncSession } from './sessionSync'
+import { SessionSync, type SyncSession } from '@plugins/sessions/main/sessionSync'
 import { GithubRepos, parseGithubFixture, type GithubReposOptions } from './githubRepos'
-import { GithubCountsSweep, githubCountsData } from '@plugins/github/main/countsSweep'
-import { githubLookups } from '@plugins/github/main/lookup'
 import { ghRead, runGh } from './ghRun'
 import { GitAccountService, newGitRequestDir, sweepStaleGitRequestDirs } from './gitAccountService'
 import { removeStaleLoginDirs } from './githubLogin'
-import { addPrWorktree, commitAll, GIT_REF_RE, pushBranch } from './gitSteps'
+import { addPrWorktree, commitAll, GIT_REF_RE, pushBranch, readReadiness } from './gitSteps'
 import { restoredWindowGeometry, trackWindowState } from './windowState'
 import { fullscreenOption, usableSessionScreen, windowMinWidth } from './windowBounds'
 import { closeAllFileWatchers, closeAllDirWatchers } from './fileWatch'
@@ -354,7 +367,7 @@ import { compositionDone } from '@plugins/workbench/main/hostComposition'
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
 import { parseSessionPorts, scanPortsHere, scanPortsOnMachine } from './sessionPorts'
-import { reachesThisMacsServer } from './thisMacsServers'
+import { reachesThisMacsServer } from '@core/thisMacsServers'
 import { mapAtMost } from '@core/mapAtMost'
 import { SessionSearch } from './sessionSearch'
 import createTranscriptSearchWorker from './transcriptSearchWorker?nodeWorker'
@@ -436,33 +449,30 @@ import type {
   WorkspaceAddResult
 } from '@shared/types'
 import { copyWorktreeIncludes } from './sessionWorktrees'
-import {
-  AgentRequests,
-  answered,
-  errorText,
-  refused,
-  tabSpokenFor,
-  type AgentReply,
-  type AgentVerb
-} from './agentRequests'
+import { AgentRequests, tabSpokenFor } from './agentRequests'
+import { answered, refused, type AgentReply, type AgentVerb } from '@core/command'
+import { errorText } from '@core/errorText'
 import { projectRulesForTheButler } from '@shared/agentGuide'
 import {
   AwayDigest,
+  butlersBlock,
   butlersFolderClaim,
   conductorFolder,
   DIGEST_GATHERS_MS,
+  GUIDE_MOVED_NEWS,
   helperRoleOf,
   OwnerAsleep,
+  pluginsChangedNews,
   quoteOf,
   THIS_MAC
 } from '@plugins/butler/api'
-import { registerChannels as registerButlerChannels } from '@plugins/butler/main/channels'
+import { switchesThatAct } from '@core/switches'
 import { Butler, type AssistBackendChoice } from '@plugins/butler/main/butler'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
 import type { OwnPick } from '@shared/types'
 import { projectDefaults } from './projectDefaults'
 import { DiscordBinding } from '@plugins/discord/main/binding'
-import { discordApiUrl, DiscordLink } from '@plugins/discord/main/link'
+import { discordApiUrl, DiscordLink, privately } from '@plugins/discord/main/link'
 import {
   reloadDiscordPage,
   saveTokenFromPage,
@@ -474,9 +484,9 @@ import { DiscordRelay, type Destination } from '@plugins/discord/main/relay'
 import { SessionAsks } from '@plugins/sessions/main/sessionAsks'
 import { SecretAsks, type SecretAnswer, type SecretAsk } from '@plugins/passwords/main/secretAsks'
 import { SECRET_ID_PREFIX, SecretCards, type TapRounds } from '@plugins/discord/main/secretCards'
-import { registerSecretCommand } from '@plugins/passwords/main/secretVerb'
+import { INSTRUCTIONS_ID_PREFIX, InstructionCards } from '@plugins/discord/main/instructionCards'
 import type { WebPage } from '@core/webPage'
-import { registerPageCommand, type TapPage } from '@plugins/passwords/main/pageVerb'
+import type { TapPage } from '@plugins/passwords/main/pageVerb'
 import {
   A_PAGE_ANSWERS_WITHIN_MS,
   findPart,
@@ -484,7 +494,7 @@ import {
   tapAt,
   type PartOnPage
 } from '@plugins/workbench/main/guestTap'
-import { within } from './within'
+import { within } from '@core/within'
 import { gridPictureHtml } from '@plugins/passwords/main/tapGrid'
 import { ButlerTyping } from '@plugins/discord/main/butlerTyping'
 import {
@@ -499,25 +509,32 @@ import { roomLink, Rooms, whereOf, type RoomSubject } from '@plugins/discord/mai
 import { accentOf } from '@plugins/discord/main/cards'
 import { AskButtons } from '@plugins/discord/main/buttons'
 import { SlashCommands, toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
+import { folderOf, startBeside } from '@plugins/sessions/main/sessionTabs'
 import { toChannel } from '@plugins/discord/main/slash'
-import { TabLifecycle, subscribeTabSubsystems } from './tabLifecycle'
+import { TabLifecycle, subscribeTabSubsystems } from '@plugins/sessions/main/tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from '@plugins/discord/main/interactions'
 import { clicksTheMouse, pressesAKey, typeKeys } from '@core/typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import {
+  askFromClaude,
+  askFromCodex,
   claudeDialog,
   codexDialog,
   isAskedCall,
   questionsOf,
   type CodexApproval,
   type CodexQuestion,
-  type DialogView
+  type DialogView,
+  type KoloftAsk
 } from '@plugins/sessions/main/dialog'
 import { sleep } from '@core/sleep'
-import { registerDiscordCommand } from '@plugins/discord/main/discordVerb'
-import { switchedOnOnceItHasABot } from '@plugins/discord/main/switchOn'
-import { registerGithubCommand, repoFlagOf } from '@plugins/github/main/ghVerb'
-import { registerTodoCommand } from '@plugins/todo/main/todoVerb'
+import {
+  discordOn,
+  DISCORD_TURNED_OFF,
+  switchedOnOnceItHasABot,
+  withDiscordAsBefore,
+  withDiscordOn
+} from '@plugins/discord/main/switchOn'
 import { listTodoPulls } from '@plugins/todo/main/pulls'
 import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
 import {
@@ -540,13 +557,13 @@ import {
   whenMessagingSocket,
   whenMessagingSocketOnMachine
 } from './claudeSessionRegistry'
-import { GLOBAL_SCOPE, scopeName } from '@shared/conductors'
+import { GLOBAL_SCOPE, scopeName } from '@shared/scope'
 import { asPeerName } from '@plugins/butler/shared/names'
 import { inviteLink, NEW_CHANNEL_NAME } from '@plugins/discord/shared/channels'
-import { registerCronCommand } from '@plugins/scheduled-tasks/main/cronVerb'
-import { registerWorkbenchCommands } from '@plugins/workbench/main/workbenchVerbs'
 import { Commands } from '@core/commands'
 import { PLUGINS } from '@plugins/list'
+import { PLUGIN_STARTS, type PluginStartDeps, type PluginsStarted } from '@plugins/starts'
+import { startPlugins } from '@core/pluginStart'
 import {
   FILE_OPENED,
   Moments,
@@ -566,70 +583,23 @@ import {
   type SessionStarted,
   type TabEnded
 } from '@core/moment'
-import {
-  butlerFollowsEachTurn,
-  butlerLetsGoOfEndedTabs,
-  butlersWords,
-  tellEachHelperItsRole
-} from '@plugins/butler/main/sessionHooks'
-import { copyEachOpenedFile } from '@plugins/discord/main/copyOnOpen'
-import {
-  closeRoomsOfEndedTabs,
-  discordFollowsEachTurn,
-  giveEachStartedSessionARoom,
-  withoutTheRelayTag
-} from '@plugins/discord/main/sessionHooks'
-import {
-  followEachState,
-  followEachTurn,
-  forgetAsksOfEndedTabs
-} from '@plugins/sessions/main/sessionHooks'
-import { closeEachStoppingTabsEndpoint } from '@plugins/browser-control/main/sessionHooks'
-import { pickDocsOfEachTurn } from '@plugins/workbench/main/sessionHooks'
-import { cardEachTurnAndQuestion } from '@plugins/inbox/main/sessionHooks'
-import { forgetSecretAsksOfEndedTabs } from '@plugins/passwords/main/sessionHooks'
-import { followEachRun } from '@plugins/scheduled-tasks/main/sessionHooks'
+import { butlersWords } from '@plugins/butler/main/sessionHooks'
+import { withoutTheRelayTag } from '@plugins/discord/main/sessionHooks'
 import { phoneCopier } from '@plugins/discord/main/phoneCopier'
 import { roomNote, tabChannels } from '@plugins/discord/main/tabChannels'
 import type { MainIpc } from '@core/ipc'
-import {
-  registerChannels as registerCronChannels,
-  pushState as pushCronState
-} from '@plugins/scheduled-tasks/main/channels'
-import {
-  registerChannels as registerInboxChannels,
-  pushChanged as pushInboxChanged
-} from '@plugins/inbox/main/channels'
-import { registerChannels as registerGithubChannels } from '@plugins/github/main/channels'
-import {
-  registerChannels as registerDiscordChannels,
-  pushStatus as pushStatusToDiscordPane
-} from '@plugins/discord/main/channels'
-import {
-  registerChannels as registerSecretChannels,
-  pushAsks as pushSecretAsks
-} from '@plugins/passwords/main/channels'
-import {
-  registerChannels as registerWorkbenchChannels,
-  pushOpenFile
-} from '@plugins/workbench/main/channels'
-import { registerInboxCommand } from '@plugins/inbox/main/inboxVerb'
+import { pushState as pushCronState } from '@plugins/scheduled-tasks/main/channels'
+import { pushChanged as pushInboxChanged } from '@plugins/inbox/main/channels'
+import { pushStatus as pushStatusToDiscordPane } from '@plugins/discord/main/channels'
+import { pushAsks as pushSecretAsks } from '@plugins/passwords/main/channels'
+import { pushOpenFile } from '@plugins/workbench/main/channels'
 import { INBOX_SENDER, Inbox } from './inbox'
 import { flushInbox, loadInbox, saveInbox } from './inboxFile'
-import {
-  askFromClaude,
-  askFromCodex,
-  inboxFooter,
-  where,
-  KoloftInbox,
-  type AskedSession,
-  type KoloftAsk
-} from './koloftInbox'
+import { inboxFooter, where, KoloftInbox, type AskedSession } from './koloftInbox'
 import { ClaudeDialogWatch } from './claudeDialogWatch'
 import {
   A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS,
   findSessionRow,
-  registerSessionCommands,
   sessionVerb,
   type HelperTask,
   type ClosableSession,
@@ -640,18 +610,22 @@ import {
 import {
   HandOver,
   resolveWorkspace,
-  instructionsPartOf,
+  everyWorkspaceBlock,
+  everyWorkspaceSavedByTheOwner,
+  ownerPartsOf,
   savedFromTheDialog,
+  InstructionAsks,
+  workspaceBlock,
   type PlacedRow,
   type Recipient
 } from '@plugins/sessions/api'
 import {
   A_HELPER_HAS_IT,
-  FROM_KOLOFT,
   crossSessionLine,
   writeLineInTurn
 } from '@plugins/sessions/main/crossSessionMessage'
 import { TODO_NEWS } from '@plugins/todo/api'
+import { docsWritingOn } from '@plugins/docs-writing/api'
 import { StartedSessions } from '@plugins/sessions/main/startedSessions'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
@@ -680,12 +654,8 @@ import {
   writeDocsPlugin
 } from './agentPlugin'
 import { installThen, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
-import {
-  registerChannels as registerSessionsChannels,
-  pushes as sessionsPushes
-} from '@plugins/sessions/main/channels'
-import { registerPageChannels, pagePushes } from '@plugins/workbench/main/pageChannels'
-import { registerChannels as registerBrowserControlChannels } from '@plugins/browser-control/main/channels'
+import { pushes as sessionsPushes } from '@plugins/sessions/main/channels'
+import { pagePushes } from '@plugins/workbench/main/pageChannels'
 
 const pluginIpc: MainIpc = {
   handle: (channel, handler) =>
@@ -773,6 +743,7 @@ function storedOwnerOf(tabId: string): SessionsWithStore | undefined {
 const startedSessions = new StartedSessions(() =>
   path.join(app.getPath('userData'), 'started-sessions.json')
 )
+const shownUnder = new StartedSessions(() => path.join(app.getPath('userData'), 'shown-under.json'))
 const readerDocs = new ReaderDocs({
   file: () => path.join(app.getPath('userData'), 'doc-verdicts.json'),
   assist: (job) => assist(job),
@@ -792,6 +763,7 @@ const sessionBackends = new SessionBackends({
     if (!idleCompaction) attention.bound(tabId, key)
     announceNow(SESSION_BOUND, { tabId, key, idleCompaction })
     startedSessions.bound(tabId, key)
+    shownUnder.bound(tabId, key)
     ptyMgr.agentBound(tabId)
     ptyMgr.wakeReady(tabId)
   },
@@ -1050,7 +1022,7 @@ function openTabOf(s: SessionInfo): OpenTab {
     sessionId: s.sessionId,
     kind: s.backendId,
     title: sidebarTitle(s) ?? s.title,
-    cwd: s.remote ? formatRemoteKey(s.remote.host, s.cwd) : s.cwd,
+    cwd: folderOf(s),
     tabIds: tabIdsOf(s.tabId)
   }
 }
@@ -1119,6 +1091,7 @@ function sleepTab(tabId: string): void {
 
 function forgetSleeper(tabId: string): void {
   sleepers.forget(tabId)
+  answerableForAPlugin.delete(tabId)
   attention.clearKeepingExit(tabId)
   sendToRenderer(CH.tab.killedByMain, tabId)
   tabLifecycle.emit('forgotten', tabId)
@@ -1184,7 +1157,7 @@ const ownerAsleep = new OwnerAsleep({
     const tab = butler?.liveTab()
     return tab ? [tab] : []
   },
-  tabs: ptyTabIds,
+  tabs: agentTabIds,
   asked: async (tabId) => {
     const stored = await pendingAskOf(tabId)
     if (stored) {
@@ -1198,7 +1171,7 @@ const ownerAsleep = new OwnerAsleep({
     const questions = questionsOf(claude).length
     return { question: questions > 0, questions, text: claudeDialog(claude).text }
   },
-  answer: answerSession,
+  answer: (tabId, reply) => answerSession(tabId, reply, true),
   titleOf: (tabId) => sessionOfTab(tabId)?.title ?? 'A session',
   changedSince: (since) => awayDigest?.changedSince(since) ?? [],
   report: (text) => void handOver?.tell(butlerRecipient(), text),
@@ -1442,7 +1415,6 @@ function requestWebglRepair(): void {
 let workspaceMgr: WorkspaceManager | null = null
 
 let freshness: GitFreshnessEngine | null = null
-let githubCounts: GithubCountsSweep | null = null
 let gitAccounts: GitAccountService | null = null
 let remoteSync: RemoteSync | null = null
 tracker.machineTmp = (host) => remoteSync?.machineTmp(host)
@@ -1512,8 +1484,9 @@ function machinePackage(): MachinePackage {
     [AGY_TITLE_FILE]: AGY_TITLE_SCRIPT,
     [AGY_LIST_FILE]: AGY_LIST_JS
   }
-  for (const [name, text] of Object.entries(SUDO_SHIM_FILES))
-    pkgFiles[`${SESSION_BIN_DIR}${name}`] = text
+  if (passwordsOn())
+    for (const [name, text] of Object.entries(SUDO_SHIM_FILES))
+      pkgFiles[`${SESSION_BIN_DIR}${name}`] = text
   for (const [rel, text] of Object.entries(agentPluginFiles()))
     pkgFiles[`${AGENT_PLUGIN_DIR}${rel}`] = text
   for (const [rel, text] of Object.entries(docsPluginFiles()))
@@ -1551,14 +1524,18 @@ const discordChannels = tabChannels({
   butlerSide,
   lobby: () => discordBinding?.channel()?.channelId,
   boundChannelOf: (tabId) => discordBinding?.channelOfTab(tabId),
-  roomCarrying: (tabId) => rooms?.carried(tabId),
+  roomCarrying: (tabId) => (discordOn() ? rooms?.carried(tabId) : undefined),
   reaches: (tabId) => !!discordRelay?.reaches(tabId)
 })
 const { roomOf: roomOfTab, askChannelOf: askChannelOfTab, phoneChannelOf } = discordChannels
 let askButtons: AskButtons | null = null
+let secretCards: SecretCards | null = null
+let instructionCards: InstructionCards | null = null
 type OwnerAsk = SecretAsk & { taps?: TapRounds }
 let secretAsks: SecretAsks<OwnerAsk> | null = null
+let instructionAsks: InstructionAsks | null = null
 const answerable = new Set<string>()
+const answerableForAPlugin = new Set<string>()
 let hookRegDir: string | undefined
 let guard: ResourceGuard | undefined
 let writeHookSettings:
@@ -1574,11 +1551,14 @@ const PLAIN_KOLOFT_SHIM = {
 }
 let claudeAgentPlugin: string | undefined
 let claudeDocsPlugin: string | undefined
+const docsPluginWhileOn = (): string | undefined => (docsWritingOn() ? claudeDocsPlugin : undefined)
 let discordConnected = false
 
 const CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS = 8
 const CODEX_REQUEST_POLL_MS = 250
 const ATTACHMENTS_KEPT_MS = 7 * 24 * 60 * 60 * 1000
+const CARDS_IN_FLIGHT_LAND_WITHIN_MS = 10_000
+const SWITCH_FLIPS_GATHER_MS = 2000
 const ATTACHMENTS_PRUNED_EVERY_MS = 24 * 60 * 60 * 1000
 const ELEMENT_PICKS_KEPT_MS = 24 * 60 * 60 * 1000
 const ELEMENT_PICKS_PRUNED_EVERY_MS = 60 * 60 * 1000
@@ -1653,7 +1633,9 @@ function syncAnswerable(): void {
   for (const s of allSessions()) {
     if (!s.alive || capabilitiesFor(s.backendId, s.host).askHookWaitsForDiscord !== true) continue
     const on =
-      ownerAsleep.answersFor(s.tabId) || (discordConnected && !!binding.channelOfTab(s.tabId))
+      ownerAsleep.answersFor(s.tabId) ||
+      (discordConnected && !!binding.channelOfTab(s.tabId)) ||
+      answerableForAPlugin.has(s.tabId)
     if (on === answerable.has(s.tabId)) continue
     if (on) answerable.add(s.tabId)
     else answerable.delete(s.tabId)
@@ -1901,11 +1883,9 @@ function notesFileOfScope(scope: string): string | undefined {
     : undefined
 }
 
-copyEachOpenedFile(moments, (o) => copyToPhone(o.tabId, o.target, o.view))
-
 const commands = new Commands(PLUGINS)
 
-registerWorkbenchCommands(commands, {
+const workbenchCommands: PluginStartDeps['workbench']['commands'] = {
   open: async (tabId, target, view) => {
     const machine = machineOfTab(tabId)
     if (machine && !schemeOf(target)) return openOnMachine(tabId, machine, target, view)
@@ -1921,7 +1901,7 @@ registerWorkbenchCommands(commands, {
     const scope = butlerSide(tabId) ? GLOBAL_SCOPE : sessionBackends.workspaceOfTab(tabId)
     return scope ? notesFileOfScope(scope) : undefined
   }
-})
+}
 
 const assistTargets: Record<BackendId, () => Promise<AssistTarget | null>> = {
   claude: async () => {
@@ -1945,7 +1925,8 @@ const assistTargets: Record<BackendId, () => Promise<AssistTarget | null>> = {
 const assist = koloftAssist({
   picks: loadSettings,
   enabled: (backend) => !turnedOffNow(backend),
-  target: (backend) => assistTargets[backend]()
+  target: (backend) => assistTargets[backend](),
+  onThisAccount: assistJobPick
 })
 const assistRuns = new Map<number, AbortController>()
 
@@ -1974,8 +1955,15 @@ async function assistBackendChoice(): Promise<AssistBackendChoice> {
   const notOnPreferred = 'error' in choice ? choice.inFull : choice.because
   if (notOnPreferred) logWhyButlerIsNotOn(preferred, inputs, notOnPreferred)
   if ('error' in choice) return choice
-  const { model, effort } = assistLaunchOn('butler', choice.backend, settings)
-  return { ...choice, ...(model && { model }), ...(effort && { effort }) }
+  const asked = assistLaunchOn('butler', choice.backend, settings)
+  const { pick, note } = await ownPick(choice.backend, asked, modelsAssistGoesBy)
+  const { model, effort } = pick
+  return {
+    ...choice,
+    ...(model && { model }),
+    ...(effort && { effort }),
+    ...(note && { modelNote: note })
+  }
 }
 
 function logWhyButlerIsNotOn(
@@ -1992,8 +1980,6 @@ function logWhyButlerIsNotOn(
     `${BUTLER_OFF_ITS_AGENT_LOG} ${said} (${BACKEND_LABEL[preferred]} ${found}; its accounts: ${accounts.join(', ') || 'none'})`
   )
 }
-const NO_GITHUB_ACCOUNT_ON_THE_MACHINE =
-  'Koloft has picked no GitHub account for this workspace on its machine; pick one in Settings ▸ Accounts ▸ Git, or run gh there yourself.'
 
 // CC§11
 async function liveClaudeRegistryOn(host: string): Promise<string> {
@@ -2055,6 +2041,19 @@ function syncSessionsOf(all: SessionInfo[]): SyncSession[] {
   )
 }
 
+// ADR-0028
+async function noteSentByKoloft(
+  tabId: string,
+  text: string,
+  id: string | undefined
+): Promise<void> {
+  const note = noteOfWhatKoloftSends(backendIdOf(ptyMgr.get(tabId)?.kind), text, id)
+  if (!note) return
+  const host = machineOfTab(tabId)
+  if (host) return hosts.machine(host).noteSent(tabId, note)
+  if (hookRegDir) noteSent(hookRegDir, tabId, note)
+}
+
 async function deliverViaOwner(tabId: string, text: string): Promise<boolean> {
   return (await storedOwnerOf(tabId)?.deliver?.(tabId, text)) ?? false
 }
@@ -2090,12 +2089,25 @@ function listedModels(backend: BackendId): Promise<ListedModel[] | undefined> {
   const listed = readModelList(backend).catch(() => undefined)
   modelLists.set(backend, { at: Date.now(), listed })
   void listed.then((models) => {
-    if (!models?.length && modelLists.get(backend)?.listed === listed) modelLists.delete(backend)
+    if (models?.length) modelsLastRead.set(backend, models)
+    else if (modelLists.get(backend)?.listed === listed) modelLists.delete(backend)
   })
   return listed
 }
 
 const THE_DIALOG_WAITS_FOR_THE_ACCOUNTS_MODELS_MS = 2000
+// AGY§21
+const ASSIST_WAITS_FOR_ITS_FIRST_MODEL_LIST_MS = 5000
+
+const listedModelsWithin = (backend: BackendId, ms: number): Promise<ListedModel[] | undefined> =>
+  within(listedModels(backend), ms, 'the model list').catch(() => undefined)
+
+const modelsLastRead = new Map<BackendId, ListedModel[]>()
+
+async function modelsAssistGoesBy(backend: BackendId): Promise<ListedModel[] | undefined> {
+  const reading = listedModelsWithin(backend, ASSIST_WAITS_FOR_ITS_FIRST_MODEL_LIST_MS)
+  return modelsLastRead.get(backend) ?? reading
+}
 
 const defaultsOfProjects = projectDefaults({
   rootOf: (dir) => projectInfoOnHost(dir).root,
@@ -2113,32 +2125,52 @@ async function rulesOf(workspace: string): Promise<string | undefined> {
   return (await defaultsOfProjects.of(workspace))?.rules
 }
 
-async function instructionsOf(workspace: string): Promise<string | undefined> {
-  return instructionsPartOf(await defaultsOfProjects.of(workspace))
+async function instructionsOf(workspace: string): Promise<string[]> {
+  return ownerPartsOf(
+    loadSettings().everyWorkspaceInstructions,
+    await defaultsOfProjects.of(workspace),
+    workspace === butlerFolderNow()
+  )
 }
 
-async function ownPick(backend: BackendId, asked: OwnPick): Promise<OwnPickResolved> {
-  const listed = asked.model && listsModels(backend) ? await listedModels(backend) : undefined
-  const resolved = resolveOwnPick(backend, asked, listed)
-  if (resolved.note) sendToRenderer(CH.toast.show, resolved.note)
-  return resolved
+const everyWorkspaceVersions = (): InstructionsVersion[] =>
+  loadSettings().everyWorkspaceInstructions
+const saveEveryWorkspaceVersions = (everyWorkspaceInstructions: InstructionsVersion[]): void => {
+  commitSettings({ everyWorkspaceInstructions })
+}
+
+async function ownPick(
+  backend: BackendId,
+  asked: OwnPick,
+  models: (backend: BackendId) => Promise<ListedModel[] | undefined> = listedModels
+): Promise<OwnPickResolved> {
+  const listed = needsTheAccountsModels(backend, asked.model) ? await models(backend) : undefined
+  return resolveOwnPick(backend, asked, listed)
+}
+
+const assistNotesSaid = new Set<string>()
+
+async function assistJobPick(backend: BackendId, asked: OwnPick): Promise<OwnPick> {
+  const { pick, note } = await ownPick(backend, asked, modelsAssistGoesBy)
+  if (note && !assistNotesSaid.has(note)) {
+    assistNotesSaid.add(note)
+    sendToRenderer(CH.toast.show, `Koloft Assist: ${note}`)
+  }
+  return pick
 }
 
 async function withOwnDefaults(opts: CreateTabOptions): Promise<CreateTabOptions> {
   const backend = backendIdOf(opts.kind)
   if (!backend || typeof opts.cwd !== 'string' || !takesOwnDefaults(opts)) return opts
   const asked = (await defaultsOfProjects.of(opts.cwd))?.picks[backend]
-  return asked ? { ...opts, ...(await ownPick(backend, asked)).pick } : opts
+  if (!asked) return opts
+  const { pick, note } = await ownPick(backend, asked)
+  if (note) sendToRenderer(CH.toast.show, note)
+  return { ...opts, ...pick }
 }
 
 const butlerFolderNow = (): string => conductorFolder(app.getPath('userData'))
 const isButlerNow = (tabId: string): boolean => !!butler?.isButlerTab(tabId)
-tellEachHelperItsRole(moments, () => helperRoleOf(loadSettings().butler))
-giveEachStartedSessionARoom(moments, {
-  isButler: isButlerNow,
-  butlerFolder: butlerFolderNow,
-  roomFor: roomForNew
-})
 
 const sessionDeps: SessionVerbDeps = {
   projectRules: rulesOf,
@@ -2200,6 +2232,7 @@ const sessionDeps: SessionVerbDeps = {
     await ptyMgr.type(tabId, keys)
   },
   deliver: deliverViaOwner,
+  noteSent: noteSentByKoloft,
   modeOf: (tabId) => sessionBackends.permissionClass(tabId),
   stop: killTabFromMain,
   answer: answerSession,
@@ -2220,7 +2253,7 @@ const sessionDeps: SessionVerbDeps = {
       : typeCommandInto(target, text, toCaller(tellCaller)),
   screen: screenOf,
   rowNote: (key) => {
-    const room = rooms?.ofKey(key)
+    const room = discordOn() ? rooms?.ofKey(key) : undefined
     return room && roomNote(room)
   },
   announceStarting: (starting) => moments.announce(SESSION_STARTING, starting),
@@ -2299,33 +2332,6 @@ const koloftInbox = new KoloftInbox({
   watching: () => attention.watching()
 })
 
-pickDocsOfEachTurn(moments, readerDocs)
-const turnsTaken = followEachTurn(moments, {
-  judge: newsJudge,
-  slash,
-  replies: sessionCommand,
-  asks: () => sessionAsks,
-  askBeforeAsksAreMade: showAskOnItsRow
-})
-butlerFollowsEachTurn(moments, {
-  butler: () => butler,
-  digest: () => awayDigest,
-  tookTheTurn: turnsTaken.tookTheTurn,
-  asleep: ownerAsleep,
-  butlerTabChanged: syncAnswerable
-})
-cardEachTurnAndQuestion(moments, { inbox: koloftInbox, tookTheTurn: turnsTaken.tookTheTurn })
-discordFollowsEachTurn(moments, {
-  relay: () => discordRelay,
-  typing: () => discordTyping,
-  rooms: () => rooms,
-  buttons: () => askButtons,
-  noTurnsYet: async (key) => !(await sessionBackends.turns(key, 1).catch(() => [])).length,
-  askChannelOf: askChannelOfTab,
-  pendingAskOf,
-  askUnreadablySoon
-})
-
 const claudeDialogs = new ClaudeDialogWatch({
   watchedProcess: (tabId) => {
     const pty = ptyMgr.get(tabId)
@@ -2346,8 +2352,12 @@ function claudeAskEnded(tabId: string): void {
   questionSeen.delete(tabId)
 }
 
-async function answerSession(tabId: string, reply: string): Promise<string | undefined> {
-  return sessionAsks ? sessionAsks.answerSession(tabId, reply) : STILL_STARTING
+async function answerSession(
+  tabId: string,
+  reply: string,
+  byTheOverseer = false
+): Promise<string | undefined> {
+  return sessionAsks ? sessionAsks.answerSession(tabId, reply, { byTheOverseer }) : STILL_STARTING
 }
 
 const ownerAsks = {
@@ -2359,16 +2369,43 @@ const ownerAsks = {
   ownerAsleep: (): boolean => presence.asleep()
 }
 
-registerSessionCommands(commands, {
+const sessionsCommands: PluginStartDeps['sessions']['commands'] = {
   rulesOfTab: async (tabId) => {
     const workspace = sessionBackends.workspaceOfTab(tabId)
     return workspace && rulesOf(workspace)
   },
   session: sessionCommand.verb,
-  workspace: { sidebar: projectRows }
-})
+  workspace: { sidebar: projectRows },
+  instructions: {
+    // CC§28 CODEX§4 AGY§13 MUSE§8
+    askTheOwner: (ask, write, stillWaiting) =>
+      instructionAsks
+        ? instructionAsks.ask(
+            ask,
+            cronTestMs('KOLOFT_INSTRUCTIONS_ASK_MS', OWNER_TYPES_A_SECRET_WITHIN_MS),
+            write,
+            stillWaiting
+          )
+        : Promise.reject(new Error(STILL_STARTING)),
+    overseerSide: butlerSide,
+    isOverseer: isButlerNow,
+    overseerBlock: () =>
+      butlersBlock(
+        () => loadSettings().butler,
+        (butler) => commitSettings({ butler }),
+        Date.now
+      ),
+    workspaceOf: pinnedWorkspaceOfTab,
+    pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
+    workspaceBlock: (workspace) => workspaceBlock(defaultsOfProjects, workspace, Date.now),
+    everyWorkspaceBlock: () =>
+      everyWorkspaceBlock(everyWorkspaceVersions, saveEveryWorkspaceVersions, Date.now),
+    nameOf: (s) =>
+      isButlerNow(s.tabId) ? butlerNameNow() : (sidebarTitle(s) ?? BACKEND_LABEL[s.backendId])
+  }
+}
 
-registerCronCommand(commands, {
+const cronCommand: PluginStartDeps['scheduled-tasks']['command'] = {
   runner: () => cronRunner,
   pinnedWorkspaceOf: pinnedWorkspaceOfTab,
   resolveWorkspace: (ref) => {
@@ -2377,17 +2414,17 @@ registerCronCommand(commands, {
   },
   toast: (text) => sendToRenderer(CH.toast.show, text),
   now: () => new Date()
-})
+}
 
-registerInboxCommand(commands, {
+const inboxCommand: PluginStartDeps['inbox']['command'] = {
   inbox: () => inbox,
   whereOf: (caller) => {
     const s = inboxSessionOfTab(caller.tabId)
     return s ? where(s) : {}
   }
-})
+}
 
-registerDiscordCommand(commands, {
+const discordCommand: PluginStartDeps['discord']['command'] = {
   channelOf: (tabId) => discordBinding?.channelOfTab(tabId),
   quiet: (tabId) => !!discordRelay && !discordRelay.reaches(tabId),
   send: async (channelId, files, text) => {
@@ -2406,18 +2443,18 @@ registerDiscordCommand(commands, {
   },
   bindNewChannel: bindWithNewChannel,
   openRoom: openRoomByRef
-})
+}
 
-registerSecretCommand(commands, {
+const secretCommand: PluginStartDeps['passwords']['secretCommand'] = {
   ...ownerAsks,
   machine: machineOfTab,
   pages: guestPagesOf,
   showSignIn: (tabId, url) => void openInWorkbench(tabId, routeFor(url, 'agent'), 'user'),
   open: openSignInEndOn,
   sleep
-})
+}
 
-registerPageCommand(commands, {
+const pageCommand: PluginStartDeps['passwords']['pageCommand'] = {
   ...ownerAsks,
   pages: tapPagesOf,
   draw: async (png, grid) => {
@@ -2430,32 +2467,31 @@ registerPageCommand(commands, {
     return shot.files[0]
   },
   sleep
-})
+}
 
-registerGithubCommand(commands, {
-  writesInEnglishOnly: butlerSide,
-  // PLATFORM§1 ADR-0036
-  run: async (args, tabId, cwd) => {
-    await loginEnvReady()
-    const workspace = butlerSide(tabId) ? undefined : sessionBackends.workspaceOfTab(tabId)
-    if (!workspace) {
-      const pinned = workspaceMgr?.pinnedPathList() ?? []
-      return ghRead(args, await gitAccounts?.ghEnvForRepo(repoFlagOf(args), pinned), cwd)
-    }
-    const remote = parseRemoteKey(workspace)
-    if (!remote) return ghRead(args, await gitAccounts?.ghEnv(workspace), cwd)
-    const inItsFolder = isUnderAnyRoot(cwd, [remote.path])
-      ? formatRemoteKey(remote.host, cwd)
-      : workspace
-    const onMachine = await gitAccounts?.machineGh(inItsFolder, args)
-    if (!onMachine) return { ok: false, out: NO_GITHUB_ACCOUNT_ON_THE_MACHINE }
-    return onMachine.code === 0
-      ? { ok: true, out: onMachine.stdout }
-      : { ok: false, out: onMachine.stderr.trim() || onMachine.stdout }
-  }
-})
+async function pinnedPathsChecked(): Promise<{ path: string; missing: boolean }[]> {
+  return (await workspaceMgr?.pinnedPathsCheckedOffTheMainThread()) ?? []
+}
 
-registerTodoCommand(commands, {
+const githubMain: PluginStartDeps['github']['main'] = {
+  repos: (wsPath) => hosts.of(wsPath).github,
+  pinnedWorkspaces: pinnedPathsChecked,
+  restampRows: () => workspaceMgr?.restampLive(),
+  browserCookies: (domain) => session.fromPartition(BROWSER_PARTITION).cookies.get({ domain }),
+  accounts: {
+    ready: loginEnvReady,
+    picked: (root) => gitAccounts?.pickedAccount(root),
+    ghEnv: async (root) => gitAccounts?.ghEnv(root),
+    ghEnvForRepo: async (repo, pinned) => gitAccounts?.ghEnvForRepo(repo, pinned),
+    machineGh: async (root, args) => (await gitAccounts?.machineGh(root, args)) ?? null
+  },
+  ghOnThisMac: ghRead,
+  butlerSide,
+  workspaceOfTab: (tabId) => sessionBackends.workspaceOfTab(tabId),
+  pinnedPaths: () => workspaceMgr?.pinnedPathList() ?? []
+}
+
+const todoCommand: PluginStartDeps['todo'] = {
   allowed: butlerSide,
   sidebar: () => workspaceMgr?.rows() ?? [],
   pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
@@ -2481,7 +2517,7 @@ registerTodoCommand(commands, {
   servers: mcpServersNow,
   butlerFolder: butlerFolderNow,
   now: Date.now
-})
+}
 
 const agentRequests = new AgentRequests({
   commands,
@@ -3585,12 +3621,30 @@ app.whenReady().then(() => {
     ptyMgr.agentDir = agentDir
     claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
   }
+  let butlerHearsOfSwitches: ReturnType<typeof setTimeout> | undefined
+  const butlerHearsSoon = (): void => {
+    clearTimeout(butlerHearsOfSwitches)
+    butlerHearsOfSwitches = setTimeout(
+      () => butler?.whatItKnowsMayHaveChanged(),
+      SWITCH_FLIPS_GATHER_MS
+    )
+  }
   onSwitchesChanged(() => {
     checkSkillsAgain()
     machinePkg = null
-    if (claudeAgentPlugin) claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
+    if (!passwordsOn()) secretAsks?.declineAll()
+    followDiscordSwitch()
+    startedPlugins.github.followSwitch()
+    try {
+      writeSudoShims(shimDir, SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS)
+      if (claudeAgentPlugin) claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
+    } catch (err) {
+      console.error('[koloft] could not rewrite what a plugin switch changed:', err)
+    }
+    butlerHearsSoon()
   })
-  claudeBackend.agentReply = (tabId, raw) => agentRequests.replyFor(tabId, raw)
+  claudeBackend.agentReply = (tabId, raw, stillWaiting) =>
+    agentRequests.replyFor(tabId, raw, stillWaiting)
   claudeBackend.watchShimRegistrations(regDir)
   if (watchOpenRequests(openDir)) ptyMgr.openDir = openDir
   if (watchPickRequests(pickDir)) ptyMgr.pickDir = pickDir
@@ -3638,7 +3692,7 @@ app.whenReady().then(() => {
     progress: (p) => sendToRenderer(CH.gitAccounts.loginProgress, p),
     accountsChanged: (views) => sendToRenderer(CH.gitAccounts.update, views),
     picksChanged: () => {
-      void githubCounts?.sweep()
+      startedPlugins.github.sweepNow()
       workspaceMgr?.restampLive()
     },
     runOnMachine: async (machine, script, args = [], opts = {}) => {
@@ -3705,25 +3759,6 @@ app.whenReady().then(() => {
     workspaces: () => workspaceMgr,
     announce: announceNow
   })
-  forgetAsksOfEndedTabs(moments, { slash, asks: () => sessionAsks })
-  followEachState(moments, {
-    asks: () => sessionAsks,
-    slash,
-    attention: {
-      stateChanged: ({ tabId, prev, next }) =>
-        attention.onStatusChange(tabId, prev, next, attentionSubjectOf(tabId))
-    }
-  })
-  closeEachStoppingTabsEndpoint(moments)
-  butlerLetsGoOfEndedTabs(moments, { butler: () => butler, digest: () => awayDigest })
-  followEachRun(moments, () => cronRunner)
-  closeRoomsOfEndedTabs(moments, {
-    typing: () => discordTyping,
-    relay: () => discordRelay,
-    buttons: () => askButtons,
-    rooms: () => rooms
-  })
-  forgetSecretAsksOfEndedTabs(moments, () => secretAsks)
   ptyMgr.on('exit', (e) => {
     const exited = ptyMgr.get(e.id)
     if (!exited?.alive) claudeDialogs.forget(e.id)
@@ -3755,6 +3790,7 @@ app.whenReady().then(() => {
     if (!restarting) earlierTabIds.delete(e.id)
     ownerTouchedAt.delete(e.id)
     questionSeen.delete(e.id)
+    if (!restarting && !asleep) answerableForAPlugin.delete(e.id)
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     guard?.forget(e.id)
@@ -3792,10 +3828,8 @@ app.whenReady().then(() => {
     // PLATFORM§21
     terminalOutput.end(e.id, !sleepers.has(e.id) && !signInNobodyOpened)
     claudeAsks.delete(e.id)
-    const runStarted = unexpected && !!cronRunner?.runStartedIn(e.id)
     tabLifecycle.emit('teardown', exit)
     const sent: TerminalExit = { id: e.id, exitCode: e.exitCode, signal: e.signal }
-    if (runStarted) sent.runStarted = true
     const accountIssue = shimAccountRefusals.get(e.id)
     shimAccountRefusals.delete(e.id)
     // ADR-0030
@@ -3899,7 +3933,10 @@ app.whenReady().then(() => {
       playwrightBin,
       fallbackBin,
       gitBin: gitFirstBin,
-      docsSkillsFolder: () => claudeDocsPlugin && pluginSkills(claudeDocsPlugin),
+      docsSkillsFolder: () => {
+        const docs = docsPluginWhileOn()
+        return docs && pluginSkills(docs)
+      },
       agent: {
         enabled: (host) => agentToolsFor('codex', host),
         answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw),
@@ -4054,13 +4091,13 @@ app.whenReady().then(() => {
       syncAnswerable()
     },
     freshness: (wsPath) => freshness?.get(wsPath),
-    pluginData: (wsPath) => githubCountsData(githubCounts?.get(wsPath)),
+    pluginData: startedPlugins.github.rowData,
     gitAccount: (wsPath) => gitAccounts?.workspaceAccount(wsPath),
     gitPickable: (wsPath) => !!gitAccounts?.pickableOnMachine(wsPath),
     onRescanned: (wsPaths) => {
       void freshness?.refreshLocal(wsPaths)
       void gitAccounts?.refreshRepoKeys(wsPaths).then(() => workspaceMgr?.restampLive())
-      void githubCounts?.sweep()
+      startedPlugins.github.sweepNow()
       claudeBackend.watchRemoteHookMirrors()
     },
     jobCountFor: (wsPath) => cronRunner?.jobCountFor(wsPath) ?? 0,
@@ -4072,7 +4109,7 @@ app.whenReady().then(() => {
     killRemoteSession: (host, sessionId) =>
       claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
     hiddenRow: (id) => sessionBackends.isOverseerSession(id),
-    parentOf: (rowId) => startedSessions.parentOfRow(rowId),
+    parentOf: (rowId) => startedSessions.parentOfRow(rowId) ?? shownUnder.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
     scratchRoots: scratchRootsAround(os.homedir(), os.tmpdir()),
     claimedFolder: butlersFolderClaim(userData),
@@ -4090,6 +4127,7 @@ app.whenReady().then(() => {
     save: (discord) => {
       void commitSettings({ discord })
       syncAnswerable()
+      butlerHearsSoon()
     },
     saveQuietly: (discord) => void saveSettings({ discord }),
     rowsChanged: () => workspaceMgr?.refresh(),
@@ -4154,7 +4192,19 @@ app.whenReady().then(() => {
     toast: (text) => sendToRenderer(CH.toast.show, text),
     notice: async (text) =>
       (await handOver?.tell(butlerRecipient(), text, discordRelay?.quietMarks)) ?? false,
-    news: { ...TODO_NEWS, text: `${FROM_KOLOFT}${TODO_NEWS.text}` },
+    news: [TODO_NEWS, GUIDE_MOVED_NEWS],
+    noticeWhileOpen: async (text) =>
+      (await handOver?.tell(
+        butlerWhileOpen(),
+        text,
+        discordOn() ? discordRelay?.quietMarks : undefined
+      )) ?? false,
+    pluginsOn: switchesThatAct,
+    pluginsNews: (changed, lines) =>
+      pluginsChangedNews(
+        PLUGINS.filter((p) => p.id in changed).map((p) => ({ name: p.name, on: changed[p.id] })),
+        lines
+      ),
     showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()
   })
@@ -4188,15 +4238,22 @@ app.whenReady().then(() => {
     regDir: hookPaths.regDir
   })
   sessionAsks = asks
-  const secrets = new SecretAsks<OwnerAsk>({
-    show: pushSecretAsks(pluginIpc),
-    owner: {
-      waitsOnTheOwner: (tabId) => attention.waitsOnTheOwner(tabId, attentionSubjectOf(tabId)),
-      ownerAnswered: (tabId) => {
-        if (tracker.statusOf(tabId) !== 'approval') attention.ownerAnswered(tabId)
-      }
+  const waitsBesidesInstructions = (tabId: string): boolean =>
+    tracker.statusOf(tabId) === 'approval' || !!secretAsks?.views().some((a) => a.tabId === tabId)
+  const ownerWaits = {
+    waitsOnTheOwner: (tabId: string) => attention.waitsOnTheOwner(tabId, attentionSubjectOf(tabId)),
+    ownerAnswered: (tabId: string) => {
+      if (!instructionAsks?.asking(tabId) && !waitsBesidesInstructions(tabId))
+        attention.ownerAnswered(tabId)
     }
+  }
+  const secrets = new SecretAsks<OwnerAsk>({ show: pushSecretAsks(pluginIpc), owner: ownerWaits })
+  const instructions = new InstructionAsks({
+    show: (asks) => pushToSessions.instructionAsks(asks),
+    owner: ownerWaits,
+    told: (text) => sendToRenderer(CH.toast.show, text)
   })
+  instructionAsks = instructions
   const discordLockFile = path.join(userData, 'discord.lock')
   const link = new DiscordLink({
     apiUrl: discordApiUrl(),
@@ -4206,21 +4263,25 @@ app.whenReady().then(() => {
     owner: () => bindingNow.owner(),
     foundAppOwner: (owner) => bindingNow.setOwner(owner),
     push: (status) => {
-      const pluginsOn = switchedOnOnceItHasABot(status.phase, loadSettings().pluginsOn)
-      if (pluginsOn) commitSettings({ pluginsOn })
       pushDiscordStatus(status)
       discordConnected = status.phase === 'connected'
       syncAnswerable()
     },
     onMessage: (m) => {
+      if (!discordRunning) return
       if (bindingNow.isButlerChannel(m.channelId) || rooms?.ofThread(m.channelId))
         discordRelay?.onMessage(m)
       else void oldThreads.onMessage(m)
     },
-    onInteraction: (i) =>
+    onInteraction: (i) => {
+      if (!discordRunning) {
+        void link.respond(i, privately(DISCORD_TURNED_OFF)).catch(() => undefined)
+        return
+      }
       void (bindingNow.isButlerChannel(i.channelId) || rooms?.ofThread(i.channelId)
         ? interactions.handle(i)
-        : oldThreads.onInteraction(i)),
+        : oldThreads.onInteraction(i))
+    },
     onReady: () => {
       if (bindingNow.channel()) void butler?.open()
       void discordRelay?.catchUp()
@@ -4237,6 +4298,7 @@ app.whenReady().then(() => {
   const butlerNow = butler
   const roomsNow = new Rooms({
     link,
+    on: discordOn,
     owner: () => bindingNow.owner(),
     lobby: () => bindingNow.channel(),
     rooms: () => bindingNow.rooms(),
@@ -4284,10 +4346,10 @@ app.whenReady().then(() => {
     },
     answered: (tabId, reply) => buttons.answered(tabId, reply)
   })
-  const secretCards = new SecretCards({
+  const cards = new SecretCards({
     asks: secrets,
     owner: () => bindingNow.owner(),
-    cardWanted: (tabId) => !!discordRelay?.reaches(tabId),
+    cardWanted: (tabId) => discordOn() && !!discordRelay?.reaches(tabId),
     place: async (tabId, card, files) => {
       const channelId = roomOfTab(tabId) ?? bindingNow.channel()?.channelId
       if (!channelId) return undefined
@@ -4301,8 +4363,28 @@ app.whenReady().then(() => {
     edit: (placed, card) => link.editCard(placed.channelId, placed.messageId, card),
     respond: (i, body) => link.respond(i, body)
   })
-  secrets.listen(secretCards)
+  secrets.listen(cards)
+  secretCards = cards
   secretAsks = secrets
+  const instructionCardsNow = new InstructionCards({
+    asks: instructions,
+    owner: () => bindingNow.owner(),
+    cardWanted: (tabId) => discordConnected && discordOn() && !!discordRelay?.reaches(tabId),
+    place: async (tabId, card) => {
+      const channelId = roomOfTab(tabId) ?? bindingNow.channel()?.channelId
+      if (!channelId) return undefined
+      const name =
+        butlerSide(tabId) || roomOfTab(tabId)
+          ? (discordRelay?.askerName(tabId) ?? butlerNameNow())
+          : await secretAskerName(tabId)
+      const messageId = (await link.card(channelId, card(name))).at(-1)
+      return messageId ? { channelId, messageId, name } : undefined
+    },
+    edit: (placed, card) => link.editCard(placed.channelId, placed.messageId, card),
+    respond: (i, body) => link.respond(i, body)
+  })
+  instructions.listen(instructionCardsNow)
+  instructionCards = instructionCardsNow
   const interactions = new Interactions({
     owner: () => bindingNow.owner(),
     ownerWrote: ownerCameBack,
@@ -4312,8 +4394,12 @@ app.whenReady().then(() => {
         text
       ),
     press: (i) =>
-      i.customId?.startsWith(SECRET_ID_PREFIX) ? secretCards.press(i) : buttons.press(i),
-    submit: (i) => secretCards.submit(i),
+      i.customId?.startsWith(SECRET_ID_PREFIX)
+        ? cards.press(i)
+        : i.customId?.startsWith(INSTRUCTIONS_ID_PREFIX)
+          ? instructionCardsNow.press(i)
+          : buttons.press(i),
+    submit: (i) => cards.submit(i),
     respond: (i, body) => link.respond(i, body)
   })
   const attachmentsDir = path.join(userData, 'discord-attachments')
@@ -4324,7 +4410,8 @@ app.whenReady().then(() => {
     ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
     queue: queueCodexMessage,
     sendLine: sendPeerLine,
-    modeOf: (tabId) => sessionBackends.permissionClass(tabId)
+    modeOf: (tabId) => sessionBackends.permissionClass(tabId),
+    noteSent: noteSentByKoloft
   })
   handOver = handOverNow
   discordRelay = new DiscordRelay({
@@ -4373,16 +4460,6 @@ app.whenReady().then(() => {
       const lobby = bindingNow.channel()
       return lobby && roomLink(lobby.channelId)
     },
-    noteDiscordId: async (tabId, id) => {
-      const host = machineOfTab(tabId)
-      if (host) return hosts.machine(host).noteDiscordId(tabId, id)
-      noteDiscordId(hookPaths.regDir, tabId, id)
-    },
-    noteDiscordSaid: async (tabId, text) => {
-      const host = machineOfTab(tabId)
-      if (host) return hosts.machine(host).noteDiscordSaid(tabId, text)
-      noteDiscordSaid(hookPaths.regDir, tabId, text)
-    },
     inRoom: (tabId) => !!roomOfTab(tabId),
     helperTitle: (tabId) =>
       butlerNow.isButlerTab(tabId) ? undefined : (sessionOfTab(tabId)?.title ?? 'helper'),
@@ -4398,6 +4475,8 @@ app.whenReady().then(() => {
     marks: () => attention.list(),
     butlerSide,
     inRoom: (tabId) => !!roomOfTab(tabId),
+    instructionsCard: (tabId) =>
+      waitsBesidesInstructions(tabId) ? undefined : instructionCardsNow.onDiscord(tabId),
     touchedBeforeLeaving: () => touchedBefore(presence.lastHandsAt()),
     judging: (tabId) => newsJudge.judging(tabId),
     sessionOf: (mark) => {
@@ -4426,7 +4505,7 @@ app.whenReady().then(() => {
   const pruneAttachments = (): void => pruneStale(attachmentsDir, ATTACHMENTS_KEPT_MS, true)
   pruneAttachments()
   setInterval(pruneAttachments, ATTACHMENTS_PRUNED_EVERY_MS).unref()
-  void link.connect()
+  void startDiscord()
   remoteSync = new RemoteSync({
     run: (host, cmd) =>
       loginEnvReady().then(() => runSsh(host, cmd, { controlDir: remoteControlDir })),
@@ -4513,8 +4592,6 @@ app.whenReady().then(() => {
     const host = machineOfTab(tabId) ?? ptyMgr.get(tabId)?.utilMachine
     if (host) remoteSync?.typedInto(host)
   })
-  const pinnedPathsChecked = async (): Promise<{ path: string; missing: boolean }[]> =>
-    (await workspaceMgr?.pinnedPathsCheckedOffTheMainThread()) ?? []
   freshness = new GitFreshnessEngine({
     workspaces: pinnedPathsChecked,
     autoFetch: () => loadSettings().gitAutoFetch,
@@ -4529,14 +4606,9 @@ app.whenReady().then(() => {
     },
     fetchFailed: (wsPath, stderr) => gitAccounts?.fetchFailed(wsPath, stderr)
   })
-  githubCounts = new GithubCountsSweep({
-    workspaces: pinnedPathsChecked,
-    openCounts: (wsPath) => githubLookup(hosts.of(wsPath).github).openCounts(wsPath),
-    onChange: () => workspaceMgr?.restampLive()
-  })
   workspaceMgr.start()
   freshness.start()
-  githubCounts.start()
+  startedPlugins.github.followSwitch()
   ensureControlDir(remoteControlDir)
   remoteSync.start()
 
@@ -4648,6 +4720,7 @@ app.whenReady().then(() => {
     presence.screenLocked()
     awayDigest?.marked()
     discordRelay?.checkHeld()
+    instructionCards?.checkHeld()
   })
   powerMonitor.on('resume', () => void freshness?.sweep({ host: null }))
   // PLATFORM§3
@@ -4888,6 +4961,10 @@ function ptyTabIds(): string[] {
           capabilitiesFor(p.kind, remoteHostOfTab(p.id) ? 'ssh' : 'local').browserControl === true)
     )
     .map((p) => p.id)
+}
+
+function agentTabIds(): string[] {
+  return ptyMgr.list().flatMap((p) => (p.alive && !p.util && p.kind !== 'shell' ? [p.id] : []))
 }
 
 const cdpOps = new CdpOps({
@@ -5185,6 +5262,7 @@ function archiveSession(id: string): boolean {
     koloftInbox.sessionGone(id, 'Its session was deleted')
     attention.clearSession(id)
     startedSessions.forget(id)
+    shownUnder.forget(id)
     readerDocs.forget(id)
   }
   return archived
@@ -5652,22 +5730,65 @@ function tapPagesOf(tabId: string): TapPage[] {
   }))
 }
 
+async function startDiscord(): Promise<void> {
+  const hasABot = async (): Promise<boolean> => !!(await discordTokenRead())
+  if (await switchedOnOnceItHasABot(loadSettings().pluginsOn, hasABot))
+    commitSettings({ pluginsOn: withDiscordOn(loadSettings().pluginsOn) })
+  followDiscordSwitch()
+}
+
+let discordRunning = false
+let discordEnding: Promise<unknown> = Promise.resolve()
+
+function followDiscordSwitch(): void {
+  const link = discordLink
+  if (!link || discordOn() === discordRunning) return
+  discordRunning = !discordRunning
+  workspaceMgr?.refresh()
+  syncAnswerable()
+  if (discordRunning) {
+    void discordEnding.then(() => {
+      if (discordRunning) void link.connect()
+    })
+    return
+  }
+  for (const { id } of ptyMgr.list()) {
+    discordRelay?.forget(id)
+    discordTyping?.forget(id)
+  }
+  discordEnding = Promise.all([
+    askButtons?.endAll(DISCORD_TURNED_OFF),
+    secretCards?.endAll(DISCORD_TURNED_OFF),
+    instructionCards?.endAll(DISCORD_TURNED_OFF)
+  ])
+    .then(() => link.quiet(CARDS_IN_FLIGHT_LAND_WITHIN_MS))
+    .finally(() => {
+      if (!discordRunning) link.stop()
+    })
+}
+
 async function saveDiscordToken(token: string): Promise<boolean> {
   const saved = await discordTokenWrite(token)
-  if (saved) void discordLink?.connect()
+  if (saved && discordRunning) void discordLink?.connect()
   return saved
 }
 
 const SET_UP_DISCORD_WORDS = 'Set up Discord for me.'
 const SET_UP_DISCORD_HOW =
   '(Koloft: run koloft discord setup and follow those steps, then close yourself with koloft session close.)'
-function setUpDiscordWithButler(ownerWords?: string): Promise<ConductorOpenResult> {
+async function setUpDiscordWithButler(ownerWords?: string): Promise<ConductorOpenResult> {
+  const before = loadSettings().pluginsOn
+  const turnsItOn = !discordOn()
+  if (turnsItOn) commitSettings({ pluginsOn: withDiscordOn(before) })
   const words = ownerWords ?? SET_UP_DISCORD_WORDS
-  return startHelper((butler) => ({
+  const started = await startHelper((butler) => ({
     prompt: `The owner asked: ${words} ${SET_UP_DISCORD_HOW}`,
     ownerWords: words,
     backend: discordHelperBackend(butler.backendId)
   }))
+  if (!started.ok && turnsItOn)
+    commitSettings({ pluginsOn: withDiscordAsBefore(loadSettings().pluginsOn, before) })
+  return started
 }
 
 function discordHelperBackend(butlerBackend: BackendId): BackendId {
@@ -5886,6 +6007,17 @@ async function roomForNew({
 
 const BUTLER_RECIPIENT = 'butler'
 
+function butlerWhileOpen(): Recipient {
+  return {
+    ...butlerRecipient(),
+    open: async () => {
+      const tab = butler?.liveTab()
+      if (!tab) throw new Error(`${butlerNameNow()} is closed.`)
+      return tab
+    }
+  }
+}
+
 function butlerRecipient(): Recipient {
   return {
     key: BUTLER_RECIPIENT,
@@ -5992,29 +6124,30 @@ function butlerTarget(ref: string): Target | undefined {
   }
 }
 
-async function cronPick(req: LaunchRequest): Promise<OwnPick> {
+async function cronPick(req: LaunchRequest): Promise<OwnPickResolved> {
   const job = { model: req.model, effort: req.effort }
   const filled =
     job.model && job.effort
       ? undefined
       : cronPickFor(req.backend, job, await defaultsOfProjects.of(req.cwd))
-  return filled ? (await ownPick(req.backend, filled)).pick : job
+  return ownPick(req.backend, filled ?? job)
 }
 
 async function launchCronRun(req: LaunchRequest): Promise<LaunchResult> {
   try {
+    const { pick, note } = await cronPick(req)
     const options: CreateTabOptions & { kind: BackendId } = {
       kind: req.backend,
       cwd: req.cwd,
       worktree: req.worktree,
-      ...(await cronPick(req)),
+      ...pick,
       permission: req.permission,
       firstPrompt: req.firstPrompt,
       name: req.name,
       scheduled: true
     }
     const tabId = await launchQuietTab(options, req.name, { jobId: req.jobId })
-    return tabId ? { ok: true, tabId } : { ok: false }
+    return tabId ? { ok: true, tabId, ...(note && { note }) } : { ok: false }
   } catch (err) {
     console.error('[koloft] a scheduled run could not be launched:', err)
     return { ok: false }
@@ -6065,29 +6198,11 @@ const githubOptions: GithubReposOptions = {
   }
 }
 
-const githubLookup = githubLookups({
-  // PLATFORM§1
-  countedAs: (root) => gitAccounts?.pickedAccount(root),
-  signedIn: async () => {
-    try {
-      const jar = await session.fromPartition(BROWSER_PARTITION).cookies.get({
-        domain: 'github.com'
-      })
-      // PLATFORM§32
-      return jar.some(
-        (c) => (c.name === 'logged_in' && c.value === 'yes') || c.name === 'user_session'
-      )
-    } catch {
-      return false
-    }
-  }
-})
-
 const hosts = new Hosts(
   localHost(new GithubRepos(githubOptions), {
     hookRegDir: () => hookRegDir ?? '',
     agentPlugin: () => (agentToolsFor('claude', 'local') ? claudeAgentPlugin : undefined),
-    docsPlugin: () => claudeDocsPlugin,
+    docsPlugin: docsPluginWhileOn,
     assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
     agentHomes: () => ({
       codexHome: path.dirname(codexSharedConfig()),
@@ -6258,23 +6373,23 @@ function registerIpc(): void {
     if (typeof oldTabId !== 'string' || typeof newTabId !== 'string') return
     ptyMgr.moveOwner(oldTabId, newTabId)
     startedSessions.moved(oldTabId, newTabId)
+    shownUnder.moved(oldTabId, newTabId)
+    if (answerableForAPlugin.delete(oldTabId)) {
+      answerableForAPlugin.add(newTabId)
+      syncAnswerable()
+    }
     sessionCommand.tabMoved(oldTabId, newTabId)
     koloftInbox.rebound(oldTabId, newTabId)
     cronRunner?.tabMoved(oldTabId, newTabId)
     webPages.tabMoved(oldTabId, newTabId)
     secretAsks?.rehome(oldTabId, newTabId)
+    instructionAsks?.rehome(oldTabId, newTabId)
     if (!sleepers.has(oldTabId) && sleepers.liveTabOf(oldTabId) === oldTabId) {
       carryTabIds(newTabId, tabIdsOf(oldTabId))
       earlierTabIds.delete(oldTabId)
     }
   })
 
-  registerInboxChannels(pluginIpc, {
-    cards: inbox,
-    sync: () => koloftInbox.sync(),
-    toast: (text) => sendToRenderer(CH.toast.show, text)
-  })
-  registerSecretChannels(pluginIpc, () => secretAsks)
   ipcMain.handle(CH.tabs.list, (): TabInventoryReply => {
     rendererReady = true
     if (probeOnceTheRendererIsUp) {
@@ -6302,12 +6417,6 @@ function registerIpc(): void {
     shrinkAdoptedClaudePtysOneRowSoFitRepaints(tabs)
     const asleep = [...sleepers].map(([id, t]): AdoptableTab => ({ id, ...t, asleep: true }))
     return { tabs: [...tabs, ...asleep], activeTabBeforeReload: active }
-  })
-
-  registerCronChannels(pluginIpc, {
-    runner: () => cronRunner,
-    skills: (workspacePath, backend) => hosts.of(workspacePath).listSkills(workspacePath, backend),
-    trusted: (workspacePath, backend) => sessionBackends.get(backend).trustsFolder(workspacePath)
   })
 
   ipcMain.handle(CH.update.check, () => checkForUpdates())
@@ -6505,34 +6614,6 @@ function registerIpc(): void {
     cronRunner?.removeWorkspace(p)
     for (const id of marked) attention.clearSession(id)
   })
-  registerDiscordChannels(pluginIpc, {
-    bind: (channel) => {
-      const saved = discordBinding?.bind(channel) ?? { ok: false, error: STILL_STARTING }
-      if (saved.ok) registerSlashCommands()
-      return saved
-    },
-    bindNewChannel: bindWithNewChannel,
-    unbind: () => {
-      discordBinding?.unbind()
-      syncAnswerable()
-    },
-    status: () => discordLink?.status() ?? DISCORD_OFF,
-    pair: (isMe) => {
-      const owner = discordLink?.pair(isMe)
-      if (owner) discordBinding?.setOwner(owner)
-    },
-    channels: () => discordLink?.channels() ?? Promise.resolve([]),
-    setUpWithButler: setUpDiscordWithButler
-  })
-  registerButlerChannels(pluginIpc, {
-    open: () => butler?.open() ?? Promise.resolve({ ok: false, error: STILL_STARTING }),
-    startFresh: () => butler?.startFresh() ?? Promise.resolve({ ok: false, error: STILL_STARTING }),
-    fromPalette: handFromPalette,
-    butler: () => loadSettings().butler,
-    save: (butler) => {
-      commitSettings({ butler })
-    }
-  })
   ipcMain.handle(CH.palette.savePicture, (_e, dataUrl: unknown) =>
     typeof dataUrl === 'string' ? savePastedPicture(dataUrl) : null
   )
@@ -6544,31 +6625,6 @@ function registerIpc(): void {
     return workspaceMgr?.rows() ?? []
   })
   ipcMain.handle(CH.workspace.discover, () => workspaceMgr?.discover() ?? [])
-  ipcMain.handle(CH.workspace.worktrees, async (_e, p: string) => {
-    const trees = (await workspaceMgr?.worktrees(p)) ?? []
-    for (const stored of storedSessions()) {
-      const mine = stored.store.listResources().filter((r) => r.originalCwd === p)
-      const there = await Promise.all(
-        mine.map((r) => r.state === 'ready' && hosts.of(r.worktreePath).dirExists(r.worktreePath))
-      )
-      for (const [i, resource] of mine.entries()) {
-        if (there[i]) continue
-        const existing = trees.find((t) => t.dir === resource.worktreePath)
-        if (existing) {
-          existing.recoveryResourceId = resource.id
-          existing.recoveryBackend = stored.id
-        } else
-          trees.push({
-            name: resource.worktreeName,
-            dir: resource.worktreePath,
-            branch: resource.worktreeBranch ?? undefined,
-            recoveryResourceId: resource.id,
-            recoveryBackend: stored.id
-          })
-      }
-    }
-    return trees
-  })
   ipcMain.handle(CH.workspace.fetchFreshness, (_e, p: string) => freshness?.fetchNow(p) ?? null)
   ipcMain.handle(
     CH.workspace.pull,
@@ -6580,31 +6636,6 @@ function registerIpc(): void {
     sessionBackends.historyRows(p, opts?.quiet ? () => {} : historyPartlyUnread)
   )
 
-  const sessionSearch = new SessionSearch({
-    candidates: () => {
-      const pins = workspaceMgr?.pinnedPathList() ?? []
-      return [
-        ...(workspaceMgr?.searchableRows() ?? []),
-        ...storedSessions().flatMap((s) => s.searchable(pins))
-      ]
-    },
-    backendSnippets: async (term, signal) =>
-      (await Promise.all(storedSessions().map((s) => s.searchSnippets(term, signal)))).flat(),
-    hidden: (id) => sessionBackends.isOverseerSession(id),
-    scan: (files, term, found) => {
-      // PLATFORM§4
-      const worker = createTranscriptSearchWorker({ workerData: { files, term } })
-      worker.on('message', (hit: { id: string; snippet: SearchSnippet }) =>
-        found(hit.id, hit.snippet)
-      )
-      worker.on('error', (error) => console.error('[koloft] session search failed', error))
-      return {
-        done: new Promise((resolve) => worker.once('exit', () => resolve())),
-        stop: () => void worker.terminate()
-      }
-    },
-    send: (found) => pushToSessions.searchHits(found)
-  })
   const usageCache = new UsageCache({
     cacheFile: () => path.join(app.getPath('userData'), 'usage-cache-4.json'),
     listFiles: async () => {
@@ -6637,66 +6668,6 @@ function registerIpc(): void {
     changed: (read) => sendToRenderer(CH.usage.changed, read)
   })
   ipcMain.handle(CH.usage.read, () => usageCache.read())
-
-  registerSessionsChannels(pluginIpc, {
-    backends: sessionBackends,
-    noteActivity: (tabId) => tracker.noteActivity(tabId),
-    installed: installedBackends,
-    installTool,
-    list: allSessions,
-    archive: archiveSession,
-    setResident: (id, on) => workspaceMgr?.setResident(id, on),
-    killTab: (tabId) => killTabPty(tabId),
-    leftovers: () => leftovers,
-    stopLeftover: async (sessionId, pid) => {
-      const stopped = await stopLeftover(sessionId, pid)
-      await refreshLeftovers()
-      return stopped
-    },
-    ports: sessionPorts,
-    search: (searchId, term) => sessionSearch.start(searchId, term),
-    attention: () => attention.list(),
-    lookedAt: (tabId) => {
-      uiActiveTabId = tabId
-      lastTabTheOwnerLookedAt = tabId ?? lastTabTheOwnerLookedAt
-      guard?.lookedAtChanged()
-      if (tabId) tracker.noteActivity(tabId)
-      if (tabId && windowFocused()) ownerSees(tabId)
-      rememberOpenTabs()
-    },
-    readDefaults: async (workspacePath) => {
-      const [defaults, listed] = await Promise.all([
-        defaultsOfProjects.read(workspacePath),
-        loadSettings().sessionMethods.enabled.agy
-          ? Promise.race([
-              listedModels('agy'),
-              new Promise<undefined>((done) =>
-                setTimeout(() => done(undefined), THE_DIALOG_WAITS_FOR_THE_ACCOUNTS_MODELS_MS)
-              )
-            ])
-          : undefined
-      ])
-      return { defaults, familyEfforts: familyEfforts('agy', listed) }
-    },
-    writeDefaults: (workspacePath, raw) =>
-      defaultsOfProjects.write(workspacePath, (saved) => savedFromTheDialog(saved, raw, Date.now()))
-  })
-
-  async function sessionPorts(tabId: string): Promise<ListeningPort[] | null> {
-    const tags = [
-      ...tabIdsOf(tabId),
-      ...ptyMgr
-        .list()
-        .filter((h) => h.util && h.alive && h.ownerTabId === tabId)
-        .map((h) => h.id)
-    ]
-    const machine = machineOfTab(tabId)
-    if (!machine) return parseSessionPorts(await scanPortsHere(tags))
-    const tmuxName =
-      tracker.remoteOf(tabId)?.tmuxName ?? storedOwnerOf(tabId)?.tmuxOfTab?.(tabId) ?? ''
-    await loginEnvReady()
-    return parseSessionPorts(await scanPortsOnMachine(machine, tags, tmuxName, remoteControlDir))
-  }
 
   ipcMain.on(CH.app.isDev, (e) => {
     e.returnValue = !app.isPackaged
@@ -6734,62 +6705,6 @@ function registerIpc(): void {
     logUnexpectedExit({ id: s.id, lines: s.lines.map(String) })
   })
 
-  registerPageChannels(pluginIpc, {
-    webPages,
-    sitePermissions,
-    pageDialogs,
-    pageDownloads,
-    pageRouting,
-    pageTools,
-    openExternal: openUrlExternally
-  })
-  registerBrowserControlChannels(pluginIpc, {
-    cdpOps,
-    stripChanged: relayStripChanged
-  })
-  registerWorkbenchChannels(pluginIpc, {
-    files: (p) => hosts.of(p),
-    base: sanitizeBase,
-    notesFile: notesFileOfScope,
-    pickFile: async () => {
-      const stub = process.env.KOLOFT_FILE_DIALOG_FILE
-      if (stub) return takeStubbedDialogPick(stub)
-      if (!mainWindow) return null
-      const res = await dialog.showOpenDialog(mainWindow, { properties: ['openFile'] })
-      if (res.canceled || res.filePaths.length === 0) return null
-      return res.filePaths[0]
-    },
-    state: (sessionId) => workspaceMgr?.workbenchState(sessionId),
-    setState: (sessionId, state) => {
-      if (!workspaceMgr) return
-      workspaceMgr.setWorkbenchState(
-        sessionId,
-        sanitizeSessionWorkbench(
-          state,
-          isWorkspaceWorkbenchKey(sessionId)
-            ? WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT
-            : workspaceMgr.defaultOpen()
-        )
-      )
-    },
-    setAvailable: setWorkbenchAvailable,
-    setFindAvailable,
-    setSaveAvailable,
-    setDirtyTabs: (ids) => {
-      dirtyTabIds.clear()
-      for (const id of ids) dirtyTabIds.add(id)
-    }
-  })
-  registerGithubChannels(pluginIpc, {
-    lookup: (root) => githubLookup(hosts.of(root).github),
-    prWorktree: async (root, pr, branch) => {
-      if (!GIT_REF_RE.test(branch)) return BAD_GIT_STEP
-      const host = hosts.of(root)
-      const r = await addPrWorktree((args, network) => host.gitRun(root, args, network), pr, branch)
-      if (r.ok) await copyWorktreeIncludes(worktreeHomeRoot(r.dir)!, r.dir, hosts.machineOf(root))
-      return r
-    }
-  })
   ipcMain.handle(CH.git.commit, (_e, root: unknown, message: unknown) => {
     if (typeof root !== 'string' || !root || typeof message !== 'string') return BAD_GIT_STEP
     const host = hosts.of(root)
@@ -6799,6 +6714,11 @@ function registerIpc(): void {
     if (typeof root !== 'string' || !root) return BAD_GIT_STEP
     const host = hosts.of(root)
     return pushBranch((args, network) => host.gitRun(root, args, network))
+  })
+  ipcMain.handle(CH.git.readiness, (_e, root: unknown) => {
+    if (typeof root !== 'string' || !root) return null
+    const host = hosts.of(root)
+    return readReadiness((args) => host.gitRun(root, args))
   })
   ipcMain.handle(CH.window.isFullScreen, () => mainWindow?.isFullScreen() ?? false)
 
@@ -6826,3 +6746,326 @@ function registerIpc(): void {
     }
   })
 }
+
+const sessionSearch = new SessionSearch({
+  candidates: () => {
+    const pins = workspaceMgr?.pinnedPathList() ?? []
+    return [
+      ...(workspaceMgr?.searchableRows() ?? []),
+      ...storedSessions().flatMap((s) => s.searchable(pins))
+    ]
+  },
+  backendSnippets: async (term, signal) =>
+    (await Promise.all(storedSessions().map((s) => s.searchSnippets(term, signal)))).flat(),
+  hidden: (id) => sessionBackends.isOverseerSession(id),
+  scan: (files, term, found) => {
+    // PLATFORM§4
+    const worker = createTranscriptSearchWorker({ workerData: { files, term } })
+    worker.on('message', (hit: { id: string; snippet: SearchSnippet }) =>
+      found(hit.id, hit.snippet)
+    )
+    worker.on('error', (error) => console.error('[koloft] session search failed', error))
+    return {
+      done: new Promise((resolve) => worker.once('exit', () => resolve())),
+      stop: () => void worker.terminate()
+    }
+  },
+  send: (found) => pushToSessions.searchHits(found)
+})
+
+async function sessionPorts(tabId: string): Promise<ListeningPort[] | null> {
+  const tags = [
+    ...tabIdsOf(tabId),
+    ...ptyMgr
+      .list()
+      .filter((h) => h.util && h.alive && h.ownerTabId === tabId)
+      .map((h) => h.id)
+  ]
+  const machine = machineOfTab(tabId)
+  if (!machine) return parseSessionPorts(await scanPortsHere(tags))
+  const tmuxName =
+    tracker.remoteOf(tabId)?.tmuxName ?? storedOwnerOf(tabId)?.tmuxOfTab?.(tabId) ?? ''
+  await loginEnvReady()
+  return parseSessionPorts(await scanPortsOnMachine(machine, tags, tmuxName, remoteControlDir))
+}
+
+const startedPlugins: PluginsStarted = startPlugins(
+  PLUGINS,
+  PLUGIN_STARTS,
+  { commands, moments, ipc: pluginIpc },
+  {
+    sessions: {
+      eachTurn: {
+        judge: newsJudge,
+        slash,
+        replies: sessionCommand,
+        asks: () => sessionAsks,
+        askBeforeAsksAreMade: showAskOnItsRow
+      },
+      commands: sessionsCommands,
+      endedTabs: {
+        slash,
+        asks: () => sessionAsks,
+        instructionAsks: () => instructionAsks
+      },
+      eachState: {
+        asks: () => sessionAsks,
+        slash,
+        attention: {
+          stateChanged: ({ tabId, prev, next }) =>
+            attention.onStatusChange(tabId, prev, next, attentionSubjectOf(tabId))
+        }
+      },
+      channels: {
+        backends: sessionBackends,
+        noteActivity: (tabId) => tracker.noteActivity(tabId),
+        installed: installedBackends,
+        installTool,
+        list: allSessions,
+        archive: archiveSession,
+        setResident: (id, on) => workspaceMgr?.setResident(id, on),
+        killTab: (tabId) => killTabPty(tabId),
+        leftovers: () => leftovers,
+        stopLeftover: async (sessionId, pid) => {
+          const stopped = await stopLeftover(sessionId, pid)
+          await refreshLeftovers()
+          return stopped
+        },
+        ports: sessionPorts,
+        search: (searchId, term) => sessionSearch.start(searchId, term),
+        attention: () => attention.list(),
+        lookedAt: (tabId) => {
+          uiActiveTabId = tabId
+          lastTabTheOwnerLookedAt = tabId ?? lastTabTheOwnerLookedAt
+          guard?.lookedAtChanged()
+          if (tabId) tracker.noteActivity(tabId)
+          if (tabId && windowFocused()) ownerSees(tabId)
+          rememberOpenTabs()
+        },
+        readDefaults: async (workspacePath) => {
+          const [defaults, listed] = await Promise.all([
+            defaultsOfProjects.read(workspacePath),
+            loadSettings().sessionMethods.enabled.agy
+              ? listedModelsWithin('agy', THE_DIALOG_WAITS_FOR_THE_ACCOUNTS_MODELS_MS)
+              : undefined
+          ])
+          return { defaults, familyEfforts: familyEfforts('agy', listed) }
+        },
+        writeDefaults: (workspacePath, raw) =>
+          defaultsOfProjects.write(workspacePath, (saved) =>
+            savedFromTheDialog(saved, raw, Date.now())
+          ),
+        saveEveryWorkspace: (text, opened) => {
+          const saved = everyWorkspaceSavedByTheOwner(
+            everyWorkspaceVersions(),
+            text,
+            opened,
+            Date.now()
+          )
+          if (!saved.ok) return saved
+          saveEveryWorkspaceVersions(saved.versions)
+          return { ok: true }
+        },
+        instructionAsks: () => instructionAsks ?? { views: () => [], answer: () => undefined },
+        worktrees: async (p) => (await workspaceMgr?.worktrees(p)) ?? [],
+        storedSessions,
+        dirExists: (dir) => hosts.of(dir).dirExists(dir)
+      },
+      tabs: {
+        askOf: inboxAskOf,
+        answer: answerSession,
+        placeOf: (tabId) => {
+          const s = sessionOfTab(tabId)
+          const workspace = sessionBackends.workspaceOfTab(tabId)
+          return s && workspace
+            ? { workspace, folder: folderOf(s), machine: s.remote?.host }
+            : undefined
+        },
+        ownerWordsOf: (tabId) => sessionCommand.ownerWordsIn(tabId),
+        lookedAt: () => attention.watching(),
+        ownerTypedSince: (tabId, at) => (touchedAt.get(tabId) ?? 0) >= at,
+        waitsOnAnother: (tabId) => attention.waitsOnAnother(tabId),
+        butlerSide,
+        markAnswerable: (tabId, on) => {
+          if (on) answerableForAPlugin.add(tabId)
+          else answerableForAPlugin.delete(tabId)
+          syncAnswerable()
+        },
+        tellAs: (tabId, opening, text) => sessionCommand.tellAs(tabId, opening, text),
+        startBeside: (tabId, spec) =>
+          startBeside(
+            {
+              sessionOfTab: (tab) => sessionDeps.allSessions().find((s) => s.tabId === tab),
+              launch: sessionDeps.launch,
+              pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
+              turnedOff: sessionDeps.turnedOff,
+              shownUnder
+            },
+            tabId,
+            spec
+          )
+      }
+    },
+    workbench: {
+      commands: workbenchCommands,
+      readerDocs,
+      pageChannels: {
+        webPages,
+        sitePermissions,
+        pageDialogs,
+        pageDownloads,
+        pageRouting,
+        pageTools,
+        openExternal: openUrlExternally
+      },
+      channels: {
+        files: (p) => hosts.of(p),
+        base: sanitizeBase,
+        notesFile: notesFileOfScope,
+        pickFile: async () => {
+          const stub = process.env.KOLOFT_FILE_DIALOG_FILE
+          if (stub) return takeStubbedDialogPick(stub)
+          if (!mainWindow) return null
+          const res = await dialog.showOpenDialog(mainWindow, { properties: ['openFile'] })
+          if (res.canceled || res.filePaths.length === 0) return null
+          return res.filePaths[0]
+        },
+        state: (sessionId) => workspaceMgr?.workbenchState(sessionId),
+        setState: (sessionId, state) => {
+          if (!workspaceMgr) return
+          workspaceMgr.setWorkbenchState(
+            sessionId,
+            sanitizeSessionWorkbench(
+              state,
+              isWorkspaceWorkbenchKey(sessionId)
+                ? WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT
+                : workspaceMgr.defaultOpen()
+            )
+          )
+        },
+        setAvailable: setWorkbenchAvailable,
+        setFindAvailable,
+        setSaveAvailable,
+        setDirtyTabs: (ids) => {
+          dirtyTabIds.clear()
+          for (const id of ids) dirtyTabIds.add(id)
+        }
+      }
+    },
+    'browser-control': {
+      channels: {
+        cdpOps,
+        stripChanged: relayStripChanged
+      }
+    },
+    butler: {
+      helperRole: () => helperRoleOf(loadSettings().butler),
+      eachTurn: {
+        butler: () => butler,
+        digest: () => awayDigest,
+        tookTheTurn: (tabId) => startedPlugins.sessions.tookTheTurn(tabId),
+        asleep: ownerAsleep,
+        butlerTabChanged: syncAnswerable
+      },
+      endedTabs: { butler: () => butler, digest: () => awayDigest },
+      channels: {
+        open: () => butler?.open() ?? Promise.resolve({ ok: false, error: STILL_STARTING }),
+        startFresh: () =>
+          butler?.startFresh() ?? Promise.resolve({ ok: false, error: STILL_STARTING }),
+        fromPalette: handFromPalette,
+        butler: () => loadSettings().butler,
+        save: (butler) => {
+          commitSettings({ butler })
+        }
+      }
+    },
+    inbox: {
+      eachTurn: {
+        inbox: koloftInbox,
+        tookTheTurn: (tabId) => startedPlugins.sessions.tookTheTurn(tabId)
+      },
+      command: inboxCommand,
+      channels: {
+        cards: inbox,
+        sync: () => koloftInbox.sync(),
+        toast: (text) => sendToRenderer(CH.toast.show, text)
+      }
+    },
+    'scheduled-tasks': {
+      command: cronCommand,
+      runner: () => cronRunner,
+      channels: {
+        runner: () => cronRunner,
+        skills: (workspacePath, backend) =>
+          hosts.of(workspacePath).listSkills(workspacePath, backend),
+        trusted: (workspacePath, backend) =>
+          sessionBackends.get(backend).trustsFolder(workspacePath)
+      }
+    },
+    github: {
+      main: githubMain,
+      prWorktree: async (root, pr, branch) => {
+        if (!GIT_REF_RE.test(branch)) return BAD_GIT_STEP
+        const host = hosts.of(root)
+        const r = await addPrWorktree(
+          (args, network) => host.gitRun(root, args, network),
+          pr,
+          branch
+        )
+        if (r.ok) await copyWorktreeIncludes(worktreeHomeRoot(r.dir)!, r.dir, hosts.machineOf(root))
+        return r
+      }
+    },
+    discord: {
+      copyToPhone: (o) => copyToPhone(o.tabId, o.target, o.view),
+      rooms: {
+        isButler: isButlerNow,
+        butlerFolder: butlerFolderNow,
+        roomFor: roomForNew
+      },
+      eachTurn: {
+        relay: () => discordRelay,
+        typing: () => discordTyping,
+        rooms: () => rooms,
+        buttons: () => askButtons,
+        noTurnsYet: async (key) => !(await sessionBackends.turns(key, 1).catch(() => [])).length,
+        askChannelOf: askChannelOfTab,
+        pendingAskOf,
+        askUnreadablySoon
+      },
+      endedTabs: {
+        typing: () => discordTyping,
+        relay: () => discordRelay,
+        buttons: () => askButtons,
+        rooms: () => rooms
+      },
+      command: discordCommand,
+      channels: {
+        bind: (channel) => {
+          const saved = discordBinding?.bind(channel) ?? { ok: false, error: STILL_STARTING }
+          if (saved.ok) registerSlashCommands()
+          return saved
+        },
+        bindNewChannel: bindWithNewChannel,
+        unbind: () => {
+          discordBinding?.unbind()
+          syncAnswerable()
+        },
+        status: () => discordLink?.status() ?? DISCORD_OFF,
+        pair: (isMe) => {
+          const owner = discordLink?.pair(isMe)
+          if (owner) discordBinding?.setOwner(owner)
+        },
+        channels: () => discordLink?.channels() ?? Promise.resolve([]),
+        setUpWithButler: setUpDiscordWithButler
+      }
+    },
+    todo: todoCommand,
+    passwords: {
+      secretCommand,
+      pageCommand,
+      endedTabs: () => secretAsks,
+      channels: () => secretAsks
+    }
+  }
+)

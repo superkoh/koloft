@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState, type JSX } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
 import { IconClose } from '../icons'
 import type { BackendId, CronEffort, OwnPick, SessionDefaultsDraft } from '@shared/types'
 import { basename } from '@shared/preview'
@@ -15,6 +15,7 @@ import {
 import { modelValue } from '../modelPick'
 import { useStore } from '../store'
 import { ModelAndThinking, OTHER_MODEL, effortLabel, useFieldFocus } from './ModelAndThinking'
+import { InstructionsChangeLines } from './InstructionsChange'
 import '../cronJobs.css'
 
 interface PickFields {
@@ -30,6 +31,10 @@ const INTRO =
 const RULES_HINT =
   "How an agent in this workspace picks the model and thinking for a session it starts with koloft session new. Left empty, agents sort the task as very simple, normal or very hard and use Koloft's own pick for each."
 const RULES_PLACEHOLDER = `Left empty, an agent sorts the task and uses Koloft's own pick:\n${SESSION_BACKENDS.map(tiersOf).join('\n')}`
+const FOLLOWED_HINT =
+  "Sessions started in this workspace get the instructions for every workspace first, then this workspace's own. You write them in Settings ▸ Sessions."
+const LEFT_OUT_HINT =
+  'Sessions started in this workspace, or in another copy of the same repository, do not get the instructions for every workspace.'
 const BAD_MODEL = 'A model name is letters, digits, dots, colons, dashes or underscores.'
 // CC§26 CODEX§17 AGY§32
 const PROJECT_FILE_MAY_WIN =
@@ -69,7 +74,11 @@ export function SessionDefaultsDialog({
   const [picks, setPicks] = useState<Record<BackendId, PickFields>>(() => byBackend(() => NOT_SET))
   const [rules, setRules] = useState('')
   const [instructions, setInstructions] = useState('')
+  const [leavesOut, setLeavesOut] = useState(false)
   const [saved, setSaved] = useState({ rules: '', instructions: '' })
+  const [changed, setChanged] = useState<{ before: string; after: string } | null>(null)
+  const changedView = useRef<HTMLDivElement>(null)
+  useEffect(() => changedView.current?.scrollIntoView({ block: 'nearest' }), [changed])
   const butler = useStore((s) => s.settings.butler.name)
   const [shown, setShown] = useState<BackendId>(backends[0] ?? 'claude')
   const { inputCls, focusProps } = useFieldFocus()
@@ -84,6 +93,7 @@ export function SessionDefaultsDialog({
         const text = textInUse(r.defaults.instructions)
         setRules(r.defaults.rules ?? '')
         setInstructions(text)
+        setLeavesOut(!!r.defaults.leavesOutEveryWorkspace)
         setSaved({ rules: r.defaults.rules ?? '', instructions: text })
         setFamilyEfforts(r.familyEfforts)
       },
@@ -159,11 +169,18 @@ export function SessionDefaultsDialog({
         })
       ),
       ...(rules.trim() && { rules: rules.trim() }),
-      instructions
+      instructions,
+      instructionsOpened: saved.instructions,
+      ...(leavesOut && { leavesOutEveryWorkspace: true })
     }
+    setChanged(null)
     const r = await window.api.sessionDefaults.write(wsPath, out)
-    if (r.ok) onClose()
-    else setError(r.error ?? 'Koloft could not save these.')
+    if (r.ok) return onClose()
+    setError(r.error ?? 'Koloft could not save these.')
+    const { inUse } = r
+    if (inUse === undefined) return
+    setChanged({ before: saved.instructions, after: inUse })
+    setSaved((s) => ({ ...s, instructions: inUse }))
   }
 
   return (
@@ -181,7 +198,7 @@ export function SessionDefaultsDialog({
           </span>
         </div>
         <div className="modal-body">
-          {error && <p className="field-hint bad">{error}</p>}
+          {error && !changed && <p className="field-hint bad">{error}</p>}
           {familyEfforts && (
             <div className="fgrid">
               <span className="flabel">When you start one</span>
@@ -238,6 +255,25 @@ export function SessionDefaultsDialog({
                 <p className="field-hint">{RULES_HINT}</p>
               </div>
 
+              <span className="flabel">Instructions for every workspace</span>
+              <div className="fcol">
+                <div className="chips">
+                  <button
+                    className={'chip' + (leavesOut ? '' : ' on')}
+                    onClick={() => setLeavesOut(false)}
+                  >
+                    Follow them
+                  </button>
+                  <button
+                    className={'chip' + (leavesOut ? ' on' : '')}
+                    onClick={() => setLeavesOut(true)}
+                  >
+                    Leave them out
+                  </button>
+                </div>
+                <p className="field-hint">{leavesOut ? LEFT_OUT_HINT : FOLLOWED_HINT}</p>
+              </div>
+
               <span className="flabel">Instructions</span>
               <div className="fcol">
                 <div className={inputCls('instructions')}>
@@ -252,6 +288,12 @@ export function SessionDefaultsDialog({
                     {...focusProps('instructions')}
                   />
                 </div>
+                {changed && (
+                  <div className="fcol" ref={changedView}>
+                    <p className="field-hint bad">{error}</p>
+                    <InstructionsChangeLines {...changed} />
+                  </div>
+                )}
                 <p className={'field-hint' + (left < 0 ? ' bad' : '')}>
                   {`${bytesLeft(left)}. ${whenItCounts(butler)}`}
                 </p>

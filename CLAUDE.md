@@ -79,8 +79,9 @@ Working principles:
   for a change include the other agents' and remote specs whenever the change reaches
   those tabs.
 - Comments: none. In `.ts/.tsx/.js/.mjs/.cjs/.css` — and in the `#` lines of a
-  `#!/` script written as a template string — `npm run check:comments` (CI, plus an
-  after-edit hook) rejects every comment except two kinds, each with nothing else in it:
+  `#!/` script written as a template string — `npm run check:comments` (CI, an
+  after-edit hook, and the before-push hook) rejects every comment except two kinds,
+  each with nothing else in it:
   - a tool directive: `@ts-expect-error`, `prettier-ignore`, `@vite-ignore`,
     `#__PURE__`, `@vitest-environment <env>`, `/// <reference … />`;
   - a marker: `// ADR-0007`, `// AGY§4`, `// CC§9`, `// CODEX§5`, `// MUSE§4`, `// PLATFORM§3` — several may
@@ -142,12 +143,14 @@ Working principles:
   is unreviewed.
 - Finish the code, then review, then test. While writing code, only the fast checks
   run (`format`, typecheck, `check:comments`, `test:unit:changed`; there is no lint) —
-  CI's first gate is `format:check`, and no hook runs Prettier. Once the
+  CI's first gate is `format:check`. No hook rewrites files: a Claude session's
+  `git push` or `gh pr create` waits for `format:check`, `check:comments` and
+  typecheck (`scripts/push-checks.mjs`) and is stopped if one finds problems. Once the
   diff is final, commit it, `git fetch origin`, and start `node scripts/code-review.mjs`
-  in the background: three reviews at once, 3–10 minutes (ADR-0040). While it runs,
+  in the background: two reviews at once, up to about 15 minutes (ADR-0040). While it runs,
   run `/simplify` over the whole diff and pick the e2e flows, but hold `/simplify`'s
   edits until the reviews are in. Merge the reports, fix what is real (a run that failed
-  is rerun, or the what-ran table says how many of three came back). Once the fixes are
+  is rerun, or the what-ran table says how many of two came back). Once the fixes are
   committed, one second round may run on the new diff and its real findings are fixed
   too; there is never a third round — what is still open after two goes to `Out of
   scope`. Only then run the e2e flows, once — in a Workflow too, whose step agents run only the fast
@@ -251,13 +254,13 @@ Working principles:
   - `vendor/` (the git, gh and Git Credential Manager Koloft ships) is only downloaded
     when the app is packed — run `node scripts/fetch-vendor.cjs` once, or a dev build
     quietly ships none of them and `bundled-git-gh.spec.ts` fails.
-- Shell in a worktree stays plain. The worktree isolation guard refuses any Bash
-  call it cannot prove stays inside this worktree, not only git ones. This block
-  binds you too, its last line aside; long text for `gh` goes in a `--body-file`:
+- Shell in a worktree stays plain. The isolation guard refuses any Bash call it
+  cannot prove stays inside this worktree. This block binds you too, its last
+  line aside; long text for `gh` goes in a `--body-file`:
 
   ```
   Shell rules — a guard refuses the rest; each refusal is a lost turn:
-  - One plain command per Bash call, absolute paths. No loop, $(…)/`…` or shell
+  - One plain command per Bash call, absolute paths. No loop, $(…), any ` or shell
     variable whose value lands in an argument; no env -u or HOME=.
   - Also refused: a path outside the worktree inside a chain, a cd outside then
     git, a shell name or builtin as an argument (grep -n "source" f, bash
@@ -272,7 +275,7 @@ Working principles:
   - Quote a spaced path: '/a b', never /a\ b.
   - Never git -C another checkout: diff origin/<branch>; gh pr diff <n> takes no path.
   - A path no tool printed is a guess: grep -rl 'word' src.
-  - No gh api -o; strings -o is offsets: use > file.
+  - No gh api -o or --comments with --json; strings -o is offsets: use > file.
   - Read stops at 25,000 tokens (~50 KB), not lines: wc -c, then slice.
   - {0,N} spans: only /usr/bin/grep -o -E, N ≤ 255; grep (ugrep) fails.
   - Findings go in your final message; the harness refuses report files.

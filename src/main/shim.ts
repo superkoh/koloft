@@ -12,6 +12,7 @@ import {
 } from '@plugins/passwords/main/sudoShim'
 import { ghWrapperScript, gitCredentialHelperScript } from './gitCredentialScripts'
 import { ENSURE_CLAUDE_MINIMUM_FN } from './cliMinimums'
+import { ADVISOR_OFF_ON_FABLE_FN } from './advisorOnFable'
 import { CLAUDE_AUTH_ENV_VARS } from './remote/launch'
 import { NO_USABLE_ACCOUNT, SHIM_FOUND_NO_ACCOUNT_EXIT } from '@shared/accountUsage'
 import { PLAYWRIGHT_CLI_SESSION_PREFIX, PLAYWRIGHT_OUTPUT_FOLDER } from '@shared/browserTabEnv'
@@ -560,6 +561,9 @@ if [ "$noinj" = "0" ] && [ "$KOLOFT_ACCOUNT_PICKED" != "1" ]; then
     inj+=(--dangerously-skip-permissions)
   fi
 fi
+
+${ADVISOR_OFF_ON_FABLE_FN}
+advisor_off_on_fable "$@"
 
 # CC§7 CC§9
 kfp="$KOLOFT_FIRST_PROMPT"

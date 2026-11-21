@@ -93,8 +93,6 @@ export interface RelayDeps {
   replyChannelOf(tabId: string): string | undefined
   askChannelOf(tabId: string): string | undefined
   lobbyLink(): string | undefined
-  noteDiscordId(tabId: string, id: string): Promise<void>
-  noteDiscordSaid(tabId: string, text: string): Promise<void>
   helperTitle(tabId: string): string | undefined
   inRoom(tabId: string): boolean
   withButtons(tabId: string, view: DialogView, card: Card): Card
@@ -259,7 +257,6 @@ export class DiscordRelay {
       clientId,
       text: command === undefined ? () => this.textOf(m) : async () => command,
       ...(command !== undefined && { typeAsCommand: (t, c) => dest.typeCommand(t, c) }),
-      beforeHanding: (t, text, asPeerLine) => this.noteDiscordWords(t, text, clientId, asPeerLine),
       handing: (t) => this.answersDiscord(t, answer),
       notHanded: (t) => void this.answering.delete(t),
       settle: (failed) => {
@@ -310,18 +307,6 @@ export class DiscordRelay {
     return this.quietTurns.has(tab)
   }
 
-  // CC§13 ADR-0028 AGY§16
-  private async noteDiscordWords(
-    tab: string,
-    text: string,
-    id: string,
-    asPeerLine: boolean
-  ): Promise<void> {
-    if (!text.startsWith(DISCORD_PREFIX)) return
-    if (asPeerLine) return this.d.noteDiscordId(tab, id)
-    if (this.d.backendOf(tab) !== 'agy') await this.d.noteDiscordSaid(tab, text)
-  }
-
   private async textOf(m: DiscordMessage): Promise<string> {
     const notes = await Promise.all(m.attachments.map((a) => this.fetchAttachment(m.id, a)))
     return [DISCORD_PREFIX, m.content, ...notes].filter(Boolean).join(' ')
@@ -356,7 +341,7 @@ export class DiscordRelay {
     if (channelId && reaches && turn.reply.trim()) this.say(channelId, turn.reply)
   }
 
-  private askerName(tab: string): string {
+  askerName(tab: string): string {
     const helper = this.d.helperTitle(tab)
     const butler = this.d.butlerName()
     return helper === undefined ? butler : this.d.inRoom(tab) ? helper : helperOf(helper, butler)
@@ -494,7 +479,7 @@ export class DiscordRelay {
       this.codexAsks.delete(tab)
       return undefined
     }
-    return this.d.asks.answerSession(tab, m.content, true)
+    return this.d.asks.answerSession(tab, m.content, { toItsCard: true })
   }
 
   forget(tab: string): void {

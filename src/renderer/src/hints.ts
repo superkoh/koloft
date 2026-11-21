@@ -30,6 +30,7 @@ export interface PartHintFire {
 
 export interface ActiveHint extends HintFire {
   n: number
+  of: number
   onDone: () => void
   onOff: () => void
 }

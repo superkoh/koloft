@@ -2,7 +2,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type JSX } f
 import { createPortal } from 'react-dom'
 import { popoverX } from '@shared/accountUsage'
 import type { HintId } from '@shared/types'
-import { HINT_IDS } from '@core/hints'
 import { pointsAtASidebarRow, type ActiveHint } from '../hints'
 import { fillsOf } from '../pluginUi'
 import { PART_HINT } from '../slots'
@@ -167,7 +166,7 @@ function sameBox(b: Box, rect: DOMRect, pos: { left: number; top: number }): boo
   )
 }
 
-export function Hint({ id, selector, n, onDone, onOff }: ActiveHint): JSX.Element | null {
+export function Hint({ id, selector, n, of, onDone, onOff }: ActiveHint): JSX.Element | null {
   const cardRef = useRef<HTMLDivElement>(null)
   const cardH = useRef(0)
   const boxRef = useRef<Box | null>(null)
@@ -278,7 +277,7 @@ export function Hint({ id, selector, n, onDone, onOff }: ActiveHint): JSX.Elemen
         <div className="t">{body}</div>
         {pic}
         <div className="foot">
-          <span className="n">{`tip ${n} of ${HINT_IDS.length}`}</span>
+          <span className="n">{`tip ${n} of ${of}`}</span>
           <button className="ob-link" onMouseDown={(e) => e.preventDefault()} onClick={onOff}>
             Don&apos;t show tips
           </button>

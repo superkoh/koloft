@@ -12,7 +12,7 @@ import {
   type TapRounds
 } from '../../../../src/plugins/passwords/main/pageVerb'
 import type { WebPage } from '../../../../src/core/webPage'
-import type { AgentCaller } from '../../../../src/main/agentRequests'
+import type { AgentCaller } from '../../../../src/core/command'
 import type { SessionInfo } from '../../../../src/shared/types'
 
 const caller: AgentCaller = {

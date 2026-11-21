@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { GLOBAL_SCOPE } from '@shared/conductors'
+import { GLOBAL_SCOPE } from '@shared/scope'
 import { newChannelGuild } from '@plugins/discord/shared/channels'
 import { sanitizeDiscord } from '@plugins/discord/shared/settings'
 import type { DiscordChannel } from '@plugins/discord/shared/types'

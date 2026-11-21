@@ -26,7 +26,7 @@ import {
   DEFAULT_THEME,
   AGY_STATUSLINE_JS
 } from '../../src/main/statusline'
-import { AGY_COST_ENV } from '../../src/main/agyHooks'
+import { AGY_COST_ENV } from '../../src/plugins/sessions/main/agyHooks'
 import { agyStatuslineScript } from '../../src/main/remote/agyTab'
 
 let wrapper: string

@@ -505,8 +505,10 @@ export function outsideThePaste(prompt: string): string {
 
 interface TranscriptRecord {
   type?: string
+  subtype?: string
+  isMeta?: boolean
   message?: { content?: unknown }
-  attachment?: { type?: string; content?: unknown }
+  attachment?: { type?: string; content?: unknown; hookEvent?: string }
 }
 
 function jsonlRecords(jsonl: string): TranscriptRecord[] {
@@ -536,15 +538,38 @@ export function claudeSkillListingsIn(jsonl: string): string[] {
   )
 }
 
+function replyTextsOf(record: TranscriptRecord): string[] {
+  const content = record.type === 'assistant' ? record.message?.content : undefined
+  return Array.isArray(content)
+    ? content.flatMap((part: { type?: string; text?: unknown }) =>
+        part?.type === 'text' && typeof part.text === 'string' ? [part.text] : []
+      )
+    : []
+}
+
 export function claudeRepliesIn(jsonl: string): string[] {
-  return jsonlRecords(jsonl).flatMap((record) => {
-    const content = record.type === 'assistant' ? record.message?.content : undefined
-    return Array.isArray(content)
-      ? content.flatMap((part: { type?: string; text?: unknown }) =>
-          part?.type === 'text' && typeof part.text === 'string' ? [part.text] : []
-        )
-      : []
-  })
+  return jsonlRecords(jsonl).flatMap(replyTextsOf)
+}
+
+// CC§2 CC§21
+export function claudeLastRepliesOfEndedTurnsIn(jsonl: string): string[] {
+  const ended: string[] = []
+  let lastReply = ''
+  let stopWasBlocked = false
+  for (const record of jsonlRecords(jsonl)) {
+    if (record.type === 'user' && !record.isMeta && typeof record.message?.content === 'string')
+      lastReply = ''
+    else if (
+      record.attachment?.type === 'hook_blocking_error' &&
+      record.attachment.hookEvent === 'Stop'
+    )
+      stopWasBlocked = true
+    else if (record.type === 'system' && record.subtype === 'stop_hook_summary') {
+      if (!stopWasBlocked) ended.push(lastReply)
+      stopWasBlocked = false
+    } else lastReply = replyTextsOf(record).at(-1) ?? lastReply
+  }
+  return ended
 }
 
 export function claudeToolResultsIn(jsonl: string): string[] {

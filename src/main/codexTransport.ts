@@ -9,9 +9,10 @@ import type { Duplex } from 'stream'
 import WebSocket, { WebSocketServer } from 'ws'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { CODEX_TMP_DIR, ownedByThisRun } from './leftovers'
+import { MUSE_HOOKS_ENV } from './museHooks'
 import { answerStreamOf } from './remote/ssh'
 import { sharedProcessTable, type ProcessRow } from './processTable'
-import { envMs } from './sessionRuntime'
+import { envMs } from '@plugins/sessions/main/sessionRuntime'
 
 export type CodexFrame = Record<string, unknown>
 
@@ -77,10 +78,17 @@ export function codexEnvironment(overrides?: NodeJS.ProcessEnv): NodeJS.ProcessE
     'CLAUDE_EFFORT',
     'AI_AGENT',
     'TERM_SESSION_ID',
+    'GEMINI_API_KEY',
+    MUSE_HOOKS_ENV,
     ...BROWSER_TAB_ENV
   ])
   for (const key of Object.keys(env)) {
-    if (runtime.has(key) || key.startsWith('KOLOFT_') || key.startsWith('CLAUDE_CODE_'))
+    if (
+      runtime.has(key) ||
+      key.startsWith('KOLOFT_') ||
+      key.startsWith('CLAUDE_CODE_') ||
+      key.startsWith('ANTIGRAVITY_')
+    )
       delete env[key]
   }
   return env

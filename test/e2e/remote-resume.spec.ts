@@ -14,10 +14,52 @@ import {
   seedRemoteWorkspace,
   sshCommands
 } from './helpers/remote'
-import { readCalls, resumedId, seedJsonl, waitBooted, waitForCalls, wsRows } from './helpers/p1'
+import {
+  readCalls,
+  resumedId,
+  seedJsonl,
+  startSessionIn,
+  waitBooted,
+  waitForCalls,
+  wsRows
+} from './helpers/p1'
 import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 
 test.afterEach(({ env }) => killFakeRemote(env))
+
+const NOTHING_LISTENS = 'http://127.0.0.1:1'
+
+const oauthToken = (name: string): string => `sk-ant-oat01-fixture-${name}`
+
+async function startWeekUseServer(
+  env: E2EEnv,
+  weekUseByAccount: Record<string, number>
+): Promise<http.Server> {
+  const weekUse = new Map(
+    Object.entries(weekUseByAccount).map(([name, use]) => [oauthToken(name), use])
+  )
+  const probe = http.createServer((req, res) => {
+    const token = String(req.headers['authorization'] ?? '').replace(/^Bearer /, '')
+    const use = weekUse.get(token) ?? 0
+    req.resume()
+    req.on('end', () => {
+      res.writeHead(200, {
+        'content-type': 'application/json',
+        'anthropic-ratelimit-unified-5h-utilization': '0.1',
+        'anthropic-ratelimit-unified-7d-utilization': String(use),
+        'anthropic-ratelimit-unified-5h-status': 'allowed',
+        'anthropic-ratelimit-unified-7d-status': use >= 1 ? 'rejected' : 'allowed'
+      })
+      res.end('{}')
+    })
+  })
+  await new Promise<void>((ok) => probe.listen(0, '127.0.0.1', ok))
+  env.launchEnv.KOLOFT_PROBE_BASE_URL = `http://127.0.0.1:${(probe.address() as AddressInfo).port}`
+  for (const name of Object.keys(weekUseByAccount))
+    addKeychainEntry(env, 'koloft-dev-claude-oauth', name, oauthToken(name))
+  seedSettings(env, { accounts: Object.keys(weekUseByAccount).map((n) => seededAccount(n)) })
+  return probe
+}
 
 test.describe('resuming a cold remote row from the mirror, never as a local path', () => {
   test('E-RW-09: clicking a cold remote row resumes it on the machine with no dialog', async ({
@@ -62,27 +104,7 @@ test.describe('resuming a cold remote row from the mirror, never as a local path
     env
   }) => {
     test.setTimeout(240_000)
-    const tokens = { alpha: 'sk-ant-oat01-fixture-alpha', bravo: 'sk-ant-oat01-fixture-bravo' }
-    const weekUse: Record<string, number> = { [tokens.alpha]: 0.1, [tokens.bravo]: 0.8 }
-    const probe = http.createServer((req, res) => {
-      const token = String(req.headers['authorization'] ?? '').replace(/^Bearer /, '')
-      req.resume()
-      req.on('end', () => {
-        res.writeHead(200, {
-          'content-type': 'application/json',
-          'anthropic-ratelimit-unified-5h-utilization': '0.1',
-          'anthropic-ratelimit-unified-7d-utilization': String(weekUse[token] ?? 0),
-          'anthropic-ratelimit-unified-5h-status': 'allowed',
-          'anthropic-ratelimit-unified-7d-status': 'allowed'
-        })
-        res.end('{}')
-      })
-    })
-    await new Promise<void>((ok) => probe.listen(0, '127.0.0.1', ok))
-    env.launchEnv.KOLOFT_PROBE_BASE_URL = `http://127.0.0.1:${(probe.address() as AddressInfo).port}`
-    for (const [name, token] of Object.entries(tokens))
-      addKeychainEntry(env, 'koloft-dev-claude-oauth', name, token)
-    seedSettings(env, { accounts: [seededAccount('alpha'), seededAccount('bravo')] })
+    const probe = await startWeekUseServer(env, { alpha: 0.1, bravo: 0.8 })
     installFakeRemote(env)
     seedRemoteWorkspace(env)
     const seeded = seedJsonl(env, remoteDir(env), {
@@ -106,10 +128,46 @@ test.describe('resuming a cold remote row from the mirror, never as a local path
       const calls = await waitForCalls(env, 1, 90_000)
       const last = calls[calls.length - 1]
       expect(resumedId(last)).toBe(seeded)
-      expect(last.oauthToken).toBe(tokens.bravo)
+      expect(last.oauthToken).toBe(oauthToken('bravo'))
     } finally {
       await quitAndClose(app)
       await new Promise((ok) => probe.close(ok))
+    }
+  })
+
+  test('after Koloft is reopened, the first remote Claude session started while no usage can be read runs on the machine in the account that had room when Koloft was last open, not the full one listed first', async ({
+    env
+  }) => {
+    test.setTimeout(240_000)
+    const probe = await startWeekUseServer(env, { alpha: 1, bravo: 0.1 })
+    installFakeRemote(env)
+    seedRemoteWorkspace(env)
+    const lastOpen = await launchApp(env)
+    try {
+      const page = await lastOpen.firstWindow()
+      await waitBooted(page)
+      await expect
+        .poll(
+          async () =>
+            (await page.evaluate(() => window.api.accounts.probe())).filter((a) => a.usage).length,
+          { timeout: 30_000 }
+        )
+        .toBe(2)
+    } finally {
+      await quitAndClose(lastOpen)
+      await new Promise((ok) => probe.close(ok))
+    }
+
+    env.launchEnv.KOLOFT_PROBE_BASE_URL = NOTHING_LISTENS
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const [call] = await waitForCalls(env, 1, 90_000)
+      expect(call.oauthToken).toBe(oauthToken('bravo'))
+    } finally {
+      await quitAndClose(app)
     }
   })
 

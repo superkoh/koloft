@@ -17,7 +17,8 @@ export {
   type SlashResult
 } from './main/slashCommands'
 export { RepliesOwed, type ReplyListener } from './main/repliesOwed'
-export { ANSWER_NOT_TAKEN } from './main/dialog'
+export { ANSWER_NOT_TAKEN, type KoloftAsk } from './main/dialog'
+export type { BesideResult, BesideSpec, SessionTabs, TabPlace } from './main/sessionTabs'
 export { HandOver, type HandOverDeps, type HandingMarks, type Recipient } from './main/handOver'
 export type { SendResult, StartResult, StartSpec } from './main/sendAndStart'
 export {
@@ -29,10 +30,29 @@ export {
 } from './main/placedRows'
 export { GITHUB_NOT_ASKED, type MergedHeads, type WorkLeft } from './main/sessionClose'
 export {
-  instructionsPartOf,
   savedFromTheDialog,
+  workspaceBlock,
   workspaceInstructionsPart
 } from './main/workspaceInstructions'
+export {
+  everyWorkspaceBlock,
+  ownerPartsOf,
+  savedByTheOwner as everyWorkspaceSavedByTheOwner
+} from './main/everyWorkspaceInstructions'
+export type { InstructionsBlock } from './main/instructionsVerb'
+export { InstructionAsks } from './main/instructionAsks'
+export type {
+  InstructionAsk,
+  InstructionAskEnd,
+  InstructionAskListener
+} from './main/instructionAsks'
+export {
+  CHANGE_THEM,
+  INSTRUCTIONS_CHANGED_MEANWHILE,
+  KEEP_THEM,
+  nothingChangesUntilYouAgree,
+  changeSummary
+} from './shared/instructionAsks'
 
 export const koloftPrompt = (backend: BackendId, rules?: string): string =>
   composePrompt('session', {

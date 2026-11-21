@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { diffLines } from '../../src/renderer/src/components/editDiff'
+import { diffLines } from '../../src/shared/editDiff'
 
 const kinds = (o: string, n: string): string[] => diffLines(o, n).rows.map((r) => r.kind)
 const texts = (o: string, n: string): string[] => diffLines(o, n).rows.map((r) => r.text)

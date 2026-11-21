@@ -109,7 +109,8 @@ for (const backend of ['claude', 'codex', 'muse'] as const) {
       accounts: []
     }),
     enabled: (b) => b === backend,
-    target: async () => (binary ? { binary, env: process.env } : null)
+    target: async () => (binary ? { binary, env: process.env } : null),
+    onThisAccount: async (_backend, asked) => asked
   })
 
   describe.skipIf(!binary)(

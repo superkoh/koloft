@@ -11,6 +11,7 @@ export interface TextBlock {
   byAgent?: Partial<Record<BackendId, string>>
   byModel?: Readonly<Record<string, string>>
   when?: string
+  whenOff?: string
 }
 
 export const eachAgent = (slot: string, textOf: (agent: BackendId) => string): TextBlock => ({
@@ -48,10 +49,15 @@ export type UiPlace =
   | 'palette-item'
   | 'settings-page'
 
-export interface UiEntry {
-  place: UiPlace
-  id: string
-}
+export type UiEntry =
+  | { place: Exclude<UiPlace, 'palette-item'>; id: string }
+  | {
+      place: 'palette-item'
+      id: string
+      label: string
+      words: readonly string[]
+      actsOnCurrent?: true
+    }
 
 export interface PluginAssistJob {
   id: string
@@ -84,4 +90,5 @@ export interface PluginManifest {
   hints?: readonly string[]
   assistJobs?: readonly PluginAssistJob[]
   mcpServers?: readonly PluginMcpServer[]
+  openings?: readonly string[]
 }

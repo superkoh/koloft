@@ -2,11 +2,7 @@ import fs from 'fs'
 import { app, session, type OnBeforeRequestListenerDetails, type CallbackResponse } from 'electron'
 import { BROWSER_PARTITION } from '@shared/types'
 import { MACHINE_PAGE_SCHEME, PREVIEW_FILE_SCHEME } from '@shared/browserRoute'
-import {
-  chromeClientHints,
-  isAttachmentResponse,
-  standardUserAgent
-} from '../../../main/browserSecurity'
+import { chromeClientHints, isAttachmentResponse, standardUserAgent } from './pageRules'
 import { directoryListingHtml, fileNotFoundHtml } from './dirListing'
 import type { PageDownloads } from './pageDownloads'
 import type { SitePermissions } from './sitePermissions'

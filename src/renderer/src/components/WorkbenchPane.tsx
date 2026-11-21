@@ -26,14 +26,16 @@ import { stopEndsMount } from './browserMount'
 import { BrowserModal, type BrowserDialog, type BrowserDialogAnswer } from './BrowserModal'
 import { BrowserDownloads, useBrowserDownloads } from './BrowserDownloads'
 import { BrowserPermissionBar } from './BrowserPermissionBar'
-import { SecretPageBar, webAskOf } from './SecretAsk'
+import { useHeldGuests, usePageAsk } from '../ownerAsks'
 import { hasDownloads } from './downloadList'
 import { NO_FOCUS_SIGNAL } from './TerminalView'
 import { FilesBar, FilesBody, useFilesController } from './FilesView'
 import { useGitChangeSet, useWatchlessRefresh } from './gitChangeSet'
+import { useGitEntry } from './GitEntry'
 import { relOf } from './filesModel'
 import { NO_CAPS, sameCaps, type ArtifactCaps } from './ArtifactPane'
 import { fileExists } from '../fileExists'
+import { focusOnceNoDialogIsOpen } from '../dialogOpen'
 import { editRefusal, startEditRead, useEditProbe } from './EditPane'
 import {
   allEditTabs,
@@ -50,7 +52,6 @@ import {
 import { historyKey, loadHistory, remember, saveHistory } from '../browserHistory'
 import { workspaceOfTab } from '../sessionRows'
 import { useStore } from '../store'
-import { useShallow } from 'zustand/react/shallow'
 import {
   FILES_TAB_ID,
   activateTab,
@@ -74,8 +75,8 @@ import {
 import type { WorkbenchCommandSignal } from './workbenchCommands'
 import { FileTabBar, FullWidthButton } from './WorkbenchBars'
 import { WorkbenchFind } from './WorkbenchFind'
-import { fillsOf } from '../pluginUi'
-import { WORKBENCH_PART } from '../slots'
+import { useFillsOf } from '../pluginUi'
+import { WORKBENCH_PART, type WorkbenchPartView } from '../slots'
 import { NewTabMenu, PageMoreMenu } from './WorkbenchMenus'
 import { WorkbenchTabStrip, type TabAudio } from './WorkbenchTabStrip'
 import { FileTabHost, TerminalHost } from './WorkbenchTabHosts'
@@ -103,6 +104,13 @@ const ZOOM_STEPS = [0.5, 0.67, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2]
 const WATCHLESS_REFRESH_THROTTLE_MS = 600
 
 const NO_TABS = emptyTabSet()
+
+const PART_OF_A_PLUGIN_TURNED_OFF: WorkbenchPartView = {
+  button: null,
+  layer: null,
+  menuOpen: false,
+  closeMenu: () => {}
+}
 
 const PREARMED_COMMANDS: ReadonlySet<WorkbenchCommandSignal['id']> = new Set([
   'find-files',
@@ -196,34 +204,47 @@ export const WorkbenchPane = memo(function WorkbenchPane({
 
   const files = useFilesController(ownerTab, treeRoot)
   const refreshFiles = files.refresh
-  const { git, numstat, base, rootMissing, watchDead, firstReadFailed, reread } = useGitChangeSet(
-    treeRoot,
-    visible,
-    files.baseChoice,
-    files.refreshNonce
-  )
+  const { git, numstat, base, head, rootMissing, watchDead, firstReadFailed, reread } =
+    useGitChangeSet(treeRoot, visible, files.baseChoice, files.refreshNonce)
   const openWebHere = useRef<(url: string) => void>(() => {})
   const openWeb = useCallback((url: string): void => openWebHere.current(url), [])
-  const closeNewTabMenu = useCallback((): void => setNewMenuOpen(false), [])
-  const closeDownloads = useCallback((): void => setDlOpen(false), [])
-  const parts = fillsOf(WORKBENCH_PART).map((usePart) =>
+  const [gitSteps, bumpGitSteps] = useReducer((n: number) => n + 1, 0)
+  const closePartMenusHere = useRef<() => void>(() => {})
+  const closeOtherMenus = useCallback((): void => {
+    setNewMenuOpen(false)
+    setDlOpen(false)
+    closePartMenusHere.current()
+  }, [])
+  const gitEntry = useGitEntry({
+    treeRoot,
+    head,
+    reread,
+    onStepped: bumpGitSteps,
+    closeOtherMenus
+  })
+  const pluginParts = useFillsOf(WORKBENCH_PART, (usePart, on) =>
     usePart({
-      visible,
+      visible: visible && on,
       treeRoot,
       session,
       onReturnFocus,
       reread,
       openWeb,
-      closeNewTabMenu,
-      closeDownloads
+      closeOtherMenus,
+      gitSteps,
+      push: gitEntry.push
     })
-  )
+  ).map((part) => part ?? PART_OF_A_PLUGIN_TURNED_OFF)
+  const parts = [gitEntry, ...pluginParts]
   const partMenuOpen = parts.some((p) => p.menuOpen)
   const partClosers = parts.map((p) => p.closeMenu)
   const closePartMenus = useCallback(
     (): void => partClosers.forEach((close) => close()),
     partClosers
   )
+  useLayoutEffect(() => {
+    closePartMenusHere.current = closePartMenus
+  }, [closePartMenus])
   const partButtons = parts.map((p) => p.button)
   const pinnedParts = useMemo(
     () => partButtons.map((button, i) => <Fragment key={i}>{button}</Fragment>),
@@ -724,14 +745,14 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     id ? els.current.get(id) : undefined
 
   const activeWebId = activeKind === 'web' ? (activeTab?.id ?? null) : null
-  const secretAsk = useStore((s) => webAskOf(s.secretAsks, ownerTab))
+  const pageAsk = usePageAsk(ownerTab)
   const secretBarAsk =
-    secretAsk &&
+    pageAsk &&
     activeWebId &&
-    (secretAsk.kind === 'url' || guestIdOf(activeWebId) === secretAsk.guestId)
-      ? secretAsk
+    (pageAsk.guestId === undefined || guestIdOf(activeWebId) === pageAsk.guestId)
+      ? pageAsk
       : undefined
-  const askedGuest = secretAsk && secretAsk.kind !== 'url' ? secretAsk.guestId : undefined
+  const askedGuest = pageAsk?.guestId
   const webTabOfGuest = (tabs: WorkbenchTabSet[], guestId: number): string | undefined =>
     tabs.flatMap((s) => s.tabs).find((t) => t.kind === 'web' && guestIdOf(t.id) === guestId)?.id
   useEffect(() => {
@@ -742,9 +763,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
     if (!st.workbenchOpen[ownerTab]) st.setWorkbenchOpen(ownerTab, true)
     activate(hit)
   }, [askedGuest, ownerTab])
-  const tappedGuests = useStore(
-    useShallow((s) => s.secretAsks.flatMap((a) => (a.kind === 'tap' ? [a.guestId] : [])))
-  )
+  const tappedGuests = useHeldGuests()
   const heldForTaps = useRef<string[]>([])
   useEffect(() => {
     const all = Object.values(states)
@@ -758,8 +777,15 @@ export const WorkbenchPane = memo(function WorkbenchPane({
   const secretBarGuest = visible && secretBarAsk ? activeWebId : null
   useEffect(() => {
     if (!secretBarGuest) return undefined
-    const raf = requestAnimationFrame(() => els.current.get(secretBarGuest)?.focus())
-    return () => cancelAnimationFrame(raf)
+    let giveUp = (): void => {}
+    const raf = requestAnimationFrame(() => {
+      const guest = els.current.get(secretBarGuest)
+      if (guest) giveUp = focusOnceNoDialogIsOpen(guest)
+    })
+    return () => {
+      cancelAnimationFrame(raf)
+      giveUp()
+    }
   }, [secretBarGuest, secretBarAsk?.id])
   const activeGuestId = useCallback(
     () => (activeWebId ? guestIdOf(activeWebId) : 0),
@@ -1544,7 +1570,7 @@ export const WorkbenchPane = memo(function WorkbenchPane({
         }}
       />
 
-      {secretBarAsk && <SecretPageBar ask={secretBarAsk} />}
+      {secretBarAsk?.bar}
 
       <div className="wb-body">
         {/* PLATFORM§9 */}

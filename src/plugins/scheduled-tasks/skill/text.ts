@@ -18,7 +18,7 @@ A scheduled task (cron) is a job that starts a new session by itself on a timer.
 
 A task's name may have spaces: put it in quotes, like "Nightly tests". If you forget, Koloft still finds it: the words that stand together, with no option or -- between them, are the name.
 
-Every cron command works on this session's workspace, or on the one --workspace <workspace> names (its folder name or full path). The butler has no workspace of its own, so it always gives --workspace.
+Every cron command works on this session's workspace, or on the one --workspace <workspace> names (its folder name or full path).
 
 When it runs: --every 30m, --every 2h, --daily 09:00, --weekly mon,wed,fri@09:00, --once 2026-10-25@14:00, or --after 2h
     --every runs on the clock: every 2h is 0:00, 2:00, 4:00 and so on.

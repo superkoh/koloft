@@ -4,7 +4,7 @@ import { waitingForAnswer } from '@shared/slashCommands'
 import type { CommandOutput } from '../../../main/claudeCommandOutput'
 import { sleep } from '@core/sleep'
 import { CLEAR_TO_LINE_START, TO_LINE_END } from '@shared/lineEditKeys'
-import { errorText } from '../../../main/agentRequests'
+import { errorText } from '@core/errorText'
 import { withoutBlankEdges } from './messageText'
 import { agyInputBoxDraft, codexComposerDraft, inputBoxDraft } from '../../../main/inputBox'
 

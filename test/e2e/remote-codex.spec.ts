@@ -5,11 +5,16 @@ import type { Locator, Page } from '@playwright/test'
 import { test, expect, osOutlets, pendingAttention, quitAndClose } from './helpers/app'
 import { portOffset } from '../../src/shared/worktreeName'
 import { barePath } from '../../src/shared/remoteKey'
-import { CODEX_ASKS_AND_WAITS, STATUS_LINE_CONFIG } from '../../src/main/codexLaunchConfig'
+import {
+  CODEX_ASKS_AND_WAITS,
+  NO_FILE_SIDE_PANEL,
+  STATUS_LINE_CONFIG
+} from '../../src/main/codexLaunchConfig'
 import {
   agentRow,
   centerTerm,
   chooseBackend,
+  codexAccountsWithLimits,
   gitInit,
   gitRepoWithAnIncludedEnv,
   INCLUDED_ENV,
@@ -22,6 +27,9 @@ import {
   readCalls,
   runIn,
   sendShortcut,
+  ERASED_BY_COMMAND_BACKSPACE,
+  KEPT_AFTER_COMMAND_BACKSPACE,
+  sendALineErasedByCommandBackspaceThenAnother,
   sendTwoLinesJoinedByShiftEnter,
   settingsOnDisk,
   startSessionIn,
@@ -44,9 +52,10 @@ import {
   MAC_CODEX_ACCESS_TOKEN,
   remoteDir,
   remoteKey,
-  REMOTE_WS_NAME
+  REMOTE_WS_NAME,
+  seedRemoteWorkspace
 } from './helpers/remote'
-import { E2E_CODEX_ACCOUNT, seedSettings, type E2EEnv } from './helpers/env'
+import { E2E_CODEX_ACCOUNT, seededAccount, seedSettings, type E2EEnv } from './helpers/env'
 import { codexAnswers, codexPromptsSent, fakeCodexLog, type CodexWireLine } from './helpers/codex'
 import { turnOffItsOnlyAccountRestartAndSeeWhy } from './helpers/restartNoAccount'
 
@@ -209,6 +218,52 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
     }
   })
 
+  test('after Koloft is reopened, the first remote Codex session started before any limit read has answered signs in on the machine with the account that had room when Koloft was last open, not the full one listed first', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    seedRemoteWorkspace(env)
+    const signedIn = (name: string, usedPercent: number): void => {
+      const home = path.join(env.userData, 'codex-homes', name)
+      fs.mkdirSync(home, { recursive: true })
+      fs.writeFileSync(
+        path.join(home, 'auth.json'),
+        JSON.stringify({
+          usedPercent,
+          tokens: { access_token: `${name}-access-token`, account_id: name }
+        })
+      )
+    }
+    signedIn(E2E_CODEX_ACCOUNT, 100)
+    signedIn('roomy', 10)
+    seedSettings(env, {
+      hintsOff: true,
+      accounts: [
+        ...(settingsOnDisk(env).accounts as Record<string, unknown>[]),
+        seededAccount('roomy', 'codex-home')
+      ]
+    })
+    const lastOpen = await launchWithRemote(env)
+    try {
+      await expect.poll(() => codexAccountsWithLimits(lastOpen.page), { timeout: 30_000 }).toBe(2)
+    } finally {
+      await quitAndClose(lastOpen.app)
+    }
+
+    fs.writeFileSync(path.join(env.home, 'fake-codex-account-read-fails'), '')
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await startRemoteCodex(page, env)
+      await expect
+        .poll(() => machineCodexLog(env, 'fake-codex-logins.jsonl'), { timeout: 30_000 })
+        .toEqual([
+          { type: 'chatgptAuthTokens', accessToken: 'roomy-access-token', accountId: 'roomy' }
+        ])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // CODEX§2 CODEX§16
   test('E-RC-16: ⇧⏎ in a remote Codex tab starts a new line in the prompt instead of sending it, and ⏎ then sends both lines as one prompt to the app-server on the machine', async ({
     env
@@ -222,6 +277,25 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       await expect
         .poll(() => codexPromptsSent(machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl')))
         .toContain(TWO_LINE_PROMPT)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CODEX§16 CODEX§25
+  test('E-RC-21: ⌘⌫ in a remote Codex tab reaches the TUI as Ctrl-U, so what was typed on the line before it never reaches the app-server on the machine', async ({
+    env
+  }) => {
+    installCodexOnFakeRemote(env)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startRemoteCodex(page, env)
+      await sendALineErasedByCommandBackspaceThenAnother(page, centerTerm(page))
+      const sent = (): unknown[] =>
+        codexPromptsSent(machineCodexLog<CodexWireLine>(env, 'fake-codex-wire.jsonl'))
+      await expect.poll(sent).toContain(KEPT_AFTER_COMMAND_BACKSPACE)
+      expect(JSON.stringify(sent())).not.toContain(ERASED_BY_COMMAND_BACKSPACE)
     } finally {
       await quitAndClose(app)
     }
@@ -460,6 +534,10 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       await expect.poll(() => tuiCalls(env).length, { timeout: 60_000 }).toBe(2)
       const resumed = tuiCalls(env)[1]
       expect(resumed).toMatchObject({ method: 'thread/resume', sessionId: threadId })
+      for (const { argv } of tuiCalls(env)) {
+        expect(argv[argv.indexOf(NO_FILE_SIDE_PANEL) - 1]).toBe('-c')
+        expect(argv[argv.indexOf(CODEX_ASKS_AND_WAITS) - 1]).toBe('-c')
+      }
       const tabId = machineServers(env)[1].tabId!
       expect(tabId).not.toBe(first.tabId)
       await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/st-waiting|st-idle/, {
