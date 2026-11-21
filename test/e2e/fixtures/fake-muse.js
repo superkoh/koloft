@@ -10,6 +10,7 @@ const CLEAR_THE_LINE = '\x15'
 const STATUS_ASK = `${ESC}]7501;?${ESC}\\`
 const STATUS_ON = `${ESC}]7501;?:states=`
 const MODEL = 'fake-model'
+const ASK_LATER_CHECKED_EVERY_MS = 200
 const TOKENS_PER_REPLY = { input_tokens: 2000, cache_read_tokens: 500, output_tokens: 500 }
 const argv = process.argv.slice(2)
 const colsAtStart = process.stdout.columns ?? null
@@ -499,28 +500,46 @@ function tui() {
       const turnId = turn(text)
       const options = [{ label: 'Red' }, { label: 'Blue' }]
       let picked = 0
-      return block(
-        'question',
-        {
-          approvals: [],
-          userInputs: [
-            {
-              userInputId: 'input-1',
-              questions: [
-                { id: 'color', question: 'Which colour?', options, selection: { mode: 'single' } }
-              ]
-            }
-          ]
-        },
-        (key) => {
-          if (/^[1-9]$/.test(key)) picked = Number(key) - 1
-          if (key !== '\r' && key !== ESC) return false
-          status('state=working:app=muse')
-          const answer = key === ESC ? 'nothing' : options[picked]?.label
-          later(() => say(turnId, `Picked: ${answer}`, text))
-          return true
-        }
-      )
+      const ask = () =>
+        block(
+          'question',
+          {
+            approvals: [],
+            userInputs: [
+              {
+                userInputId: 'input-1',
+                questions: [
+                  { id: 'color', question: 'Which colour?', options, selection: { mode: 'single' } }
+                ]
+              }
+            ]
+          },
+          (key) => {
+            if (/^[1-9]$/.test(key)) picked = Number(key) - 1
+            if (key !== '\r' && key !== ESC) return false
+            status('state=working:app=muse')
+            const answer = key === ESC ? 'nothing' : options[picked]?.label
+            later(() => say(turnId, `Picked: ${answer}`, text))
+            return true
+          }
+        )
+      const shownFirst = read('fake-muse-open-before-ask')
+      if (!shownFirst) return ask()
+      fs.unlinkSync(file('fake-muse-open-before-ask'))
+      const call = {
+        turn_id: turnId,
+        tool_name: 'bash',
+        tool_input: { command: `koloft open ${shownFirst}` }
+      }
+      fire('PreToolUse', call)
+      const opening = ['-c', 'koloft open "$1"', 'sh', shownFirst]
+      execFile('/bin/sh', opening, { cwd: process.cwd() }, (e, out, err) => {
+        const said = `${out}${err}`
+        process.stdout.write(said.replace(/\r?\n/g, '\r\n'))
+        fire('PostToolUse', { ...call, tool_response: said })
+        ask()
+      })
+      return
     }
     if (text === '/ask-several') {
       const turnId = turn(text)
@@ -744,6 +763,11 @@ function tui() {
     const turnId = turn(text)
     later(() => say(turnId, `echo: ${text}`, text))
   }
+  setInterval(() => {
+    if (!session || blocked || !fs.existsSync(file('fake-muse-ask-later'))) return
+    fs.rmSync(file('fake-muse-ask-later'), { force: true })
+    command('/ask')
+  }, ASK_LATER_CHECKED_EVERY_MS).unref()
   if (process.stdin.isTTY) process.stdin.setRawMode(true)
   // PLATFORM§35
   if (process.env.KOLOFT_FAKE_TMUX_RAW_MARK)

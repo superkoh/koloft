@@ -7,6 +7,7 @@ const { execFile, spawnSync } = require('child_process')
 
 const VERSION_AT_KOLOFTS_MINIMUM = '0.161.0'
 const FLAGS_FOLLOWED_BY_A_VALUE = ['--remote', '-C', '-c', '-m', '-a', '-s']
+const ASK_LATER_CHECKED_EVERY_MS = 200
 
 const argv = process.argv.slice(2)
 const colsAtStart = process.stdout.columns ?? null
@@ -23,6 +24,7 @@ const read = (name, fallback = '') => {
     return fallback
   }
 }
+const shellQuoted = (s) => `'${s.replace(/'/g, `'\\''`)}'`
 const append = (name, value) => fs.appendFileSync(file(name), JSON.stringify(value) + '\n')
 const load = (id) => {
   if (!/^[a-zA-Z0-9-]+$/.test(id)) return undefined
@@ -385,10 +387,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
         if (writeAtMs) setTimeout(write, writeAtMs)
         else write()
       }
-      const ran = /^\/(koloft|sh) (.+)$/s.exec(text)
-      if (ran) {
-        const [, tool, rest] = ran
-        const command = tool === 'koloft' ? `koloft ${rest.trim()}` : rest.trim()
+      const runTool = (tool, command, then) => {
         const call = {
           session_id: thread.id,
           cwd: thread.cwd,
@@ -414,8 +413,14 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
             }
           })
           runHook('PostToolUse', call)
-          complete(thread, turn)
+          then()
         })
+      }
+      const ran = /^\/(koloft|sh) (.+)$/s.exec(text)
+      if (ran) {
+        const [, tool, rest] = ran
+        const command = tool === 'koloft' ? `koloft ${rest.trim()}` : rest.trim()
+        runTool(tool, command, () => complete(thread, turn))
         return
       }
       if (text.includes('approve')) {
@@ -433,33 +438,40 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
           }
         })
       } else if (text.includes('ask me')) {
-        pendingApproval = { id: 'question-' + turn.id, thread, turn }
-        status(thread, { type: 'active', activeFlags: ['waitingOnUserInput'] })
-        // CODEX§20
-        emit({
-          id: pendingApproval.id,
-          method: 'item/tool/requestUserInput',
-          params: {
-            threadId: thread.id,
-            turnId: turn.id,
-            itemId: 'call-1',
-            questions: [
-              {
-                id: 'colour',
-                header: 'Colour',
-                question: 'Which colour do you prefer?',
-                isOther: true,
-                isSecret: false,
-                options: [
-                  { label: 'Red', description: 'Choose red.' },
-                  { label: 'Green', description: 'Choose green.' }
-                ]
-              }
-            ],
-            isBlocking: false,
-            autoResolutionMs: null
-          }
-        })
+        const askNow = () => {
+          pendingApproval = { id: 'question-' + turn.id, thread, turn }
+          status(thread, { type: 'active', activeFlags: ['waitingOnUserInput'] })
+          // CODEX§20
+          emit({
+            id: pendingApproval.id,
+            method: 'item/tool/requestUserInput',
+            params: {
+              threadId: thread.id,
+              turnId: turn.id,
+              itemId: 'call-1',
+              questions: [
+                {
+                  id: 'colour',
+                  header: 'Colour',
+                  question: 'Which colour do you prefer?',
+                  isOther: true,
+                  isSecret: false,
+                  options: [
+                    { label: 'Red', description: 'Choose red.' },
+                    { label: 'Green', description: 'Choose green.' }
+                  ]
+                }
+              ],
+              isBlocking: false,
+              autoResolutionMs: null
+            }
+          })
+        }
+        const shownFirst = read('fake-codex-open-before-ask')
+        if (shownFirst) {
+          fs.unlinkSync(file('fake-codex-open-before-ask'))
+          runTool('koloft', `koloft open ${shellQuoted(shownFirst)}`, askNow)
+        } else askNow()
       } else if (text.includes('spawn child')) {
         // CODEX§4
         const childId = crypto.randomUUID()
@@ -909,6 +921,11 @@ async function startTui() {
     })
   const prompt = (text) =>
     send('turn/start', { threadId: thread.id, input: [{ type: 'text', text }] })
+  setInterval(() => {
+    if (leaving || working || !thread || !flag('fake-codex-ask-later')) return
+    fs.rmSync(file('fake-codex-ask-later'), { force: true })
+    prompt('ask me').catch(() => {})
+  }, ASK_LATER_CHECKED_EVERY_MS).unref()
   const open = async (method, params) => {
     const response = await send(method, params)
     thread = response.thread
