@@ -314,7 +314,7 @@ export function checkCardBody(input: InboxCardInput, warn: string[]): InboxCardB
       : null,
     actions,
     links: links.map((l) => ({ ...l, label: cut(l.label, INBOX_LIMIT.label, warn, 'link label') })),
-    dismissButton: input.dismissButton || undefined
+    dismissButton: input.dismissButton === true || undefined
   }
 }
 

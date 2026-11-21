@@ -150,7 +150,13 @@ export class OwnerAsleep {
         this.d.now() - sleptAt,
         this.d.changedSince(sleptAt),
         this.answered,
-        this.morningLines.flatMap((lines) => lines(sleptAt))
+        this.morningLines.flatMap((lines) => {
+          try {
+            return lines(sleptAt)
+          } catch {
+            return []
+          }
+        })
       )
       this.keepAnswered([])
       if (text) this.d.report(text)

@@ -136,6 +136,26 @@ describe('firedHints — approval', () => {
     expect(firedHints(prev, next)).toEqual([{ id: 'approval', selector: rowSelector('t2') }])
   })
 
+  it("stays quiet when the amber row is a plugin's own session, whether its row is still its tab or already its session", () => {
+    const sessions = [{ tabId: 't1' }, { tabId: 't2', sessionId: 's2' }, { tabId: 't3' }]
+    const prev = snap({ activeTabId: 't1', sessions })
+    const next = snap({
+      activeTabId: 't1',
+      sessions: [
+        { tabId: 't1' },
+        { tabId: 't2', sessionId: 's2', status: 'approval' },
+        { tabId: 't3', status: 'approval' }
+      ],
+      rows: [
+        ws('/a', [
+          { ...running('s2'), pluginOwn: true },
+          { ...launch('t3'), pluginOwn: true }
+        ])
+      ]
+    })
+    expect(firedHints(prev, next)).toEqual([])
+  })
+
   it('stays quiet when the amber row IS the one on screen', () => {
     const prev = snap({ activeTabId: 't2', sessions: [{ tabId: 't2' }] })
     const next = snap({ activeTabId: 't2', sessions: [{ tabId: 't2', status: 'approval' }] })

@@ -163,26 +163,30 @@ describe('koloft requests from a session', () => {
     expect(calls).toEqual([])
   })
 
-  it('a session a plugin gave a list of koloft commands runs only those, matched by their first words, from its Workbench shell too', async () => {
+  it('a session a plugin gave a list of koloft commands runs only those, matched by their first words, from its Workbench shell too, and gets the guide for one of them', async () => {
     const tabId = tabOf(process.pid, 1)
     const shell = tabOf(process.pid, 2)
     tabs.set(shell, { util: true, ownerTabId: tabId })
     const limited = requests({
-      commandsOf: (id) => (id === tabId ? ['echo read', 'help'] : undefined)
+      commandsOf: (id) => (id === tabId ? ['echo read'] : undefined)
     })
     await limited.answer(dir, 'req-a.json', { tabId, argv: ['echo', 'read', '3'], cwd: '/w' })
     await limited.answer(dir, 'req-b.json', { tabId: shell, argv: ['echo', 'read'], cwd: '/w' })
     await limited.answer(dir, 'req-c.json', { tabId, argv: ['echo', 'send', 'x'], cwd: '/w' })
     await limited.answer(dir, 'req-d.json', { tabId, argv: ['echo', 'readall'], cwd: '/w' })
-    await limited.answer(dir, 'req-e.json', { tabId, argv: ['--help'], cwd: '/w' })
+    await limited.answer(dir, 'req-e.json', { tabId, argv: ['echo', 'read', '--help'], cwd: '/w' })
+    await limited.answer(dir, 'req-f.json', { tabId, argv: ['echo', '--help'], cwd: '/w' })
+    await limited.answer(dir, 'req-g.json', { tabId, argv: ['--help'], cwd: '/w' })
     expect(calls.map((c) => c.args)).toEqual([['read', '3'], ['read']])
     const refusal = {
       exit: 1,
-      text: 'koloft: this session may run only these koloft commands: koloft echo read, koloft help.'
+      text: 'koloft: this session may run only these koloft commands: koloft echo read.'
     }
     expect(reply('c')).toEqual(refusal)
     expect(reply('d')).toEqual(refusal)
     expect(reply('e')).toEqual({ exit: 0, text: expect.any(String) })
+    expect(reply('f')).toEqual(refusal)
+    expect(reply('g')).toEqual(refusal)
   })
 
   it('refuses every command while agent tools are off', async () => {

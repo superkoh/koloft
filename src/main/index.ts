@@ -771,6 +771,7 @@ const sessionBackends = new SessionBackends({
     startedSessions.bound(tabId, key)
     shownUnder.bound(tabId, key)
     pluginSessions.bound(tabId, key)
+    if (pluginSessions.own(tabId)) ownerAsleep.awakeTabsChanged()
     ptyMgr.agentBound(tabId)
     ptyMgr.wakeReady(tabId)
   },
@@ -6394,6 +6395,7 @@ function registerIpc(): void {
     startedSessions.moved(oldTabId, newTabId)
     shownUnder.moved(oldTabId, newTabId)
     pluginSessions.moved(oldTabId, newTabId)
+    if (pluginSessions.own(newTabId)) ownerAsleep.awakeTabsChanged()
     if (answerableForAPlugin.delete(oldTabId)) {
       answerableForAPlugin.add(newTabId)
       syncAnswerable()
@@ -6657,12 +6659,20 @@ function registerIpc(): void {
   )
   ipcMain.handle(CH.workspace.pluginOwnRow, async (_e, ref: string) => {
     if (typeof ref !== 'string' || !pluginSessions.own(ref)) return null
-    for (const { path: workspace } of workspaceMgr?.pinnedPaths() ?? []) {
-      const rows = await sessionBackends.historyRows(workspace, () => {}).catch(() => [])
-      const row = rows.find((r) => r.id === ref)
-      if (row) return { row, workspace }
-    }
-    return null
+    const workspaces = workspaceMgr?.pinnedPaths() ?? []
+    return new Promise((resolve) => {
+      let left = workspaces.length
+      if (!left) return resolve(null)
+      for (const { path: workspace } of workspaces)
+        void sessionBackends
+          .historyRows(workspace, () => {})
+          .catch(() => [])
+          .then((rows) => {
+            const row = rows.find((r) => r.id === ref)
+            if (row) resolve({ row, workspace })
+            else if (--left === 0) resolve(null)
+          })
+    })
   })
 
   const usageCache = new UsageCache({

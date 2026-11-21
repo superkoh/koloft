@@ -1021,7 +1021,11 @@ export class WorkspaceManager {
           path: ws.path,
           missing,
           isGit,
-          hasHistory: hasHistory(visible, owned, wsRunningIds),
+          hasHistory: hasHistory(
+            visible.filter((r) => !this.deps.ownedByAPlugin?.(r.id)),
+            owned,
+            wsRunningIds
+          ),
           ...(ws.path === claimed?.path && {
             claim: { by: claimed.by, shownAs: claimed.shownAs }
           }),
