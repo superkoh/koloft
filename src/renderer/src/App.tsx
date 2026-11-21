@@ -21,7 +21,6 @@ import {
   IconAddProject,
   IconChevronRight,
   IconKeepAwake,
-  IconOwnerAsleep,
   IconNotifications,
   IconOpenedPage,
   IconSettings,
@@ -111,8 +110,16 @@ import {
 import { openSessionRow, visitAndReveal, visitNextWaiting, visitTab } from './sessionClick'
 import { adoptionIsSettled, adoptionSettled, markAdoptionSettled, preAdoptExits } from './adoption'
 import { CloseSessionDialog } from './components/CloseSessionDialog'
-import { sudoAskOf, SudoDialog } from './components/SecretAsk'
-import { OpenCentrePage, PartsAt, useShowsGlobalNote } from './pluginUi'
+import { useOverTerminal, useWatchOwnerAsks } from './ownerAsks'
+import { instructionAskOf, InstructionsAskDialog } from './components/InstructionsChange'
+import { fillsOf, fillsOfOnOrOff, OpenCentrePage, PartsAt, useShowsGlobalNote } from './pluginUi'
+import {
+  PALETTE_HAND_OFF,
+  PALETTE_ROUTE,
+  PALETTE_RUN,
+  STARTED_BEFORE_EXIT,
+  WINDOW_FEED
+} from './slots'
 import { UnsavedDialog } from './components/UnsavedDialog'
 import { ResumeDialog } from './components/ResumeDialog'
 import { basename } from '@shared/preview'
@@ -123,12 +130,10 @@ import { TerminalView } from './components/TerminalView'
 import { repairAllWebgl, scheduleWebglRepair } from './webglRepair'
 import { WorkspaceSidebar } from './components/WorkspaceSidebar'
 import { NotesIsland } from './components/NotesIsland'
-import { setUpDiscordWithButler } from '@plugins/discord/renderer/setUpWithButler'
 import { someAccountCanRunAssist } from './assistInputs'
 import { pickerRows, pullable, skipPicker, type PickerMode } from './workspacePicker'
 import { RestoreDialog } from './components/RestoreDialog'
 import { PastSessions } from './components/PastSessions'
-import { CronJobsDialog } from './components/CronJobsDialog'
 import { SessionDefaultsDialog } from './components/SessionDefaultsDialog'
 import { RemoteWorkspaceDialog } from './components/RemoteWorkspaceDialog'
 import { hostOf, isRemoteKey } from '@shared/remoteKey'
@@ -156,10 +161,10 @@ import { pendingOptions, projectOptions, projectParentKey } from './aiStart'
 import type { PaletteAction } from './palette'
 import {
   PALETTE_FEATURES,
-  type PaletteActionKey,
+  type CorePaletteAction,
   type PaletteFeature
 } from '@shared/paletteFeatures'
-import { GLOBAL_SCOPE } from '@shared/conductors'
+import { GLOBAL_SCOPE } from '@shared/scope'
 
 const RECENT_MAX = 3
 const CENTER_TERMINAL_MAX_COLS = 140
@@ -298,7 +303,8 @@ export default function App(): JSX.Element {
   const keepAwake = useStore((s) => s.settings.keepAwake)
   const asleep = useStore((s) => s.settings.ownerAsleepSince !== null)
   const heldAwake = keepAwake || asleep
-  const secretAsks = useStore((s) => s.secretAsks)
+  const overTerminalOf = useOverTerminal()
+  const instructionAsks = useStore((s) => s.instructionAsks)
   const centrePage = useStore((s) => s.centrePage)
   const setWorkbenchWidth = useStore((s) => s.setWorkbenchWidth)
   const setTabWorkbenchWidth = useStore((s) => s.setTabWorkbenchWidth)
@@ -326,7 +332,6 @@ export default function App(): JSX.Element {
   } | null>(null)
   const [newProject, setNewProject] = useState<{ id: number; seed: ProjectSeed } | null>(null)
   const [restoreWs, setRestoreWs] = useState<string | null>(null)
-  const [cronWs, setCronWs] = useState<{ path: string; jobId?: string } | null>(null)
   const [defaultsWs, setDefaultsWs] = useState<string | null>(null)
   const [addMenu, setAddMenu] = useState(false)
   const [remoteDialog, setRemoteDialog] = useState(false)
@@ -429,10 +434,6 @@ export default function App(): JSX.Element {
   const newWorktreeSessionIn = useCallback(
     (path: string) => requestNew('worktree', path),
     [requestNew]
-  )
-  const openScheduledJobs = useCallback(
-    (path: string, jobId?: string) => setCronWs({ path, jobId }),
-    []
   )
 
   const startNow = useCallback(
@@ -790,14 +791,14 @@ export default function App(): JSX.Element {
   }, [])
 
   useEffect(() => {
-    return window.api.browser.onCdpOp((op) => {
+    return window.api.browserControl.onCdpOp((op) => {
       setPanelMounted(true)
       setCdpOps((q) => [...q, op])
     })
   }, [])
 
   useEffect(() => {
-    return window.api.browser.onCdpAttached((a) =>
+    return window.api.browserControl.onCdpAttached((a) =>
       useStore.getState().setCdpAttached(a.sessionId, a.targetIds)
     )
   }, [])
@@ -959,22 +960,10 @@ export default function App(): JSX.Element {
         ...(t.sessionId ? { sessionId: t.sessionId, resuming: true } : {})
       })
     })
-    let pushed = false
-    const offState = window.api.cron.onState((s) => {
-      pushed = true
-      useStore.getState().setCron(s)
-    })
-    void adoptionSettled.then(() =>
-      window.api.cron
-        .list()
-        .then((s) => {
-          if (!pushed) useStore.getState().setCron(s)
-        })
-        .catch(() => {})
-    )
+    const offFeeds = fillsOf(WINDOW_FEED).map((feed) => feed(adoptionSettled))
     return () => {
       offSpawned()
-      offState()
+      for (const off of offFeeds) off()
     }
   }, [])
 
@@ -1018,15 +1007,20 @@ export default function App(): JSX.Element {
     return off
   }, [])
 
+  useWatchOwnerAsks()
+
   useEffect(() => {
-    const set = useStore.getState().setSecretAsks
-    const off = window.api.secret.onAsks(set)
-    void window.api.secret.list().then(set)
+    const set = useStore.getState().setInstructionAsks
+    const off = window.api.instructionAsks.onAsks(set)
+    void window.api.instructionAsks.list().then(set)
     return off
   }, [])
 
   useEffect(() => {
     const off = window.api.terminal.onExit((e) => {
+      const runStarted = fillsOf(STARTED_BEFORE_EXIT)
+        .map((started) => started(e.id))
+        .some(Boolean)
       if (useStore.getState().tabs.some((t) => t.id === e.id && t.asleep)) return
       if (!adoptionIsSettled()) preAdoptExits.add(e.id)
       if (useStore.getState().terminalExited(e.id)) return
@@ -1035,7 +1029,7 @@ export default function App(): JSX.Element {
       const found = useStore.getState().tabs.find((t) => t.id === e.id)
       const tab = e.unexpected ? tabAsItsAgent(found) : found
       if (tab?.sessionId) releaseResume(tab.sessionId)
-      if (unexpectedExitWanted(tab, e)) {
+      if (unexpectedExitWanted(tab, e, runStarted)) {
         const notice = unexpectedExitNotice(e, tab.kind, tabEverBound(tab.id))
         useStore.getState().showToast(notice)
         if (useStore.getState().keepEndedTab(e.id, endedRowNote(e))) {
@@ -1188,13 +1182,14 @@ export default function App(): JSX.Element {
       })
       return
     }
-    if (route?.kind === 'discord') {
-      void setUpDiscordWithButler(prompt).then((error) => {
+    const pluginRoute = route && fillsOfOnOrOff(PALETTE_ROUTE).find((r) => r.kind === route.kind)
+    if (pluginRoute) {
+      void pluginRoute.run(prompt).then((error) => {
         if (error) showToast(error)
       })
       return
     }
-    const toButler = (title: string, about: string | null): void => {
+    const handOff = (title: string, about: string | null): void => {
       const at = activeTabWs ?? undefined
       const request = {
         words: prompt,
@@ -1204,7 +1199,8 @@ export default function App(): JSX.Element {
         about: about ?? undefined,
         at
       }
-      void window.api.conductors.fromPalette(request).then((r) => {
+      const [toPlugin] = fillsOf(PALETTE_HAND_OFF)
+      void toPlugin(request).then((r) => {
         if (r.ok) return visitTab(r.tabId)
         showToast(r.error)
         requestNew(
@@ -1226,11 +1222,11 @@ export default function App(): JSX.Element {
         .find((w) => w.workspace.path === route.path)
         ?.rows.find((r) => r.id === route.id)
       if (row) openSessionRow(row, route.path)
-      else toButler(route.title, null)
+      else handOff(route.title, null)
       return
     }
     if (route?.kind === 'assist') {
-      toButler(route.title, route.path)
+      handOff(route.title, route.path)
       return
     }
     if (!route && !someAccountCanRunAssist(useStore.getState())) {
@@ -1241,7 +1237,7 @@ export default function App(): JSX.Element {
       route?.kind === 'workspace' &&
       workspaceRows.find((w) => w.workspace.path === route.path && !w.workspace.missing)
     if (route?.kind !== 'workspace' || !ws) {
-      toButler(route?.title ?? '', null)
+      handOff(route?.title ?? '', null)
       return
     }
     const pending: PendingStart = {
@@ -1267,7 +1263,7 @@ export default function App(): JSX.Element {
     const hasHistory = workspaceRows.some(
       (w) => w.workspace.path === currentWs && w.workspace.hasHistory
     )
-    const run: Record<PaletteActionKey, () => void> = {
+    const run: Record<CorePaletteAction, () => void> = {
       'new-session': () => globalNew('main'),
       'new-worktree-session': () => globalNew('worktree'),
       'add-workspace': () => void addWorkspace(),
@@ -1276,20 +1272,26 @@ export default function App(): JSX.Element {
       'toggle-workbench': toggleWorkbench,
       'toggle-sidebar': toggleSidebar,
       'restore-session': () => setRestoreWs(currentWs),
-      'scheduled-jobs': () => currentWs && setCronWs({ path: currentWs }),
       'open-settings': () => setSettingsOpen(true),
       'check-update': () => useStore.getState().openUpdateCheck()
     }
     const disabled: Partial<Record<PaletteFeature['key'], boolean>> = {
-      'restore-session': !hasHistory,
-      'scheduled-jobs': !currentWs
+      'restore-session': !hasHistory
     }
-    return PALETTE_FEATURES.map(({ pane, actsOnCurrent: _, ...f }) => ({
-      ...f,
-      kind: 'action',
-      disabled: disabled[f.key],
-      run: pane ? () => useStore.getState().openSettingsPane(pane) : run[f.key as PaletteActionKey]
-    }))
+    const fromPlugins = fillsOf(PALETTE_RUN)
+    return PALETTE_FEATURES.map(({ pane, actsOnCurrent: _, ...f }) => {
+      const plugin = fromPlugins.find((a) => a.key === f.key)
+      return {
+        ...f,
+        kind: 'action',
+        disabled: plugin ? plugin.disabled(currentWs) : disabled[f.key],
+        run: pane
+          ? () => useStore.getState().openSettingsPane(pane)
+          : plugin
+            ? () => plugin.run(currentWs)
+            : run[f.key as CorePaletteAction]
+      }
+    })
   }
 
   const activeTab = tabs.find((t) => t.id === activeTabId)
@@ -1551,7 +1553,7 @@ export default function App(): JSX.Element {
           className={'toast' + (toastReveal ? ' link' : '')}
           onClick={() => {
             if (!toastReveal) return
-            window.api.fs.reveal(toastReveal)
+            window.api.os.reveal(toastReveal)
             dismissToast()
           }}
         >
@@ -1624,7 +1626,6 @@ export default function App(): JSX.Element {
             onNewWorktreeSession={newWorktreeSessionIn}
             onRestoreSession={setRestoreWs}
             onSessionDefaults={setDefaultsWs}
-            onScheduledJobs={openScheduledJobs}
           />
           {updateOffer && (
             <button
@@ -1686,19 +1687,7 @@ export default function App(): JSX.Element {
           >
             <IconKeepAwake size={20} />
           </button>
-          <button
-            className={'tb-ico' + (asleep ? ' on' : '')}
-            onClick={() => updateSettings({ ownerAsleepSince: asleep ? null : Date.now() })}
-            title={
-              asleep
-                ? "Asleep — sessions keep going on their own. Click when you're back"
-                : 'Going to sleep — sessions keep going without you'
-            }
-            aria-label="Owner asleep"
-            aria-pressed={asleep}
-          >
-            <IconOwnerAsleep size={20} />
-          </button>
+          <PartsAt place="sidebar-foot" />
           <button
             className="tb-ico"
             onClick={() => setSettingsOpen(true)}
@@ -1737,7 +1726,9 @@ export default function App(): JSX.Element {
               )}
               <div className="terminals">
                 {tabs.flatMap((t) => {
-                  const sudo = sudoAskOf(secretAsks, t.id)
+                  const overTerminal = overTerminalOf(t.id)
+                  const instructionAsk = instructionAskOf(instructionAsks, t.id)
+                  const asked = !!overTerminal || !!instructionAsk
                   return [
                     t.ghost && (
                       <div
@@ -1783,8 +1774,8 @@ export default function App(): JSX.Element {
                             ? () => window.api.sessions.noteActivity(t.id)
                             : undefined
                         }
-                        autoFocus={!sudo}
-                        focusSignal={sudo ? undefined : tuiFocus}
+                        autoFocus={!asked}
+                        focusSignal={asked ? undefined : tuiFocus}
                         onRepainted={() => {
                           if (t.id === activeTabId) setPaintedGen(switchGen)
                         }}
@@ -1796,7 +1787,14 @@ export default function App(): JSX.Element {
                       {t.resuming && (t.kind === 'claude' || t.kind === 'agy') && (
                         <ResumingMask title={t.title} />
                       )}
-                      {sudo && <SudoDialog key={sudo.id} ask={sudo} shown={t.id === shown.id} />}
+                      {overTerminal?.(t.id === shown.id)}
+                      {!overTerminal && instructionAsk && (
+                        <InstructionsAskDialog
+                          key={instructionAsk.id}
+                          ask={instructionAsk}
+                          shown={t.id === shown.id}
+                        />
+                      )}
                     </div>
                   ]
                 })}
@@ -1878,6 +1876,7 @@ export default function App(): JSX.Element {
                     </div>
                   ))}
               </div>
+              <PartsAt place="below-terminal" />
             </div>
           </div>
           {panelShown && !panelFull && (
@@ -2045,14 +2044,6 @@ export default function App(): JSX.Element {
             <RemoteWorkspaceDialog
               onAdd={(key) => void addRemoteWorkspace(key)}
               onClose={() => setRemoteDialog(false)}
-            />
-          )}
-          {cronWs && (
-            <CronJobsDialog
-              key={cronWs.path}
-              wsPath={cronWs.path}
-              initialJobId={cronWs.jobId}
-              onClose={() => setCronWs(null)}
             />
           )}
           {defaultsWs && (

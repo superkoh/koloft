@@ -3,15 +3,34 @@ import path from 'path'
 import type { BackendId, ConductorOpenResult, CronEffort } from '@shared/types'
 import { BACKEND_LABEL, conversationAtFirstPrompt, identityOf } from '@shared/sessionBackend'
 import { butlerNames, peerNamesOf } from '../shared/names'
-import type { ButlerSession, ButlerSetting } from '../shared/types'
+import {
+  isKnownBy,
+  type ButlerSession,
+  type ButlerSetting,
+  type OldConversationNews,
+  type PluginsOn
+} from '../shared/types'
+import { instructionsOf } from '../shared/instructions'
 import { errorText } from '@core/errorText'
-import { butlerRole } from '../prompts/role'
+import { FROM_KOLOFT } from '@plugins/sessions/api'
+import type { PromptState } from '@core/prompt'
+import {
+  butlerLinesGained,
+  butlerRole,
+  factGivesLinesWhile,
+  linesCameNews,
+  ownerInstructionsPart
+} from '../prompts/role'
 import { conductorFolder } from './folder'
 
-export interface ButlerLaunch {
+interface ButlerPrompt {
+  role: string
+  ownerText?: string
+}
+
+export interface ButlerLaunch extends ButlerPrompt {
   backend: BackendId
   cwd: string
-  role: string
   title: string
   firstPrompt?: string
   model?: string
@@ -23,6 +42,7 @@ export type AssistBackendPick = {
   because?: string
   model?: string
   effort?: CronEffort
+  modelNote?: string
 }
 export type AssistBackendChoice = AssistBackendPick | { error: string }
 
@@ -44,10 +64,52 @@ export interface ButlerDeps {
   rowsChanged(): void
   toast(text: string): void
   notice(text: string): Promise<boolean>
-  todoNotice: string
+  news: readonly OldConversationNews[]
+  noticeWhileOpen(text: string): Promise<boolean>
+  pluginsOn(): PluginsOn
+  pluginsNews(changed: PluginsOn, lines: readonly string[]): string
   showsPromptBeforeBind(tabId: string): boolean
   bindDeadlineMs: number
 }
+
+function knownListsOnDisk(
+  s: ButlerSession,
+  stillOnDisk: (key: string) => boolean
+): Partial<ButlerSession> {
+  return Object.fromEntries(
+    Object.entries(s).flatMap(([knownBy, keys]) =>
+      isKnownBy(knownBy) && Array.isArray(keys) ? [[knownBy, keys.filter(stillOnDisk)]] : []
+    )
+  )
+}
+
+function knowing(
+  s: ButlerSession,
+  news: readonly OldConversationNews[],
+  key: string
+): Partial<ButlerSession> {
+  return Object.fromEntries(news.map(({ knownBy }) => [knownBy, [...(s[knownBy] ?? []), key]]))
+}
+
+function forgetting(
+  s: ButlerSession,
+  news: readonly OldConversationNews[],
+  key: string
+): Partial<ButlerSession> {
+  return Object.fromEntries(
+    news.map(({ knownBy }) => [knownBy, (s[knownBy] ?? []).filter((k) => k !== key)])
+  )
+}
+
+interface FactsChange {
+  gained: readonly string[]
+  dropped: readonly string[]
+}
+
+const withFacts = (facts: readonly string[], { gained, dropped }: FactsChange): string[] => [
+  ...facts.filter((fact) => !dropped.includes(fact)),
+  ...gained.filter((fact) => !facts.includes(fact))
+]
 
 function refusal(error: string): ConductorOpenResult {
   return { ok: false, error }
@@ -60,15 +122,20 @@ export class Butler {
   private opening: Promise<ConductorOpenResult> | undefined
   private deadlines = new Map<string, ReturnType<typeof setTimeout>>()
   private waitingForWords: string | undefined
+  private launchedWith: PromptState | undefined
 
   constructor(private d: ButlerDeps) {
     this.session = d.loadSession()
   }
 
   private changeSession(change: (s: ButlerSession) => ButlerSession): void {
+    this.remember(change)
+    this.d.rowsChanged()
+  }
+
+  private remember(change: (s: ButlerSession) => ButlerSession): void {
     this.session = change(this.session)
     this.d.saveSession(this.session)
-    this.d.rowsChanged()
   }
 
   isButler(ref: string): boolean {
@@ -102,17 +169,23 @@ export class Butler {
     return tabId === this.resident
   }
 
-  // ADR-0029
-  identityOfLaunch(cwd: string, resumeKey?: string): { role: string } | undefined {
+  // ADR-0029 CC§23
+  identityOfLaunch(cwd: string, resumeKey?: string): ButlerPrompt | undefined {
     const launched = this.d.realpath(path.resolve(cwd))
     if (this.d.realpath(conductorFolder(this.d.userData)) !== launched || !resumeKey)
       return undefined
     if (!this.recorded(resumeKey)) return undefined
-    return { role: this.role() }
+    return this.prompt()
   }
 
-  private role(): string {
-    return butlerRole(this.d.butler().name, this.d.roleFacts())
+  private prompt(): ButlerPrompt {
+    const butler = this.d.butler()
+    const instructions = instructionsOf(butler)
+    // CC§13 CC§23
+    return {
+      role: butlerRole(butler.name, this.d.roleFacts()),
+      ...(instructions && { ownerText: ownerInstructionsPart(instructions) })
+    }
   }
 
   forgetGone(stillOnDisk: (key: string) => boolean): void {
@@ -123,7 +196,8 @@ export class Butler {
     this.changeSession(() => ({
       sessionIds,
       ...(keepLast && s.lastSessionKey ? { lastSessionKey: s.lastSessionKey } : {}),
-      ...(s.knowsTodo ? { knowsTodo: s.knowsTodo.filter(stillOnDisk) } : {}),
+      ...(s.pluginsSeen && stillOnDisk(s.pluginsSeen.key) ? { pluginsSeen: s.pluginsSeen } : {}),
+      ...knownListsOnDisk(s, stillOnDisk),
       ...(keepLast && s.carried ? { carried: s.carried } : {})
     }))
   }
@@ -149,7 +223,7 @@ export class Butler {
   private launchFor(backend: BackendId): ButlerLaunch {
     const cwd = conductorFolder(this.d.userData)
     fs.mkdirSync(cwd, { recursive: true })
-    return { backend, cwd, role: this.role(), title: this.d.butler().name }
+    return { backend, cwd, ...this.prompt(), title: this.d.butler().name }
   }
 
   private async openNow(firstPrompt?: string): Promise<ConductorOpenResult> {
@@ -176,23 +250,23 @@ export class Butler {
       sameAgent && ((!!carried?.model && !launch.model) || (!!carried?.effort && !launch.effort))
     const key = keepsWhatItNoLongerNames ? undefined : last
     const resumable = key !== undefined && sameAgent
-    if (keepsWhatItNoLongerNames)
-      this.d.toast(
-        `${launch.title} goes back to ${BACKEND_LABEL[launch.backend]}’s own model or thinking, so it starts a new conversation.`
-      )
-    else if (last !== undefined && !resumable)
-      this.d.toast(
-        `${launch.title} now runs on ${BACKEND_LABEL[launch.backend]}, so it starts a new conversation.`
-      )
-    else if (choice.because) this.d.toast(choice.because)
+    const says = keepsWhatItNoLongerNames
+      ? `${launch.title} goes back to ${BACKEND_LABEL[launch.backend]}’s own model or thinking, so it starts a new conversation.`
+      : last !== undefined && !resumable
+        ? `${launch.title} now runs on ${BACKEND_LABEL[launch.backend]}, so it starts a new conversation.`
+        : choice.because
+    const modelNote =
+      choice.modelNote && (says ? choice.modelNote : `${launch.title}: ${choice.modelNote}`)
+    if (says || modelNote) this.d.toast([says, modelNote].filter(Boolean).join(' '))
     let tabId: string | null
-    let resumedOld = false
     let started = false
+    const launchedWith = this.knownNow()
     try {
       if (resumable) {
         const live = this.d.liveTabFor(launch.backend, key)
         if (live) {
           this.resident = live
+          this.launchedWith = undefined
           return { ok: true, tabId: live }
         }
         if (await this.d.runningElsewhere(launch.backend, key))
@@ -200,7 +274,6 @@ export class Butler {
       }
       const hasTranscript =
         resumable && (await this.d.transcriptExists(launch.backend, key).catch(() => false))
-      resumedOld = hasTranscript && !this.session.knowsTodo?.includes(key)
       // AGY§8
       if (hasTranscript) tabId = await this.d.resume({ ...launch, key })
       else {
@@ -220,8 +293,9 @@ export class Butler {
         }
       })
     }))
-    if (resumedOld && key !== undefined) this.tellOfTodo(key)
     this.resident = tabId
+    this.launchedWith = launchedWith
+    if (!started && key !== undefined) this.tellWhatChanged(key)
     // AGY§8
     if (started && !firstPrompt && conversationAtFirstPrompt(launch.backend))
       this.waitingForWords = tabId
@@ -236,12 +310,85 @@ export class Butler {
     return true
   }
 
+  private knownNow(): PromptState {
+    return { on: this.d.pluginsOn(), facts: this.d.roleFacts() }
+  }
+
   // CC§23 CODEX§17 MUSE§9 AGY§8
-  private tellOfTodo(key: string): void {
-    void this.d.notice(this.d.todoNotice).then((told) => {
-      if (told && !this.session.knowsTodo?.includes(key))
-        this.changeSession((s) => ({ ...s, knowsTodo: [...(s.knowsTodo ?? []), key] }))
+  private tellWhatChanged(key: string): void {
+    const seen = this.session.pluginsSeen?.key === key ? this.session.pluginsSeen : undefined
+    const now = this.knownNow()
+    const was: PromptState = seen ? { on: seen.on, facts: seen.facts ?? now.facts } : now
+    const changed = Object.fromEntries(
+      Object.entries(now.on).filter(([id, isOn]) => (was.on[id] ?? isOn) !== isOn)
+    )
+    const factsGained = now.facts.filter((fact) => !was.facts.includes(fact))
+    const factsDropped = was.facts.filter(
+      (fact) => !now.facts.includes(fact) && !factGivesLinesWhile(fact, now.on)
+    )
+    const untoldNews = this.d.news.filter(
+      ({ knownBy, on }) => on() && !this.session[knownBy]?.includes(key)
+    )
+    const newsTexts = untoldNews.map(({ text }) => text())
+    const lines = butlerLinesGained(was, now).filter(
+      (line) => !newsTexts.some((text) => text.includes(line.trim()))
+    )
+    const parts = [
+      ...newsTexts,
+      ...(Object.keys(changed).length > 0
+        ? [this.d.pluginsNews(changed, lines)]
+        : lines.length > 0
+          ? [linesCameNews(lines)]
+          : [])
+    ]
+    const factsChange = { gained: factsGained, dropped: factsDropped }
+    if (seen?.facts && parts.length === 0 && factsGained.length === 0 && factsDropped.length === 0)
+      return
+    this.remember((s) => ({
+      ...s,
+      pluginsSeen: { key, on: now.on, facts: withFacts(was.facts, factsChange) },
+      ...knowing(s, untoldNews, key)
+    }))
+    if (parts.length === 0) return
+    void this.d
+      .noticeWhileOpen(`${FROM_KOLOFT}${parts.join(' ')}`)
+      .catch(() => false)
+      .then((told) => {
+        if (!told) this.untold(key, changed, factsChange, untoldNews)
+      })
+  }
+
+  private untold(
+    key: string,
+    changed: PluginsOn,
+    factsChange: FactsChange,
+    news: readonly OldConversationNews[]
+  ): void {
+    this.remember((s) => {
+      const seen = s.pluginsSeen
+      const asBefore = Object.fromEntries(Object.entries(changed).map(([id, on]) => [id, !on]))
+      return {
+        ...s,
+        ...(seen?.key === key && {
+          pluginsSeen: {
+            key,
+            on: { ...seen.on, ...asBefore },
+            facts: withFacts(seen.facts ?? [], {
+              gained: factsChange.dropped,
+              dropped: factsChange.gained
+            })
+          }
+        }),
+        ...forgetting(s, news, key)
+      }
     })
+  }
+
+  whatItKnowsMayHaveChanged(): void {
+    const tab = this.liveTab()
+    const key = this.session.lastSessionKey
+    if (!tab || this.deadlines.has(tab) || tab === this.waitingForWords || key === undefined) return
+    this.tellWhatChanged(key)
   }
 
   private armDeadline(tabId: string, title: string): void {
@@ -279,18 +426,29 @@ export class Butler {
     if (tabId !== this.resident) {
       if (this.session.lastSessionKey !== key || this.liveTab()) return
       this.resident = tabId
+      this.launchedWith = undefined
     }
     this.forgetTab(tabId)
-    this.changeSession((s) =>
-      s.sessionIds.includes(key)
-        ? { ...s, lastSessionKey: key }
+    this.changeSession((s) => {
+      const pluginsSeen =
+        s.pluginsSeen?.key === key
+          ? s.pluginsSeen
+          : { key, ...(this.launchedWith ?? this.knownNow()) }
+      return s.sessionIds.includes(key)
+        ? { ...s, lastSessionKey: key, pluginsSeen }
         : {
             ...s,
             sessionIds: [...s.sessionIds, key],
             lastSessionKey: key,
-            knowsTodo: [...(s.knowsTodo ?? []), key]
+            pluginsSeen,
+            ...knowing(
+              s,
+              this.d.news.filter(({ on }) => on()),
+              key
+            )
           }
-    )
+    })
+    this.whatItKnowsMayHaveChanged()
   }
 
   onPtyExit(tabId: string): void {

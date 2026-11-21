@@ -7,7 +7,7 @@ import type {
   CronState,
   SkillSuggestion
 } from '@shared/types'
-import { CHANNELS } from '../shared/channels'
+import { CHANNELS, type RunStartedNews } from '../shared/ipc'
 
 export interface CronBridge {
   cron: {
@@ -20,6 +20,7 @@ export interface CronBridge {
     // CC§9
     trusted(workspacePath: string, backend: BackendId): Promise<boolean>
     onState(cb: (s: CronState) => void): () => void
+    onRunStarted(cb: (news: RunStartedNews) => void): () => void
   }
 }
 
@@ -32,6 +33,7 @@ export const bridge = (ipc: PreloadIpc): CronBridge => ({
     runNow: (jobId) => ipc.invoke(CHANNELS.runNow, jobId),
     skills: (workspacePath, backend) => ipc.invoke(CHANNELS.skills, workspacePath, backend),
     trusted: (workspacePath, backend) => ipc.invoke(CHANNELS.trusted, workspacePath, backend),
-    onState: (cb) => ipc.listen(CHANNELS.state, cb)
+    onState: (cb) => ipc.listen(CHANNELS.state, cb),
+    onRunStarted: (cb) => ipc.listen(CHANNELS.runStarted, cb)
   }
 })

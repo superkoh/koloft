@@ -7,12 +7,31 @@ import { PLUGIN_FORMAT_VERSION } from '@core/plugin'
 import { fill, placeUi, slot, type PluginUi } from '@core/ui'
 import { PLUGINS } from '@plugins/list'
 import { PLUGIN_UIS } from '@plugins/uis'
-import { ROW_EXTRAS, type RowExtrasFill } from '../../src/renderer/src/slots'
+import { PLUGIN_PALETTE_ACTIONS } from '@shared/paletteFeatures'
+import { PLUGIN_ROUTE_KINDS } from '@shared/sessionRoute'
+import {
+  PALETTE_HAND_OFF,
+  PALETTE_ROUTE,
+  PALETTE_RUN,
+  ROW_EXTRAS,
+  ROW_SET_UP,
+  PLUGIN_SET_UP,
+  PART_HINT,
+  WORKSPACE_REMOVAL_LOSS,
+  type PaletteRun,
+  type PluginSetUp,
+  type RowExtrasFill,
+  type RowSetUpFill
+} from '../../src/renderer/src/slots'
+
+const listedAt = (place: UiEntry['place']): string[] =>
+  PLUGINS.flatMap((p) => (p.ui ?? []).filter((e) => e.place === place).map((e) => e.id))
 
 const manifest = (id: string, ui: UiEntry[] = []): PluginManifest => ({
   formatVersion: PLUGIN_FORMAT_VERSION,
   id,
   name: id,
+  does: id,
   mandatory: true,
   needs: [],
   ui
@@ -55,10 +74,10 @@ describe('UI parts a plugin registers', () => {
       uis
     )
     expect(placed.parts.dialog).toEqual([
-      { id: 'one', Part },
-      { id: 'three', Part }
+      { id: 'one', plugin: 'a', Part },
+      { id: 'three', plugin: 'b', Part }
     ])
-    expect(placed.parts['centre-page']).toEqual([{ id: 'two', Part: Other }])
+    expect(placed.parts['centre-page']).toEqual([{ id: 'two', plugin: 'b', Part: Other }])
   })
 
   it('gives a slot what each plugin fills it with, in the order of the list of plugins, and nothing another slot got', () => {
@@ -70,12 +89,11 @@ describe('UI parts a plugin registers', () => {
     })
     expect(placed.fillsOf(words)).toEqual(['from a', 'from b'])
     expect(placed.fillsOf(counts)).toEqual([2])
+    expect(placed.fillsOf(words, (plugin) => plugin !== 'b')).toEqual(['from a'])
   })
 
   it('every row a plugin adds menu entries and a line to is a sidebar row some plugin lists', () => {
-    const rows = PLUGINS.flatMap((p) =>
-      (p.ui ?? []).filter((e) => e.place === 'sidebar-row').map((e) => e.id)
-    )
+    const rows = listedAt('sidebar-row')
     const filled = Object.values(PLUGIN_UIS).flatMap((ui) =>
       (ui.fills ?? [])
         .filter((f) => f.slot === ROW_EXTRAS)
@@ -83,6 +101,26 @@ describe('UI parts a plugin registers', () => {
     )
     expect(filled.length).toBeGreaterThan(0)
     for (const row of filled) expect(rows).toContain(row)
+    const setUp = Object.values(PLUGIN_UIS).flatMap((ui) =>
+      (ui.fills ?? [])
+        .filter((f) => f.slot === ROW_SET_UP)
+        .map((f) => (f.value as RowSetUpFill).row)
+    )
+    for (const row of setUp) expect(rows).toContain(row)
+  })
+
+  it('a "Set up" action in Settings ▸ Plugins is given only by an optional plugin, for itself, and only once', () => {
+    const given = Object.entries(PLUGIN_UIS).flatMap(([owner, ui]) =>
+      (ui.fills ?? [])
+        .filter((f) => f.slot === PLUGIN_SET_UP)
+        .map((f) => ({ owner, plugin: (f.value as PluginSetUp).plugin }))
+    )
+    expect(given.length).toBeGreaterThan(0)
+    for (const { owner, plugin } of given) {
+      expect(plugin).toBe(owner)
+      expect(PLUGINS.find((p) => p.id === plugin)?.mandatory).toBe(false)
+    }
+    expect(new Set(given.map((g) => g.plugin)).size).toBe(given.length)
   })
 
   it('the list of UIs holds the renderer/ui.tsx of every plugin folder that has one, keyed by its id, and each holds the parts its manifest lists', () => {
@@ -93,7 +131,42 @@ describe('UI parts a plugin registers', () => {
     expect(() => placeUi(PLUGINS, PLUGIN_UIS)).not.toThrow()
     for (const p of PLUGINS.filter((q) => q.ui?.length))
       expect(Object.keys(PLUGIN_UIS[p.id]?.parts ?? {}).sort(), p.id).toEqual(
-        p.ui!.map((e) => e.id).sort()
+        p
+          .ui!.filter((e) => e.place !== 'palette-item')
+          .map((e) => e.id)
+          .sort()
       )
+  })
+
+  it('every ⌘P item a plugin runs is listed by its manifest, is one the palette leaves to plugins, and has exactly one runner', () => {
+    const run = Object.values(PLUGIN_UIS).flatMap((ui) =>
+      (ui.fills ?? []).filter((f) => f.slot === PALETTE_RUN).map((f) => (f.value as PaletteRun).key)
+    )
+    expect(run.sort()).toEqual([...PLUGIN_PALETTE_ACTIONS].sort())
+    expect(listedAt('palette-item').sort()).toEqual([...PLUGIN_PALETTE_ACTIONS].sort())
+  })
+
+  it('exactly one plugin says what removing a workspace deletes, since the remove confirm names only one such loss', () => {
+    expect(placeUi(PLUGINS, PLUGIN_UIS).fillsOf(WORKSPACE_REMOVAL_LOSS)).toHaveLength(1)
+  })
+
+  it('exactly one plugin takes the ⌘P words core cannot route itself, and each route kind core leaves to plugins has exactly one taker', () => {
+    const placed = placeUi(PLUGINS, PLUGIN_UIS)
+    expect(placed.fillsOf(PALETTE_HAND_OFF)).toHaveLength(1)
+    expect(
+      placed
+        .fillsOf(PALETTE_ROUTE)
+        .map((r) => r.kind)
+        .sort()
+    ).toEqual([...PLUGIN_ROUTE_KINDS].sort())
+  })
+
+  it('each first-run tip a plugin fills is one its manifest lists in hints, and each listed tip has exactly one fill with words', () => {
+    for (const plugin of PLUGINS) {
+      const filled = (PLUGIN_UIS[plugin.id]?.fills ?? [])
+        .filter((f) => f.slot === PART_HINT)
+        .map((f) => (f.value as { id: string }).id)
+      expect(filled.sort()).toEqual([...(plugin.hints ?? [])].sort())
+    }
   })
 })

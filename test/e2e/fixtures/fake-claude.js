@@ -234,6 +234,17 @@ function reportedBackgroundMs() {
   return SECOND_STOP_AFTER_MS_OUTLASTING_A_MISSED_WATCH_POLL
 }
 
+const BUSY_TICK_MS = 250
+const BUSY_TICKS_BY_DEFAULT = 120
+
+function busyTicks() {
+  try {
+    const v = fs.readFileSync(path.join(home, 'fake-claude-busy-ms'), 'utf8').trim()
+    if (v) return Math.ceil(Number(v) / BUSY_TICK_MS) || BUSY_TICKS_BY_DEFAULT
+  } catch {}
+  return BUSY_TICKS_BY_DEFAULT
+}
+
 function nextFreshLaunchTitleFromFile() {
   if (argVal('--resume') || launchedInTheButlersFolder) return null
   const f = path.join(home, 'fake-claude-next-title')
@@ -1467,9 +1478,11 @@ function handleLine(line) {
     return
   }
   // CC§8
-  if (text === '/bg-monitor') {
+  if (text === '/bg-monitor' || text === '/bg-monitor 2.1.329') {
     fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
     const monToolUseId = 'toolu_monitor_e2e'
+    const reportedAsMonitor = text.endsWith('2.1.329')
+    const monTaskId = reportedAsMonitor ? 'bmon_e2e' : 'mon_e2e'
     const meta = usageMeta()
     append([
       { type: 'user', message: { role: 'user', content: text }, cwd },
@@ -1497,14 +1510,14 @@ function handleLine(line) {
       {
         type: 'user',
         timestamp: new Date().toISOString(),
-        toolUseResult: { taskId: 'mon_e2e', timeoutMs: 0, persistent: true },
+        toolUseResult: { taskId: monTaskId, timeoutMs: 0, persistent: true },
         message: {
           role: 'user',
           content: [
             {
               type: 'tool_result',
               tool_use_id: monToolUseId,
-              content: 'Monitor started (task mon_e2e).'
+              content: `Monitor started (task ${monTaskId}).`
             }
           ]
         },
@@ -1514,7 +1527,12 @@ function handleLine(line) {
     fireHook('stop', {
       hook_event_name: 'Stop',
       background_tasks: [
-        { id: 'mon_e2e', type: 'shell', status: 'running', description: 'tail -f bot.log' }
+        {
+          id: monTaskId,
+          type: reportedAsMonitor ? 'monitor' : 'shell',
+          status: 'running',
+          description: 'tail -f bot.log'
+        }
       ]
     })
     process.stdout.write('[fake-claude] bg-monitor parked\r\n> ')
@@ -1805,10 +1823,11 @@ function handleLine(line) {
     fireHook('prompt', { hook_event_name: 'UserPromptSubmit' })
     append([{ type: 'user', message: { role: 'user', content: text }, cwd }])
     let ticks = 0
+    const lastTick = busyTicks()
     const busy = setInterval(() => {
       ticks += 1
       process.stdout.write(`[fake-claude] busy ${ticks}\r\n`)
-      if (ticks >= 120) {
+      if (ticks >= lastTick) {
         clearInterval(busy)
         const meta = usageMeta()
         append([
@@ -1830,7 +1849,7 @@ function handleLine(line) {
         fireHook('stop', { hook_event_name: 'Stop' })
         process.stdout.write('[fake-claude] busy finished\r\n> ')
       }
-    }, 250)
+    }, BUSY_TICK_MS)
     return
   }
   // CC§13

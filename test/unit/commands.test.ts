@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { answered } from '../../src/core/command'
 import { Commands } from '../../src/core/commands'
+import { knowPluginStates } from '../../src/core/switches'
 import { PLUGINS } from '../../src/plugins/list'
 import { testManifest } from './helpers/testCommands'
 
@@ -16,5 +17,28 @@ describe('koloft commands', () => {
     expect(() => commands.register({ two: run })).toThrow()
     commands.register({ one: run })
     expect(() => commands.register({ one: run })).toThrow()
+  })
+
+  it('a command of a plugin that is off is refused with one sentence naming why, and runs again once it is on', async () => {
+    const hub = { ...testManifest('hub', ['hub']), name: 'Hub', mandatory: false }
+    const list = { ...testManifest('list', ['list']), name: 'List', mandatory: false }
+    const commands = new Commands([hub, list])
+    commands.register({ hub: () => answered('hub ran'), list: () => answered('list ran') })
+    const caller = {} as Parameters<Commands['dispatch']>[2]
+    try {
+      knowPluginStates({ list: { on: false } })
+      expect(await commands.dispatch('list', [], caller)).toMatchObject({
+        exit: 1,
+        text: 'koloft: List is turned off in Settings ▸ Plugins.'
+      })
+      knowPluginStates({ hub: { on: false }, list: { on: false, offBecause: hub } })
+      expect(await commands.dispatch('list', [], caller)).toMatchObject({
+        text: 'koloft: List is off because Hub is turned off in Settings ▸ Plugins.'
+      })
+      knowPluginStates({})
+      expect(await commands.dispatch('list', [], caller)).toMatchObject({ text: 'list ran' })
+    } finally {
+      knowPluginStates({})
+    }
   })
 })

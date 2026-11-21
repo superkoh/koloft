@@ -1,3 +1,12 @@
-export { butlerRole, butlerHelperRole } from './prompts/role'
-export { conductorFolder } from './main/folder'
-export { OwnerAsleep, THIS_MAC } from './main/ownerAsleep'
+export {
+  butlerRole,
+  butlerHelperRole,
+  GUIDE_MOVED_NEWS,
+  helperRoleOf,
+  pluginsChangedNews
+} from './prompts/role'
+export { butlersFolderClaim, conductorFolder } from './main/folder'
+export { OwnerAsleep, OWNER_ASLEEP_PUSH, THIS_MAC } from './main/ownerAsleep'
+export { AwayDigest, DIGEST_GATHERS_MS, quoteOf } from './main/awayDigest'
+export type { OldConversationNews } from './shared/types'
+export { butlersBlock } from './main/instructionsBlock'

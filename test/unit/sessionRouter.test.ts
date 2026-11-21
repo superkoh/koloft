@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkspaceRows, WorktreeInfo } from '@shared/types'
 import { routeSession } from '../../src/main/sessionRouter'
-import type { AssistJob } from '../../src/main/assist'
+import type { AssistJob } from '../../src/core/assistModels'
 
 describe('routeSession', () => {
   it('never offers Assist a worktree whose folder is gone, so ⌘P cannot start a session in a missing folder', async () => {

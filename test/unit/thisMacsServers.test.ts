@@ -1,7 +1,7 @@
 import dns from 'dns'
 import os from 'os'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { namesThisMacsServer, reachesThisMacsServer } from '../../src/main/thisMacsServers'
+import { namesThisMacsServer, reachesThisMacsServer } from '../../src/core/thisMacsServers'
 
 afterEach(() => vi.restoreAllMocks())
 

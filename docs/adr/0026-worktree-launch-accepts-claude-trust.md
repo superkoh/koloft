@@ -1,4 +1,4 @@
-# 0026 Only a worktree session the person starts or opens, a scheduled run's worktree under a folder they trusted, a session an agent starts in a sidebar workspace, an Antigravity resume on another account in a folder an account trusts, or a Claude Code launch handed Koloft's own picture folder, writes an agent's folder trust
+# 0026 Only a worktree session the person starts or opens, a scheduled run's worktree under a folder they trusted, a session an agent starts in a sidebar workspace, a session a plugin starts beside another in a sidebar workspace, an Antigravity resume on another account in a folder an account trusts, or a Claude Code launch handed Koloft's own picture folder, writes an agent's folder trust
 
 **Constraint**: `claude -w <name>` in a repo Claude has never been trusted in does not
 ask the trust question — it prints an error and exits at once (`CC§9`). In a folder it
@@ -22,6 +22,11 @@ for good.
   nobody is at the terminal to answer. A worktree it starts is trusted by the first
   rule's code; a folder the sidebar does not hold (the caller's own fallback folder,
   home) gets nothing.
+- a plugin starts a session beside another one (`startBeside`), in the folder that
+  session runs in, when that folder is a sidebar workspace or lies inside one, such as a
+  worktree Koloft made in it: the owner's yes to the workspace covers it, a session
+  already works there, and the one started beside it may be another agent, which has
+  never been asked about that folder and has nobody at its terminal.
 - the person opens an Antigravity session in a worktree Koloft made — a recovered one, a
   resumed one — whose workspace agy already trusts: that earlier yes covers it, but agy
   does not carry a folder's trust down to its subfolders and has no flag that trusts for
@@ -40,7 +45,7 @@ for good.
 - a Claude Code session starts with a first prompt whose picture sits in Koloft's own
   picture folder (`palette-pictures` in Koloft's data folder on the Mac,
   a folder ending in `/.koloft/element-picks` on a remote machine, where Koloft copies
-  pictures): Koloft hands claude that folder with `--add-dir`, and on 2.1.327 claude stops on its own "Adding a new directory"
+  pictures): Koloft hands claude that folder with `--add-dir`, and since 2.1.326 claude stops on its own "Adding a new directory"
   question for a folder it does not trust, sends no first prompt and tells Koloft
   nothing (`CC§18`). The folder holds only pictures Koloft saved, so trusting it gives
   nothing away. A `Picture:` line naming any other folder (typed words, an agent's

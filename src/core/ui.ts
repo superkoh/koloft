@@ -4,6 +4,8 @@ import type { PluginManifest, UiPlace } from './plugin'
 
 export type UiParts = Readonly<Record<string, ComponentType>>
 
+const ACTION_PLACE: UiPlace = 'palette-item'
+
 export interface Slot<T> {
   name: string
   filledWith?: T
@@ -25,12 +27,17 @@ export interface PluginUi {
 
 export interface PlacedPart {
   id: string
+  plugin: string
   Part: ComponentType
 }
 
+export type PluginOn = (plugin: string) => boolean
+
+const EVERY_PLUGIN: PluginOn = () => true
+
 export interface PlacedUi {
   parts: Readonly<Partial<Record<UiPlace, readonly PlacedPart[]>>>
-  fillsOf: <T>(into: Slot<T>) => readonly T[]
+  fillsOf: <T>(into: Slot<T>, on?: PluginOn) => readonly T[]
 }
 
 export function placeUi(
@@ -41,7 +48,7 @@ export function placeUi(
     if (!plugins.some((p) => p.id === id))
       throw new Error(`UI parts are given for "${id}", which is not on the list of plugins`)
   const placed: Partial<Record<UiPlace, PlacedPart[]>> = {}
-  const fills: SlotFill[] = []
+  const fills: (SlotFill & { plugin: string })[] = []
   const taken = new Set<string>()
   for (const plugin of plugins) {
     const parts = uis[plugin.id]?.parts ?? {}
@@ -50,16 +57,21 @@ export function placeUi(
       if (!declared.some((entry) => entry.id === id))
         throw new Error(`plugin ${plugin.id} registers "${id}", which its manifest does not list`)
     for (const { place, id } of declared) {
-      const Part = parts[id]
-      if (!Part) throw new Error(`plugin ${plugin.id} lists "${id}" but registers no part for it`)
       if (taken.has(id)) throw new Error(`"${id}" is listed twice`)
       taken.add(id)
-      ;(placed[place] ??= []).push({ id, Part })
+      if (place === ACTION_PLACE) continue
+      const Part = parts[id]
+      if (!Part) throw new Error(`plugin ${plugin.id} lists "${id}" but registers no part for it`)
+      ;(placed[place] ??= []).push({ id, plugin: plugin.id, Part })
     }
-    fills.push(...(uis[plugin.id]?.fills ?? []))
+    fills.push(...(uis[plugin.id]?.fills ?? []).map((f) => ({ ...f, plugin: plugin.id })))
   }
+  const bySlot = new Map<Slot<unknown>, { plugin: string; value: unknown }[]>()
+  for (const { slot: into, plugin, value } of fills)
+    bySlot.set(into, [...(bySlot.get(into) ?? []), { plugin, value }])
   return {
     parts: placed,
-    fillsOf: <T>(into: Slot<T>) => fills.filter((f) => f.slot === into).map((f) => f.value as T)
+    fillsOf: <T>(into: Slot<T>, on: PluginOn = EVERY_PLUGIN) =>
+      (bySlot.get(into) ?? []).filter((f) => on(f.plugin)).map((f) => f.value as T)
   }
 }

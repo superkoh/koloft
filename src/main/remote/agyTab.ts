@@ -1,9 +1,9 @@
 import { shq } from '@shared/shellQuote'
-import { record } from '../codexObservation'
+import { record } from '@plugins/sessions/main/codexObservation'
 import { AGY_APP_DIR, TOP_LEVEL_ROWS } from '../agyStore'
 import { SHARED_FILES, SHARED_FOLDERS } from '../agyAccounts'
-import { AGY_LOG_ENV, AGY_LOG_POINTER_SUFFIX, AGY_START_ENV } from '../agyHooks'
-import { NOTICE_ENV, remoteNoticeFile } from '../hooks'
+import { AGY_LOG_ENV, AGY_LOG_POINTER_SUFFIX, AGY_START_ENV } from '@plugins/sessions/main/agyHooks'
+import { NOTICE_ENV, remoteNoticeFile } from '@plugins/sessions/main/hooks'
 import { CSRF_HEADER, SERVICE } from '../agyApi'
 import { remoteAnswerCommand, remoteShCommand } from './install'
 import {
@@ -182,11 +182,44 @@ export function parseAgyConfig(stdout: string): RemoteAgyConfig {
 }
 
 // AGY§8
+const AGY_TITLE_READ_JS = `import fs from 'fs'
+import { DatabaseSync } from 'node:sqlite'
+const [db, ann, id] = process.argv.slice(1)
+let title = ''
+if (fs.existsSync(db)) {
+  let sqlite
+  try {
+    sqlite = new DatabaseSync(db, { readOnly: true })
+    const row = sqlite.prepare('select title from conversation_summaries where conversation_id = ?').get(id)
+    if (typeof row?.title === 'string') title = row.title
+  } catch {} finally {
+    sqlite?.close()
+  }
+}
+if (title) {
+  process.stdout.write(JSON.stringify({ title }))
+} else {
+  let pbtxt = ''
+  try { pbtxt = fs.readFileSync(ann, 'utf8') } catch {}
+  process.stdout.write(JSON.stringify(pbtxt ? { pbtxt } : {}))
+}
+`
+
+// AGY§8
+export function agyTitleCmd(conversationId: string): string {
+  return remoteAnswerCommand(
+    `[ -x "${REMOTE_NODE}" ] || exit 0
+exec "${REMOTE_NODE}" --no-warnings --experimental-sqlite --input-type=module -e ${shq(AGY_TITLE_READ_JS)} "${REMOTE_GEMINI}/${AGY_APP_DIR}/conversation_summaries.db" "${REMOTE_GEMINI}/${AGY_APP_DIR}/annotations/$1.pbtxt" "$1"`,
+    [conversationId]
+  )
+}
+
+// AGY§8
 export function listAgyCmd(machineName: string): string {
   const script = `${REMOTE_HOME}/$1/${AGY_LIST_FILE}`
   return remoteAnswerCommand(
     `[ -x "${REMOTE_NODE}" ] && [ -f "${script}" ] || { echo "Koloft's files are not on this machine yet." >&2; exit 1; }
-exec "${REMOTE_NODE}" --no-warnings --experimental-sqlite "${script}" "${REMOTE_GEMINI}/${AGY_APP_DIR}/conversation_summaries.db" "$2" "${REMOTE_GEMINI}/${AGY_APP_DIR}/conversations"`,
+exec "${REMOTE_NODE}" --no-warnings --experimental-sqlite "${script}" "${REMOTE_GEMINI}/${AGY_APP_DIR}" "$2"`,
     [machineName, TOP_LEVEL_ROWS]
   )
 }

@@ -1,9 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { SessionInfo } from '@shared/types'
-import { agentGuide } from '@shared/agentGuide'
-import { errorText } from '@core/errorText'
-import { answered, refused, splitAtDashes, type AgentReply, type AgentVerb } from '@core/command'
+import { refused, splitAtDashes, type AgentReply } from '@core/command'
 import type { Commands } from '@core/commands'
 import { watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import { anotherLiveInstanceOwns } from './ptyManager'
@@ -14,25 +12,6 @@ export interface AgentRequest {
   cwd: string
   pid?: number
 }
-
-export {
-  answered,
-  EXIT_USAGE,
-  fail,
-  refused,
-  splitAtDashes,
-  type AgentCaller,
-  type AgentReply,
-  type AgentVerb,
-  type Parsed
-} from '@core/command'
-
-export { errorText }
-
-export const helpVerb =
-  (rulesOfTab: (tabId: string) => Promise<string | undefined>): AgentVerb =>
-  async (_args, caller) =>
-    answered(agentGuide(await rulesOfTab(caller.tabId)))
 
 export const AGENT_TOOLS_OFF =
   "koloft: Koloft's agent tools are not on for this session: the owner turned them off in Koloft's Settings."
@@ -116,8 +95,12 @@ export class AgentRequests {
     return this.settle(dir, name, parseAgentRequest(raw), tabId)
   }
 
-  replyFor(tabId: string | undefined, raw: unknown): Promise<AgentReply> {
-    return this.replyTo(parseAgentRequest(raw), tabId)
+  replyFor(
+    tabId: string | undefined,
+    raw: unknown,
+    stillWaiting?: () => boolean
+  ): Promise<AgentReply> {
+    return this.replyTo(parseAgentRequest(raw), tabId, stillWaiting)
   }
 
   private async settle(
@@ -133,20 +116,31 @@ export class AgentRequests {
     fs.rm(full, { force: true }, () =>
       setTimeout(() => this.claimed.delete(full), CLAIM_OUTLIVES_DROP_REREADS_MS)
     )
-    const reply = await this.replyTo(req, tabId)
-    if (req?.pid !== undefined && !this.deps.alive(req.pid)) return
+    const pid = req?.pid
+    const stillWaiting = pid === undefined ? undefined : () => this.deps.alive(pid)
+    const reply = await this.replyTo(req, tabId, stillWaiting)
+    if (stillWaiting && !stillWaiting()) return
     try {
       writeWholeBeforeVisible(path.join(dir, `res-${id}.json`), replyJson(reply))
     } catch {}
   }
 
-  private async replyTo(req: AgentRequest | null, tabId: string | undefined): Promise<AgentReply> {
+  private async replyTo(
+    req: AgentRequest | null,
+    tabId: string | undefined,
+    stillWaiting?: () => boolean
+  ): Promise<AgentReply> {
     if (!req) return refused(UNREADABLE)
     if (!tabId) return refused(UNKNOWN_TAB)
     if (!this.deps.enabled(tabId)) return refused(AGENT_TOOLS_OFF)
     const session = this.deps.session(tabId)
     if (!session) return refused(UNKNOWN_TAB)
     const [verb = 'help', ...args] = asksForHelp(req.argv) ? ['help'] : req.argv
-    return this.deps.commands.dispatch(verb, args, { tabId, cwd: req.cwd, session })
+    return this.deps.commands.dispatch(verb, args, {
+      tabId,
+      cwd: req.cwd,
+      session,
+      ...(stillWaiting && { stillWaiting })
+    })
   }
 }

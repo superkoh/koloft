@@ -5,37 +5,41 @@ import { butlerName, butlerTitle, renamedButler } from '../shared/names'
 import { attentionReason } from '@shared/types'
 import { assistBackendsFor, assistRowBackend } from '@shared/assistPicks'
 import { butlerStart } from '@shared/butlerStart'
-import { settingsPaneName } from '@shared/paletteFeatures'
+import { settingsPaneName } from '@shared/settingsPanes'
 import { useInstalledBackends } from '@renderer/useInstalledBackends'
 import { useStore } from '@renderer/store'
 import { rowStateClass, shownRows, statusWithSecrets } from '@renderer/sessionRows'
+import { useAskedTabs } from '@renderer/ownerAsks'
 import { assistInputs } from '@renderer/assistInputs'
 import { SessionBackendIcon } from '@renderer/components/SessionBackendIcon'
 import { updateSettings } from '@renderer/components/settings/useSettingsUpdate'
 import { menuPosFor, useDismissOnOutside } from '@renderer/components/menuPlace'
 import { SessionRowsOfContext } from '@renderer/components/sidebarRows'
-import { fillsOf } from '@renderer/pluginUi'
-import { ROW_EXTRAS } from '@renderer/slots'
+import { useFillsOf } from '@renderer/pluginUi'
+import { ROW_EXTRAS, type RowExtras } from '@renderer/slots'
 import { BUTLER_ROW_PART } from '../plugin'
-import { butlerSetUp, butlerTabOf } from './butlerTabs'
+import { butlerSetUp, butlerTabOf, isButlersWorkspace } from './butlerTabs'
 import { openButler, renameButler, useButler } from './state'
 
 function useButlerFolderRows(): JSX.Element[] | null {
   const rowsOf = useContext(SessionRowsOfContext)
   const workspaceRows = useStore((s) => s.workspaceRows)
-  const butlerWorkspace = useStore((s) => s.butlerWorkspace)
+  const claimedWorkspaces = useStore((s) => s.claimedWorkspaces)
   const tabs = useStore((s) => s.tabs)
   const shown = useMemo(
-    () => shownRows({ workspaceRows, butlerWorkspace, tabs }).butlerWorkspace,
-    [workspaceRows, butlerWorkspace, tabs]
+    () =>
+      shownRows({ workspaceRows, claimedWorkspaces, tabs }).claimedWorkspaces.find(
+        isButlersWorkspace
+      ),
+    [workspaceRows, claimedWorkspaces, tabs]
   )
-  return shown && rowsOf(shown)
+  return shown ? rowsOf(shown) : null
 }
 
 export function ButlerRow(): JSX.Element {
-  const fills = fillsOf(ROW_EXTRAS)
-    .filter((f) => f.row === BUTLER_ROW_PART)
-    .map((f) => f.useExtras())
+  const fills = useFillsOf(ROW_EXTRAS, (f) =>
+    f.row === BUTLER_ROW_PART ? f.useExtras() : undefined
+  ).filter((f): f is RowExtras => !!f)
   const moreMenu = fills.flatMap((f) => f.menu)
   const where = fills.map((f) => f.where).join('')
   const children = useButlerFolderRows()
@@ -47,7 +51,7 @@ export function ButlerRow(): JSX.Element {
   const tabs = useStore((s) => s.tabs)
   const attention = useStore((s) => s.attention)
   const activeTabId = useStore((s) => s.activeTabId)
-  const secretAsks = useStore((s) => s.secretAsks)
+  const ownerAsks = useAskedTabs()
   const opened = useButler((s) => s.openedTab)
   const askToSetUp = (): void => useButler.setState({ setUpAsked: true })
   const [menu, setMenu] = useState<{ left: number; top: number } | null>(null)
@@ -77,7 +81,7 @@ export function ButlerRow(): JSX.Element {
     item('Open', () => void openButler(), 'mi', '↩'),
     item('Rename…', () => renameButler(true)),
     item('Start a fresh conversation', () => void openButler(true)),
-    <div key="sep" className="sep" />,
+    ...(moreMenu.length ? [<div key="sep" className="sep" />] : []),
     ...moreMenu.map((e) => item(e.label, e.run, e.danger ? 'mi danger' : 'mi'))
   ]
 
@@ -90,7 +94,7 @@ export function ButlerRow(): JSX.Element {
   const stateClass =
     rowStateClass(
       !!tabId,
-      statusWithSecrets(sess?.status, tabId, secretAsks),
+      statusWithSecrets(sess?.status, tabId, ownerAsks),
       !!tabId && !sess,
       sess?.turnOver
     ) + (tabId && tabId === activeTabId ? ' active' : '')

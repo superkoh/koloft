@@ -5,16 +5,15 @@ import path from 'path'
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }))
 
-import { AGENT_GUIDE, agentGuide } from '../../src/shared/agentGuide'
+import { agentGuide } from '../../src/shared/agentGuide'
 import {
   AGENT_TOOLS_OFF,
   AgentRequests,
-  answered,
-  helpVerb,
-  type AgentCaller,
   type AgentRequestDeps,
   type TabFacts
 } from '../../src/main/agentRequests'
+import { answered, type AgentCaller } from '../../src/core/command'
+import { helpVerb } from '../../src/plugins/sessions/main/sessionVerbs'
 import type { SessionInfo } from '../../src/shared/types'
 import { testCommands } from './helpers/testCommands'
 
@@ -88,8 +87,8 @@ describe('koloft requests from a session', () => {
     const tabId = tabOf(process.pid, 1)
     await r.answer(dir, 'req-a.json', { tabId, argv: ['help'], cwd: '/w' })
     await r.answer(dir, 'req-b.json', { tabId, argv: [], cwd: '/w' })
-    expect(reply('a')).toEqual({ exit: 0, text: AGENT_GUIDE })
-    expect(reply('b')).toEqual({ exit: 0, text: AGENT_GUIDE })
+    expect(reply('a')).toEqual({ exit: 0, text: agentGuide() })
+    expect(reply('b')).toEqual({ exit: 0, text: agentGuide() })
   })
 
   it('help in a session of a workspace with its own rules for picking a model answers with the guide that carries them, --help too', async () => {
@@ -107,8 +106,8 @@ describe('koloft requests from a session', () => {
     const tabId = tabOf(process.pid, 1)
     await r.answer(dir, 'req-a.json', { tabId, argv: ['echo', 'fix-login', '--help'], cwd: '/w' })
     await r.answer(dir, 'req-b.json', { tabId, argv: ['--help'], cwd: '/w' })
-    expect(reply('a')).toEqual({ exit: 0, text: AGENT_GUIDE })
-    expect(reply('b')).toEqual({ exit: 0, text: AGENT_GUIDE })
+    expect(reply('a')).toEqual({ exit: 0, text: agentGuide() })
+    expect(reply('b')).toEqual({ exit: 0, text: agentGuide() })
     expect(calls).toEqual([])
     await r.answer(dir, 'req-c.json', { tabId, argv: ['echo', 'a', '--', '--help'], cwd: '/w' })
     expect(reply('c')).toEqual({ exit: 0, text: 'a -- --help' })

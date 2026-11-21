@@ -8,14 +8,14 @@ import { killSessionCmd, machineToolProgram, renameSessionCmd } from '../../src/
 import { tabPackageDir } from '../../src/main/remote/paths'
 import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { localHost } from '../../src/main/host/localHost'
-import { GithubLookup } from '../../src/main/github'
+import { GithubRepos } from '../../src/main/githubRepos'
 import { utilTerminalGuard } from '../../src/main/shim'
 import { answerOf, type BytesResult } from '../../src/main/remote/ssh'
 import { AccountPicker, type LaunchedSession } from '../../src/main/accountPicker'
 import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
 import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import { barePath } from '../../src/shared/remoteKey'
-import { removeTree } from '../../src/main/sessionClose'
+import { removeTree } from '../../src/plugins/sessions/main/sessionClose'
 import { REMOTE_ENV_LINES } from '../../src/main/remote/install'
 
 const MACHINE = 'devbox'
@@ -162,6 +162,7 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       const changes = await machine().gitChanges(keyed(repo), 'merge-base')
       expect(changes).toEqual({
         base: git('rev-parse', 'HEAD').trim(),
+        head: { branch: git('symbolic-ref', '--short', 'HEAD').trim() },
         status: {
           [keyed(path.join(repo, 'a.txt'))]: 'modified',
           [keyed(path.join(repo, 'broken'))]: 'untracked',
@@ -184,6 +185,18 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       expect(await localDiffBase(repo)).toBe(forkPoint)
     })
 
+    it('names the branch the checkout is on, or a detached HEAD, the same as the local Workbench', async () => {
+      const local = localHost(new GithubRepos({}), {} as never)
+      git('checkout', '-qb', 'feature/login')
+      expect((await machine().gitChanges(keyed(repo), 'head')).head).toEqual({
+        branch: 'feature/login'
+      })
+      expect((await local.gitChanges(repo, 'head')).head).toEqual({ branch: 'feature/login' })
+      git('checkout', '-q', '--detach')
+      expect((await machine().gitChanges(keyed(repo), 'head')).head).toEqual({ detached: true })
+      expect((await local.gitChanges(repo, 'head')).head).toEqual({ detached: true })
+    })
+
     it('lists the same Changes as the local Workbench for one checkout: renamed, deleted, staged, against the fork point or HEAD', async () => {
       git('branch', '-M', 'main')
       git('checkout', '-qb', 'feature')
@@ -195,7 +208,7 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       fs.writeFileSync(path.join(repo, 'staged.txt'), 'one\ntwo\n')
       git('add', 'staged.txt')
       fs.writeFileSync(path.join(repo, 'loose.txt'), 'x\n')
-      const local = localHost(new GithubLookup({}), {} as never)
+      const local = localHost(new GithubRepos({}), {} as never)
       const bareKeys = <V>(m: Record<string, V>): Record<string, V> =>
         Object.fromEntries(Object.entries(m).map(([k, v]) => [barePath(k), v]))
       for (const choice of ['merge-base', 'head'] as const) {
@@ -217,6 +230,7 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
     it('says the workspace folder is missing when the machine says it is gone, and empty outside a repo', async () => {
       expect(await machine().gitChanges(keyed(path.join(repo, 'gone')), 'merge-base')).toEqual({
         base: null,
+        head: null,
         status: {},
         numstat: {},
         missing: true
@@ -224,6 +238,7 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       fs.rmSync(path.join(repo, '.git'), { recursive: true })
       expect(await machine().gitChanges(keyed(repo), 'merge-base')).toEqual({
         base: null,
+        head: null,
         status: {},
         numstat: {},
         missing: false

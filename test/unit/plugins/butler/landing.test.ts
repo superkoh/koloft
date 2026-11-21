@@ -31,7 +31,7 @@ describe('closing the session you watch lands on the butler, whichever of sessio
     butlersOpened = 0
     ;(globalThis as { window?: unknown }).window = {
       api: {
-        conductors: {
+        butler: {
           open: () => {
             butlersOpened++
             return new Promise(() => {})
@@ -70,7 +70,7 @@ describe('closing the session you watch lands on the butler, whichever of sessio
   it('does not start the butler again when the butler’s own session ended before its terminal exited', () => {
     const s = useStore.getState()
     s.addTab({ id: 'own-butler', kind: 'claude', title: 'Alfred', cwd: '/w', alive: true })
-    s.setSessions([{ ...session('own-butler'), butler: true }])
+    s.setSessions([{ ...session('own-butler'), overseer: true }])
     s.setSessions([])
 
     useStore.getState().removeTab('own-butler')

@@ -44,8 +44,11 @@ function check(dir: string): { code: number | null; reported: string[] } {
 const lines = (...l: string[]): string => l.join('\n') + '\n'
 
 describe('check-plugin-imports', () => {
-  it('lets a plugin import core, its own folder and the api.ts of a plugin it needs, and lets the app import the list, the list of preload bridges, the list of UIs and the list of settings', () => {
+  it('lets a plugin import core, its own folder and the api.ts or windowApi.ts of a plugin it needs, and lets the app import the list, the list of preload bridges, the list of UIs, the list of settings and the list of starts', () => {
     const dir = fixtureRepo({
+      'src/plugins/starts.ts': "import { start } from './a/main/start'\n",
+      'src/plugins/a/main/start.ts': 'export const start = () => {}\n',
+      'src/main/index.ts': "import { PLUGIN_STARTS } from '@plugins/starts'\n",
       'src/plugins/settings.ts': "import { SETTINGS } from './a/shared/settings'\n",
       'src/plugins/a/shared/settings.ts': 'export const SETTINGS = {}\n',
       'src/shared/settingsOps.ts': "import { PLUGIN_SETTINGS } from '@plugins/settings'\n",
@@ -58,6 +61,7 @@ describe('check-plugin-imports', () => {
       'src/plugins/b/main/ok.ts': lines(
         "import { PLUGIN_FORMAT_VERSION } from '@core/plugin'",
         "import { fromA } from '@plugins/a/api'",
+        "import { titleA } from '@plugins/a/windowApi'",
         "import { fromB } from '../api'",
         "export { fromA as again } from '../../a/api.ts'",
         "const later = import('@plugins/a/api')",
@@ -68,7 +72,7 @@ describe('check-plugin-imports', () => {
     expect(check(dir)).toEqual({ code: 0, reported: [] })
   })
 
-  it('reports each import that breaks the rule, static, re-exported, dynamic or through a .. in an alias, and still exits 0', () => {
+  it('reports each import that breaks the rule, static, re-exported, dynamic or through a .. in an alias, and a windowApi.ts that loads its own main/ or prompts/, and still exits 0', () => {
     const dir = fixtureRepo({
       'src/plugins/c/main/bad.ts': lines(
         "import { inner } from '@plugins/a/main/inner'",
@@ -79,7 +83,8 @@ describe('check-plugin-imports', () => {
         "const plugin = import('@plugins/b')",
         "import { sneak } from '@core/../plugins/b/main/inner'",
         "type Inner = typeof import('@plugins/a/main/inner')",
-        "import { pluginBridges } from '../../bridges'"
+        "import { pluginBridges } from '../../bridges'",
+        "import { titleA } from '@plugins/a/windowApi'"
       ),
       'src/plugins/bridges.ts': "import { start } from './a/main/start'\n",
       'src/plugins/uis.ts': "import { bridge } from './a/preload/bridge'\n",
@@ -89,6 +94,11 @@ describe('check-plugin-imports', () => {
       'src/plugins/list.ts':
         "import { plugin as a } from './a/plugin'\nimport { plugin as b } from './b/plugin'\nimport { plugin as c } from './c/plugin'\nimport { start } from './a/main/start'\nexport const PLUGINS = [a, b, c]\n",
       'src/plugins/a/main/start.ts': 'export const start = 1\n',
+      'src/plugins/a/windowApi.ts': lines(
+        "export { title } from './shared/names'",
+        "export { start } from './main/start'",
+        "export { role } from './prompts/role'"
+      ),
       'src/plugins/a/broken.ts': 'import {\n'
     })
     expect(check(dir)).toEqual({
@@ -96,6 +106,8 @@ describe('check-plugin-imports', () => {
       reported: [
         'src/core/bad.ts:1 @plugins/a/api',
         'src/plugins/a/broken.ts: cannot',
+        'src/plugins/a/windowApi.ts:2 ./main/start',
+        'src/plugins/a/windowApi.ts:3 ./prompts/role',
         'src/plugins/bridges.ts:1 ./a/main/start',
         'src/plugins/c/main/bad.ts:1 @plugins/a/main/inner',
         'src/plugins/c/main/bad.ts:2 @plugins/a/api',
@@ -106,6 +118,7 @@ describe('check-plugin-imports', () => {
         'src/plugins/c/main/bad.ts:7 @core/../plugins/b/main/inner',
         'src/plugins/c/main/bad.ts:8 @plugins/a/main/inner',
         'src/plugins/c/main/bad.ts:9 ../../bridges',
+        'src/plugins/c/main/bad.ts:10 @plugins/a/windowApi',
         'src/plugins/list.ts:4 ./a/main/start',
         'src/plugins/settings.ts:1 ./a/renderer/ui',
         'src/plugins/uis.ts:1 ./a/preload/bridge',

@@ -1,0 +1,4 @@
+.term-island > .wb-bar.butler-strip {
+  border-bottom: 0;
+  border-top: 1px solid var(--line);
+}

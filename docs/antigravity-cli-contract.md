@@ -413,8 +413,22 @@ only downloaded the public release.
     `step_count` 0 and "never" times. The row appears at the first message
     (`RUNNING`, steps 0, both times "never") and gets its real values when the turn
     ends.
-  - The row appears 0.4–0.6 s after Enter, with the made-up title. `/rename` updates
-    `title`. A `/new` that is never used stays as a row with `step_count` 0.
+  - The row appears 0.4–0.6 s after Enter, with the made-up title (measured against the
+    fake Gemini server on 1.3.6). Against real Google servers (measured 2026-11-19, agy
+    1.5.13 on macOS, two live sessions checked via `cli-*.log`, `annotations/*.pbtxt`
+    timestamps and `conversation_summaries.db`), the title call can land past 1 s
+    (1.0–1.4 s after the first message), and `annotations/<id>.pbtxt` (UTF-8
+    `title:"…"`) can hold the title while `conversation_summaries.db` still shows
+    `step_count` 0. `/rename` updates `title`. A `/new` that is never used stays as a
+    row with `step_count` 0.
+  - The row can stay at `step_count` 0, an empty `title` and "never" times for good,
+    however many turns the conversation has (2026-11-20, agy 1.5.13 on macOS, the
+    owner's own `~/.gemini`, read with a script): 3 of the 4 top-level rows at 0 had
+    a transcript of 155–365 lines, one of them a Koloft tab's with its title only in
+    `annotations/<id>.pbtxt`; the 4th, with no transcript, was the only one never
+    used. The `cli-*.log` of that tab's launches shows the first message and later
+    turns, and no line about its summary. So `step_count` 0 does not tell an unused
+    conversation; a transcript with something in it does.
   - `status` (`CASCADE_RUN_STATUS_IDLE` / `RUNNING`) does not tell whether a process
     is live: a finished `-p` leaves `IDLE`, opening the `/resume` picker sets every
     row not live to `""`, an open ask reads `RUNNING` with `not_fully_idle=1`, a
@@ -518,6 +532,15 @@ only downloaded the public release.
   | `--conversation=<id>` or `-c` launch | that id, at once |
   | During and after a subagent | the parent's id |
 
+- **A conversation id is a lower-case UUID** (8-4-4-4-12 hex). Counted 2026-11-18 on
+  agy 1.5.11 in one account folder used since 1.4.0: all 215 folder names under
+  `brain/` and every `<id>.db` and `<id>.pb` under `conversations/` have that shape.
+
+Koloft dependents: `agyLogLine` drops a title or hook line that names any other id (a
+title line may name `""`): such a line was not written for agy. On 2026-11-18 a unit
+test run inside an agy tab ran Koloft's title script with the tab's own env, and so
+wrote `{"conversation_id":"abc-123"}` into the live tab's log.
+
 ## §10 Status: OSC 7501
 
 - agy speaks the terminal "program status" protocol, OSC 7501, as Claude Code and Muse
@@ -549,6 +572,11 @@ only downloaded the public release.
   | Failed turn (§22) | `error` | the error text |
   | Ask declined with Esc or `4` | `idle`, no `done` | — |
 
+- The `idle` waiting for the first key after `done` is dropped once the next turn
+  starts without a key (a message sent through the API, §16): a key pressed during
+  that turn sends no `idle`. (agy 1.5.10, Linux arm64, Docker with no network, a python
+  pty answering the terminal's queries, `AGY_CLI_OSC7501=on`, fake Gemini server,
+  2026-11-20, 1 run.)
 - A turn agy starts by itself (a background command finished, a subagent reported
   back) sends `working` then `done`. `!cmd` sends no `working`. No OSC 9, OSC 777 or
   bare BEL was seen; no OSC 0/2 unless a title script is set (§11).
@@ -575,7 +603,16 @@ only downloaded the public release.
   (1.4.7, while background tasks run, §13).
   - `agent_state`: `authenticating` (start), `initializing` (1.4.7, a resumed
     conversation still on the colour or trust screen, §5), `idle`, `working`, `tool_use` (an ask
-    is open), `reviewing` (an artifact is waiting for review, §19).
+    is open), `reviewing` (once any artifact exists in `brain/<id>/`, even with
+    `RequestFeedback: false`, `agent_state` stays `reviewing` instead of `idle` between
+    turns, §19; measured 2026-11-18, agy 1.5.11 macOS).
+  - `subagents` (measured 2026-11-18, agy 1.5.11 macOS, a `/teamwork` run of 45
+    descendants across depths 1–3): lists every descendant in the tree as
+    `{name, role, model, status}` (no `conversation_id`). `status` is `"running"` while
+    a descendant is in a turn or waiting on its own children, and `"completed"` once its
+    turn ends; completed entries stay in the list for the rest of the session, and when
+    an internal orchestrator passes no short `Role`, `role` holds the full multi-kilobyte
+    `Prompt` (reaching ~184 KB per title input at 45 descendants).
   - `conversation_title` is `null` until `/rename` or a resume pick, even after the
     summaries row has its made-up title.
   - `transcript_path` points to `<geminiDir>/antigravity/brain/…`, beside
@@ -610,7 +647,10 @@ only downloaded the public release.
   `ANTIGRAVITY_CSRF_TOKEN`.
 - stdin is camelCase JSON: `conversationId`, `workspacePaths`, `transcriptPath` (→
   `transcript_full.jsonl`), `artifactDirectoryPath`, `modelName`
-  (`gemini-3.1-pro-low`), plus per event:
+  (`gemini-3.1-pro-low`), plus `cwd`, `hookEventName`, `lastUserInput` (1.5.11 macOS,
+  2026-11-18; child and grandchild hooks carry that child's own `conversationId` and
+  omit `parentConversationId`, `rootConversationId` and `agentName` at runtime), plus
+  per event:
 
   | Event | Fires | Extra fields |
   |---|---|---|
@@ -680,6 +720,12 @@ only downloaded the public release.
     with a text holding `OLDTEXT-A1`, then started again with `--conversation=<its id>`
     and a text holding `NEWTEXT-B2`: the resumed request carried both turns and
     `OLDTEXT-A1`, never `NEWTEXT-B2`, and its hook log had no `SessionStart`.
+  - **A text of about 24 KB arrives whole on a remote tab too.** 2026-11-20, agy 1.5.10,
+    the same lab, rendering and stand-in. The text was `koloftPrompt('agy')`, then two
+    blocks of 9,845 and 9,844 bytes, each at the 10,000-byte limit as Koloft counts it,
+    made of lines holding Chinese, `$HOME`, backticks, `{{x}}`, `'`, `"`, `%s`, `!!`,
+    `$(id)`, curly quotes and an emoji (23,797 bytes in all). The `gemini-3.1-pro-preview`
+    request held it as one exact string, 2 of 2 runs, each on a new tab.
   - `PreInvocation` printing `{"injectSteps":[{"ephemeralMessage":"…"}]}` adds it as
     the last user content of that one request; copies do not pile up.
   - **What a `PreInvocation` hook can read of the model's earlier words.** 1.4.7 Linux
@@ -749,10 +795,40 @@ only downloaded the public release.
   was not probed.
 - A command that outlives `WaitMsBeforeAsync` returns "running as a background task
   with task id: <conv>/task-N … logs at file://…/brain/<id>/.system_generated/tasks/task-N.log".
-  `manage_task` handles these background tasks; it is not a to-do list.
-- A subagent is a child conversation: a summaries row with `parent_conversation_id`,
-  `nesting_depth:1`, `agent_name:"self"`. Its result makes the parent run another
-  turn.
+  `manage_task` handles these background tasks (`Action: "list" | "kill" | "status" | "send_input"`,
+  `TaskId?`, `Input?`); it is not a to-do list.
+- **A `run_command` waits at most 10 s, then runs on as a background task for at least 11
+  minutes.** 2026-11-19, agy 1.5.10 Linux arm64 in Docker (`--network none`), `agy -p
+  --dangerously-skip-permissions` against a fake Gemini server whose model called
+  `run_command {CommandLine: "sleep 660; echo done-after-660", WaitMsBeforeAsync: 10000}`,
+  `ps` read every 15 s; one run. `WaitMsBeforeAsync` is required (a call without it
+  fails validation: "missing property 'WaitMsBeforeAsync'"), and the tool's description
+  bounds it to "500 to 10000". At 10 s the model got the background-task answer above;
+  the command ran its full 660 s, and at 660 s agy sent the model a new request whose
+  last part was a `<SYSTEM_MESSAGE>` "[Message] … sender=<conv>/task-2 …" (as §13's
+  `schedule` firings do). `-p` stayed up the whole time, printing "root agent idle;
+  waiting for 1 background task(s) to finish". Not probed: the TUI, and a task longer
+  than 11 minutes.
+- **Subagents, `/teamwork` and `swarm` (measured 2026-11-18, agy 1.5.11 on macOS, a real
+  `/teamwork` TUI run and a `-p --input-format stream-json` `swarm` run against a fake
+  Gemini server):**
+  - `invoke_subagent` takes flat `{TypeName, Role, Prompt, Model?, Workspace?}`;
+    `manage_subagents` takes `{Action: "list" | "kill" | "kill_all", ConversationIds?}`;
+    `send_message` takes `{Recipient, Message}`.
+  - Each subagent is a child conversation in `conversation_summaries.db` with
+    `parent_conversation_id` set to its caller's `conversation_id`, `nesting_depth` 1, 2,
+    …, and `agent_name` set to `TypeName` (`"self"`, `"teamwork"`,
+    `"teamwork_interviewer"`, `"teamwork_orchestrator"`, …); a killed child sets
+    `killed: 1`. When a parked child is woken later by `send_message`, it runs
+    `PreInvocation` … `Stop` with no second `SessionStart`.
+  - `swarm {action: "add", name, brief, n?, tasks?}` spawns child conversation(s)
+    (`<name>`, or `<name>-1`..`<name>-<k>`) whose `SessionStart` fires at once, with
+    `parent_conversation_id` = the coordinator's `conversation_id` and `agent_name` =
+    the member name in `conversation_summaries.db`, and writes
+    `brain/<coordinatorId>/.system_generated/swarm/{swarm.json, members.json, board.jsonl}`.
+    A worker parks by calling `swarm_wait`, which returns at once and ends its turn with
+    `Stop {fullyIdle: true}`; `@<name>` or `@all` in `post_message` wakes it on a new
+    `PreInvocation`; `swarm {action: "kill", name}` ends it.
 - **`schedule` and what the hooks see of it.** 1.4.7 Linux arm64 in Docker with no
   network, fake Gemini server, the TUI in tmux, every hook logged, 2026-10-26. The
   tool is `schedule {Prompt, DurationSeconds | CronExpression, IsDaemon?,
@@ -875,6 +951,17 @@ only downloaded the public release.
   in, the answer was `ZEBRA`. With the PNG outside it, `-p` produced no answer and
   listed `denied_actions: [{action: "read_file"}]`: the outside-workspace ask of §26,
   which headless mode cannot show. Not run: the same in the TUI, where that ask shows.
+- **A `/<skill>` first line pasted with a `Picture:` line still sends the skill, and
+  the line goes with the words in one turn.** Measured 2026-11-17, agy 1.5.10 (build
+  `5253791805734912`, `linux_arm64.json`), Docker `--network none`, a fake Gemini
+  server, bare `agy` in a pty, the text written as one bracketed paste plus `\r` on the
+  first OSC 7501 `idle` frame (as §31). With and without `\n\nPicture: <png>` (the PNG
+  outside the workspace): `/probe-skill say hi` (in `<ws>/.agents/skills/`; 3 runs with
+  the picture, plus 1 inside tmux 3.3a on the title script's first `idle`) and the
+  built-in `/antigravity-guide …` sent `<USER_REQUEST>` holding the words and the
+  `Picture:` line, and the `<SKILL>` block in the same user part; `$ARGUMENTS` stays as
+  written. `/nosuch do X` went as plain text, the `Picture:` line in `<USER_REQUEST>`. No
+  request held `inlineData`, `fileData` or `image/png`.
 
 ## §14 Asks in the terminal and the keys that answer them
 
@@ -1131,10 +1218,34 @@ only downloaded the public release.
   sent to an idle agy for a conversation another process or nobody holds. A running
   agy in another process keeps the old `conversation_title` for its own scripts.
   `-p "/rename x"` is refused (exit 2, "print mode has no conversation manager").
-- `StreamAgentStateUpdates {"conversationId"}` (stream): a full snapshot, then an
-  update per step: `status`/`executorLoopStatus` (`CASCADE_RUN_STATUS_IDLE`,
-  `RUNNING`, `CANCELING`), `mainTrajectoryUpdate.stepsUpdate` (new steps whole,
-  waiting asks included), `fullyIdle`, `turnsUpdate`, `activeHook`.
+- `StreamAgentStateUpdates {"conversationId"}` (stream, measured 2026-11-18, agy 1.5.11
+  macOS against a fake Gemini server with live `run_command` and `schedule` tasks and
+  with a waiting permission prompt):
+  each message wraps `{"update": {…}}`: a full snapshot, then an update per step with
+  `status`/`executorLoopStatus` (`CASCADE_RUN_STATUS_IDLE`, `RUNNING`, `CANCELING` —
+  while a permission prompt waits on the user, `status` and `executorLoopStatus` stay
+  `CASCADE_RUN_STATUS_RUNNING` and `executableStatus` is `CASCADE_RUN_STATUS_IDLE`),
+  `mainTrajectoryUpdate.stepsUpdate` (new steps whole, waiting asks included),
+  `backgroundTasksUpdate` (`{indices, backgroundTasks: [{taskSnapshot, step, taskDetails}],
+  totalLength}` — carries both `run_command` and `schedule` tasks, with `isDaemon: true`
+  when `IsDaemon: true` and omitted when `false`; when the last background task ends,
+  agy sends `"backgroundTasksUpdate": {}` with `totalLength` and `backgroundTasks`
+  omitted), `turnsUpdate`, `activeHook`;
+  protojson omits `fullyIdle` when `false` and sends `"fullyIdle": true` when `true`.
+  Between a turn and the next one (agy 1.5.10, Linux arm64, Docker with no network, a
+  python pty answering the terminal's queries, `AGY_CLI_OSC7501=on`, fake Gemini
+  server, 2026-11-20, 1 run of each):
+  - a line typed and sent during a 10 s turn waits as "queued msg"; when the turn
+    ends the stream sends `IDLE` with `fullyIdle: true` (twice), then 7501 `done`, then
+    about 200 ms later the stream's `RUNNING` and 7501 `working` for the queued line.
+    The pty and the stream are two channels, so a reader can get that `IDLE` after
+    the next `working`;
+  - a `SendUserCascadeMessage` sent 2 s into a 10 s turn is taken into the same run:
+    the stream stays `RUNNING` until both are answered, with one 7501 `done` (the
+    second reply's text) and no `done`/`working` between them.
+  `ListBackgroundTasks {"cascadeId"}` returns `{tasks: [{conversationId, task}]}` with
+  the same `taskSnapshot` fields for both `run_command` and `schedule`, or `{}` when
+  none are running.
 - `CancelCascadeInvocation {cascadeId}` stops the turn: screen "⎿ Interrupted · What
   should Antigravity CLI do instead?", 7501 `done` "Task complete" then `idle`, only
   the `USER_INPUT` line in the transcript.
@@ -1310,9 +1421,24 @@ only downloaded the public release.
   `gemini-3.8-flash-{high,medium,low}`, `claude-opus-5-5-{low,medium,high}`,
   `claude-sonnet-5-5-{low,medium,high}`, `gpt-oss-120b-medium`; no `gemini-3.1-pro`.
   The list is the account's: Carbon was not open to every account that day. Koloft
-  reads it to turn a family name (`flash`, `argon`, `carbon`) into the newest id the
+  reads it to turn a family name (`flash`, `neon`, `argon`, `carbon`) into the newest id the
   account has. `--model gemini-4-carbon --effort high -p "Reply with exactly: OK"` on
   that account exited 0 with `OK` (24 thinking tokens).
+- **Gemini 4 Neon** (2026-11-19, agy 1.5.13 on macOS, the same copied-token route):
+  `agy models` prints 27 rows: `gemini-4-neon-{high,xhigh,medium,low}` first, then
+  Carbon, Argon (still listed), `gemini-4-hydrogen-{high,xhigh,medium,low}`, three
+  `gemini-pro-orchestrator`, `-neon`, `-argon` rows with no effort in the id (so
+  `agyListedModels` skips them), 3.8 Flash, the Claude rows and `gpt-oss-120b-medium`.
+  `--model gemini-4-neon --effort xhigh -p "Reply with exactly: OK"` exited 0 with `OK`
+  in 2.9 s (22 thinking tokens), and with no `--effort` in 5.8 s; `--effort max` exited 1 before any request: `gemini-4-neon
+  has no "max" effort (available: low, medium, high, xhigh)`. Hydrogen's efforts are read
+  off its ids only, not run. That an account without Neon lists Argon, as this one
+  still does, is inferred, not checked: Carbon was not open to every account (above),
+  so Koloft's normal tier runs Argon where Neon is missing.
+- **How long `agy models` takes** (2026-11-20, agy 1.5.13 on macOS, the same copied-token
+  route, four runs one after another): 1.3 to 1.5 s each, exit 0, the same 27 rows. So an
+  Assist job set to Neon or Carbon goes by the list Koloft last read, and only while none
+  has come back since Koloft started does it wait for one: at most 5 s of the 15 s it has.
 - `/model`, Down, Esc leaves the model unchanged.
 
 - **`-p` on a real Google account, by model and effort** (2026-11-11, agy 1.5.6 on
@@ -1333,6 +1459,13 @@ only downloaded the public release.
   conversation a default-model `-p` had started in the same folder: `num_turns` 2, and
   the answer named the earlier turn's word (same day and build). Which model the second
   turn ran on is not in the JSON; it took 3.9 s against the first turn's 9.7 s.
+- **Turn judgement on Neon** (2026-11-19, agy 1.5.13, same bench and route, three runs
+  each, four at a time): `gemini-4-argon` `medium` 83 / 82 / 82 right, 3 asks read as
+  news, mean 8.2 s, 0–2 of 65 calls over 15 s, one-tap replies on 27–28 of 33 asks;
+  `gemini-4-neon` `medium` 81 / 82 / 83, 1–3 asks read as news, mean 14.3 s, 25–27
+  over 15 s (about 1,000 thinking tokens a call); `gemini-4-neon` `low` 81 / 80 / 82,
+  2–3 asks read as news, mean 9.6 s, 2–4 over 15 s, one-tap replies on 22–24. So the
+  turn judgement stays on Argon at `medium` while Neon runs the normal session tier.
 
 ## §22 Errors and retries
 
@@ -1801,7 +1934,7 @@ fake Gemini server with MCP servers that logged their start.
   `/clear`, in `--dangerously-skip-permissions`, and on the macOS build in the tart VM.
 
 Koloft dependents: `koloft todo`'s list of MCP servers (`src/main/mcpServers.ts`); the
-Workbench browser's address in agy's environment (`src/main/agySessions.ts`); the allow
+Workbench browser's address in agy's environment (`src/plugins/sessions/main/agySessions.ts`); the allow
 rule for the owner's Playwright entries (`src/main/agyAccounts.ts`).
 
 ## §31 Skills
@@ -1898,6 +2031,13 @@ model_invocable}]`); `agy -p "hi"` showed what the model gets.
   `_agents/skills/`, no matter which copy's own folder name sorted first. Not probed:
   `/SKILL`, an empty `name`, a `name` with a space or one agy's own command has, two
   copies of a `name` inside one folder, and the TUI in a workspace agy does not trust.
+- **A pasted `/automation …` line runs a different skill.** 2026-11-17, agy 1.5.10
+  linux-arm64, Docker, fake Gemini server, one bracketed paste plus `\r` on the first
+  OSC 7501 `idle` (and 2 s later: the same): `/automation summarize my notes every
+  morning` reached the model as `<USER_REQUEST>/agy-customizations summarize my notes
+  every morning</USER_REQUEST>` with the `agy-customizations` skill's body, with and
+  without a `Picture:` line after it (1 run each). Why the name changed (the slash popup's
+  top entry taking the Enter is a guess) was not probed.
 
 ## §32 The folder's AGENTS.md as a memory
 
@@ -1946,7 +2086,9 @@ repository, like the butler's.
   Google sign-in route, and the owner's own `~/.gemini/GEMINI.md` beside it.
 
 Koloft dependents: the butler's folder gets that `AGENTS.md` when an Antigravity butler
-starts, as a Codex one does (`src/main/assistMemory.ts`).
+starts, as a Codex one does (`src/main/assistMemory.ts`); the Session defaults dialog says
+the project's own file may win over a workspace's Instructions
+(`src/renderer/src/components/SessionDefaultsDialog.tsx`).
 
 ## §33 What agy asks the terminal
 

@@ -16,9 +16,11 @@ import { OWNING_TAB_ENV } from '../owningTabEnv'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
 import { ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE } from '../agentLift'
 import { AGENT_PROMPT_FILE, KOLOFT_DOCS_SKILL, KOLOFT_SKILL, pluginSkillDir } from '../agentPlugin'
-import { saidFile, seedHandedOverOwnerWords, STATUS_LOG_SUFFIX } from '../hooks'
+import { docsWritingOn } from '@plugins/docs-writing/api'
+import { saidFile, seedHandedOverOwnerWords, STATUS_LOG_SUFFIX } from '@plugins/sessions/main/hooks'
 import { STATUS_RELAY_FILE } from './statusRelay'
 import { TRUST_CWD_JS } from './claudeTrustJs'
+import { ADVISOR_OFF_ON_FABLE_FN } from '../advisorOnFable'
 
 export const CLAUDE_AUTH_ENV_VARS = [
   'CLAUDE_CODE_OAUTH_TOKEN',
@@ -83,10 +85,12 @@ export function skillsFromMachineLine(
     const next = `"${skillsDir}/${skill}.new-$$"`
     return `{ diff -r ${from} ${to} >/dev/null 2>&1 || { rm -rf ${next} && cp -R ${from} ${next} && rm -rf ${to} && mv ${next} ${to}; }; }`
   }
+  const keepWhile = (on: boolean, pluginDir: string, skill: string): string =>
+    on ? keep(pluginDir, skill) : `rm -rf "${skillsDir}/${skill}"`
   return [
     `mkdir -p "${skillsDir}"`,
-    keep(DOCS_PLUGIN_DIR, KOLOFT_DOCS_SKILL),
-    koloftOn ? keep(AGENT_PLUGIN_DIR, KOLOFT_SKILL) : `rm -rf "${skillsDir}/${KOLOFT_SKILL}"`
+    keepWhile(docsWritingOn(), DOCS_PLUGIN_DIR, KOLOFT_DOCS_SKILL),
+    keepWhile(koloftOn, AGENT_PLUGIN_DIR, KOLOFT_SKILL)
   ].join('; ')
 }
 
@@ -153,7 +157,9 @@ export interface TabProgram {
 export interface ClaudeTab {
   settings: Record<string, unknown>
   agentPlugin?: boolean
+  docsPlugin?: boolean
   projectPrompt?: string
+  ownerText?: string
   claudeArgs: string[]
   trustFolder?: boolean
   pictureFolder?: string
@@ -180,7 +186,8 @@ export const claudeTabSpec = (tab: Omit<TabSpec, 'program'>, c: ClaudeTab): TabS
       [`${tab.tabId}.json`]: JSON.stringify(c.settings),
       [`${tab.tabId}.tmux`]: tab.tmuxName,
       ...(c.agentPlugin &&
-        c.projectPrompt && { [`${tab.tabId}${PROJECT_PROMPT_SUFFIX}`]: c.projectPrompt })
+        c.projectPrompt && { [`${tab.tabId}${PROJECT_PROMPT_SUFFIX}`]: c.projectPrompt }),
+      ...(c.ownerText && { [`${tab.tabId}${OWNER_TEXT_SUFFIX}`]: c.ownerText })
     }
   }
 })
@@ -205,6 +212,7 @@ export const TAB_TMUX_NAME_SH = `cat "$HOME/.koloft/tabs/$1.tmux" 2>/dev/null
 exit 0`
 
 const PROJECT_PROMPT_SUFFIX = '.prompt.md'
+const OWNER_TEXT_SUFFIX = '.owner.md'
 
 // CC§12 CC§13
 function claudeRun(tabId: string, c: ClaudeTab): string {
@@ -212,8 +220,11 @@ function claudeRun(tabId: string, c: ClaudeTab): string {
   const prompt = c.projectPrompt
     ? `${T}${PROJECT_PROMPT_SUFFIX}`
     : `$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}`
+  const ownerText = c.ownerText ? ` --append-system-prompt "$(cat "${T}${OWNER_TEXT_SUFFIX}")"` : ''
   return `  PATH="$M/${CLAUDE_BIN_DIR}:$PATH"; export PATH
-  set -- claude --settings "${T}.json" --plugin-dir "$M/${DOCS_PLUGIN_DIR}"${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "${prompt}"` : ''} ${c.claudeArgs.map(shq).join(' ')}
+  set -- claude --settings "${T}.json"${c.docsPlugin ? ` --plugin-dir "$M/${DOCS_PLUGIN_DIR}"` : ''}${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "${prompt}"` : ''}${ownerText} ${c.claudeArgs.map(shq).join(' ')}
+${ADVISOR_OFF_ON_FABLE_FN}
+  advisor_off_on_fable "$@"
   ${EXEC_ARGS_THROUGH_THE_STATUS_RELAY.join('\n  ')}\n`
 }
 

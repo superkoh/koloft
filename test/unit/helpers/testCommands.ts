@@ -5,6 +5,7 @@ export const testManifest = (id: string, verbs: string[]): PluginManifest => ({
   formatVersion: PLUGIN_FORMAT_VERSION,
   id,
   name: id,
+  does: id,
   mandatory: true,
   needs: [],
   commands: verbs.map((verb) => ({ verb }))

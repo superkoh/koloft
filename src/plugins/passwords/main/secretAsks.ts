@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import { loopbackHttp, urlOrNull } from '@shared/browserRoute'
 import type { SecretAskShape, SecretAskView } from '@shared/types'
 import type { OwnerWaits } from '@core/ownerWaits'
+import type { PageHeldElsewhere } from '@plugins/workbench/api'
 
 export interface SecretAsk {
   tabId: string
@@ -68,6 +69,19 @@ export class SecretAsks<A extends SecretAsk = SecretAsk> {
     return this.pending.get(id)?.ask
   }
 
+  notShownElsewhere(id: string): void {
+    const p = this.pending.get(id)
+    if (p) this.d.owner.waitsOnTheOwner(p.ask.tabId)
+  }
+
+  pagesHeld(): PageHeldElsewhere[] {
+    return this.views().flatMap((ask) =>
+      ask.kind === 'sudo'
+        ? []
+        : [{ tabId: ask.tabId, guestId: ask.kind === 'url' ? undefined : ask.guestId }]
+    )
+  }
+
   views(): SecretAskView[] {
     return [...this.pending].map(([id, p]) => ({ ...p.ask.shape, id, tabId: p.ask.tabId }))
   }
@@ -83,6 +97,10 @@ export class SecretAsks<A extends SecretAsk = SecretAsk> {
 
   decline(id: string): void {
     this.end(id, { ended: 'declined' }, 'declined-in-koloft')
+  }
+
+  declineAll(): void {
+    for (const id of [...this.pending.keys()]) this.decline(id)
   }
 
   answerFromElsewhere(id: string, answer: AnsweredElsewhere): void {

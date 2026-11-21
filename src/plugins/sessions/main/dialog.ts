@@ -2,8 +2,8 @@ import { isDeepStrictEqual } from 'util'
 import type { AskPayload } from '@shared/sessionEvent'
 import type { BackendId } from '@shared/types'
 import { fail, type Parsed } from '@core/command'
-import type { ToolCall } from '../../../main/sessionTracker'
-import { keysFor, typedPieces } from '../../../main/typeKeys'
+import type { ToolCall } from './sessionTracker'
+import { keysFor, typedPieces } from '@core/typeKeys'
 import { CLEAR_TO_LINE_START } from '@shared/lineEditKeys'
 
 interface Option {
@@ -546,4 +546,28 @@ function keysOf(keys: AnswerKeys, q: Question, a: QuestionAnswer): string[] {
 
 export function answerKeys(keys: AnswerKeys, q: Asked, answers: QuestionAnswer[]): string[] {
   return [...answers.flatMap((a, i) => keysOf(keys, q.questions[i]!, a)), ...keys.submit(answers)]
+}
+
+export type KoloftAsk =
+  | { kind: 'question'; questions: Question[] }
+  | { kind: 'approval'; command?: string; plan?: string }
+
+export function askFromClaude(p: AskPayload): KoloftAsk {
+  if (p.tool_name === 'AskUserQuestion') return { kind: 'question', questions: questionsOf(p) }
+  const plan = planOf(p)
+  if (plan !== undefined) return { kind: 'approval', plan }
+  const command = p.tool_input?.command
+  return {
+    kind: 'approval',
+    command:
+      typeof command === 'string'
+        ? command
+        : `${p.tool_name ?? 'A tool'} ${JSON.stringify(p.tool_input ?? {})}`
+  }
+}
+
+export function askFromCodex(a: CodexApproval | CodexQuestion): KoloftAsk {
+  if ('questions' in a) return { kind: 'question', questions: a.questions }
+  if (a.plan) return { kind: 'approval', plan: a.reason ?? 'Open the session to read the plan.' }
+  return { kind: 'approval', command: a.command ?? a.file ?? a.reason }
 }

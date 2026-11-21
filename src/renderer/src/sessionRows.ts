@@ -9,7 +9,7 @@ import type {
   TabKind,
   WorkspaceRows
 } from '@shared/types'
-import { PLACEHOLDER_SESSION_TITLE, PLAN_READY } from '@shared/types'
+import { isPlaceholderSessionTitle, PLAN_READY } from '@shared/types'
 import { basename } from '@shared/preview'
 import { NOTES_HEIGHT_FLOOR } from '@shared/settingsOps'
 import { statusUnavailable } from '@shared/sessionBackend'
@@ -19,9 +19,11 @@ export { statusUnavailable }
 
 export function everyWorkspaceRows(s: {
   workspaceRows: WorkspaceRows[]
-  butlerWorkspace: WorkspaceRows | null
+  claimedWorkspaces: WorkspaceRows[]
 }): WorkspaceRows[] {
-  return s.butlerWorkspace ? [...s.workspaceRows, s.butlerWorkspace] : s.workspaceRows
+  return s.claimedWorkspaces.length > 0
+    ? [...s.workspaceRows, ...s.claimedWorkspaces]
+    : s.workspaceRows
 }
 
 export function relTime(mtimeMs: number, nowMs: number): string {
@@ -235,7 +237,7 @@ export function liveTabOf(
 }
 
 export function shownTitle(rowTitle: string, liveTitle: string | undefined): string {
-  return liveTitle && liveTitle !== PLACEHOLDER_SESSION_TITLE ? liveTitle : rowTitle
+  return liveTitle && !isPlaceholderSessionTitle(liveTitle) ? liveTitle : rowTitle
 }
 
 export function workspaceName(ws: WorkspaceRows['workspace']): string {
@@ -366,15 +368,15 @@ export function withEndedRows(all: WorkspaceRows[], tabs: readonly EndedTab[]): 
 
 export function shownRows(s: {
   workspaceRows: WorkspaceRows[]
-  butlerWorkspace: WorkspaceRows | null
+  claimedWorkspaces: WorkspaceRows[]
   tabs: readonly EndedTab[]
-}): { workspaceRows: WorkspaceRows[]; butlerWorkspace: WorkspaceRows | null } {
+}): { workspaceRows: WorkspaceRows[]; claimedWorkspaces: WorkspaceRows[] } {
   const every = everyWorkspaceRows(s)
   const all = withEndedRows(every, s.tabs)
-  if (all === every) return { workspaceRows: s.workspaceRows, butlerWorkspace: s.butlerWorkspace }
-  return s.butlerWorkspace
-    ? { workspaceRows: all.slice(0, -1), butlerWorkspace: all[all.length - 1] }
-    : { workspaceRows: all, butlerWorkspace: null }
+  if (all === every)
+    return { workspaceRows: s.workspaceRows, claimedWorkspaces: s.claimedWorkspaces }
+  const listed = s.workspaceRows.length
+  return { workspaceRows: all.slice(0, listed), claimedWorkspaces: all.slice(listed) }
 }
 
 export function mixesBackends(rows: { backendId: SessionBackend }[]): boolean {

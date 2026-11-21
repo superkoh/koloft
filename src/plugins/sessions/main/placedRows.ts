@@ -1,4 +1,9 @@
-import type { SessionInfo, SessionRow, WorkspaceRows } from '@shared/types'
+import {
+  isPlaceholderSessionTitle,
+  type SessionInfo,
+  type SessionRow,
+  type WorkspaceRows
+} from '@shared/types'
 import { parseRemoteKey, remoteCopyText } from '@shared/remoteKey'
 import { basename } from '@shared/preview'
 import { fail, type Parsed } from '@core/command'
@@ -21,8 +26,6 @@ export interface PlacedRow {
   live?: SessionInfo
 }
 
-const THE_BUTLERS_FOLDER = "the butler's own folder"
-
 export function placedRows(sidebar: WorkspaceRows[], sessions: SessionInfo[]): PlacedRow[] {
   return sidebar.flatMap((w) =>
     w.rows
@@ -31,9 +34,9 @@ export function placedRows(sidebar: WorkspaceRows[], sessions: SessionInfo[]): P
         const live = sessions.find((s) => s.alive && s.sessionId === row.id)
         return {
           workspace: w.workspace.path,
-          shownAs: w.workspace.butler ? THE_BUTLERS_FOLDER : workspaceLabel(w.workspace.path),
+          shownAs: w.workspace.claim?.shownAs ?? workspaceLabel(w.workspace.path),
           row,
-          title: live?.title ?? row.title,
+          title: live?.title && !isPlaceholderSessionTitle(live.title) ? live.title : row.title,
           live
         }
       })

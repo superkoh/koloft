@@ -11,7 +11,12 @@ import {
   machineAppServerCmd,
   ownerWordsLines
 } from '../../src/main/remote/codexMachine'
-import { CODEX_REPLY_LANGUAGE_SCRIPT, seedHandedOverOwnerWords } from '../../src/main/hooks'
+import {
+  CODEX_REPLY_LANGUAGE_SCRIPT,
+  CODEX_SENT_WORDS_ENV,
+  remoteSentWordsFile,
+  seedHandedOverOwnerWords
+} from '../../src/plugins/sessions/main/hooks'
 import { DEFAULT_MAX_FRAME } from '../../src/main/codexTransport'
 
 const FAKE_CODEX = path.join(__dirname, '..', 'e2e', 'fixtures', 'fake-codex.js')
@@ -118,6 +123,20 @@ describe('the tab script of a Codex session on a machine', () => {
     expect(printed.stdout).toBe("/usr/bin:/bin:/opt/it's here/bin:/b\n")
     expect(tabScript(false, '/b')).not.toContain('bash -lc')
     expect(tabScript(false)).toContain('login_path=$(bash -lc ')
+  })
+
+  // ADR-0028
+  it("tells the tab's reply-language hook where Koloft notes the words it hands that tab on the machine, so a Koloft or [Discord] message there is not flagged as forged", () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'kcm-home-'))
+    const envLine = tabScript(false)
+      .split('\n')
+      .find((line) => line.includes(`${CODEX_SENT_WORDS_ENV}=`))!
+    const printed = spawnSync('/bin/sh', ['-c', `${envLine}\necho "$${CODEX_SENT_WORDS_ENV}"`], {
+      env: { PATH: '/usr/bin:/bin', HOME: home },
+      encoding: 'utf8'
+    })
+    expect(printed.stdout.trim()).toBe(remoteSentWordsFile('T').replace('$HOME', home))
+    fs.rmSync(home, { recursive: true, force: true })
   })
 
   it("copies the koloft-docs skill from the machine package into the tab's Codex home every time, and the koloft skill only with agent tools on", () => {

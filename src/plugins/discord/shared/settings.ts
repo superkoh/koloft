@@ -1,5 +1,5 @@
 import { setting, type SettingKeys } from '@core/settings'
-import { GLOBAL_SCOPE } from '@shared/conductors'
+import { GLOBAL_SCOPE } from '@shared/scope'
 import { isRecord, stringsIn } from '@shared/workbenchState'
 import { isDiscordId, newerSnowflake } from './channels'
 import type { DiscordChannel, DiscordSettings, SessionRoom } from './types'

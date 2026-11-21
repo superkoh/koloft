@@ -1,0 +1,4478 @@
+import fs from 'fs'
+import http from 'http'
+import os from 'os'
+import path from 'path'
+import { execFileSync, spawnSync } from 'child_process'
+import { pathToFileURL } from 'url'
+import { EventEmitter } from 'events'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  AgySessions,
+  type AgyHomePick,
+  type AgySessionDeps
+} from '../../../../src/plugins/sessions/main/agySessions'
+import { BackgroundFile } from '../../../../src/main/backgroundFile'
+import { agySessionKey } from '../../../../src/plugins/sessions/main/sessionStore'
+import { agyTranscript, annotationFile, type SummaryRow } from '../../../../src/main/agyStore'
+import type { AgyMachineLaunch, RemoteAgyConfig } from '../../../../src/main/remote/agyTab'
+import { TAB_TMUX_NAME_SH } from '../../../../src/main/remote/launch'
+import { SessionRuntime } from '../../../../src/plugins/sessions/main/sessionRuntime'
+import { PROGRAM_STATUS_REPLY } from '../../../../src/main/programStatus'
+import type { SessionEvent } from '../../../../src/shared/sessionEvent'
+import { NO_USABLE_ACCOUNT } from '../../../../src/shared/accountUsage'
+import { appendConversation, ownerTyped, writeSummaries } from '../../helpers/agyStore'
+const mocks = vi.hoisted(() => ({ runtime: vi.fn() }))
+vi.mock('../../../../src/main/cliRuntime', () => ({ resolveCliRuntime: mocks.runtime }))
+
+const A = '3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d'
+const B = '7a2d4e6f-1b3c-4d5e-8f9a-0b1c2d3e4f5a'
+const CHILD = 'c4d5e6f7-a8b9-4c0d-9e1f-2a3b4c5d6e7f'
+const ESC = '\x1b'
+const osc = (body: string): string => `${ESC}]7501;${body}${ESC}\\`
+const b64 = (text: string): string => Buffer.from(text, 'utf8').toString('base64')
+const state = (s: string, extra = ''): string => osc(`state=${s}${extra}:app=antigravity`)
+const SERVICE = '/exa.language_server_pb.LanguageServerService/'
+const REAL_PATH = process.env.PATH
+const REMOTE_WS = 'ssh://devbox/home/me/proj'
+const LISTED_TITLE_READ_SETTLES_MS = 300
+const TITLE_LANDS_AFTER_THE_TURN_MS = 1500
+const STANDING_CRON = {
+  name: 'schedule',
+  args: { CronExpression: '0 * * * *', IsDaemon: true, Prompt: 'Check the build' }
+}
+const LOTS_OF_CRON_FIRINGS = 8000
+const TIMER = { name: 'schedule', args: { DurationSeconds: 1800, Prompt: 'Look again' } }
+const killTask = (TaskId: string): Record<string, unknown> => ({
+  name: 'manage_task',
+  args: { Action: 'kill', TaskId }
+})
+const daemon = (CommandLine: string): Record<string, unknown> => ({
+  name: 'run_command',
+  args: { CommandLine, IsDaemon: true, WaitMsBeforeAsync: 500, toolSummary: 'Dev server startup' }
+})
+const command = (CommandLine: string): Record<string, unknown> => ({
+  name: 'run_command',
+  args: { CommandLine, WaitMsBeforeAsync: 500, toolSummary: 'Probe command' }
+})
+
+let home: string
+let repo: string
+let gemini: string
+let sessions: AgySessions
+let pty: EventEmitter & { write: ReturnType<typeof vi.fn>; type: ReturnType<typeof vi.fn> }
+let runtime: SessionRuntime
+let created: {
+  id: string
+  argv: string[]
+  env: NodeJS.ProcessEnv
+  setForTab: Record<string, string>
+}[]
+let agentTools: boolean
+let projectRules: string | undefined
+let browserEndpoint: string
+let picked: AgyHomePick | undefined
+let apiKey: string | undefined
+let skipPermissions: boolean
+let assist: { role: string } | undefined
+let machine: {
+  launches: AgyMachineLaunch[]
+  ended: string[]
+  config: RemoteAgyConfig
+  rows: unknown[]
+  titles: Record<string, string | undefined>
+  titleReads: number
+  held: boolean
+  alive: Set<string>
+  attach: boolean
+  tmuxThere: string | null
+}
+let mirror: string
+
+let server: http.Server
+let apiAnswers: boolean
+let trajectory: unknown
+let backgroundTasks: unknown
+let streamHandler: ((res: http.ServerResponse) => void) | undefined
+let apiCalls: { method: string; body: unknown }[]
+
+const streamFrame = (value: unknown): Buffer => {
+  const body = Buffer.from(JSON.stringify(value))
+  const head = Buffer.alloc(5)
+  head.writeUInt8(0, 0)
+  head.writeUInt32BE(body.length, 1)
+  return Buffer.concat([head, body])
+}
+
+beforeAll(async () => {
+  server = http.createServer((req, res) => {
+    const chunks: Buffer[] = []
+    req.on('data', (c: Buffer) => chunks.push(c))
+    req.on('end', () => {
+      if (!apiAnswers) {
+        res.writeHead(503)
+        return res.end('down')
+      }
+      const method = req.url!.slice(SERVICE.length)
+      if (method === 'StreamAgentStateUpdates')
+        return streamHandler ? streamHandler(res) : res.end()
+      apiCalls.push({ method, body: JSON.parse(Buffer.concat(chunks).toString('utf8')) })
+      res.writeHead(200, { 'content-type': 'application/json' })
+      res.end(
+        method === 'GetCascadeTrajectory'
+          ? JSON.stringify({ trajectory })
+          : method === 'ListBackgroundTasks'
+            ? JSON.stringify(backgroundTasks)
+            : '{}'
+      )
+    })
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+})
+
+afterAll(() => {
+  server.close()
+})
+
+const events = (type: SessionEvent['type']): SessionEvent[] =>
+  vi
+    .mocked(sessions['deps'].events)
+    .mock.calls.map(([, e]) => e)
+    .filter((e) => e.type === type)
+
+const tabEnv = (tabId: string): NodeJS.ProcessEnv => {
+  const c = created.find((one) => one.id === tabId)!
+  return { ...c.env, ...c.setForTab }
+}
+const say = (tabId: string, data: string): void => {
+  pty.emit('data', { id: tabId, data })
+}
+const sent = (method: string): unknown[] =>
+  apiCalls.filter((c) => c.method === method).map((c) => c.body)
+
+function hook(tabId: string, event: string, input: Record<string, unknown> = {}): string {
+  const hooks = JSON.parse(
+    fs.readFileSync(path.join(picked!.home, 'config', 'hooks.json'), 'utf8')
+  ).koloft
+  const [first] = hooks[event]
+  const command: string = (first.hooks ?? [first])[0].command
+  return execFileSync('/bin/sh', ['-c', command], {
+    input: JSON.stringify({ conversationId: A, workspacePaths: [repo], ...input }),
+    env: tabEnv(tabId),
+    encoding: 'utf8'
+  })
+}
+
+function title(tabId: string, input: Record<string, unknown>): void {
+  const settings = JSON.parse(
+    fs.readFileSync(path.join(picked!.home, 'antigravity-cli', 'settings.json'), 'utf8')
+  )
+  execFileSync('/bin/sh', ['-c', settings.title.command], {
+    input: JSON.stringify({ agent_state: 'idle', ...input }),
+    env: tabEnv(tabId),
+    encoding: 'utf8'
+  })
+}
+
+async function hooksTaken(tabId: string): Promise<void> {
+  const log = tabEnv(tabId).KOLOFT_AGY_LOG!
+  const size = fs.statSync(log).size
+  await vi.waitFor(() => expect(sessions['runs'].get(tabId)?.log['offset']).toBe(size), {
+    timeout: 2000
+  })
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'agy-sessions-')))
+  repo = path.join(home, 'repo')
+  fs.mkdirSync(repo)
+  gemini = path.join(home, '.gemini')
+  const tools = path.join(home, 'tools')
+  fs.mkdirSync(tools)
+  fs.writeFileSync(path.join(tools, 'playwright-cli'), '')
+  fs.writeFileSync(path.join(tools, 'gh'), '')
+  const bin = path.join(home, 'bin')
+  fs.mkdirSync(bin)
+  fs.writeFileSync(
+    path.join(bin, 'lsof'),
+    `#!/bin/sh\nif [ "$1" = "-t" ]; then cat '${path.join(home, 'lock-holders')}' 2>/dev/null; exit 0; fi\nexec /usr/sbin/lsof "$@"\n`,
+    { mode: 0o755 }
+  )
+  process.env.PATH = `${bin}:${REAL_PATH}`
+  mocks.runtime.mockResolvedValue({
+    binary: '/fixture/agy',
+    env: { HOME: home, PATH: '/usr/bin:/bin' },
+    version: '1.4.0',
+    verified: true
+  })
+  created = []
+  agentTools = false
+  browserEndpoint = ''
+  picked = { account: 'work', home: path.join(home, 'agy-homes', 'work') }
+  apiKey = undefined
+  skipPermissions = false
+  assist = undefined
+  apiAnswers = false
+  trajectory = undefined
+  backgroundTasks = {}
+  streamHandler = undefined
+  apiCalls = []
+  machine = {
+    launches: [],
+    ended: [],
+    config: { ownersSettings: {}, ownersHooks: {}, ownSettings: {}, accountsSettings: [] },
+    rows: [],
+    titles: {},
+    titleReads: 0,
+    held: false,
+    alive: new Set(),
+    attach: false,
+    tmuxThere: null
+  }
+  mirror = path.join(home, 'mirror-hooks')
+  fs.mkdirSync(mirror)
+  let tab = 0
+  pty = Object.assign(new EventEmitter(), {
+    nextId: vi.fn(() => `pty-${++tab}`),
+    create: vi.fn(
+      (args: {
+        id: string
+        argv: string[]
+        processEnv: NodeJS.ProcessEnv
+        envSetForThisTab?: Record<string, string>
+      }) => {
+        created.push({
+          id: args.id,
+          argv: args.argv,
+          env: args.processEnv,
+          setForTab: args.envSetForThisTab ?? {}
+        })
+        return { id: args.id, startedAt: Date.now() }
+      }
+    ),
+    pidOf: vi.fn(() => process.pid),
+    write: vi.fn(),
+    type: vi.fn(async () => undefined),
+    wakeReady: vi.fn(),
+    kill: vi.fn(),
+    clearResumeIntent: vi.fn()
+  })
+  runtime = new SessionRuntime()
+  const deps: AgySessionDeps = {
+    pty: pty as unknown as AgySessionDeps['pty'],
+    runtime,
+    projectInfo: (p) => ({ root: p.startsWith('ssh://') ? REMOTE_WS : repo, treeRoot: p }),
+    remoteDirExists: async () => true,
+    changed: vi.fn(),
+    events: vi.fn((tabId, event) => sessions.observe(tabId, event)),
+    error: vi.fn(),
+    noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],
+    openShimRoot: path.join(home, 'agy-open'),
+    scriptsDir: path.join(home, 'scripts'),
+    ownersGemini: () => gemini,
+    pickHome: () => picked,
+    apiKeyOf: async () => apiKey,
+    playwrightBin: tools,
+    browserEndpoint: () => browserEndpoint,
+    builtInStatusLine: () => undefined,
+    skipPermissions: () => skipPermissions,
+    assistOf: () => assist,
+    agent: { enabled: () => agentTools, answer: vi.fn() },
+    projectRules: async () => projectRules,
+    gitAccounts: { configEnv: (env) => env, ghWrapper: path.join(tools, 'gh') },
+    remote: {
+      machine: () => ({
+        launchAgy: async (spec) => {
+          machine.launches.push(spec)
+          return {
+            attach: machine.attach,
+            tmuxName: spec.resumeId ? `k-${spec.resumeId}` : `m-${spec.tabId}-t`,
+            spawnCwd: home,
+            shell: '/bin/zsh',
+            launchCommand: () => 'ssh devbox',
+            resized: () => undefined
+          }
+        },
+        readAgyConfig: async () => machine.config,
+        agyHeldElsewhere: async () => machine.held,
+        agyConversationTitle: async (id) => {
+          machine.titleReads++
+          return (
+            machine.titles[id] ??
+            (machine.rows as { conversation_id?: string; title?: string }[]).find(
+              (r) => r.conversation_id === id && r.title
+            )?.title
+          )
+        },
+        agyConversations: async () => machine.rows as SummaryRow[],
+        agySend: async () => false,
+        endTmuxSession: async (name) => {
+          machine.ended.push(name)
+          return undefined
+        },
+        endedByKoloft: async (id) => machine.ended.includes(`k-${id}`),
+        runScript: async (script) => (script === TAB_TMUX_NAME_SH ? machine.tmuxThere : null)
+      }),
+      hosts: () => ['devbox'],
+      keyed: (host, p) => `ssh://${host}${p}`,
+      mirrorDir: () => mirror,
+      mirrorGemini: () => path.join(home, 'mirror-gemini'),
+      gone: (_host, id) => !machine.alive.has(id),
+      connected: () => true,
+      nextPull: async () => undefined,
+      setupLine: () => undefined,
+      hookSettings: () => undefined,
+      machineName: () => 'm-test'
+    }
+  }
+  sessions = new AgySessions(path.join(home, 'agy-sessions.json'), deps)
+})
+
+afterEach(async () => {
+  await sessions.stopAll()
+  process.env.PATH = REAL_PATH
+  await BackgroundFile.whenAllWritten()
+  fs.rmSync(home, { recursive: true, force: true })
+})
+
+async function launch(
+  extra: Partial<Parameters<AgySessions['launch']>[0]> = {}
+): Promise<{ id: string }> {
+  return sessions.launch({ kind: 'agy', cwd: repo, ...extra })
+}
+
+async function boundTab(): Promise<string> {
+  const { id } = await launch()
+  title(id, {
+    conversation_id: A,
+    model: { id: 'gemini-3.1-pro-low' },
+    context_window: { used_percentage: 12 }
+  })
+  say(id, state('idle'))
+  expect(sessions.list()[0]?.nativeSessionId).toBe(A)
+  return id
+}
+
+function storedMember(id: string, permission?: 'bypass'): void {
+  sessions.store.upsertMember({
+    id,
+    key: agySessionKey(id),
+    workspacePath: repo,
+    cwd: repo,
+    title: 'Saved',
+    createdAt: 1,
+    updatedAt: 1,
+    ...(permission ? { permission } : {})
+  })
+}
+
+describe('AgySessions launch', () => {
+  it("starts agy on the account's own folder with a token for its API, the model and effort it was given, and the first prompt typed in", async () => {
+    await launch({ model: 'gemini-3.1-pro-high', effort: 'high', firstPrompt: 'hello' })
+    expect(created[0].argv).toEqual([
+      `--gemini_dir=${picked!.home}`,
+      expect.stringMatching(/^--csrf_token=[0-9a-f]{48}$/),
+      '--model',
+      'gemini-3.1-pro-high',
+      '--effort',
+      'high',
+      '-i',
+      'hello'
+    ])
+  })
+
+  it('a first prompt that starts with / is typed into the tab once agy shows its prompt, not given with -i, so agy sends the skill it names; until then nobody else is told the tab takes typing', async () => {
+    const { id } = await launch({ firstPrompt: '/review do X' })
+    expect(created[0].argv).not.toContain('-i')
+    title(id, { conversation_id: '', agent_state: 'initializing' })
+    say(id, state('idle'))
+    expect(pty.write).not.toHaveBeenCalled()
+    expect(sessions.showsPromptBeforeBind(id)).toBe(false)
+    title(id, { conversation_id: '', agent_state: 'idle' })
+    title(id, { conversation_id: '', agent_state: 'idle' })
+    await hooksTaken(id)
+    expect(pty.write.mock.calls).toEqual([[id, `${ESC}[200~/review do X${ESC}[201~\r`]])
+    expect(sessions.showsPromptBeforeBind(id)).toBe(true)
+  })
+
+  it('asks before every action by default, "edit without asking" starts accept-edits mode, and a resume opens the stored conversation with the permission it had', async () => {
+    await launch()
+    await launch({ permission: 'acceptEdits' })
+    storedMember(A, 'bypass')
+    await sessions.resume({ sessionId: agySessionKey(A), cwd: repo })
+    expect(created.map((c) => c.argv.slice(2))).toEqual([
+      [],
+      ['--mode', 'accept-edits'],
+      ['--dangerously-skip-permissions', `--conversation=${A}`]
+    ])
+  })
+
+  it('skips every ask when "Skip permission prompts" is on in Accounts, here and on a remote machine, but never over a permission picked for this launch, and a session started that way asks again on resume once the setting is off', async () => {
+    skipPermissions = true
+    const id = await boundTab()
+    await launch({ permission: 'acceptEdits' })
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    expect(created[0].argv.slice(2)).toEqual(['--dangerously-skip-permissions'])
+    expect(created[1].argv.slice(2)).toEqual(['--mode', 'accept-edits'])
+    expect(machine.launches[0].program.run).toContain("'--dangerously-skip-permissions'")
+    expect(sessions.launchedBypassingChecks(id)).toBe(true)
+    await sessions.stop(id)
+    skipPermissions = false
+    await sessions.resume({ sessionId: agySessionKey(A), cwd: repo })
+    expect(created[3].argv.slice(2)).toEqual([`--conversation=${A}`])
+  })
+
+  it("puts the tab's own open, gh and playwright-cli commands first on agy's PATH", async () => {
+    await launch()
+    const first = created[0].env.PATH!.split(':')[0]
+    for (const tool of ['open', 'gh', 'playwright-cli'])
+      expect(fs.existsSync(path.join(first, tool))).toBe(true)
+  })
+
+  it("keeps playwright-cli's snapshots and screenshots in a folder of the tab under the temp folder, out of the workspace", async () => {
+    await launch()
+    expect(created[0].setForTab.PLAYWRIGHT_MCP_OUTPUT_DIR).toBe(
+      path.join(os.tmpdir(), 'koloft-playwright', created[0].id)
+    )
+  })
+
+  it("keeps the account's sign-in in its own folder instead of the shared macOS Keychain, and routes to its API key when it has one", async () => {
+    await launch()
+    expect(created[0].env.WSL_INTEROP).toBe('koloft')
+    expect(created[0].env.GEMINI_API_KEY).toBeUndefined()
+    apiKey = 'key-1'
+    await launch()
+    expect(created[1].env.GEMINI_API_KEY).toBe('key-1')
+    const settings = path.join(picked!.home, 'antigravity-cli', 'settings.json')
+    expect(JSON.parse(fs.readFileSync(settings, 'utf8')).modelProvider).toBe('gemini')
+  })
+
+  // AGY§9 AGY§25
+  it("strips an ancestor Antigravity tab's log, start file, owner title, notice, API key and ANTIGRAVITY_* variables from the environment before launching a new tab", async () => {
+    const ancestor = {
+      KOLOFT_AGY_LOG: '/ancestor/agy.jsonl',
+      KOLOFT_AGY_START: '/ancestor/agy-session-start.json',
+      KOLOFT_AGY_COST: '/ancestor/agy-cost',
+      KOLOFT_AGY_OWNER_TITLE: '/ancestor/title.sh',
+      KOLOFT_NOTICE: '/ancestor/tab.notice',
+      ANTIGRAVITY_AGENT: '1',
+      ANTIGRAVITY_CONVERSATION_ID: B,
+      GEMINI_API_KEY: 'ancestor-key'
+    }
+    mocks.runtime.mockResolvedValueOnce({
+      binary: '/fixture/agy',
+      env: { HOME: home, PATH: '/usr/bin:/bin', ...ancestor },
+      version: '1.4.0',
+      verified: true
+    })
+    sessions.forgetAvailability()
+    await sessions.availability({ force: true })
+    const { id } = await launch()
+    const env = tabEnv(id)
+    expect(env.KOLOFT_AGY_LOG).not.toBe(ancestor.KOLOFT_AGY_LOG)
+    expect(env.KOLOFT_AGY_COST).not.toBe(ancestor.KOLOFT_AGY_COST)
+    expect(env.KOLOFT_AGY_START).toBeUndefined()
+    expect(env.KOLOFT_AGY_OWNER_TITLE).toBeUndefined()
+    expect(env.KOLOFT_NOTICE).toBeUndefined()
+    expect(env.ANTIGRAVITY_AGENT).toBeUndefined()
+    expect(env.ANTIGRAVITY_CONVERSATION_ID).toBeUndefined()
+    expect(env.GEMINI_API_KEY).toBeUndefined()
+  })
+
+  it('does not start without a usable account', async () => {
+    picked = undefined
+    await expect(launch()).rejects.toThrow(/No Antigravity account/)
+    expect(created).toEqual([])
+  })
+
+  it('counts each tab on the account it runs on, from the moment it starts opening, and says so when every account is at its limit', async () => {
+    const seen: (string | undefined)[][] = []
+    sessions['deps'].pickHome = () => {
+      seen.push(sessions.launchedSessions().map((s) => s.account))
+      return { ...picked!, notice: 'Every Antigravity account is at its limit' }
+    }
+    await Promise.all([launch(), launch()])
+    expect(seen).toEqual([[], ['work']])
+    expect(sessions.launchedSessions().map((s) => s.account)).toEqual(['work', 'work'])
+    expect(sessions['deps'].error).toHaveBeenCalledWith('Every Antigravity account is at its limit')
+  })
+
+  it("writes the folder into agy's own trust list only when Koloft was told to trust it", async () => {
+    await launch()
+    expect(sessions.trustsFolder(repo)).toBe(false)
+    await launch({ trustFolder: true })
+    expect(sessions.trustsFolder(repo)).toBe(true)
+  })
+
+  // AGY§5
+  it("a resume on another account trusts the folder there when one of the owner's accounts already trusts it, here and on a remote machine, since agy would stop on its trust question with nobody at the tab; a fresh launch, or a resume in a folder no account trusts, still asks", async () => {
+    storedMember(A)
+    await sessions.resume({ sessionId: agySessionKey(A), cwd: repo })
+    expect(sessions.trustsFolder(repo)).toBe(false)
+    const spent = path.join(home, 'agy-homes', 'spent', 'antigravity-cli')
+    fs.mkdirSync(spent, { recursive: true })
+    fs.writeFileSync(
+      path.join(spent, 'settings.json'),
+      JSON.stringify({ trustedWorkspaces: [repo] })
+    )
+    await launch()
+    expect(sessions.trustsFolder(repo)).toBe(false)
+    storedMember(CHILD)
+    await sessions.resume({ sessionId: agySessionKey(CHILD), cwd: repo })
+    expect(sessions.trustsFolder(repo)).toBe(true)
+
+    machine.config.accountsSettings = [{ trustedWorkspaces: ['/home/me/proj'] }, {}]
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    sessions.store.upsertMember({
+      id: B,
+      key: agySessionKey(B, 'devbox'),
+      workspacePath: REMOTE_WS,
+      cwd: REMOTE_WS,
+      title: 'Remote',
+      createdAt: 1,
+      updatedAt: 1
+    })
+    await sessions.resume({ sessionId: agySessionKey(B, 'devbox'), cwd: REMOTE_WS })
+    const trusted = machine.launches.map(
+      (spec) => JSON.parse(spec.program.files[`${spec.tabId}.settings.json`]).trustedWorkspaces
+    )
+    expect(trusted).toEqual([[], ['/home/me/proj']])
+  })
+
+  // AGY§5
+  it('counts a folder the owner’s own agy settings trust as trusted before any launch, as a launch does', () => {
+    fs.mkdirSync(path.join(gemini, 'antigravity-cli'), { recursive: true })
+    fs.writeFileSync(
+      path.join(gemini, 'antigravity-cli', 'settings.json'),
+      JSON.stringify({ trustedWorkspaces: [repo] })
+    )
+    expect(sessions.trustsFolder(repo)).toBe(true)
+  })
+
+  // AGY§32
+  it("the butler's folder gets an AGENTS.md that tells agy to keep what the owner teaches it there, since agy has no memory of its own; one already there is kept, and a plain tab's folder gets none", async () => {
+    const memory = path.join(repo, 'AGENTS.md')
+    await launch()
+    expect(fs.existsSync(memory)).toBe(false)
+    await launch({ conductor: true, trustFolder: true })
+    expect(fs.readFileSync(memory, 'utf8')).toMatch(/memory/)
+    fs.writeFileSync(memory, 'Favourite fruit: lychee.\n')
+    await launch({ conductor: true, trustFolder: true })
+    expect(fs.readFileSync(memory, 'utf8')).toBe('Favourite fruit: lychee.\n')
+  })
+
+  // AGY§5
+  it('trusts a worktree Koloft made in agy whenever agy trusts its workspace, here and on a remote machine, since agy does not carry trust down to subfolders, but never a git worktree the person made', async () => {
+    const recover = async (workspace: string, name: string, managed = true): Promise<string> => {
+      const resource = {
+        id: crypto.randomUUID(),
+        originalCwd: workspace,
+        worktreePath: `${workspace}/.claude/worktrees/${name}`,
+        worktreeName: name,
+        worktreeBranch: `worktree-${name}`,
+        originalHeadCommit: '0'.repeat(40),
+        state: 'ready' as const,
+        managed
+      }
+      sessions.store.putResource(resource)
+      vi.spyOn(sessions.worktrees, 'rebuild').mockResolvedValueOnce(resource)
+      await sessions.launch({ kind: 'agy', cwd: workspace, worktreeResourceId: resource.id })
+      return resource.worktreePath
+    }
+    expect(sessions.trustsFolder(await recover(repo, 'before'))).toBe(false)
+    fs.mkdirSync(path.join(gemini, 'antigravity-cli'), { recursive: true })
+    fs.writeFileSync(
+      path.join(gemini, 'antigravity-cli', 'settings.json'),
+      JSON.stringify({ trustedWorkspaces: [repo] })
+    )
+    expect(sessions.trustsFolder(await recover(repo, 'own', false))).toBe(false)
+    expect(sessions.trustsFolder(await recover(repo, 'koloft'))).toBe(true)
+
+    const trustedThere = async (): Promise<string[]> => {
+      const at = (await recover(REMOTE_WS, `remote-${machine.launches.length}`)).slice(
+        'ssh://devbox'.length
+      )
+      const spec = machine.launches.at(-1)!
+      const settings = JSON.parse(spec.program.files[`${spec.tabId}.settings.json`])
+      return [at, ...settings.trustedWorkspaces]
+    }
+    const [notTrusted, ...before] = await trustedThere()
+    expect(before).not.toContain(notTrusted)
+    machine.config = {
+      ownersSettings: { trustedWorkspaces: ['/home/me/proj'] },
+      ownersHooks: {},
+      ownSettings: {},
+      accountsSettings: []
+    }
+    const [trusted, ...after] = await trustedThere()
+    expect(after).toContain(trusted)
+  })
+
+  it("hands agy Koloft's instructions, with its workspace's own rules for picking a model, when a conversation starts only when agent tools are on", async () => {
+    agentTools = true
+    projectRules = 'Code: high.'
+    const on = await launch()
+    projectRules = undefined
+    agentTools = false
+    const off = await launch()
+    const told = JSON.parse(hook(on.id, 'SessionStart'))
+    expect(told.injectSteps[0].systemMessage.systemMessage).toContain('koloft help')
+    expect(told.injectSteps[0].systemMessage.systemMessage).toContain('    Code: high.')
+    expect(hook(off.id, 'SessionStart')).toBe('')
+  })
+
+  // AGY§26
+  it('lets agy run koloft commands without an ask only when agent tools are on, here and on a remote machine', async () => {
+    const allowHere = (): unknown =>
+      JSON.parse(
+        fs.readFileSync(path.join(picked!.home, 'antigravity-cli', 'settings.json'), 'utf8')
+      ).permissions
+    agentTools = true
+    await launch()
+    expect(allowHere()).toEqual({ allow: ['command(koloft)'] })
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, tabId: 'pty-r' })
+    const there = JSON.parse(machine.launches[0].program.files['pty-r.settings.json'])
+    expect(there.permissions).toEqual({ allow: ['command(koloft)'] })
+    agentTools = false
+    await launch()
+    expect(allowHere()).toBeUndefined()
+    machine.config = { ...machine.config, ownSettings: there }
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, tabId: 'pty-r2' })
+    const after = JSON.parse(machine.launches[1].program.files['pty-r2.settings.json'])
+    expect(after.permissions).toBeUndefined()
+  })
+
+  // ADR-0048 AGY§26 AGY§30
+  it("lets the owner's Playwright MCP run every tool without an ask only in a tab that has the Workbench browser", async () => {
+    const allowHere = (): unknown =>
+      JSON.parse(
+        fs.readFileSync(path.join(picked!.home, 'antigravity-cli', 'settings.json'), 'utf8')
+      ).permissions
+    fs.mkdirSync(path.join(gemini, 'config'), { recursive: true })
+    fs.writeFileSync(
+      path.join(gemini, 'config', 'mcp_config.json'),
+      JSON.stringify({ mcpServers: { pw: { command: 'npx', args: ['@playwright/mcp'] } } })
+    )
+    browserEndpoint = 'ws://127.0.0.1:9/cdp/x'
+    await launch()
+    expect(allowHere()).toEqual({ allow: ['mcp(pw/*)'] })
+    expect(created.at(-1)!.setForTab.PLAYWRIGHT_MCP_CDP_ENDPOINT).toBe(browserEndpoint)
+    browserEndpoint = ''
+    await launch()
+    expect(allowHere()).toBeUndefined()
+  })
+
+  // AGY§31
+  it("puts the koloft skill as real files in the account's own agy folder, here and from the machine package on a remote machine, only when agent tools are on, and the koloft-docs skill always", async () => {
+    const skillsHere = (): string => path.join(picked!.home, 'antigravity-cli', 'skills')
+    const skillHere = (): string => path.join(skillsHere(), 'koloft', 'SKILL.md')
+    const docsHere = (): string => path.join(skillsHere(), 'koloft-docs', 'references', 'core.md')
+    const fromPackage = '"$M/agent-plugin/skills/koloft"'
+    const docsFromPackage = '"$M/docs-plugin/skills/koloft-docs"'
+    agentTools = true
+    await launch()
+    expect(fs.lstatSync(skillHere()).isFile()).toBe(true)
+    expect(fs.readFileSync(skillHere(), 'utf8')).toMatch(/^---\nname: koloft\n/)
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, tabId: 'pty-r' })
+    expect(machine.launches[0].program.run).toContain(fromPackage)
+    agentTools = false
+    await launch()
+    expect(fs.existsSync(skillHere())).toBe(false)
+    expect(fs.lstatSync(docsHere()).isFile()).toBe(true)
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, tabId: 'pty-r2' })
+    expect(machine.launches[1].program.run).not.toContain(fromPackage)
+    expect(machine.launches[1].program.run).toContain(docsFromPackage)
+    expect(machine.launches[1].program.run).toContain('"$A/antigravity-cli/skills/koloft"')
+  })
+
+  // AGY§9 AGY§24
+  it('refuses to resume a conversation another agy process holds open, and resumes one whose lock nobody holds', async () => {
+    storedMember(A)
+    const presence = path.join(gemini, 'antigravity-cli', 'presence')
+    fs.mkdirSync(presence, { recursive: true })
+    fs.writeFileSync(path.join(presence, `${A}.lock`), '')
+    fs.writeFileSync(path.join(home, 'lock-holders'), '99998\n')
+    await expect(sessions.resume({ sessionId: agySessionKey(A), cwd: repo })).rejects.toThrow(
+      /open in another agy window/
+    )
+    expect(created).toEqual([])
+    fs.writeFileSync(path.join(home, 'lock-holders'), '')
+    await sessions.resume({ sessionId: agySessionKey(A), cwd: repo })
+    expect(created[0].argv).toContain(`--conversation=${A}`)
+  })
+})
+
+describe('The butler on Antigravity', () => {
+  // ADR-0029
+  it('asks as the owner’s permission setting says, like any tab, trusts its folder, and is told its role instead of the session guide', async () => {
+    agentTools = true
+    assist = { role: 'You are the butler.' }
+    const { id } = await launch()
+    expect(created[0].argv).not.toContain('--dangerously-skip-permissions')
+    expect(sessions.trustsFolder(repo)).toBe(true)
+    const told = JSON.parse(hook(id, 'SessionStart'))
+    expect(told.injectSteps[0].systemMessage.systemMessage).toBe('You are the butler.')
+    skipPermissions = true
+    await launch()
+    expect(created[1].argv).toContain('--dangerously-skip-permissions')
+  })
+
+  // ADR-0029
+  it('no session runs a tool gate, the butler included', async () => {
+    const plain = await launch()
+    assist = { role: 'r' }
+    const butler = await launch()
+    for (const { id } of [plain, butler])
+      expect(hook(id, 'PreToolUse', { toolCall: { name: 'invoke_subagent', args: {} } })).toBe('')
+  })
+})
+
+describe('AgySessions binding (AGY§9 AGY§10 AGY§11)', () => {
+  it('answers the status question agy asks at start', async () => {
+    const { id } = await launch()
+    say(id, osc('?'))
+    expect(pty.write).toHaveBeenCalledWith(id, PROGRAM_STATUS_REPLY)
+  })
+
+  it('binds the tab to the conversation agy names to its title script, and not to the empty id before the first prompt', async () => {
+    const { id } = await launch()
+    title(id, { conversation_id: '', agent_state: 'authenticating', model: null })
+    say(id, state('idle'))
+    expect(sessions.list()).toEqual([])
+    title(id, { conversation_id: A })
+    title(id, { conversation_id: A, agent_state: 'working' })
+    say(id, state('working'))
+    expect(sessions.list()[0]).toMatchObject({ sessionId: agySessionKey(A), nativeSessionId: A })
+    expect(events('bound')).toHaveLength(1)
+  })
+
+  // AGY§5 AGY§8
+  it('before its first prompt it tells whether it shows the prompt or a setup screen, and once bound it no longer says so', async () => {
+    const { id } = await launch()
+    expect(sessions.showsPromptBeforeBind(id)).toBe(false)
+    say(id, state('blocked', ':kind=question'))
+    expect(sessions.showsPromptBeforeBind(id)).toBe(false)
+    say(id, state('idle'))
+    expect(sessions.showsPromptBeforeBind(id)).toBe(true)
+    title(id, { conversation_id: A })
+    say(id, state('working'))
+    expect(sessions.showsPromptBeforeBind(id)).toBe(false)
+  })
+
+  it('the status frames since the prompt from before the bind count once bound, so a turn that started or ended before it is not lost', async () => {
+    const started = (await launch()).id
+    say(started, state('idle'))
+    say(started, state('working'))
+    say(started, state('working'))
+    expect(events('prompt')).toHaveLength(0)
+    title(started, { conversation_id: A })
+    await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(A), { timeout: 3000 })
+    expect(events('prompt')).toHaveLength(1)
+    expect(events('stop')).toHaveLength(0)
+
+    const ended = (await launch()).id
+    say(ended, state('idle'))
+    say(ended, state('working'))
+    say(ended, state('done'))
+    title(ended, { conversation_id: B })
+    await vi.waitFor(() => expect(sessions.list()).toHaveLength(2), { timeout: 3000 })
+    expect(events('prompt')).toHaveLength(2)
+    expect(events('stop')).toHaveLength(1)
+  })
+
+  it('a prompt from before the bind with nothing after it counts as a finished turn once bound, as after a slash command typed first', async () => {
+    const { id } = await launch()
+    say(id, state('idle'))
+    title(id, { conversation_id: A })
+    await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(A), { timeout: 3000 })
+    expect(events('stop')).toHaveLength(1)
+    expect(events('prompt')).toHaveLength(0)
+  })
+
+  it('binds on its own from the title log, without waiting for a status frame', async () => {
+    const { id } = await launch()
+    title(id, { conversation_id: A })
+    await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(A), { timeout: 3000 })
+  })
+
+  it('moves the tab to the new conversation after /clear and drops the old one', async () => {
+    const id = await boundTab()
+    title(id, { conversation_id: B })
+    say(id, state('idle'))
+    expect(sessions.list()[0].nativeSessionId).toBe(B)
+    expect(sessions.store.getMember(agySessionKey(A))).toBeUndefined()
+  })
+
+  it("skips a line that names an id agy never makes, written into the tab's log by a program that inherited the tab's env, and still takes the lines after it", async () => {
+    const id = await boundTab()
+    title(id, { conversation_id: 'abc-123' })
+    hook(id, 'Stop', { conversationId: 'abc-123' })
+    title(id, { conversation_id: B })
+    say(id, state('idle'))
+    expect(sessions.list()[0].nativeSessionId).toBe(B)
+    expect(sessions.store.getMember(agySessionKey(A))).toBeUndefined()
+  })
+
+  // AGY§8 AGY§19
+  it("the tab's Scratchpad is agy's own folder for the conversation it holds, under the account folder agy runs with, so it is the very path agy writes its plans to, and follows the tab to the next conversation after /clear", async () => {
+    const id = await boundTab()
+    const brain = path.join(picked!.home, 'antigravity-cli', 'brain')
+    expect(sessions.list()[0].scratchpadDir).toBe(path.join(brain, A))
+    title(id, { conversation_id: B })
+    say(id, state('idle'))
+    expect(sessions.list()[0].scratchpadDir).toBe(path.join(brain, B))
+  })
+
+  it('moves the tab to a stored conversation picked with /resume inside agy, and keeps the one it left', async () => {
+    writeSummaries(gemini, [
+      {
+        conversation_id: B,
+        title: 'Old work',
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href]),
+        last_modified_time: '2026-10-15 08:00:00+00:00'
+      }
+    ])
+    const id = await boundTab()
+    await sessions.refreshHistory()
+    title(id, { conversation_id: B })
+    say(id, state('idle'))
+    expect(sessions.list()[0]).toMatchObject({ nativeSessionId: B, title: 'Old work' })
+    expect(sessions.store.getMember(agySessionKey(A))).toBeDefined()
+  })
+
+  it('keeps foreign unparented conversation hooks isolated while attributing child subagent hooks to background without polluting main files or lastTool', async () => {
+    const id = await boundTab()
+    const foreign = path.join(repo, 'foreign.md')
+    fs.writeFileSync(foreign, 'x\n')
+    hook(id, 'PostToolUse', {
+      conversationId: CHILD,
+      toolCall: { name: 'write_to_file', args: { TargetFile: foreign } }
+    })
+    hook(id, 'Stop', { conversationId: CHILD, fullyIdle: false })
+    await hooksTaken(id)
+    const mine = path.join(repo, 'mine.md')
+    fs.writeFileSync(mine, 'x\n')
+    hook(id, 'PostToolUse', { toolCall: { name: 'write_to_file', args: { TargetFile: mine } } })
+    await vi.waitFor(() => expect(sessions.list()[0].files).toHaveLength(1))
+    expect(sessions.list()[0]).toMatchObject({ nativeSessionId: A, files: [{ src: mine }] })
+    expect(sessions.list()[0].background).toBeUndefined()
+
+    const childFile = path.join(repo, 'sub.md')
+    fs.writeFileSync(childFile, 'y\n')
+    hook(id, 'PreToolUse', { toolCall: { name: 'edit_file', args: { Path: mine } } })
+    hook(id, 'PreToolUse', {
+      stepIdx: 3,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: { Subagents: [{ TypeName: 'research', Role: 'Explore auth', Prompt: 'Inspect' }] }
+      }
+    })
+    hook(id, 'SessionStart', { conversationId: CHILD, parentConversationId: A })
+    hook(id, 'PreInvocation', { conversationId: CHILD, parentConversationId: A, invocationNum: 0 })
+    hook(id, 'PreToolUse', {
+      conversationId: CHILD,
+      parentConversationId: A,
+      toolCall: { name: 'run_command', args: { CommandLine: 'echo child' } }
+    })
+    hook(id, 'PostToolUse', {
+      conversationId: CHILD,
+      parentConversationId: A,
+      toolCall: { name: 'write_file', args: { Path: childFile, Content: 'y\n' } }
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: CHILD, kind: 'agent', label: 'research: Explore auth', state: 'working' }
+      ])
+    )
+    expect(sessions.list()[0].files).toHaveLength(1)
+    expect(sessions.list()[0].files).toMatchObject([{ src: mine, access: 'wrote' }])
+    expect(sessions.list()[0].lastAction).toBe('Wrote mine.md')
+    hook(id, 'Stop', { conversationId: CHILD, parentConversationId: A, fullyIdle: true })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+  })
+})
+
+describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
+  it("turns agy's status frames into a turn starting, an approval or a question waiting, and the turn ending", async () => {
+    const id = await boundTab()
+    say(id, state('working'))
+    expect(runtime.statusOf(id)).toBe('working')
+    say(id, state('blocked', `:kind=permission:msg=${b64('Approve RunCommand: ls')}`))
+    say(id, state('blocked', `:kind=question:msg=${b64('Which fruit?')}`))
+    say(id, state('error', `:msg=${b64('Error 500')}`))
+    const shown = vi
+      .mocked(sessions['deps'].events)
+      .mock.calls.map(([, e]) => e)
+      .filter((e) => ['prompt', 'notify', 'stop'].includes(e.type))
+    expect(shown).toEqual([
+      { type: 'stop' },
+      { type: 'prompt' },
+      { type: 'notify', need: 'approval' },
+      { type: 'notify', need: 'input' },
+      { type: 'stop' }
+    ])
+  })
+
+  it('names a new conversation with the title agy makes up for it in its list, without waiting for a /rename', async () => {
+    const id = await boundTab()
+    writeSummaries(gemini, [
+      {
+        conversation_id: A,
+        title: 'Tidy the readme',
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+      }
+    ])
+    say(id, state('working'))
+    say(id, state('done'))
+    await vi.waitFor(() => expect(sessions.list()[0].title).toBe('Tidy the readme'))
+    expect(sessions.rows(repo)[0].title).toBe('Tidy the readme')
+  })
+
+  it('takes the title agy makes up even when it reaches agy’s list a few seconds after a short turn ends', async () => {
+    const id = await boundTab()
+    say(id, state('working'))
+    say(id, state('done'))
+    await new Promise((resolve) => setTimeout(resolve, TITLE_LANDS_AFTER_THE_TURN_MS))
+    writeSummaries(gemini, [
+      {
+        conversation_id: A,
+        title: 'Tidy the readme',
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+      }
+    ])
+    await vi.waitFor(() => expect(sessions.list()[0].title).toBe('Tidy the readme'), {
+      timeout: 3000
+    })
+  })
+
+  it('picks up a title that lands more than a second into the first turn without waiting for the turn to end, even from annotations while step_count is still 0', async () => {
+    const id = await boundTab()
+    say(id, state('working'))
+    await new Promise((resolve) => setTimeout(resolve, TITLE_LANDS_AFTER_THE_TURN_MS))
+    writeSummaries(gemini, [
+      {
+        conversation_id: A,
+        title: '',
+        step_count: 0,
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+      }
+    ])
+    const ann = annotationFile(gemini, A)
+    fs.mkdirSync(path.dirname(ann), { recursive: true })
+    fs.writeFileSync(ann, 'title:"First turn title"')
+    await vi.waitFor(() => expect(sessions.list()[0].title).toBe('First turn title'), {
+      timeout: 3000
+    })
+    expect(sessions.rows(repo)[0].title).toBe('First turn title')
+  })
+
+  it('syncs a placeholder live title when refreshHistory reads a real title, without clobbering an already-known title with a preview', async () => {
+    await boundTab()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    writeSummaries(gemini, [
+      {
+        conversation_id: A,
+        title: 'Refreshed title',
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+      }
+    ])
+    await sessions.refreshHistory()
+    expect(sessions.rows(repo)[0].title).toBe('Refreshed title')
+    expect(sessions.list()[0].title).toBe('Refreshed title')
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    writeSummaries(gemini, [
+      {
+        conversation_id: A,
+        title: '',
+        preview: 'first prompt preview text',
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+      }
+    ])
+    await sessions.refreshHistory()
+    expect(sessions.rows(repo)[0].title).toBe('Refreshed title')
+    expect(sessions.list()[0].title).toBe('Refreshed title')
+  })
+
+  it('picks up a remote Antigravity conversation title mid-turn through agyConversationTitle and does not restart the working chase on repeat working state updates', async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    const log = path.join(mirror, `${id}.agy.jsonl`)
+    fs.writeFileSync(
+      log,
+      [
+        JSON.stringify({ conversation_id: A, agent_state: 'working' }),
+        JSON.stringify({ conversation_id: A, agent_state: 'working' })
+      ].join('\n') + '\n'
+    )
+    sessions.followMirrors('devbox')
+    expect(sessions.list()[0]?.nativeSessionId).toBe(A)
+    await new Promise((resolve) => setTimeout(resolve, TITLE_LANDS_AFTER_THE_TURN_MS))
+    const readsBeforeTitle = machine.titleReads
+    expect(readsBeforeTitle).toBeGreaterThanOrEqual(1)
+    expect(readsBeforeTitle).toBeLessThanOrEqual(2)
+    machine.titles[A] = 'Remote first turn title'
+    await vi.waitFor(() => expect(sessions.list()[0].title).toBe('Remote first turn title'), {
+      timeout: 3000
+    })
+  })
+
+  // AGY§16
+  it('a launch given a name keeps it over the title agy makes up, and renames the conversation in agy to it once agy has listed its own', async () => {
+    apiAnswers = true
+    const { id } = await launch({ name: 'Docs pass' })
+    title(id, { conversation_id: A })
+    say(id, state('idle'))
+    say(id, state('working'))
+    say(id, state('done'))
+    const listed = (rowTitle: string): void =>
+      writeSummaries(gemini, [
+        {
+          conversation_id: A,
+          title: rowTitle,
+          workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+        }
+      ])
+    listed('Tidy the readme')
+    await vi.waitFor(
+      () =>
+        expect(sent('UpdateConversationAnnotations')).toContainEqual({
+          cascadeId: A,
+          annotations: { title: 'Docs pass' },
+          mergeAnnotations: true
+        }),
+      { timeout: 3000 }
+    )
+    expect(sessions.list()[0].title).toBe('Docs pass')
+    listed('Docs pass')
+    say(id, state('working'))
+    say(id, state('done'))
+    await sessions.refreshHistory()
+    await vi.waitFor(() => expect(sessions.rows(repo)[0].title).toBe('Docs pass'))
+    expect(sessions.list()[0].title).toBe('Docs pass')
+  })
+
+  it("the owner's own /rename in agy before Koloft has renamed the conversation wins over the name given at launch", async () => {
+    apiAnswers = true
+    const { id } = await launch({ name: 'Docs pass' })
+    title(id, { conversation_id: A })
+    say(id, state('idle'))
+    title(id, { conversation_id: A, conversation_title: 'My own title' })
+    writeSummaries(gemini, [
+      {
+        conversation_id: A,
+        title: 'My own title',
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+      }
+    ])
+    say(id, state('working'))
+    say(id, state('done'))
+    await new Promise((resolve) => setTimeout(resolve, LISTED_TITLE_READ_SETTLES_MS))
+    expect(sessions.list()[0].title).toBe('My own title')
+    await sessions.refreshHistory()
+    expect(sessions.rows(repo)[0].title).toBe('My own title')
+    expect(sent('UpdateConversationAnnotations')).toEqual([])
+  })
+
+  it('a name given at launch is dropped once /clear moves the tab to a new conversation, which takes the title agy makes up', async () => {
+    apiAnswers = true
+    const { id } = await launch({ name: 'Docs pass' })
+    title(id, { conversation_id: A })
+    say(id, state('idle'))
+    title(id, { conversation_id: B })
+    say(id, state('idle'))
+    writeSummaries(gemini, [
+      {
+        conversation_id: B,
+        title: 'Next thing',
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href])
+      }
+    ])
+    say(id, state('working'))
+    say(id, state('done'))
+    await vi.waitFor(() => expect(sessions.list()[0].title).toBe('Next thing'), { timeout: 3000 })
+    expect(sent('UpdateConversationAnnotations')).toEqual([])
+  })
+
+  it("hands on a finished turn's reply with the owner's own words, and its tokens and cost for the model agy reports", async () => {
+    const id = await boundTab()
+    appendConversation(gemini, A, [
+      { type: 'USER_INPUT', content: ownerTyped('fix the docs') },
+      {
+        type: 'PLANNER_RESPONSE',
+        content: 'Fixed.',
+        input_tokens: 1000,
+        output_tokens: 200,
+        cache_read_tokens: 500
+      }
+    ])
+    say(id, state('working') + state('done', `:msg=${b64('Fixed.')}`))
+    await vi.waitFor(() => expect(events('usage')).toHaveLength(1))
+    const [ended] = events('turn-ended') as Extract<SessionEvent, { type: 'turn-ended' }>[]
+    expect(ended.turn.said.map((s) => s.text)).toEqual(['fix the docs'])
+    expect(ended.turn.reply).toBe('Fixed.')
+    const [{ usage }] = events('usage') as Extract<SessionEvent, { type: 'usage' }>[]
+    expect(usage).toMatchObject({
+      inTok: 1000,
+      outTok: 200,
+      cacheReadTok: 500,
+      cacheWriteTok: 0,
+      ctxPct: 0.12,
+      model: 'gemini-3.1-pro-low'
+    })
+    expect(usage.costUsd).toBeCloseTo((1000 * 2 + 200 * 12 + 500 * 0.2) / 1e6, 10)
+    const costFile = tabEnv(id).KOLOFT_AGY_COST!
+    await vi.waitFor(() => expect(fs.readFileSync(costFile, 'utf8')).toBe(String(usage.costUsd)))
+  })
+
+  // ADR-0031 AGY§12
+  it("tells the model the language of the owner's latest words before each model call, so agy replies in it", async () => {
+    const id = await boundTab()
+    appendConversation(gemini, A, [
+      { type: 'USER_INPUT', content: ownerTyped('先别改代码，帮我查一下') }
+    ])
+    const out = hook(id, 'PreInvocation', { transcriptPath: agyTranscript(gemini, A) })
+    expect(JSON.parse(out).injectSteps[0].ephemeralMessage).toMatch(/^The user writes Chinese\. /)
+  })
+
+  it('lists each file agy wrote or edited, with its added and removed lines, and not a file it only read', async () => {
+    const id = await boundTab()
+    const made = path.join(repo, 'new.md')
+    fs.writeFileSync(made, 'a\nb\nc\n')
+    hook(id, 'PostToolUse', { toolCall: { name: 'view_file', args: { AbsolutePath: made } } })
+    hook(id, 'PostToolUse', {
+      toolCall: {
+        name: 'write_to_file',
+        args: { TargetFile: made, CodeContent: JSON.stringify('a\nb\nc\n') }
+      }
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].files).toHaveLength(1))
+    const edited = path.join(repo, 'old.md')
+    fs.writeFileSync(edited, 'y\nz\nw\n')
+    appendConversation(gemini, A, [
+      {
+        type: 'GENERIC',
+        content: `Edited file://${edited}\n[diff_block_start]\n@@ -1,2 +1,3 @@\n-x\n+y\n+z\n w\n[diff_block_end]`
+      }
+    ])
+    hook(id, 'PostToolUse', {
+      toolCall: { name: 'replace_file_content', args: { TargetFile: JSON.stringify(edited) } }
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].files).toHaveLength(2))
+    const files = Object.fromEntries(sessions.list()[0].files!.map((f) => [f.src, f]))
+    expect(files[made]).toMatchObject({ access: 'wrote', added: 3 })
+    expect(files[edited]).toMatchObject({ access: 'wrote', added: 2, removed: 1 })
+    expect(sessions.list()[0]).toMatchObject({ lastWritten: edited, liveWrites: 2 })
+  })
+
+  // AGY§13
+  it("lists a file agy 1.4.7 wrote with write_file, from its Path, with the Content's lines as added", async () => {
+    const id = await boundTab()
+    const made = path.join(repo, 'made.txt')
+    fs.writeFileSync(made, 'one\ntwo\n')
+    hook(id, 'PostToolUse', {
+      toolCall: { name: 'write_file', args: { Path: made, Content: 'one\ntwo\n' } }
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].files).toHaveLength(1))
+    expect(sessions.list()[0].files![0]).toMatchObject({ src: made, access: 'wrote', added: 2 })
+    expect(sessions.list()[0]).toMatchObject({ lastWritten: made, liveWrites: 1 })
+  })
+
+  // AGY§13
+  it('lists a file agy 1.4.7 edited with edit_file, from its Path, counting only the lines where Target and Replacement differ', async () => {
+    const id = await boundTab()
+    const edited = path.join(repo, 'edited.txt')
+    fs.writeFileSync(edited, 'one\nTWO\n2b\nthree')
+    hook(id, 'PostToolUse', {
+      toolCall: {
+        name: 'edit_file',
+        args: { Path: edited, Target: 'one\ntwo\nthree', Replacement: 'one\nTWO\n2b\nthree' }
+      }
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].files).toHaveLength(1))
+    expect(sessions.list()[0].files![0]).toMatchObject({
+      src: edited,
+      access: 'wrote',
+      added: 2,
+      removed: 1
+    })
+    expect(sessions.list()[0]).toMatchObject({ lastWritten: edited, liveWrites: 1 })
+  })
+
+  // AGY§13
+  it('does not list a write or edit that agy reports as failed', async () => {
+    const id = await boundTab()
+    const missed = path.join(repo, 'missed.txt')
+    const made = path.join(repo, 'made.txt')
+    fs.writeFileSync(made, 'one\n')
+    hook(id, 'PostToolUse', {
+      toolCall: { name: 'edit_file', args: { Path: missed, Target: 'absent', Replacement: 'x' } },
+      error: 'target not found'
+    })
+    hook(id, 'PostToolUse', {
+      toolCall: { name: 'write_file', args: { Path: made, Content: 'one\n' } },
+      error: ''
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].files).toHaveLength(1))
+    expect(sessions.list()[0].files![0]).toMatchObject({ src: made })
+    expect(sessions.list()[0]).toMatchObject({ lastWritten: made, liveWrites: 1 })
+  })
+
+  it('shows work agy keeps doing after its turn, such as a subagent, until a Stop says it is fully idle', async () => {
+    const id = await boundTab()
+    hook(id, 'Stop', { fullyIdle: false, terminationReason: 'NO_TOOL_CALL' })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toHaveLength(1))
+    expect(sessions.list()[0].background![0]).toMatchObject({ kind: 'agent', state: 'working' })
+    hook(id, 'Stop', { fullyIdle: true, terminationReason: 'NO_TOOL_CALL' })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+  })
+
+  it("names each command agy left running in the background after its turn, in place of the plain Background work, until it ends; one that finished inside the turn or was declined, so agy's own task list lacks it, never shows, and one the list has stays through the next turn even if no model call followed it", async () => {
+    apiAnswers = true
+    const id = await boundTab()
+    hook(id, 'PreToolUse', { toolCall: command('sleep 45; echo done'), stepIdx: 2 })
+    hook(id, 'PreInvocation', { invocationNum: 1 })
+    hook(id, 'PreToolUse', { toolCall: command('echo fast'), stepIdx: 4 })
+    hook(id, 'PostToolUse', { toolCall: command('echo fast'), stepIdx: 4, error: '' })
+    hook(id, 'PreInvocation', { invocationNum: 2 })
+    hook(id, 'Stop', { fullyIdle: false, terminationReason: 'NO_TOOL_CALL' })
+    hook(id, 'PreInvocation', { invocationNum: 0 })
+    hook(id, 'PreToolUse', { toolCall: command('rm -rf build'), stepIdx: 6 })
+    backgroundTasks = { tasks: [{ conversationId: A, task: { taskId: `${A}/task-2` } }] }
+    title(id, { conversation_id: A, agent_state: 'idle', task_count: 1 })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: `${A}/task-2`, kind: 'command', label: 'sleep 45; echo done', state: 'working' }
+      ])
+    )
+    hook(id, 'PostToolUse', { toolCall: command('sleep 45; echo done'), stepIdx: 2, error: '' })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+    hook(id, 'PreToolUse', { toolCall: command('npm test'), stepIdx: 10 })
+    backgroundTasks = { tasks: [{ conversationId: A, task: { taskId: `${A}/task-10` } }] }
+    title(id, { conversation_id: A, agent_state: 'idle', task_count: 1 })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toMatchObject([{ label: 'npm test' }])
+    )
+    hook(id, 'PreInvocation', { invocationNum: 0 })
+    await hooksTaken(id)
+    expect(sessions.list()[0].background).toMatchObject([{ label: 'npm test' }])
+  })
+
+  it("shows a command agy runs as a daemon as a parked server once the turn is over and agy's own task list has it, through /clear, until it exits, agy kills it or the list loses it, as after a kill from /tasks, which no hook reports; a command still asking, which agy's list lacks, is not one", async () => {
+    apiAnswers = true
+    const id = await boundTab()
+    const listed = (...steps: number[]): void => {
+      backgroundTasks = {
+        tasks: steps.map((n) => ({ conversationId: A, task: { taskId: `${A}/task-${n}` } }))
+      }
+    }
+    const serverIds = (): string[] => (sessions.list()[0].background ?? []).map((item) => item.id)
+    const turnOver = async (conversationId: string, asks: number): Promise<void> => {
+      title(id, { conversation_id: conversationId, agent_state: 'idle', task_count: 1 })
+      await vi.waitFor(() => expect(sent('ListBackgroundTasks')).toHaveLength(asks))
+      await hooksTaken(id)
+    }
+    hook(id, 'PreToolUse', { toolCall: daemon('python3 -m http.server 8077'), stepIdx: 2 })
+    hook(id, 'PreToolUse', { toolCall: daemon('npm run watch'), stepIdx: 4 })
+    hook(id, 'PreToolUse', {
+      toolCall: { name: 'run_command', args: { CommandLine: 'sleep 25', WaitMsBeforeAsync: 500 } },
+      stepIdx: 6
+    })
+    title(id, { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true })
+    await hooksTaken(id)
+    expect(sessions.list()[0].background).toBeUndefined()
+    listed(2, 4)
+    await turnOver(A, 1)
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        {
+          id: `${A}/task-2`,
+          kind: 'server',
+          label: 'python3 -m http.server 8077',
+          state: 'waiting'
+        },
+        { id: `${A}/task-4`, kind: 'server', label: 'npm run watch', state: 'waiting' }
+      ])
+    )
+    expect(runtime.statusOf(id)).toBe('waiting')
+    title(id, { conversation_id: B })
+    say(id, state('idle'))
+    await vi.waitFor(() => expect(sessions.list()[0].nativeSessionId).toBe(B))
+    expect(serverIds()).toHaveLength(2)
+    hook(id, 'PostToolUse', { conversationId: A, toolCall: daemon('x'), stepIdx: 2 })
+    await hooksTaken(id)
+    expect(serverIds()).toEqual([`${A}/task-4`])
+    hook(id, 'PreToolUse', { conversationId: B, toolCall: daemon('npm run dev'), stepIdx: 3 })
+    hook(id, 'PostToolUse', {
+      conversationId: B,
+      stepIdx: 5,
+      error: '',
+      toolCall: killTask('task-3')
+    })
+    listed(4)
+    await turnOver(B, 3)
+    expect(serverIds()).toEqual([`${A}/task-4`])
+    listed()
+    await turnOver(B, 4)
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+  })
+
+  it('keeps a tab that set a standing cron, which agy reports fully idle, from closing as idle until the cron has fired for the last time', async () => {
+    const id = await boundTab()
+    hook(id, 'Stop', { fullyIdle: true, terminationReason: 'NO_TOOL_CALL' })
+    await hooksTaken(id)
+    expect(await runtime.stillWorking(id)).toBe(false)
+    hook(id, 'PreToolUse', { toolCall: STANDING_CRON, stepIdx: 2 })
+    hook(id, 'PreInvocation', { invocationNum: 1 })
+    hook(id, 'Stop', { fullyIdle: true, terminationReason: 'NO_TOOL_CALL' })
+    await hooksTaken(id)
+    expect(await runtime.stillWorking(id)).toBe(true)
+    hook(id, 'PostToolUse', { toolCall: STANDING_CRON, stepIdx: 2 })
+    await hooksTaken(id)
+    expect(await runtime.stillWorking(id)).toBe(false)
+  })
+
+  it('keeps holding the tab for a timer after /clear moves it on, since the timer still fires in the old conversation, and lets go once it has', async () => {
+    const id = await boundTab()
+    hook(id, 'PreToolUse', { toolCall: TIMER, stepIdx: 2 })
+    hook(id, 'Stop', { fullyIdle: false, terminationReason: 'NO_TOOL_CALL' })
+    await hooksTaken(id)
+    title(id, { conversation_id: B })
+    say(id, state('idle'))
+    await vi.waitFor(() => expect(sessions.list()[0].nativeSessionId).toBe(B))
+    expect(await runtime.stillWorking(id)).toBe(true)
+    hook(id, 'PostToolUse', { toolCall: TIMER, stepIdx: 2 })
+    await hooksTaken(id)
+    expect(await runtime.stillWorking(id)).toBe(false)
+  })
+
+  it('lets go of a standing cron agy killed, by its full or its short task id, and not after a kill that failed', async () => {
+    const id = await boundTab()
+    hook(id, 'Stop', { fullyIdle: true, terminationReason: 'NO_TOOL_CALL' })
+    hook(id, 'PreToolUse', { toolCall: STANDING_CRON, stepIdx: 2 })
+    hook(id, 'PreInvocation', { invocationNum: 1 })
+    hook(id, 'PreToolUse', { toolCall: STANDING_CRON, stepIdx: 5 })
+    hook(id, 'PreInvocation', { invocationNum: 2 })
+    hook(id, 'PostToolUse', {
+      stepIdx: 8,
+      error: 'no such task',
+      toolCall: killTask(`${A}/task-2`)
+    })
+    hook(id, 'PostToolUse', { stepIdx: 9, error: '', toolCall: killTask(`${A}/task-2`) })
+    await hooksTaken(id)
+    expect(await runtime.stillWorking(id)).toBe(true)
+    hook(id, 'PostToolUse', { stepIdx: 10, error: '', toolCall: killTask('task-5') })
+    await hooksTaken(id)
+    expect(await runtime.stillWorking(id)).toBe(false)
+  })
+
+  it('tracks concurrent command, subagent, and non-daemon schedule without suppressing subagents or timers, and prunes declined schedule calls', async () => {
+    const id = await boundTab()
+    say(id, state('working'))
+    hook(id, 'PreToolUse', { toolCall: command('sleep 30'), stepIdx: 2 })
+    hook(id, 'PreInvocation', { invocationNum: 1 })
+    hook(id, 'PreToolUse', {
+      stepIdx: 3,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: { Subagents: [{ TypeName: 'self', Role: 'Verify tests', Prompt: 'Run unit tests' }] }
+      }
+    })
+    hook(id, 'SessionStart', { conversationId: CHILD })
+    hook(id, 'PreToolUse', { toolCall: TIMER, stepIdx: 4 })
+    hook(id, 'Stop', { fullyIdle: false, terminationReason: 'NO_TOOL_CALL' })
+    say(id, state('done'))
+    expect(runtime.statusOf(id)).toBe('working')
+    expect(runtime.turnOver(id)).toBe(true)
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: CHILD, kind: 'agent', label: 'Verify tests', state: 'working' },
+        { id: `${A}/task-2`, kind: 'command', label: 'sleep 30', state: 'working' },
+        { id: `${A}/task-4`, kind: 'monitor', label: 'Timer (30m): Look again', state: 'waiting' }
+      ])
+    )
+    hook(id, 'PostToolUse', { toolCall: command('sleep 30'), stepIdx: 2, error: '' })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: CHILD, kind: 'agent', label: 'Verify tests', state: 'working' },
+        { id: `${A}/task-4`, kind: 'monitor', label: 'Timer (30m): Look again', state: 'waiting' }
+      ])
+    )
+    hook(id, 'PreInvocation', { invocationNum: 0 })
+    hook(id, 'PreToolUse', { toolCall: STANDING_CRON, stepIdx: 6 })
+    hook(id, 'PreInvocation', { invocationNum: 0 })
+    await hooksTaken(id)
+    expect(sessions.list()[0].background?.some((b) => b.id === `${A}/task-6`)).toBe(false)
+
+    hook(id, 'Stop', { conversationId: CHILD, fullyIdle: true })
+    hook(id, 'PostToolUse', { toolCall: TIMER, stepIdx: 4 })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+    expect(await runtime.stillWorking(id)).toBe(false)
+  })
+
+  it('tracks manage_subagents kill/kill_all, send_message wakeups, swarm teammates, and standing daemon cron monitors', async () => {
+    const id = await boundTab()
+    const CHILD2 = 'd5e6f7a8-b9c0-4d1e-8f2a-3b4c5d6e7f8a'
+    hook(id, 'PreToolUse', {
+      stepIdx: 1,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: {
+          Subagents: [
+            { TypeName: 'teamwork_explorer', Role: 'Survey 1', Prompt: 'Read' },
+            { TypeName: 'teamwork_worker', Role: 'Worker 1', Prompt: 'Edit' }
+          ]
+        }
+      }
+    })
+    const SCOUT = 'e6f7a8b9-c0d1-4e2f-8a3b-4c5d6e7f8a9b'
+    hook(id, 'SessionStart', { conversationId: CHILD })
+    hook(id, 'SessionStart', { conversationId: CHILD2 })
+    hook(id, 'PreToolUse', { toolCall: STANDING_CRON, stepIdx: 2 })
+    hook(id, 'PreToolUse', {
+      stepIdx: 20,
+      toolCall: { name: 'swarm', args: { action: 'add', name: 'scout', brief: 'Survey' } }
+    })
+    hook(id, 'PostToolUse', {
+      stepIdx: 20,
+      error: '',
+      toolCall: { name: 'swarm', args: { action: 'add', name: 'scout' } }
+    })
+    hook(id, 'SessionStart', { conversationId: SCOUT })
+    hook(id, 'PreToolUse', {
+      conversationId: SCOUT,
+      stepIdx: 1,
+      toolCall: { name: 'swarm_wait', args: { since: 1 } }
+    })
+    hook(id, 'Stop', { conversationId: SCOUT, fullyIdle: true })
+    hook(id, 'Stop', { fullyIdle: false })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: CHILD, kind: 'agent', label: 'teamwork_explorer: Survey 1', state: 'working' },
+        { id: CHILD2, kind: 'agent', label: 'teamwork_worker: Worker 1', state: 'working' },
+        {
+          id: `${A}/task-2`,
+          kind: 'monitor',
+          label: 'Cron (0 * * * *): Check the build',
+          state: 'waiting'
+        },
+        { id: 'teammates', kind: 'teammate', label: '1 idle', state: 'waiting' }
+      ])
+    )
+    hook(id, 'PostToolUse', {
+      stepIdx: 3,
+      error: '',
+      toolCall: { name: 'manage_subagents', args: { Action: 'kill', ConversationIds: [CHILD] } }
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background?.some((b) => b.id === CHILD)).toBe(false)
+    )
+    hook(id, 'PreToolUse', {
+      stepIdx: 4,
+      toolCall: { name: 'post_message', args: { text: '@scout resume' } }
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background?.find((b) => b.id === SCOUT)).toEqual({
+        id: SCOUT,
+        kind: 'agent',
+        label: 'scout',
+        state: 'working'
+      })
+    )
+    hook(id, 'PostToolUse', {
+      stepIdx: 5,
+      error: '',
+      toolCall: { name: 'manage_subagents', args: { Action: 'kill_all' } }
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        {
+          id: `${A}/task-2`,
+          kind: 'monitor',
+          label: 'Cron (0 * * * *): Check the build',
+          state: 'waiting'
+        }
+      ])
+    )
+    say(id, state('done'))
+    expect(runtime.statusOf(id)).toBe('waiting')
+  })
+
+  it('drains hook log before emitting stop on OSC 7501 done so status never flickers working -> waiting -> working', async () => {
+    const id = await boundTab()
+    const transitions: string[] = []
+    runtime.on('status', ({ next }) => transitions.push(next))
+    say(id, state('working'))
+    hook(id, 'PreToolUse', { toolCall: command('sleep 20'), stepIdx: 2 })
+    hook(id, 'PreInvocation', { invocationNum: 1 })
+    hook(id, 'Stop', { fullyIdle: false })
+    say(id, state('done'))
+    expect(transitions).toEqual(['working'])
+    expect(runtime.statusOf(id)).toBe('working')
+    expect(runtime.turnOver(id)).toBe(true)
+  })
+
+  it('reconstructs rich TaskSnapshot items from ListBackgroundTasks and handles StreamAgentStateUpdates compaction, tasks, and Esc fullyIdle recovery', async () => {
+    apiAnswers = true
+    let pushStream!: (msg: unknown) => void
+    streamHandler = (res) => {
+      res.writeHead(200, { 'content-type': 'application/connect+json' })
+      pushStream = (msg) => res.write(streamFrame(msg))
+    }
+    const id = await boundTab()
+    say(id, state('working'))
+    await vi.waitFor(() => expect(pushStream).toBeDefined())
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_RUNNING',
+        activeHook: { hookName: 'context_summary' }
+      }
+    })
+    await vi.waitFor(() => expect(events('compacting')).toHaveLength(1))
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        fullyIdle: true,
+        backgroundTasksUpdate: {
+          totalLength: 1,
+          backgroundTasks: [
+            {
+              taskSnapshot: {
+                taskId: `${A}/task-9`,
+                toolName: 'run_command',
+                description: 'vite dev',
+                isDaemon: true,
+                startTime: Date.now() - 120_000
+              }
+            }
+          ]
+        }
+      }
+    })
+    await vi.waitFor(() => expect(events('compacted')).toHaveLength(1))
+    expect(sessions.list()[0].background).toMatchObject([
+      { id: `${A}/task-9`, kind: 'server', label: 'vite dev', state: 'waiting' }
+    ])
+    expect(sessions.list()[0].background![0].ageMs).toBeGreaterThanOrEqual(120_000)
+
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        fullyIdle: false,
+        backgroundTasksUpdate: { totalLength: 0, backgroundTasks: [] }
+      }
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        {
+          id: 'agy-background',
+          kind: 'agent',
+          label: 'Active background task',
+          state: 'working'
+        }
+      ])
+    )
+
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        fullyIdle: true,
+        backgroundTasksUpdate: { totalLength: 0, backgroundTasks: [] }
+      }
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+  })
+
+  it('falls back to local conversation_summaries parent_conversation_id to attribute child hooks whose SessionStart was missed', async () => {
+    const id = await boundTab()
+    writeSummaries(gemini, [
+      { conversation_id: A, workspace_uris: JSON.stringify([pathToFileURL(repo).href]) },
+      {
+        conversation_id: CHILD,
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href]),
+        parent_conversation_id: A
+      }
+    ])
+    hook(id, 'PreInvocation', { conversationId: CHILD, invocationNum: 0 })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: CHILD, kind: 'agent', label: 'Subagent', state: 'working' }
+      ])
+    )
+    hook(id, 'Stop', { conversationId: CHILD, fullyIdle: true })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+  })
+
+  it('clears working teamwork children on Stop(fullyIdle: true) and StreamAgentStateUpdates(CASCADE_RUN_STATUS_IDLE) while keeping parked teammates, and exits working without 7501 idle', async () => {
+    apiAnswers = true
+    let pushStream!: (msg: unknown) => void
+    streamHandler = (res) => {
+      res.writeHead(200, { 'content-type': 'application/connect+json' })
+      pushStream = (msg) => res.write(streamFrame(msg))
+    }
+    const id = await boundTab()
+    const CHILD2 = 'd5e6f7a8-b9c0-4d1e-8f2a-3b4c5d6e7f8a'
+    await vi.waitFor(() => expect(pushStream).toBeDefined())
+    say(id, state('working'))
+    hook(id, 'PreToolUse', {
+      stepIdx: 1,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: { Subagents: [{ TypeName: 'teamwork_worker', Role: 'Worker 1' }] }
+      }
+    })
+    const SCOUT = 'e6f7a8b9-c0d1-4e2f-8a3b-4c5d6e7f8a9b'
+    hook(id, 'SessionStart', { conversationId: CHILD })
+    hook(id, 'PreToolUse', {
+      stepIdx: 10,
+      toolCall: { name: 'swarm', args: { action: 'add', name: 'scout', brief: 'Watch' } }
+    })
+    hook(id, 'PostToolUse', {
+      stepIdx: 10,
+      error: '',
+      toolCall: { name: 'swarm', args: { action: 'add', name: 'scout' } }
+    })
+    hook(id, 'SessionStart', { conversationId: SCOUT })
+    hook(id, 'PreToolUse', {
+      conversationId: SCOUT,
+      stepIdx: 1,
+      toolCall: { name: 'swarm_wait', args: { since: 1 } }
+    })
+    hook(id, 'Stop', { conversationId: SCOUT, fullyIdle: true })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: CHILD, kind: 'agent', label: 'teamwork_worker: Worker 1', state: 'working' },
+        { id: 'teammates', kind: 'teammate', label: '1 idle', state: 'waiting' }
+      ])
+    )
+    hook(id, 'Stop', { fullyIdle: true })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: 'teammates', kind: 'teammate', label: '1 idle', state: 'waiting' }
+      ])
+    )
+    say(id, state('done'))
+    expect(runtime.statusOf(id)).toBe('waiting')
+
+    say(id, state('working'))
+    hook(id, 'PreToolUse', {
+      stepIdx: 2,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: { Subagents: [{ TypeName: 'teamwork_worker', Role: 'Worker 2' }] }
+      }
+    })
+    hook(id, 'SessionStart', { conversationId: CHILD2 })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background?.some((b) => b.id === CHILD2)).toBe(true)
+    )
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        fullyIdle: true,
+        backgroundTasksUpdate: { totalLength: 0, backgroundTasks: [] }
+      }
+    })
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('waiting'))
+    expect(sessions.list()[0].background).toEqual([
+      { id: 'teammates', kind: 'teammate', label: '1 idle', state: 'waiting' }
+    ])
+  })
+
+  it('a turn that ended reaching the stream only after the terminal has started the next one leaves that next turn working until the stream shows it running and then idle', async () => {
+    apiAnswers = true
+    let pushStream!: (msg: unknown) => void
+    streamHandler = (res) => {
+      res.writeHead(200, { 'content-type': 'application/connect+json' })
+      pushStream = (msg) => res.write(streamFrame(msg))
+    }
+    const id = await boundTab()
+    await vi.waitFor(() => expect(pushStream).toBeDefined())
+    const running = { update: { conversationId: A, status: 'CASCADE_RUN_STATUS_RUNNING' } }
+    say(id, state('working'))
+    pushStream(running)
+    say(id, state('done'))
+    say(id, state('working'))
+    expect(runtime.statusOf(id)).toBe('working')
+
+    pushStream(running)
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        fullyIdle: true,
+        backgroundTasksUpdate: {
+          totalLength: 1,
+          backgroundTasks: [
+            {
+              taskSnapshot: {
+                taskId: `${A}/task-9`,
+                toolName: 'run_command',
+                description: 'vite dev',
+                isDaemon: true,
+                startTime: Date.now()
+              }
+            }
+          ]
+        }
+      }
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toMatchObject([{ id: `${A}/task-9` }])
+    )
+    expect(runtime.statusOf(id)).toBe('working')
+
+    pushStream(running)
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        fullyIdle: true,
+        backgroundTasksUpdate: { totalLength: 0, backgroundTasks: [] }
+      }
+    })
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('waiting'))
+  })
+
+  it('a next turn the stream shows running before the terminal has even ended the last one is still ended by its own stream IDLE', async () => {
+    apiAnswers = true
+    let pushStream!: (msg: unknown) => void
+    streamHandler = (res) => {
+      res.writeHead(200, { 'content-type': 'application/connect+json' })
+      pushStream = (msg) => res.write(streamFrame(msg))
+    }
+    const id = await boundTab()
+    await vi.waitFor(() => expect(pushStream).toBeDefined())
+    say(id, state('working'))
+    pushStream({ update: { conversationId: A, status: 'CASCADE_RUN_STATUS_RUNNING' } })
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        fullyIdle: true,
+        backgroundTasksUpdate: {
+          totalLength: 1,
+          backgroundTasks: [
+            {
+              taskSnapshot: {
+                taskId: `${A}/task-9`,
+                toolName: 'run_command',
+                description: 'vite dev',
+                isDaemon: true,
+                startTime: Date.now()
+              }
+            }
+          ]
+        }
+      }
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toMatchObject([{ id: `${A}/task-9` }])
+    )
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_RUNNING',
+        backgroundTasksUpdate: { totalLength: 0, backgroundTasks: [] }
+      }
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+    say(id, state('done'))
+    say(id, state('working'))
+    expect(runtime.statusOf(id)).toBe('working')
+
+    pushStream({
+      update: { conversationId: A, status: 'CASCADE_RUN_STATUS_IDLE', fullyIdle: true }
+    })
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('waiting'))
+  })
+
+  it('prunes declined or synchronous invoke_subagent pendingSpawns and unconfirmed non-daemon schedules on Stop(fullyIdle: true)', async () => {
+    const id = await boundTab()
+    hook(id, 'PreToolUse', {
+      stepIdx: 1,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: { Subagents: [{ TypeName: 'self', Role: 'Declined helper' }] }
+      }
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toHaveLength(1))
+    hook(id, 'PreInvocation', { invocationNum: 0 })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+
+    hook(id, 'PreToolUse', {
+      stepIdx: 2,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: { Subagents: [{ TypeName: 'self', Role: 'Sync helper' }] }
+      }
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toHaveLength(1))
+    hook(id, 'PostToolUse', {
+      stepIdx: 2,
+      error: '',
+      toolCall: { name: 'invoke_subagent', args: {} }
+    })
+    hook(id, 'Stop', { fullyIdle: false })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background?.some((b) => b.label === 'Sync helper')).toBe(false)
+    )
+    hook(id, 'Stop', { fullyIdle: true })
+
+    hook(id, 'PreToolUse', { toolCall: TIMER, stepIdx: 3 })
+    await hooksTaken(id)
+    expect(await runtime.stillWorking(id)).toBe(false)
+    hook(id, 'Stop', { fullyIdle: true })
+    hook(id, 'PreInvocation', { invocationNum: 0 })
+    await hooksTaken(id)
+    expect(sessions.list()[0].background).toBeUndefined()
+    expect(await runtime.stillWorking(id)).toBe(false)
+  })
+
+  it('reveals child-owned schedules and commands on child Stop without holding invisible timers', async () => {
+    const id = await boundTab()
+    hook(id, 'PreToolUse', {
+      stepIdx: 1,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: { Subagents: [{ TypeName: 'self', Role: 'Scheduler' }] }
+      }
+    })
+    hook(id, 'SessionStart', { conversationId: CHILD })
+    hook(id, 'PreToolUse', { conversationId: CHILD, stepIdx: 2, toolCall: TIMER })
+    hook(id, 'PreInvocation', { conversationId: CHILD, invocationNum: 1 })
+    hook(id, 'PreToolUse', {
+      conversationId: CHILD,
+      stepIdx: 3,
+      toolCall: command('sleep 10')
+    })
+    hook(id, 'Stop', { conversationId: CHILD, fullyIdle: true })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        {
+          id: `${CHILD}/task-2`,
+          kind: 'monitor',
+          label: 'Timer (30m): Look again',
+          state: 'waiting'
+        }
+      ])
+    )
+    expect(await runtime.stillWorking(id)).toBe(true)
+    hook(id, 'PostToolUse', { conversationId: CHILD, stepIdx: 2, toolCall: TIMER })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+    expect(await runtime.stillWorking(id)).toBe(false)
+  })
+
+  it('prevents phantom children on send_message to unknown recipients and rolls back parked wakeups on send_message error', async () => {
+    const id = await boundTab()
+    hook(id, 'PreToolUse', {
+      stepIdx: 1,
+      toolCall: { name: 'send_message', args: { Recipient: 'bogus-peer', Message: 'hi' } }
+    })
+    hook(id, 'PostToolUse', {
+      stepIdx: 1,
+      error: 'recipient not found',
+      toolCall: { name: 'send_message', args: { Recipient: 'bogus-peer' } }
+    })
+    await hooksTaken(id)
+    expect(sessions.list()[0].background).toBeUndefined()
+
+    const SCOUT = 'e6f7a8b9-c0d1-4e2f-8a3b-4c5d6e7f8a9b'
+    hook(id, 'PreToolUse', {
+      stepIdx: 10,
+      toolCall: { name: 'swarm', args: { action: 'add', name: 'scout', brief: 'Wait' } }
+    })
+    hook(id, 'PostToolUse', {
+      stepIdx: 10,
+      error: '',
+      toolCall: { name: 'swarm', args: { action: 'add', name: 'scout' } }
+    })
+    hook(id, 'SessionStart', { conversationId: SCOUT })
+    hook(id, 'PreToolUse', {
+      conversationId: SCOUT,
+      stepIdx: 1,
+      toolCall: { name: 'swarm_wait', args: { since: 1 } }
+    })
+    hook(id, 'Stop', { conversationId: SCOUT, fullyIdle: true })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: 'teammates', kind: 'teammate', label: '1 idle', state: 'waiting' }
+      ])
+    )
+    hook(id, 'PreToolUse', {
+      stepIdx: 2,
+      toolCall: { name: 'post_message', args: { text: '@scout go' } }
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: SCOUT, kind: 'agent', label: 'scout', state: 'working' }
+      ])
+    )
+    hook(id, 'PostToolUse', {
+      stepIdx: 2,
+      error: 'busy',
+      toolCall: { name: 'post_message', args: { text: '@scout go' } }
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: 'teammates', kind: 'teammate', label: '1 idle', state: 'waiting' }
+      ])
+    )
+    hook(id, 'PostToolUse', {
+      stepIdx: 3,
+      error: '',
+      toolCall: { name: 'swarm', args: { action: 'kill', name: 'scout' } }
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+  })
+
+  it('upgrades existing PreToolUse commands and schedules with isDaemon, kind, state, and description in applyApiTasks', async () => {
+    apiAnswers = true
+    const id = await boundTab()
+    hook(id, 'PreToolUse', { toolCall: command('npm run dev'), stepIdx: 2 })
+    hook(id, 'PreToolUse', { toolCall: TIMER, stepIdx: 4 })
+    backgroundTasks = {
+      tasks: [
+        {
+          conversationId: A,
+          task: {
+            taskId: `${A}/task-2`,
+            toolName: 'run_command',
+            description: 'vite dev server',
+            isDaemon: true,
+            startTime: Date.now() - 10_000
+          }
+        },
+        {
+          conversationId: A,
+          task: {
+            taskId: `${A}/task-4`,
+            toolName: 'schedule',
+            toolSummary: 'Standing monitor',
+            isDaemon: true
+          }
+        }
+      ]
+    }
+    title(id, { conversation_id: A, agent_state: 'idle', task_count: 2 })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toMatchObject([
+        { id: `${A}/task-2`, kind: 'server', label: 'vite dev server', state: 'waiting' },
+        { id: `${A}/task-4`, kind: 'monitor', label: 'Standing monitor', state: 'waiting' }
+      ])
+    )
+  })
+
+  it('retries resolveChildFromDb across SQLite write lag and never drops Stop in a burst of >20 child hooks', async () => {
+    const id = await boundTab()
+    writeSummaries(gemini, [
+      { conversation_id: A, workspace_uris: JSON.stringify([pathToFileURL(repo).href]) }
+    ])
+    hook(id, 'PreInvocation', { conversationId: CHILD, invocationNum: 0 })
+    await hooksTaken(id)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    writeSummaries(gemini, [
+      { conversation_id: A, workspace_uris: JSON.stringify([pathToFileURL(repo).href]) },
+      {
+        conversation_id: CHILD,
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href]),
+        parent_conversation_id: A
+      }
+    ])
+    hook(id, 'PreToolUse', { conversationId: CHILD, toolCall: command('echo hi'), stepIdx: 1 })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: CHILD, kind: 'agent', label: 'Subagent', state: 'working' }
+      ])
+    )
+
+    const CHILD2 = 'd5e6f7a8-b9c0-4d1e-8f2a-3b4c5d6e7f8a'
+    writeSummaries(gemini, [
+      { conversation_id: A, workspace_uris: JSON.stringify([pathToFileURL(repo).href]) },
+      {
+        conversation_id: CHILD2,
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href]),
+        parent_conversation_id: A
+      }
+    ])
+    const lines = [
+      { event: 'PreInvocation', input: { conversationId: CHILD2, invocationNum: 0 } },
+      ...Array.from({ length: 22 }, (_, i) => ({
+        event: 'PreToolUse',
+        input: {
+          conversationId: CHILD2,
+          stepIdx: i + 1,
+          toolCall: { name: 'read_file', args: { Path: '/tmp/a' } }
+        }
+      })),
+      { event: 'Stop', input: { conversationId: CHILD2, fullyIdle: true } }
+    ]
+    fs.appendFileSync(
+      tabEnv(id).KOLOFT_AGY_LOG!,
+      lines.map((l) => JSON.stringify(l) + '\n').join('')
+    )
+    await hooksTaken(id)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(sessions.list()[0].background?.some((b) => b.id === CHILD2)).toBe(false)
+  })
+
+  it('cancels pending compacting timer across bindTo (/clear) so compacting does not leak to the new conversation', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      apiAnswers = true
+      let pushStream!: (msg: unknown) => void
+      streamHandler = (res) => {
+        res.writeHead(200, { 'content-type': 'application/connect+json' })
+        pushStream = (msg) => res.write(streamFrame(msg))
+      }
+      const id = await boundTab()
+      say(id, state('working'))
+      await vi.waitFor(() => expect(pushStream).toBeDefined())
+      pushStream({
+        update: {
+          conversationId: A,
+          status: 'CASCADE_RUN_STATUS_RUNNING',
+          activeHook: { hookName: 'context_summary' }
+        }
+      })
+      await vi.waitFor(() => expect(sessions['runs'].get(id)?.compacting).toBeDefined())
+      title(id, { conversation_id: B, agent_state: 'idle' })
+      await vi.waitFor(() => expect(sessions.list()[0].nativeSessionId).toBe(B))
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(events('compacting')).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not resurrect a stopped child on subsequent PostToolUse when conversation_summaries has parent_conversation_id', async () => {
+    const id = await boundTab()
+    writeSummaries(gemini, [
+      { conversation_id: A, workspace_uris: JSON.stringify([pathToFileURL(repo).href]) },
+      {
+        conversation_id: CHILD,
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href]),
+        parent_conversation_id: A
+      }
+    ])
+    hook(id, 'PreToolUse', {
+      stepIdx: 1,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: { Subagents: [{ TypeName: 'self', Role: 'Timer child' }] }
+      }
+    })
+    hook(id, 'SessionStart', { conversationId: CHILD })
+    hook(id, 'PreToolUse', { conversationId: CHILD, stepIdx: 2, toolCall: TIMER })
+    hook(id, 'PreInvocation', { conversationId: CHILD, invocationNum: 1 })
+    hook(id, 'Stop', { conversationId: CHILD, fullyIdle: true })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        {
+          id: `${CHILD}/task-2`,
+          kind: 'monitor',
+          label: 'Timer (30m): Look again',
+          state: 'waiting'
+        }
+      ])
+    )
+    hook(id, 'PostToolUse', { conversationId: CHILD, stepIdx: 2, toolCall: TIMER })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+    expect(await runtime.stillWorking(id)).toBe(false)
+    hook(id, 'PostToolUse', {
+      conversationId: CHILD,
+      parentConversationId: A,
+      stepIdx: 3,
+      toolCall: command('echo late')
+    })
+    await hooksTaken(id)
+    expect(sessions.list()[0].background).toBeUndefined()
+  })
+
+  it('attributes buffered[0] PreToolUse(schedule) when resolveChildFromDb resolves SQLite write lag', async () => {
+    const id = await boundTab()
+    writeSummaries(gemini, [
+      { conversation_id: A, workspace_uris: JSON.stringify([pathToFileURL(repo).href]) }
+    ])
+    hook(id, 'PreToolUse', { conversationId: CHILD, stepIdx: 2, toolCall: TIMER })
+    await hooksTaken(id)
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    writeSummaries(gemini, [
+      { conversation_id: A, workspace_uris: JSON.stringify([pathToFileURL(repo).href]) },
+      {
+        conversation_id: CHILD,
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href]),
+        parent_conversation_id: A
+      }
+    ])
+    hook(id, 'PreInvocation', { conversationId: CHILD, invocationNum: 1 })
+    hook(id, 'Stop', { conversationId: CHILD, fullyIdle: true })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        {
+          id: `${CHILD}/task-2`,
+          kind: 'monitor',
+          label: 'Timer (30m): Look again',
+          state: 'waiting'
+        }
+      ])
+    )
+    expect(await runtime.stillWorking(id)).toBe(true)
+    hook(id, 'PostToolUse', { conversationId: CHILD, stepIdx: 2, toolCall: TIMER })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+    expect(await runtime.stillWorking(id)).toBe(false)
+  })
+
+  it('never promotes or holds wakeupPending for unconfirmed IsDaemon schedules or commands declined before confirmation', async () => {
+    const id = await boundTab()
+    hook(id, 'PreToolUse', { toolCall: STANDING_CRON, stepIdx: 2 })
+    hook(id, 'Stop', { fullyIdle: true })
+    await hooksTaken(id)
+    expect(sessions.list()[0].background).toBeUndefined()
+    expect(await runtime.stillWorking(id)).toBe(false)
+
+    hook(id, 'PreToolUse', { toolCall: STANDING_CRON, stepIdx: 3 })
+    title(id, { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true })
+    await hooksTaken(id)
+    expect(await runtime.stillWorking(id)).toBe(false)
+    title(id, { conversation_id: A, agent_state: 'idle' })
+    await hooksTaken(id)
+    expect(sessions.list()[0].background).toBeUndefined()
+    expect(await runtime.stillWorking(id)).toBe(false)
+
+    hook(id, 'PreToolUse', { toolCall: daemon('npm run dev'), stepIdx: 4 })
+    hook(id, 'Stop', { fullyIdle: true })
+    await hooksTaken(id)
+    expect(sessions.list()[0].background).toBeUndefined()
+  })
+
+  it('preserves async invoke_subagent attribution and label when PostToolUse arrives before SessionStart', async () => {
+    const id = await boundTab()
+    hook(id, 'PreInvocation', { invocationNum: 0 })
+    hook(id, 'PreToolUse', {
+      stepIdx: 1,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: { Subagents: [{ TypeName: 'research', Role: 'Async explorer' }] }
+      }
+    })
+    hook(id, 'PostToolUse', {
+      stepIdx: 1,
+      error: '',
+      toolCall: { name: 'invoke_subagent', args: {} }
+    })
+    hook(id, 'Stop', { fullyIdle: false })
+    hook(id, 'SessionStart', { conversationId: CHILD })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: CHILD, kind: 'agent', label: 'research: Async explorer', state: 'working' }
+      ])
+    )
+    hook(id, 'Stop', { conversationId: CHILD, fullyIdle: true })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+
+    const CHILD2 = 'd5e6f7a8-b9c0-4d1e-8f2a-3b4c5d6e7f8a'
+    hook(id, 'PreInvocation', { invocationNum: 0 })
+    hook(id, 'PreToolUse', {
+      stepIdx: 2,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: { Subagents: [{ TypeName: 'research', Role: 'Same-turn async' }] }
+      }
+    })
+    hook(id, 'PostToolUse', {
+      stepIdx: 2,
+      error: '',
+      toolCall: { name: 'invoke_subagent', args: {} }
+    })
+    hook(id, 'SessionStart', { conversationId: CHILD2 })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: CHILD2, kind: 'agent', label: 'research: Same-turn async', state: 'working' }
+      ])
+    )
+  })
+
+  it('exits blocked approval and clears child working commands on StreamAgentStateUpdates CASCADE_RUN_STATUS_IDLE with fullyIdle true', async () => {
+    apiAnswers = true
+    let pushStream!: (msg: unknown) => void
+    streamHandler = (res) => {
+      res.writeHead(200, { 'content-type': 'application/connect+json' })
+      pushStream = (msg) => res.write(streamFrame(msg))
+    }
+    const id = await boundTab()
+    await vi.waitFor(() => expect(pushStream).toBeDefined())
+    say(id, state('working'))
+    hook(id, 'PreToolUse', { toolCall: command('rm -rf dist'), stepIdx: 1 })
+    await hooksTaken(id)
+    say(id, state('blocked', `:kind=permission:msg=${b64('Approve RunCommand: rm -rf dist')}`))
+    expect(runtime.statusOf(id)).toBe('approval')
+    expect(sessions.openApproval(id)).toBeDefined()
+
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        fullyIdle: true,
+        backgroundTasksUpdate: { totalLength: 0, backgroundTasks: [] }
+      }
+    })
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('waiting'))
+    expect(sessions.openApproval(id)).toBeUndefined()
+
+    say(id, state('working'))
+    hook(id, 'PreInvocation', { invocationNum: 0 })
+    hook(id, 'SessionStart', { conversationId: CHILD })
+    hook(id, 'PreToolUse', { conversationId: CHILD, stepIdx: 3, toolCall: command('sleep 30') })
+    hook(id, 'Stop', { conversationId: CHILD, fullyIdle: false })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: CHILD, kind: 'agent', label: 'Subagent', state: 'working' },
+        { id: `${CHILD}/task-3`, kind: 'command', label: 'sleep 30', state: 'working' }
+      ])
+    )
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        fullyIdle: true,
+        backgroundTasksUpdate: { totalLength: 0, backgroundTasks: [] }
+      }
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+    expect(runtime.statusOf(id)).toBe('waiting')
+  })
+
+  it('prunes unconfirmed declined daemon schedules and commands on StreamAgentStateUpdates CASCADE_RUN_STATUS_IDLE with fullyIdle true even when backgroundTasksTotal is omitted', async () => {
+    apiAnswers = true
+    let pushStream!: (msg: unknown) => void
+    streamHandler = (res) => {
+      res.writeHead(200, { 'content-type': 'application/connect+json' })
+      pushStream = (msg) => res.write(streamFrame(msg))
+    }
+    const id = await boundTab()
+    await vi.waitFor(() => expect(pushStream).toBeDefined())
+    say(id, state('working'))
+    hook(id, 'PreToolUse', { toolCall: daemon('npm run dev'), stepIdx: 1 })
+    hook(id, 'PreInvocation', { invocationNum: 1 })
+    hook(id, 'Stop', { fullyIdle: true })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: `${A}/task-1`, kind: 'server', label: 'npm run dev', state: 'waiting' }
+      ])
+    )
+
+    say(id, state('working'))
+    hook(id, 'PreToolUse', { toolCall: STANDING_CRON, stepIdx: 2 })
+    hook(id, 'PreToolUse', { toolCall: daemon('evil-daemon'), stepIdx: 3 })
+    await hooksTaken(id)
+    say(id, state('blocked', `:kind=permission:msg=${b64('Approve Schedule')}`))
+    expect(runtime.statusOf(id)).toBe('approval')
+
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        fullyIdle: true
+      }
+    })
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('waiting'))
+
+    say(id, state('working'))
+    hook(id, 'PreToolUse', { toolCall: command('sleep 5'), stepIdx: 4 })
+    hook(id, 'PreInvocation', { invocationNum: 1 })
+    hook(id, 'Stop', { fullyIdle: false })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: `${A}/task-1`, kind: 'server', label: 'npm run dev', state: 'waiting' },
+        { id: `${A}/task-4`, kind: 'command', label: 'sleep 5', state: 'working' }
+      ])
+    )
+  })
+
+  it('does not let a child steal its own or a sibling grandchild PendingSpawn across DB lag or concurrent SessionStart', async () => {
+    const id = await boundTab()
+    const CHILD2 = 'd5e6f7a8-b9c0-4d1e-8f2a-3b4c5d6e7f8a'
+    const GRANDCHILD = 'e6f7a8b9-c0d1-4e2f-8a3b-4c5d6e7f8a9b'
+    const GRANDCHILD2 = 'f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c'
+
+    writeSummaries(gemini, [
+      { conversation_id: A, workspace_uris: JSON.stringify([pathToFileURL(repo).href]) },
+      {
+        conversation_id: CHILD,
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href]),
+        parent_conversation_id: A
+      }
+    ])
+    hook(id, 'PreInvocation', { invocationNum: 0 })
+    hook(id, 'SessionStart', { conversationId: CHILD })
+    hook(id, 'PreToolUse', {
+      conversationId: CHILD,
+      stepIdx: 1,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: { Subagents: [{ TypeName: 'coder', Role: 'Sibling grandchild' }] }
+      }
+    })
+    hook(id, 'SessionStart', { conversationId: CHILD2 })
+    hook(id, 'SessionStart', { conversationId: GRANDCHILD, parentConversationId: CHILD })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: CHILD, kind: 'agent', label: 'Subagent', state: 'working' },
+        { id: CHILD2, kind: 'agent', label: 'Subagent', state: 'working' },
+        { id: GRANDCHILD, kind: 'agent', label: 'coder: Sibling grandchild', state: 'working' }
+      ])
+    )
+    hook(id, 'Stop', { conversationId: GRANDCHILD, fullyIdle: true })
+    hook(id, 'Stop', { conversationId: CHILD2, fullyIdle: true })
+    hook(id, 'Stop', { conversationId: CHILD, fullyIdle: true })
+    hook(id, 'Stop', { fullyIdle: true })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+
+    const CHILD3 = '12345678-1234-4234-8234-1234567890ab'
+    hook(id, 'PreToolUse', {
+      conversationId: CHILD3,
+      stepIdx: 1,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: { Subagents: [{ TypeName: 'coder', Role: 'DB lag grandchild' }] }
+      }
+    })
+    await hooksTaken(id)
+    writeSummaries(gemini, [
+      { conversation_id: A, workspace_uris: JSON.stringify([pathToFileURL(repo).href]) },
+      {
+        conversation_id: CHILD3,
+        workspace_uris: JSON.stringify([pathToFileURL(repo).href]),
+        parent_conversation_id: A
+      }
+    ])
+    hook(id, 'PreInvocation', { conversationId: CHILD3, invocationNum: 1 })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: CHILD3, kind: 'agent', label: 'Subagent', state: 'working' },
+        {
+          id: `${CHILD3}/subagent-1-0`,
+          kind: 'agent',
+          label: 'coder: DB lag grandchild',
+          state: 'working'
+        }
+      ])
+    )
+    hook(id, 'SessionStart', { conversationId: GRANDCHILD2, parentConversationId: CHILD3 })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: CHILD3, kind: 'agent', label: 'Subagent', state: 'working' },
+        { id: GRANDCHILD2, kind: 'agent', label: 'coder: DB lag grandchild', state: 'working' }
+      ])
+    )
+  })
+
+  it('consumes recentSpawns when SessionStart upgrades a generic fromTitle child', async () => {
+    const id = await boundTab()
+    hook(id, 'PreInvocation', { invocationNum: 0 })
+    hook(id, 'PreToolUse', {
+      stepIdx: 1,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: { Subagents: [{ TypeName: 'research', Role: 'Async upgraded' }] }
+      }
+    })
+    hook(id, 'PostToolUse', {
+      stepIdx: 1,
+      error: '',
+      toolCall: { name: 'invoke_subagent', args: {} }
+    })
+    title(id, {
+      conversation_id: A,
+      agent_state: 'working',
+      subagents: [{ conversation_id: CHILD, name: 'self', state: 'working' }]
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: CHILD, kind: 'agent', label: 'Subagent', state: 'working' }
+      ])
+    )
+    hook(id, 'SessionStart', { conversationId: CHILD })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: CHILD, kind: 'agent', label: 'research: Async upgraded', state: 'working' }
+      ])
+    )
+    expect(sessions['runs'].get(id)?.recentSpawns).toBeUndefined()
+  })
+
+  it('prunes unconfirmed declined commands and schedules in askCommands catch fallback when ListBackgroundTasks returns 503', async () => {
+    apiAnswers = true
+    backgroundTasks = {
+      tasks: [
+        {
+          conversationId: A,
+          task: {
+            taskId: `${A}/task-1`,
+            toolName: 'run_command',
+            description: 'sleep 60',
+            isDaemon: false
+          }
+        }
+      ]
+    }
+    const id = await boundTab()
+    hook(id, 'PreToolUse', { toolCall: command('sleep 60'), stepIdx: 1 })
+    hook(id, 'PreInvocation', { invocationNum: 1 })
+    title(id, { conversation_id: A, agent_state: 'idle', task_count: 1 })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: `${A}/task-1`, kind: 'command', label: 'sleep 60', state: 'working' }
+      ])
+    )
+
+    apiAnswers = false
+    say(id, state('working'))
+    hook(id, 'PreToolUse', { toolCall: STANDING_CRON, stepIdx: 2 })
+    hook(id, 'PreToolUse', { toolCall: daemon('npm run bad'), stepIdx: 3 })
+    await hooksTaken(id)
+    say(id, state('blocked', `:kind=permission:msg=${b64('Approve Schedule')}`))
+    title(id, { conversation_id: A, agent_state: 'idle', task_count: 1 })
+    await vi.waitFor(() => expect(sessions['runs'].get(id)?.schedules?.size ?? 0).toBe(0))
+    expect(sessions['runs'].get(id)?.commands?.has(`${A}/task-3`)).toBe(false)
+
+    say(id, state('working'))
+    hook(id, 'PreToolUse', { toolCall: command('echo ok'), stepIdx: 4 })
+    hook(id, 'PreInvocation', { invocationNum: 1 })
+    hook(id, 'Stop', { fullyIdle: false })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: `${A}/task-1`, kind: 'command', label: 'sleep 60', state: 'working' },
+        { id: `${A}/task-4`, kind: 'command', label: 'echo ok', state: 'working' }
+      ])
+    )
+  })
+
+  it('prunes declined commands, schedules, and invoke_subagent pendingSpawns on StreamAgentStateUpdates fullyIdle false during approval', async () => {
+    apiAnswers = true
+    let pushStream!: (msg: unknown) => void
+    streamHandler = (res) => {
+      res.writeHead(200, { 'content-type': 'application/connect+json' })
+      pushStream = (msg) => res.write(streamFrame(msg))
+    }
+    backgroundTasks = {
+      tasks: [
+        {
+          conversationId: A,
+          task: {
+            taskId: `${A}/task-1`,
+            toolName: 'run_command',
+            description: 'sleep 60',
+            isDaemon: false
+          }
+        }
+      ]
+    }
+    const id = await boundTab()
+    await vi.waitFor(() => expect(pushStream).toBeDefined())
+    say(id, state('working'))
+    hook(id, 'PreToolUse', { toolCall: command('sleep 60'), stepIdx: 1 })
+    hook(id, 'PreInvocation', { invocationNum: 1 })
+    hook(id, 'Stop', { fullyIdle: false })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: `${A}/task-1`, kind: 'command', label: 'sleep 60', state: 'working' }
+      ])
+    )
+
+    say(id, state('working'))
+    hook(id, 'PreToolUse', { toolCall: STANDING_CRON, stepIdx: 2 })
+    hook(id, 'PreToolUse', { toolCall: daemon('npm run bad'), stepIdx: 3 })
+    await hooksTaken(id)
+    say(id, state('blocked', `:kind=permission:msg=${b64('Approve Schedule')}`))
+    expect(runtime.statusOf(id)).toBe('approval')
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        fullyIdle: false
+      }
+    })
+    await vi.waitFor(() => expect(sessions.openApproval(id)).toBeUndefined())
+    say(id, state('working'))
+    hook(id, 'PreToolUse', { toolCall: command('echo ok'), stepIdx: 4 })
+    hook(id, 'PreInvocation', { invocationNum: 1 })
+    hook(id, 'Stop', { fullyIdle: false })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: `${A}/task-1`, kind: 'command', label: 'sleep 60', state: 'working' },
+        { id: `${A}/task-4`, kind: 'command', label: 'echo ok', state: 'working' }
+      ])
+    )
+
+    say(id, state('working'))
+    hook(id, 'PreToolUse', {
+      stepIdx: 5,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: { Subagents: [{ TypeName: 'research', Role: 'Declined sub' }] }
+      }
+    })
+    await hooksTaken(id)
+    say(id, state('blocked', `:kind=permission:msg=${b64('Approve Subagent')}`))
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        fullyIdle: false
+      }
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: `${A}/task-1`, kind: 'command', label: 'sleep 60', state: 'working' },
+        { id: `${A}/task-4`, kind: 'command', label: 'echo ok', state: 'working' }
+      ])
+    )
+  })
+
+  it('clears unattributedBackground and consumes recentSpawns across non-generic fromTitle names and early PreInvocation hooks', async () => {
+    const id = await boundTab()
+    hook(id, 'PreInvocation', { invocationNum: 0 })
+    hook(id, 'PreToolUse', {
+      stepIdx: 1,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: { Subagents: [{ TypeName: 'teamwork_worker', Role: 'Check logs' }] }
+      }
+    })
+    hook(id, 'PostToolUse', {
+      stepIdx: 1,
+      error: '',
+      toolCall: { name: 'invoke_subagent', args: {} }
+    })
+    hook(id, 'Stop', { fullyIdle: false })
+    title(id, {
+      conversation_id: A,
+      agent_state: 'working',
+      subagents: [{ conversation_id: CHILD, name: 'explorer', state: 'working' }]
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: CHILD, kind: 'agent', label: 'explorer', state: 'working' }
+      ])
+    )
+    expect(sessions['runs'].get(id)?.unattributedBackground).toBe(false)
+    hook(id, 'SessionStart', { conversationId: CHILD })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: CHILD, kind: 'agent', label: 'teamwork_worker: Check logs', state: 'working' }
+      ])
+    )
+    expect(sessions['runs'].get(id)?.recentSpawns).toBeUndefined()
+    hook(id, 'Stop', { conversationId: CHILD, fullyIdle: true })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+
+    const CHILD2 = 'd5e6f7a8-b9c0-4d1e-8f2a-3b4c5d6e7f8a'
+    hook(id, 'PreInvocation', { invocationNum: 0 })
+    hook(id, 'PreToolUse', {
+      stepIdx: 2,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: { Subagents: [{ TypeName: 'research', Role: 'Early invocation' }] }
+      }
+    })
+    hook(id, 'PostToolUse', {
+      stepIdx: 2,
+      error: '',
+      toolCall: { name: 'invoke_subagent', args: {} }
+    })
+    title(id, {
+      conversation_id: A,
+      agent_state: 'working',
+      subagents: [{ conversation_id: CHILD2, name: 'self', state: 'working' }]
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: CHILD2, kind: 'agent', label: 'Subagent', state: 'working' }
+      ])
+    )
+    hook(id, 'PreInvocation', { conversationId: CHILD2, invocationNum: 0 })
+    hook(id, 'SessionStart', { conversationId: CHILD2 })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: CHILD2, kind: 'agent', label: 'research: Early invocation', state: 'working' }
+      ])
+    )
+    expect(sessions['runs'].get(id)?.recentSpawns).toBeUndefined()
+  })
+
+  it('prunes unconfirmed child STANDING_CRON schedules on child Stop with fullyIdle true', async () => {
+    const id = await boundTab()
+    hook(id, 'PreInvocation', { invocationNum: 0 })
+    hook(id, 'PreToolUse', {
+      stepIdx: 1,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: { Subagents: [{ TypeName: 'research', Role: 'Cron child' }] }
+      }
+    })
+    hook(id, 'SessionStart', { conversationId: CHILD })
+    hook(id, 'PreToolUse', { conversationId: CHILD, stepIdx: 2, toolCall: STANDING_CRON })
+    hook(id, 'Stop', { conversationId: CHILD, fullyIdle: true })
+    hook(id, 'Stop', { fullyIdle: true })
+    await hooksTaken(id)
+    expect(sessions.list()[0].background).toBeUndefined()
+    expect(await runtime.stillWorking(id)).toBe(false)
+  })
+
+  it('prunes declined STANDING_CRON and daemon commands when PTY state idle arrives before StreamAgentStateUpdates fullyIdle false', async () => {
+    apiAnswers = true
+    let pushStream!: (msg: unknown) => void
+    streamHandler = (res) => {
+      res.writeHead(200, { 'content-type': 'application/connect+json' })
+      pushStream = (msg) => res.write(streamFrame(msg))
+    }
+    backgroundTasks = {
+      tasks: [
+        {
+          conversationId: A,
+          task: {
+            taskId: `${A}/task-1`,
+            toolName: 'run_command',
+            description: 'sleep 60',
+            isDaemon: false
+          }
+        }
+      ]
+    }
+    const id = await boundTab()
+    await vi.waitFor(() => expect(pushStream).toBeDefined())
+    say(id, state('working'))
+    hook(id, 'PreToolUse', { toolCall: command('sleep 60'), stepIdx: 1 })
+    hook(id, 'PreInvocation', { invocationNum: 1 })
+    hook(id, 'Stop', { fullyIdle: false })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: `${A}/task-1`, kind: 'command', label: 'sleep 60', state: 'working' }
+      ])
+    )
+
+    say(id, state('working'))
+    hook(id, 'PreToolUse', { toolCall: STANDING_CRON, stepIdx: 2 })
+    hook(id, 'PreToolUse', { toolCall: daemon('npm run bad'), stepIdx: 3 })
+    await hooksTaken(id)
+    say(id, state('blocked', `:kind=permission:msg=${b64('Approve Schedule')}`))
+    expect(runtime.statusOf(id)).toBe('approval')
+
+    say(id, state('idle'))
+    await vi.waitFor(() => expect(sessions.openApproval(id)).toBeUndefined())
+    expect(sessions['runs'].get(id)?.exitedAskToIdle).toBe(true)
+    expect(sessions['runs'].get(id)?.schedules?.size ?? 0).toBe(0)
+    expect(sessions['runs'].get(id)?.commands?.has(`${A}/task-3`)).toBe(false)
+
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        fullyIdle: false
+      }
+    })
+    await vi.waitFor(() => expect(sessions['runs'].get(id)?.exitedAskToIdle).toBe(false))
+
+    say(id, state('working'))
+    hook(id, 'PreToolUse', { toolCall: command('echo ok'), stepIdx: 4 })
+    hook(id, 'PreInvocation', { invocationNum: 1 })
+    hook(id, 'Stop', { fullyIdle: false })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: `${A}/task-1`, kind: 'command', label: 'sleep 60', state: 'working' },
+        { id: `${A}/task-4`, kind: 'command', label: 'echo ok', state: 'working' }
+      ])
+    )
+  })
+
+  it('prunes declined STANDING_CRON and daemon commands when PTY state idle arrives before title idle with ListBackgroundTasks 503', async () => {
+    apiAnswers = true
+    backgroundTasks = {
+      tasks: [
+        {
+          conversationId: A,
+          task: {
+            taskId: `${A}/task-1`,
+            toolName: 'run_command',
+            description: 'sleep 60',
+            isDaemon: false
+          }
+        }
+      ]
+    }
+    const id = await boundTab()
+    hook(id, 'PreToolUse', { toolCall: command('sleep 60'), stepIdx: 1 })
+    hook(id, 'PreInvocation', { invocationNum: 1 })
+    title(id, { conversation_id: A, agent_state: 'idle', task_count: 1 })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: `${A}/task-1`, kind: 'command', label: 'sleep 60', state: 'working' }
+      ])
+    )
+
+    apiAnswers = false
+    say(id, state('working'))
+    hook(id, 'PreToolUse', { toolCall: STANDING_CRON, stepIdx: 2 })
+    hook(id, 'PreToolUse', { toolCall: daemon('npm run bad'), stepIdx: 3 })
+    await hooksTaken(id)
+    say(id, state('blocked', `:kind=permission:msg=${b64('Approve Schedule')}`))
+    expect(runtime.statusOf(id)).toBe('approval')
+
+    say(id, state('idle'))
+    expect(sessions['runs'].get(id)?.exitedAskToIdle).toBe(true)
+    title(id, { conversation_id: A, agent_state: 'idle', task_count: 1 })
+    await vi.waitFor(() => expect(sessions['runs'].get(id)?.exitedAskToIdle).toBe(false))
+    await new Promise((r) => setTimeout(r, 50))
+    expect(sessions['runs'].get(id)?.schedules?.size ?? 0).toBe(0)
+    expect(sessions['runs'].get(id)?.commands?.has(`${A}/task-3`)).toBe(false)
+
+    say(id, state('working'))
+    hook(id, 'PreToolUse', { toolCall: command('echo ok'), stepIdx: 4 })
+    hook(id, 'PreInvocation', { invocationNum: 1 })
+    hook(id, 'Stop', { fullyIdle: false })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: `${A}/task-1`, kind: 'command', label: 'sleep 60', state: 'working' },
+        { id: `${A}/task-4`, kind: 'command', label: 'echo ok', state: 'working' }
+      ])
+    )
+  })
+
+  it('prunes declined invoke_subagent pendingSpawns when PTY state idle arrives before StreamAgentStateUpdates fullyIdle false', async () => {
+    apiAnswers = true
+    let pushStream!: (msg: unknown) => void
+    streamHandler = (res) => {
+      res.writeHead(200, { 'content-type': 'application/connect+json' })
+      pushStream = (msg) => res.write(streamFrame(msg))
+    }
+    backgroundTasks = {
+      tasks: [
+        {
+          conversationId: A,
+          task: {
+            taskId: `${A}/task-1`,
+            toolName: 'run_command',
+            description: 'sleep 60',
+            isDaemon: false
+          }
+        }
+      ]
+    }
+    const id = await boundTab()
+    await vi.waitFor(() => expect(pushStream).toBeDefined())
+    say(id, state('working'))
+    hook(id, 'PreToolUse', { toolCall: command('sleep 60'), stepIdx: 1 })
+    hook(id, 'PreInvocation', { invocationNum: 1 })
+    hook(id, 'Stop', { fullyIdle: false })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: `${A}/task-1`, kind: 'command', label: 'sleep 60', state: 'working' }
+      ])
+    )
+
+    say(id, state('working'))
+    hook(id, 'PreToolUse', {
+      stepIdx: 2,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: { Subagents: [{ TypeName: 'research', Role: 'Declined sub' }] }
+      }
+    })
+    await hooksTaken(id)
+    say(id, state('blocked', `:kind=permission:msg=${b64('Approve Subagent')}`))
+    expect(runtime.statusOf(id)).toBe('approval')
+
+    say(id, state('idle'))
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: `${A}/task-1`, kind: 'command', label: 'sleep 60', state: 'working' }
+      ])
+    )
+    expect(sessions['runs'].get(id)?.exitedAskToIdle).toBe(true)
+
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        fullyIdle: false
+      }
+    })
+    await vi.waitFor(() => expect(sessions['runs'].get(id)?.exitedAskToIdle).toBe(false))
+
+    say(id, state('working'))
+    hook(id, 'PreToolUse', { toolCall: command('echo ok'), stepIdx: 3 })
+    hook(id, 'PreInvocation', { invocationNum: 1 })
+    hook(id, 'Stop', { fullyIdle: false })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: `${A}/task-1`, kind: 'command', label: 'sleep 60', state: 'working' },
+        { id: `${A}/task-3`, kind: 'command', label: 'echo ok', state: 'working' }
+      ])
+    )
+  })
+
+  it('scopes unconfirmed pruning to the main conversation id in emitState and StreamAgentStateUpdates fullyIdle false', async () => {
+    apiAnswers = true
+    let pushStream!: (msg: unknown) => void
+    streamHandler = (res) => {
+      res.writeHead(200, { 'content-type': 'application/connect+json' })
+      pushStream = (msg) => res.write(streamFrame(msg))
+    }
+    const id = await boundTab()
+    await vi.waitFor(() => expect(pushStream).toBeDefined())
+    hook(id, 'PreInvocation', { invocationNum: 0 })
+    hook(id, 'PreToolUse', {
+      stepIdx: 1,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: { Subagents: [{ TypeName: 'research', Role: 'Active child' }] }
+      }
+    })
+    hook(id, 'SessionStart', { conversationId: CHILD })
+    hook(id, 'PreToolUse', { conversationId: CHILD, stepIdx: 2, toolCall: STANDING_CRON })
+    hook(id, 'PreToolUse', {
+      conversationId: CHILD,
+      stepIdx: 3,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: { Subagents: [{ TypeName: 'coder', Role: 'Grandchild spawn' }] }
+      }
+    })
+    hook(id, 'Stop', { fullyIdle: false })
+
+    say(id, state('working'))
+    hook(id, 'PreToolUse', { toolCall: STANDING_CRON, stepIdx: 4 })
+    await hooksTaken(id)
+    say(id, state('blocked', `:kind=permission:msg=${b64('Approve Schedule')}`))
+    say(id, state('idle'))
+
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        fullyIdle: false
+      }
+    })
+    await vi.waitFor(() => expect(sessions['runs'].get(id)?.exitedAskToIdle).toBe(false))
+    expect(sessions['runs'].get(id)?.schedules?.has(`${A}/task-4`)).toBe(false)
+    expect(sessions['runs'].get(id)?.schedules?.has(`${CHILD}/task-2`)).toBe(true)
+    expect(sessions['runs'].get(id)?.pendingSpawns).toEqual([
+      {
+        id: `${CHILD}/subagent-3-0`,
+        parentId: CHILD,
+        stepIdx: '3',
+        label: 'coder: Grandchild spawn'
+      }
+    ])
+
+    hook(id, 'PreInvocation', { conversationId: CHILD, invocationNum: 1 })
+    hook(id, 'Stop', { conversationId: CHILD, fullyIdle: false })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: CHILD, kind: 'agent', label: 'research: Active child', state: 'working' },
+        {
+          id: `${CHILD}/subagent-3-0`,
+          kind: 'agent',
+          label: 'coder: Grandchild spawn',
+          state: 'working'
+        },
+        {
+          id: `${CHILD}/task-2`,
+          kind: 'monitor',
+          label: 'Cron (0 * * * *): Check the build',
+          state: 'waiting'
+        }
+      ])
+    )
+  })
+
+  it('tracks flat agy 1.5.11 invoke_subagent, grandchild SessionStart without parentConversationId, woken PreInvocation, reviewing title settles, and omitted protojson fullyIdle', async () => {
+    apiAnswers = true
+    let pushStream!: (msg: unknown) => void
+    streamHandler = (res) => {
+      res.writeHead(200, { 'content-type': 'application/connect+json' })
+      pushStream = (msg) => res.write(streamFrame(msg))
+    }
+    const GRAND = 'f7a8b9c0-d1e2-4f3a-8b4c-5d6e7f8a9b0c'
+    const id = await boundTab()
+    await vi.waitFor(() => expect(pushStream).toBeDefined())
+    say(id, state('working'))
+    hook(id, 'PreToolUse', {
+      stepIdx: 1,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: { TypeName: 'teamwork', Role: 'Teamwork Multi-Agent Team', Prompt: 'Build M1' }
+      }
+    })
+    hook(id, 'PostToolUse', {
+      stepIdx: 1,
+      error: '',
+      toolCall: { name: 'invoke_subagent', args: { TypeName: 'teamwork' } }
+    })
+    hook(id, 'SessionStart', { conversationId: CHILD })
+    hook(id, 'PreToolUse', {
+      conversationId: CHILD,
+      stepIdx: 2,
+      toolCall: {
+        name: 'invoke_subagent',
+        args: { TypeName: 'teamwork_interviewer', Role: 'Task Interviewer', Prompt: 'Ask 5' }
+      }
+    })
+    hook(id, 'PostToolUse', {
+      conversationId: CHILD,
+      stepIdx: 2,
+      error: '',
+      toolCall: { name: 'invoke_subagent', args: { TypeName: 'teamwork_interviewer' } }
+    })
+    hook(id, 'SessionStart', { conversationId: GRAND })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: CHILD, kind: 'agent', label: 'Teamwork Multi-Agent Team', state: 'working' },
+        {
+          id: GRAND,
+          kind: 'agent',
+          label: 'teamwork_interviewer: Task Interviewer',
+          state: 'working'
+        }
+      ])
+    )
+    hook(id, 'Stop', { conversationId: GRAND, fullyIdle: true })
+    hook(id, 'Stop', { conversationId: CHILD, fullyIdle: true })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+
+    hook(id, 'PreInvocation', { conversationId: GRAND, invocationNum: 0 })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        {
+          id: GRAND,
+          kind: 'agent',
+          label: 'teamwork_interviewer: Task Interviewer',
+          state: 'working'
+        }
+      ])
+    )
+    hook(id, 'Stop', { conversationId: GRAND, fullyIdle: true })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        backgroundTasksUpdate: {
+          totalLength: 1,
+          backgroundTasks: [
+            {
+              taskSnapshot: {
+                taskId: `${A}/task-9`,
+                toolName: 'run_command',
+                description: 'sleep 25'
+              }
+            }
+          ]
+        }
+      }
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0].background).toEqual([
+        { id: `${A}/task-9`, kind: 'command', label: 'sleep 25', state: 'working' }
+      ])
+    )
+    expect(runtime.statusOf(id)).toBe('working')
+
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        fullyIdle: true,
+        backgroundTasksUpdate: {}
+      }
+    })
+    await vi.waitFor(() => expect(sessions.list()[0].background).toBeUndefined())
+    expect(runtime.statusOf(id)).toBe('waiting')
+
+    const brain = path.join(gemini, 'antigravity-cli', 'brain', A)
+    fs.mkdirSync(brain, { recursive: true })
+    fs.writeFileSync(path.join(brain, 'plan.md'), '# Plan')
+    fs.writeFileSync(
+      path.join(brain, 'plan.md.metadata.json'),
+      JSON.stringify({ requestFeedback: true, updatedAt: '1' })
+    )
+    say(id, state('blocked', `:kind=permission:msg=${b64('Approve plan')}`))
+    await vi.waitFor(() => expect(sessions.openApproval(id)?.plan).toBe(true))
+    pushStream({
+      update: {
+        conversationId: A,
+        status: 'CASCADE_RUN_STATUS_IDLE',
+        fullyIdle: true
+      }
+    })
+    await new Promise((r) => setTimeout(r, 50))
+    expect(sessions.openApproval(id)?.plan).toBe(true)
+    expect(runtime.statusOf(id)).toBe('approval')
+  })
+})
+
+describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
+  const waitingStep = (requestedInteraction: unknown): unknown => ({
+    trajectoryId: 't9',
+    steps: [
+      { userInput: { userConfig: { plannerConfig: { planModel: 'M36' } } } },
+      { status: 'CORTEX_STEP_STATUS_DONE' },
+      { status: 'CORTEX_STEP_STATUS_WAITING', requestedInteraction }
+    ]
+  })
+
+  // AGY§26
+  it("declines by the key that says no on the box of the tool agy's blocked message names — or, when that names none, as in a tab on a machine, of the tool its hook named — picked when the ask is read, never 2 on a box whose 2 is “always allow”: 2 on an edit, Esc on a file to create or read, 4 on a command or a tool it does not know", async () => {
+    const id = await boundTab()
+    const OUTSIDE = '/elsewhere/outside.txt'
+    const asks: [tool: string, args: Record<string, unknown>, message: string, noKey: string][] = [
+      ['edit_file', { Path: OUTSIDE }, `Approve EditFile: Write: ${OUTSIDE}`, '2'],
+      [
+        'replace_file_content',
+        { TargetFile: OUTSIDE },
+        `Approve ReplaceFileContent: Write: ${OUTSIDE}`,
+        '2'
+      ],
+      ['write_file', { Path: OUTSIDE }, `Approve WriteFile: Write: ${OUTSIDE}`, ESC],
+      ['write_to_file', { TargetFile: OUTSIDE }, `Approve WriteToFile: Write: ${OUTSIDE}`, ESC],
+      ['read_file', { Path: OUTSIDE }, `Approve ReadFile: Read: ${OUTSIDE}`, ESC],
+      ['run_command', { CommandLine: 'ls' }, 'Approve RunCommand: ls', '4'],
+      ['edit_file', { Path: OUTSIDE }, `Approve WriteFile: Write: ${OUTSIDE}`, ESC],
+      ['edit_file', { Path: OUTSIDE }, 'no tool named', '2'],
+      ['write_to_file', { TargetFile: OUTSIDE }, 'no tool named', ESC],
+      ['view_file', { AbsolutePath: OUTSIDE }, 'no tool named', ESC],
+      ['run_command', { CommandLine: 'ls' }, 'no tool named', '4'],
+      ['call_mcp_tool', { ToolName: 'ping' }, 'no tool named', '4']
+    ]
+    for (const [name, args, message] of asks) {
+      hook(id, 'PreToolUse', { toolCall: { name, args } })
+      await hooksTaken(id)
+      say(id, state('blocked', `:kind=permission:msg=${b64(message)}`))
+      hook(id, 'PreToolUse', { toolCall: { name: 'edit_file', args: { Path: '/later/tool.md' } } })
+      await hooksTaken(id)
+      expect(await sessions.answer(id, 'no')).toEqual({ watch: true })
+    }
+    expect(pty.write.mock.calls).toEqual(asks.map(([, , , noKey]) => [id, noKey]))
+  })
+
+  it("presses the key agy's own dialog takes when its API does not answer, and says it went in as keys: 1 runs a command, 4 declines it, Esc declines a file to create", async () => {
+    const id = await boundTab()
+    const ask = async (name: string, args: Record<string, unknown>, msg: string): Promise<void> => {
+      hook(id, 'PreToolUse', { toolCall: { name, args } })
+      await hooksTaken(id)
+      say(id, state('blocked', `:kind=permission:msg=${b64(msg)}`))
+    }
+    await ask('run_command', { CommandLine: 'rm -rf build' }, 'Approve RunCommand: rm -rf build')
+    expect(sessions.openApproval(id)).toMatchObject({ command: 'rm -rf build' })
+    expect(await sessions.answer(id, 'maybe')).toEqual({
+      error: 'an Antigravity approval takes yes or no.'
+    })
+    expect(await sessions.answer(id, 'no')).toEqual({ watch: true })
+    await ask('run_command', { CommandLine: 'ls' }, 'Approve RunCommand: ls')
+    expect(await sessions.answer(id, 'yes')).toEqual({ watch: true })
+    const file = path.join(repo, 'a.md')
+    await ask('write_to_file', { TargetFile: file }, `Approve WriteToFile: Write: ${file}`)
+    expect(sessions.openApproval(id)).toMatchObject({ command: file })
+    expect(await sessions.answer(id, 'no')).toEqual({ watch: true })
+    expect(pty.write.mock.calls).toEqual([
+      [id, '4'],
+      [id, '1'],
+      [id, ESC]
+    ])
+    expect(await sessions.answer(id, 'yes')).toBe(false)
+  })
+
+  // AGY§13
+  it("names the file in an approval for agy 1.4.7's write_file and edit_file, from their Path", async () => {
+    const id = await boundTab()
+    for (const name of ['write_file', 'edit_file']) {
+      const file = path.join(repo, `${name}.md`)
+      hook(id, 'PreToolUse', { toolCall: { name, args: { Path: file } } })
+      await hooksTaken(id)
+      say(id, state('blocked', `:kind=permission:msg=${b64('Approve a file change')}`))
+      expect(sessions.openApproval(id)).toMatchObject({ command: file, file })
+      expect(sessions.openApproval(id)?.read).toBeUndefined()
+      expect(await sessions.answer(id, 'no')).toEqual({ watch: true })
+    }
+  })
+
+  // AGY§26
+  it("marks an approval for read_file, from its Path, and for agy 1.4.2's view_file, from its AbsolutePath, as a read", async () => {
+    const id = await boundTab()
+    const file = '/elsewhere/outside.txt'
+    hook(id, 'PreToolUse', { toolCall: { name: 'read_file', args: { Path: file } } })
+    await hooksTaken(id)
+    say(id, state('blocked', `:kind=permission:msg=${b64(`Approve ReadFile: Read: ${file}`)}`))
+    expect(sessions.openApproval(id)).toMatchObject({ command: file, file, read: true })
+    hook(id, 'PreToolUse', { toolCall: { name: 'view_file', args: { AbsolutePath: file } } })
+    await hooksTaken(id)
+    say(id, state('blocked', `:kind=permission:msg=${b64(`Approve ViewFile: Read: ${file}`)}`))
+    expect(sessions.openApproval(id)).toMatchObject({ command: file, file, read: true })
+  })
+
+  // AGY§26
+  it("keeps a read ask a read when agy's API names it, and declines it through the API with no key pressed", async () => {
+    apiAnswers = true
+    const file = '/elsewhere/outside.txt'
+    trajectory = waitingStep({ permission: { resource: { action: 'read_file', target: file } } })
+    const id = await boundTab()
+    say(id, state('blocked', `:kind=permission:msg=${b64(`Approve ReadFile: Read: ${file}`)}`))
+    await vi.waitFor(() => expect(sessions.openApproval(id)?.id).toBe('t9:2'))
+    const approval = sessions.openApproval(id)
+    expect(approval).toMatchObject({ command: file, file, read: true })
+    expect(approval?.reason).toBeUndefined()
+    await sessions.answer(id, 'no')
+    expect(sent('HandleCascadeUserInteraction')).toEqual([
+      {
+        cascadeId: A,
+        interaction: { trajectoryId: 't9', stepIndex: 2, permission: { allow: false } }
+      }
+    ])
+    expect(pty.write).not.toHaveBeenCalled()
+  })
+
+  it("answers an approval through agy's API when it answers, and presses no key", async () => {
+    apiAnswers = true
+    trajectory = waitingStep({
+      permission: { resource: { action: 'command', target: 'npm test' } }
+    })
+    const id = await boundTab()
+    say(id, state('blocked', `:kind=permission:msg=${b64('Approve RunCommand: npm test')}`))
+    await vi.waitFor(() => expect(sessions.openApproval(id)?.id).toBe('t9:2'))
+    expect(sessions.openApproval(id)).toMatchObject({ command: 'npm test' })
+    await sessions.answer(id, 'yes')
+    expect(sent('HandleCascadeUserInteraction')).toEqual([
+      {
+        cascadeId: A,
+        interaction: { trajectoryId: 't9', stepIndex: 2, permission: { allow: true } }
+      }
+    ])
+    expect(pty.write).not.toHaveBeenCalled()
+  })
+
+  it("answers each question of an ask through the API, a picked option by its id and the owner's own words as a write-in", async () => {
+    apiAnswers = true
+    trajectory = waitingStep({
+      askQuestion: {
+        questions: [
+          {
+            question: 'Which fruit?',
+            options: [
+              { id: 'a', text: 'Apple' },
+              { id: 'b', text: 'Banana' }
+            ]
+          },
+          { question: 'Which size?', options: [{ id: 's', text: 'Small' }] }
+        ]
+      }
+    })
+    const id = await boundTab()
+    say(id, state('blocked', `:kind=question:msg=${b64('Which fruit?')}`))
+    await vi.waitFor(() => expect(sessions.openQuestion(id)?.id).toBe('t9:2'))
+    expect(sessions.openQuestion(id)?.questions).toEqual([
+      {
+        question: 'Which fruit?',
+        options: [{ label: 'Apple' }, { label: 'Banana' }],
+        ownWords: true
+      },
+      { question: 'Which size?', options: [{ label: 'Small' }], ownWords: true }
+    ])
+    expect(await sessions.answer(id, 'banana')).toBe(false)
+    expect(sent('HandleCascadeUserInteraction')).toEqual([])
+    expect(await sessions.answer(id, 'banana\nMedium, please')).toEqual({})
+    expect(sent('HandleCascadeUserInteraction')).toEqual([
+      {
+        cascadeId: A,
+        interaction: {
+          trajectoryId: 't9',
+          stepIndex: 2,
+          askQuestion: {
+            responses: [
+              { question: 'Which fruit?', selectedOptionIds: ['b'] },
+              { question: 'Which size?', writeInResponse: 'Medium, please' }
+            ]
+          }
+        }
+      }
+    ])
+    expect(pty.write).not.toHaveBeenCalled()
+    expect(pty.type).not.toHaveBeenCalled()
+  })
+
+  it('reads a question from the tool call when the API does not answer, and leaves it open for the keys the relay presses', async () => {
+    const id = await boundTab()
+    hook(id, 'PreToolUse', {
+      toolCall: {
+        name: 'ask_question',
+        args: { questions: [{ question: 'Which fruit?', options: ['Apple', 'Banana'] }] }
+      }
+    })
+    await hooksTaken(id)
+    say(id, state('blocked', `:kind=question:msg=${b64('Which fruit?')}`))
+    const open = {
+      id: expect.any(String),
+      questions: [
+        {
+          question: 'Which fruit?',
+          options: [{ label: 'Apple' }, { label: 'Banana' }],
+          ownWords: true
+        }
+      ]
+    }
+    expect(sessions.openQuestion(id)).toEqual(open)
+    expect(await sessions.answer(id, 'A ripe mango')).toBe(false)
+    expect(sessions.openQuestion(id)).toEqual(open)
+    expect(pty.write).not.toHaveBeenCalled()
+  })
+
+  // AGY§14
+  it('holds a question that takes several picks open as one, from the tool call or the API; through the API its picks go as the ids of every option picked', async () => {
+    const id = await boundTab()
+    hook(id, 'PreToolUse', {
+      toolCall: {
+        name: 'ask_question',
+        args: {
+          questions: [
+            { question: 'Which fruits?', options: ['Apple', 'Banana'], is_multi_select: true }
+          ]
+        }
+      }
+    })
+    await hooksTaken(id)
+    say(id, state('blocked', `:kind=question:msg=${b64('Which fruits?')}`))
+    const fruits = {
+      question: 'Which fruits?',
+      options: [{ label: 'Apple' }, { label: 'Banana' }],
+      ownWords: true,
+      multiSelect: true
+    }
+    expect(sessions.openQuestion(id)?.questions).toEqual([fruits])
+    expect(await sessions.answer(id, '1, 2')).toBe(false)
+
+    say(id, state('working'))
+    apiAnswers = true
+    trajectory = waitingStep({
+      askQuestion: {
+        questions: [
+          {
+            question: 'Which fruits?',
+            options: [
+              { id: 'a', text: 'Apple' },
+              { id: 'b', text: 'Banana' }
+            ],
+            isMultiSelect: true
+          }
+        ]
+      }
+    })
+    say(id, state('blocked', `:kind=question:msg=${b64('Which fruits?')}`))
+    await vi.waitFor(() => expect(sessions.openQuestion(id)?.id).toBe('t9:2'))
+    expect(sessions.openQuestion(id)?.questions).toEqual([fruits])
+    expect(await sessions.answer(id, 'banana, 1')).toEqual({})
+    expect(sent('HandleCascadeUserInteraction')).toEqual([
+      {
+        cascadeId: A,
+        interaction: {
+          trajectoryId: 't9',
+          stepIndex: 2,
+          askQuestion: { responses: [{ question: 'Which fruits?', selectedOptionIds: ['a', 'b'] }] }
+        }
+      }
+    ])
+    expect(pty.write).not.toHaveBeenCalled()
+  })
+
+  it('a plan waiting for review carries its own text, and approving it sends agy "[Approved] <plan>" through its API, with the conversation\'s own settings', async () => {
+    apiAnswers = true
+    trajectory = waitingStep({})
+    const brain = path.join(gemini, 'antigravity-cli', 'brain', A)
+    fs.mkdirSync(brain, { recursive: true })
+    fs.writeFileSync(path.join(brain, 'implementation_plan.md'), '# Plan\n\n1. Do the thing.\n')
+    fs.writeFileSync(
+      path.join(brain, 'implementation_plan.md.metadata.json'),
+      JSON.stringify({ summary: 'x', requestFeedback: true })
+    )
+    fs.writeFileSync(
+      path.join(brain, 'notes.md.metadata.json'),
+      JSON.stringify({ summary: 'y', userFacing: true })
+    )
+    const id = await boundTab()
+    say(id, state('blocked', `:kind=permission:msg=${b64('Approve plan')}`))
+    expect(sessions.openApproval(id)).toMatchObject({
+      command: 'implementation_plan.md',
+      reason: '# Plan\n\n1. Do the thing.',
+      plan: true
+    })
+    expect(await sessions.answer(id, 'yes')).toEqual({})
+    expect(sent('SendUserCascadeMessage')).toEqual([
+      {
+        cascadeId: A,
+        items: [{ text: '[Approved] implementation_plan.md' }],
+        cascadeConfig: { plannerConfig: { planModel: 'M36' } }
+      }
+    ])
+    expect(pty.write).not.toHaveBeenCalled()
+  })
+
+  it('rejects a plan by pasting "[Rejected] <plan>" into agy when its API does not answer; the plan agy writes again after that is a new ask, so a card already shown for the old one does not hide it', async () => {
+    const brain = path.join(gemini, 'antigravity-cli', 'brain', A)
+    fs.mkdirSync(brain, { recursive: true })
+    const sidecar = path.join(brain, 'implementation_plan.md.metadata.json')
+    fs.writeFileSync(sidecar, JSON.stringify({ requestFeedback: true, updatedAt: 'T1' }))
+    const id = await boundTab()
+    say(id, state('blocked', `:kind=permission:msg=${b64('Approve plan')}`))
+    const first = sessions.openApproval(id)
+    expect(first).toMatchObject({ command: 'implementation_plan.md' })
+    await sessions.answer(id, 'no')
+    expect(pty.write.mock.calls).toEqual([
+      [id, '\x1b[200~[Rejected] implementation_plan.md\x1b[201~\r']
+    ])
+
+    say(id, state('working'))
+    fs.writeFileSync(sidecar, JSON.stringify({ requestFeedback: true, updatedAt: 'T2' }))
+    say(id, state('blocked', `:kind=permission:msg=${b64('Approve plan')}`))
+    expect(sessions.openApproval(id)?.id).not.toBe(first?.id)
+  })
+
+  it("delivers a message Koloft sends to the tab through agy's API, and says so when it could not", async () => {
+    apiAnswers = true
+    trajectory = waitingStep({})
+    const id = await boundTab()
+    expect(await sessions.deliver(id, 'hi')).toBe(true)
+    expect(sent('SendUserCascadeMessage')).toMatchObject([{ items: [{ text: 'hi' }] }])
+    apiAnswers = false
+    expect(await sessions.deliver(id, 'again')).toBe(false)
+  })
+})
+
+describe('AgySessions search (AGY§8)', () => {
+  it('finds a conversation by what the owner said or agy replied, not by tool output', async () => {
+    writeSummaries(gemini, [
+      { conversation_id: A, workspace_uris: JSON.stringify([pathToFileURL(repo).href]) }
+    ])
+    appendConversation(gemini, A, [
+      { type: 'USER_INPUT', content: ownerTyped('first ask') },
+      { type: 'GENERIC', content: 'zebra' },
+      { type: 'PLANNER_RESPONSE', content: 'The lantern is lit.' }
+    ])
+    await sessions.availability()
+    await sessions.refreshHistory()
+    expect(await sessions.searchSnippets('LANTERN')).toEqual([
+      { id: agySessionKey(A), snippet: 'The lantern is lit.' }
+    ])
+    expect(await sessions.searchSnippets('zebra')).toEqual([])
+  })
+})
+
+describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
+  const mirrored = (tabId: string, lines: unknown[]): void => {
+    fs.appendFileSync(
+      path.join(mirror, `${tabId}.agy.jsonl`),
+      lines.map((l) => JSON.stringify(l) + '\n').join('')
+    )
+    sessions.followMirrors('devbox')
+  }
+  const remoteMember = (id: string): void => {
+    sessions.store.upsertMember({
+      id,
+      key: agySessionKey(id, 'devbox'),
+      workspacePath: REMOTE_WS,
+      cwd: REMOTE_WS,
+      title: 'Remote',
+      createdAt: 1,
+      updatedAt: 1
+    })
+  }
+  const shown = (): SessionEvent[] =>
+    vi
+      .mocked(sessions['deps'].events)
+      .mock.calls.map(([, e]) => e)
+      .filter((e) => ['prompt', 'notify', 'stop'].includes(e.type))
+
+  // AGY§8
+  it('a remembered conversation on that machine stays while its list cannot be read, and leaves once the machine lists without it', async () => {
+    remoteMember(A)
+    machine.rows = undefined as never
+    await sessions.availability()
+    await sessions.refreshHistory()
+    expect(sessions.rows(REMOTE_WS).map((row) => row.id)).toEqual([agySessionKey(A, 'devbox')])
+    machine.rows = []
+    await sessions.refreshHistory()
+    expect(sessions.rows(REMOTE_WS)).toEqual([])
+  })
+
+  it("starts agy on that machine over ssh, on the account's own folder there with Koloft's title and hook scripts from its machine package, the owner's own settings and hooks kept, the API key in the tab's env, and the folder trusted when asked", async () => {
+    apiKey = 'key-1'
+    machine.config = {
+      ownersSettings: { theme: 'dark', trustedWorkspaces: ['/elsewhere'] },
+      ownersHooks: { mine: { Stop: [] } },
+      ownSettings: {},
+      accountsSettings: []
+    }
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, trustFolder: true, firstPrompt: 'hi' })
+    const [spec] = machine.launches
+    expect(created).toHaveLength(1)
+    expect(spec.cwd).toBe(REMOTE_WS)
+    expect(spec.env).toEqual({ ANT_ACCOUNT: 'work', KOLOFT_AGY_KEY: 'key-1' })
+    const settings = JSON.parse(spec.program.files['pty-1.settings.json'])
+    expect(settings).toMatchObject({
+      theme: 'dark',
+      modelProvider: 'gemini',
+      title: { command: '/bin/sh "$HOME/.koloft/m-test/agy-title.sh"' }
+    })
+    expect(settings.trustedWorkspaces.sort()).toEqual(['/elsewhere', '/home/me/proj'])
+    const hooks = JSON.parse(spec.program.files['pty-1.hooks.json'])
+    expect(Object.keys(hooks).sort()).toEqual(['koloft', 'mine'])
+    expect(JSON.stringify(hooks.koloft)).toContain('$HOME/.koloft/m-test/agy-hook.sh')
+    expect(spec.program.files['pty-1.auth.json']).toBeUndefined()
+    expect(spec.program.run).toContain(`--gemini_dir="$HOME/.koloft/agy"/'work'`)
+    expect(spec.program.run).toMatch(/set -- agy .*'-i' 'hi'\n/)
+  })
+
+  it('a first prompt that starts with / is typed into the tab once the mirrored title says agy is idle, not given with -i', async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS, firstPrompt: '/review' })
+    expect(machine.launches[0].program.run).not.toContain("'-i'")
+    mirrored(id, [{ conversation_id: '', agent_state: 'authenticating' }])
+    expect(pty.write).not.toHaveBeenCalled()
+    mirrored(id, [{ conversation_id: '', agent_state: 'idle' }])
+    await vi.waitFor(() =>
+      expect(pty.write.mock.calls).toEqual([[id, `${ESC}[200~/review${ESC}[201~\r`]])
+    )
+  })
+
+  it('shows its state from the log the machine mirrors back: the first hook binds the tab, a model call is working, an open ask waits for approval and is answered by keys, Stop ends the turn', async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    mirrored(id, [
+      { event: 'SessionStart', input: { conversationId: A } },
+      { event: 'PreInvocation', input: { conversationId: A } },
+      {
+        event: 'PreToolUse',
+        input: { conversationId: A, toolCall: { name: 'run_command', args: { CommandLine: 'ls' } } }
+      },
+      { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true }
+    ])
+    expect(sessions.list()[0].nativeSessionId).toBe(A)
+    await vi.waitFor(() => expect(sessions.openApproval(id)).toMatchObject({ command: 'ls' }))
+    expect(await sessions.answer(id, 'yes')).toEqual({ watch: true })
+    expect(pty.write).toHaveBeenCalledWith(id, '1')
+    mirrored(id, [
+      { conversation_id: A, agent_state: 'working' },
+      { event: 'Stop', input: { conversationId: A, fullyIdle: true } }
+    ])
+    expect(shown()).toEqual([
+      { type: 'prompt' },
+      { type: 'notify', need: 'approval' },
+      { type: 'prompt' },
+      { type: 'stop' }
+    ])
+  })
+
+  it('an ask declined with Esc or 4 there, which sends the title script idle and no Stop, leaves waiting for approval at once', async () => {
+    const asking = { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true }
+    const idle = { conversation_id: A, agent_state: 'idle' }
+    const afterEsc = [idle, idle]
+    const afterFour = [asking, idle]
+    for (const declined of [afterEsc, afterFour]) {
+      vi.mocked(sessions['deps'].events).mockClear()
+      const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+      mirrored(id, [
+        { event: 'SessionStart', input: { conversationId: A } },
+        { event: 'PreInvocation', input: { conversationId: A } },
+        {
+          event: 'PreToolUse',
+          input: {
+            conversationId: A,
+            toolCall: { name: 'run_command', args: { CommandLine: 'ls' } }
+          }
+        },
+        asking
+      ])
+      await vi.waitFor(() => expect(sessions.openApproval(id)).toMatchObject({ command: 'ls' }))
+      mirrored(id, declined)
+      expect(shown()).toEqual([
+        { type: 'prompt' },
+        { type: 'notify', need: 'approval' },
+        { type: 'stop' }
+      ])
+      expect(sessions.openApproval(id)).toBeUndefined()
+      await sessions.stop(id)
+    }
+  })
+
+  it('a turn stopped with Esc there, which sends the title script idle and no Stop, ends once the title has said working, but not on the idle line every prompt sends just before or just after its PreInvocation', async () => {
+    const idle = { conversation_id: A, agent_state: 'idle' }
+    const working = { conversation_id: A, agent_state: 'working' }
+    const preInvocation = { event: 'PreInvocation', input: { conversationId: A } }
+    const idleFirst = [idle, preInvocation]
+    const idleAfter = [preInvocation, idle]
+    for (const prompt of [idleFirst, idleAfter]) {
+      vi.mocked(sessions['deps'].events).mockClear()
+      const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+      mirrored(id, [
+        { event: 'SessionStart', input: { conversationId: A } },
+        preInvocation,
+        { event: 'Stop', input: { conversationId: A, fullyIdle: true } },
+        idle,
+        ...prompt
+      ])
+      const firstTurnAndPrompt = [{ type: 'prompt' }, { type: 'stop' }, { type: 'prompt' }]
+      expect(shown()).toEqual(firstTurnAndPrompt)
+      mirrored(id, [working, idle, idle])
+      expect(shown()).toEqual([...firstTurnAndPrompt, { type: 'stop' }])
+      await sessions.stop(id)
+    }
+  })
+
+  it('a tab started on a conversation there, whose first title line carries its id and idle before anyone types, shows idle so Koloft can type into it, and again when it moves to another conversation, but not on the idle line that follows a finished turn', async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    mirrored(id, [{ conversation_id: A, agent_state: 'idle' }])
+    expect(sessions.list()[0].nativeSessionId).toBe(A)
+    expect(shown()).toEqual([{ type: 'stop' }])
+    mirrored(id, [
+      { event: 'PreInvocation', input: { conversationId: A } },
+      { event: 'Stop', input: { conversationId: A, fullyIdle: true } },
+      { conversation_id: A, agent_state: 'idle' },
+      { conversation_id: B, agent_state: 'idle' }
+    ])
+    expect(sessions.list()[0].nativeSessionId).toBe(B)
+    expect(shown()).toEqual([
+      { type: 'stop' },
+      { type: 'prompt' },
+      { type: 'stop' },
+      { type: 'stop' }
+    ])
+  })
+
+  // AGY§12
+  it("a tab on that machine learns where agy keeps its conversations there from the first hook, and its Scratchpad follows it to the next conversation after /clear, even when that one's first hook comes before the switch", async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    const brain = '/home/me/.koloft/agy/work/antigravity-cli/brain'
+    mirrored(id, [
+      {
+        event: 'SessionStart',
+        input: { conversationId: A, artifactDirectoryPath: `${brain}/${A}` }
+      }
+    ])
+    expect(sessions.list()[0].scratchpadDir).toBe(`ssh://devbox${brain}/${A}`)
+    mirrored(id, [
+      {
+        event: 'SessionStart',
+        input: { conversationId: B, artifactDirectoryPath: `${brain}/${B}` }
+      },
+      { conversation_id: B, agent_state: 'idle' }
+    ])
+    expect(sessions.list()[0]).toMatchObject({
+      nativeSessionId: B,
+      scratchpadDir: `ssh://devbox${brain}/${B}`
+    })
+  })
+
+  it("closing the tab ends the machine's tmux session by the name agy's title script gave it, by the conversation's name before that, and by the tab's launch name before it binds; quitting Koloft leaves it running to attach to again", async () => {
+    const first = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    machine.tmuxThere = `k-${B}`
+    await sessions.stop(first.id)
+    machine.tmuxThere = null
+    const second = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    mirrored(second.id, [{ event: 'SessionStart', input: { conversationId: A } }])
+    await sessions.stop(second.id)
+    const third = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    await sessions.stop(third.id)
+    expect(machine.ended).toEqual([`k-${B}`, `k-${A}`, `m-${third.id}-t`])
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    await sessions.stopAll()
+    expect(machine.ended).toHaveLength(3)
+  })
+
+  it('a tab whose tmux session left the machine closes once the machine still lacks it a moment later', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    try {
+      const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+      mirrored(id, [{ event: 'SessionStart', input: { conversationId: A } }])
+      sessions.noticeRemoteExits('devbox', [A])
+      await vi.runAllTimersAsync()
+      expect(sessions.list()).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('resuming a conversation tmux still runs there attaches to it: the tab binds at once, reads waiting from the turn that already ended without reporting that turn again (nor when its background work ends), and follows the log its agy writes, found through the pointer the title script left', async () => {
+    machine.attach = true
+    machine.alive.add(A)
+    machine.held = true
+    remoteMember(A)
+    fs.writeFileSync(path.join(mirror, `k-${A}.agy-log`), 'pty-old.agy.jsonl')
+    const old = path.join(mirror, 'pty-old.agy.jsonl')
+    const stop = (fullyIdle: boolean): string =>
+      JSON.stringify({ event: 'Stop', input: { conversationId: A, fullyIdle } }) + '\n'
+    fs.writeFileSync(old, stop(false))
+    appendConversation(path.join(home, 'mirror-gemini'), A, [
+      { type: 'USER_INPUT', content: ownerTyped('before the restart') },
+      { type: 'PLANNER_RESPONSE', content: 'Already told.' }
+    ])
+    const { id } = await sessions.resume({
+      sessionId: agySessionKey(A, 'devbox'),
+      cwd: REMOTE_WS
+    })
+    await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(A))
+    expect(shown()).toEqual([{ type: 'stop' }])
+    fs.appendFileSync(
+      old,
+      stop(true) + JSON.stringify({ event: 'PreInvocation', input: { conversationId: A } }) + '\n'
+    )
+    sessions.followMirrors('devbox')
+    expect(runtime.statusOf(id)).toBe('working')
+    expect(shown()).toEqual([{ type: 'stop' }, { type: 'prompt' }])
+    expect(
+      vi.mocked(sessions['deps'].events).mock.calls.filter(([, e]) => e.type === 'turn-ended')
+    ).toEqual([])
+  })
+
+  it('attaching to a conversation tmux still runs there holds the tab for a standing cron set before the restart, however long ago, and not for one killed before it', async () => {
+    machine.attach = true
+    machine.alive.add(A)
+    machine.held = true
+    remoteMember(A)
+    fs.writeFileSync(path.join(mirror, `k-${A}.agy-log`), 'pty-old.agy.jsonl')
+    const old = path.join(mirror, 'pty-old.agy.jsonl')
+    const line = (event: string, input: Record<string, unknown>): string =>
+      JSON.stringify({ event, input: { conversationId: A, ...input } }) + '\n'
+    fs.writeFileSync(
+      old,
+      line('PreToolUse', { toolCall: STANDING_CRON, stepIdx: 2 }) +
+        line('PreInvocation', { invocationNum: 1 }) +
+        line('PostToolUse', { stepIdx: 4, error: '', toolCall: killTask(`${A}/task-2`) }) +
+        line('PreToolUse', { toolCall: STANDING_CRON, stepIdx: 6 }) +
+        line('PreInvocation', { invocationNum: 2 }) +
+        line('Stop', { fullyIdle: true }).repeat(LOTS_OF_CRON_FIRINGS) +
+        line('Stop', { fullyIdle: true })
+    )
+    const { id } = await sessions.resume({ sessionId: agySessionKey(A, 'devbox'), cwd: REMOTE_WS })
+    await vi.waitFor(() => expect(shown()).toEqual([{ type: 'stop' }]))
+    expect(await runtime.stillWorking(id)).toBe(true)
+    fs.appendFileSync(old, line('PostToolUse', { toolCall: STANDING_CRON, stepIdx: 6 }))
+    sessions.followMirrors('devbox')
+    expect(await runtime.stillWorking(id)).toBe(false)
+  })
+
+  it('a remote tab, with no task list to ask, shows a daemon and names a plain background command once a turn-over title counts tasks, drops them once one counts none, and never shows a command that was declined, which no model call follows; on an agy that never sends task_count it keeps them', async () => {
+    const background = (tabId: string): unknown =>
+      sessions.list().find((s) => s.tabId === tabId)?.background
+    const pre = (
+      conversationId: string,
+      stepIdx = 2,
+      toolCall = daemon('npm run dev')
+    ): unknown => ({
+      event: 'PreToolUse',
+      input: { conversationId, stepIdx, toolCall }
+    })
+    const modelCall = (conversationId: string, invocationNum: number): unknown => ({
+      event: 'PreInvocation',
+      input: { conversationId, invocationNum }
+    })
+    const counting = (await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })).id
+    mirrored(counting, [
+      { event: 'SessionStart', input: { conversationId: A } },
+      modelCall(A, 0),
+      pre(A),
+      { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true }
+    ])
+    expect(background(counting)).toBeUndefined()
+    mirrored(counting, [
+      modelCall(A, 1),
+      pre(A, 4, command('sleep 45')),
+      modelCall(A, 2),
+      { event: 'Stop', input: { conversationId: A, fullyIdle: false } },
+      modelCall(A, 0),
+      pre(A, 8, command('rm -rf build')),
+      { conversation_id: A, agent_state: 'idle', task_count: 2 }
+    ])
+    expect(background(counting)).toEqual([
+      { id: `${A}/task-2`, kind: 'server', label: 'npm run dev', state: 'waiting' },
+      { id: `${A}/task-4`, kind: 'command', label: 'sleep 45', state: 'working' }
+    ])
+    mirrored(counting, [{ conversation_id: A, agent_state: 'idle' }])
+    expect(background(counting)).toBeUndefined()
+    const older = (await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })).id
+    mirrored(older, [
+      { event: 'SessionStart', input: { conversationId: B } },
+      pre(B),
+      modelCall(B, 1),
+      { conversation_id: B, agent_state: 'idle' }
+    ])
+    expect(background(older)).toEqual([
+      { id: `${B}/task-2`, kind: 'server', label: 'npm run dev', state: 'waiting' }
+    ])
+  })
+
+  it('attaching to a conversation tmux still runs there shows the daemons it left running, and not one a later turn-over title stopped counting', async () => {
+    machine.attach = true
+    machine.alive.add(A)
+    machine.held = true
+    remoteMember(A)
+    fs.writeFileSync(path.join(mirror, `k-${A}.agy-log`), 'pty-old.agy.jsonl')
+    const line = (event: string, input: Record<string, unknown>): string =>
+      JSON.stringify({ event, input: { conversationId: A, ...input } }) + '\n'
+    const titled = (taskCount: number): string =>
+      JSON.stringify({ conversation_id: A, agent_state: 'idle', task_count: taskCount }) + '\n'
+    fs.writeFileSync(
+      path.join(mirror, 'pty-old.agy.jsonl'),
+      line('PreToolUse', { toolCall: daemon('python3 -m http.server 8077'), stepIdx: 2 }) +
+        line('PreInvocation', { invocationNum: 1 }) +
+        titled(1) +
+        JSON.stringify({ conversation_id: A, agent_state: 'idle' }) +
+        '\n' +
+        line('PreToolUse', { toolCall: daemon('npm run watch'), stepIdx: 6 }) +
+        line('PreInvocation', { invocationNum: 1 }) +
+        line('Stop', { fullyIdle: true }) +
+        titled(1)
+    )
+    await sessions.resume({ sessionId: agySessionKey(A, 'devbox'), cwd: REMOTE_WS })
+    await vi.waitFor(() =>
+      expect(sessions.list()[0]?.background).toEqual([
+        { id: `${A}/task-6`, kind: 'server', label: 'npm run watch', state: 'waiting' }
+      ])
+    )
+  })
+
+  it('a finished remote tab that never scheduled anything is not held once /clear moves it on', async () => {
+    machine.attach = true
+    machine.alive.add(A)
+    machine.held = true
+    remoteMember(A)
+    fs.writeFileSync(path.join(mirror, `k-${A}.agy-log`), 'pty-old.agy.jsonl')
+    const old = path.join(mirror, 'pty-old.agy.jsonl')
+    fs.writeFileSync(
+      old,
+      JSON.stringify({ event: 'Stop', input: { conversationId: A, fullyIdle: true } }) + '\n'
+    )
+    const { id } = await sessions.resume({ sessionId: agySessionKey(A, 'devbox'), cwd: REMOTE_WS })
+    await vi.waitFor(() => expect(shown()).toEqual([{ type: 'stop' }]))
+    fs.appendFileSync(old, JSON.stringify({ conversation_id: B, agent_state: 'idle' }) + '\n')
+    sessions.followMirrors('devbox')
+    await vi.waitFor(() => expect(sessions.list()[0].nativeSessionId).toBe(B))
+    expect(await runtime.stillWorking(id)).toBe(false)
+  })
+
+  it('attaching to a conversation tmux still runs there while it waits for an approval shows it waiting for that approval again', async () => {
+    machine.attach = true
+    machine.alive.add(A)
+    machine.held = true
+    remoteMember(A)
+    fs.writeFileSync(path.join(mirror, `k-${A}.agy-log`), 'pty-old.agy.jsonl')
+    fs.writeFileSync(
+      path.join(mirror, 'pty-old.agy.jsonl'),
+      [
+        { event: 'PreInvocation', input: { conversationId: A } },
+        {
+          event: 'PreToolUse',
+          input: {
+            conversationId: A,
+            toolCall: { name: 'run_command', args: { CommandLine: 'ls' } }
+          }
+        },
+        { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true }
+      ]
+        .map((l) => JSON.stringify(l) + '\n')
+        .join('')
+    )
+    const { id } = await sessions.resume({ sessionId: agySessionKey(A, 'devbox'), cwd: REMOTE_WS })
+    await vi.waitFor(() => expect(sessions.openApproval(id)).toMatchObject({ command: 'ls' }))
+    expect(shown()).toEqual([{ type: 'notify', need: 'approval' }])
+  })
+
+  it('refuses to resume a conversation another agy on that machine holds', async () => {
+    machine.held = true
+    remoteMember(A)
+    await expect(
+      sessions.resume({ sessionId: agySessionKey(A, 'devbox'), cwd: REMOTE_WS })
+    ).rejects.toThrow(/open in another agy window/)
+    expect(machine.launches).toEqual([])
+  })
+
+  it('refuses to resume a conversation another agy on that machine holds when Koloft just ended its tmux and the last pull still listed it', async () => {
+    machine.held = true
+    machine.alive.add(A)
+    machine.ended.push(`k-${A}`)
+    remoteMember(A)
+    await expect(
+      sessions.resume({ sessionId: agySessionKey(A, 'devbox'), cwd: REMOTE_WS })
+    ).rejects.toThrow(/open in another agy window/)
+    expect(machine.launches).toEqual([])
+  })
+
+  it("lists the conversations in the machine's own store under its remote workspace", async () => {
+    machine.rows = [
+      {
+        conversation_id: B,
+        title: 'Remote work',
+        preview: '',
+        workspace_uris: JSON.stringify(['file:///home/me/proj']),
+        last_modified_time: '2026-10-16 08:00:00+00:00',
+        step_count: 2,
+        born: 1_700_000_000_000
+      }
+    ]
+    await sessions.refreshHistory()
+    expect(sessions.rows(REMOTE_WS)).toEqual([
+      expect.objectContaining({
+        id: agySessionKey(B, 'devbox'),
+        title: 'Remote work',
+        cwd: 'ssh://devbox/home/me/proj',
+        invalidCwd: false,
+        createdAt: 1_700_000_000_000
+      })
+    ])
+    expect(sessions.rows(repo)).toEqual([])
+  })
+
+  it('a remote tab tracks child subagents, timers, and title.subagents over mirrored hooks without flipping main status on child Stop, and restores subagents on reattach', async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    mirrored(id, [
+      { event: 'SessionStart', input: { conversationId: A } },
+      { event: 'PreInvocation', input: { conversationId: A, invocationNum: 0 } },
+      {
+        event: 'PreToolUse',
+        input: {
+          conversationId: A,
+          stepIdx: 1,
+          toolCall: {
+            name: 'invoke_subagent',
+            args: { Subagents: [{ TypeName: 'research', Role: 'Check remote logs' }] }
+          }
+        }
+      },
+      { event: 'SessionStart', input: { conversationId: CHILD } },
+      { event: 'PreToolUse', input: { conversationId: A, stepIdx: 2, toolCall: TIMER } },
+      { event: 'PreInvocation', input: { conversationId: A, invocationNum: 1 } }
+    ])
+    expect(runtime.statusOf(id)).toBe('working')
+    expect(runtime.turnOver(id)).toBe(false)
+    expect(sessions.list()[0].background).toEqual([
+      { id: CHILD, kind: 'agent', label: 'research: Check remote logs', state: 'working' },
+      { id: `${A}/task-2`, kind: 'monitor', label: 'Timer (30m): Look again', state: 'waiting' }
+    ])
+    mirrored(id, [{ event: 'Stop', input: { conversationId: A, fullyIdle: false } }])
+    expect(runtime.statusOf(id)).toBe('working')
+    expect(runtime.turnOver(id)).toBe(true)
+
+    mirrored(id, [
+      { event: 'Stop', input: { conversationId: CHILD, fullyIdle: true } },
+      { event: 'PostToolUse', input: { conversationId: A, stepIdx: 2, toolCall: TIMER } }
+    ])
+    expect(sessions.list()[0].background).toBeUndefined()
+    expect(runtime.statusOf(id)).toBe('waiting')
+
+    mirrored(id, [
+      {
+        conversation_id: A,
+        agent_state: 'idle',
+        subagents: [{ conversation_id: B, name: 'swarm_worker', role: 'Patch CSS', state: 'idle' }]
+      }
+    ])
+    expect(sessions.list()[0].background).toEqual([
+      { id: 'teammates', kind: 'teammate', label: '1 idle', state: 'waiting' }
+    ])
+    expect(runtime.statusOf(id)).toBe('waiting')
+    mirrored(id, [{ conversation_id: A, agent_state: 'idle', subagents: [] }])
+    expect(sessions.list()[0].background).toBeUndefined()
+
+    const REATTACH = '9f8e7d6c-5b4a-4321-8765-43210fedcba9'
+    machine.attach = true
+    machine.alive.add(REATTACH)
+    machine.held = true
+    remoteMember(REATTACH)
+    fs.writeFileSync(path.join(mirror, `k-${REATTACH}.agy-log`), 'pty-reattach.agy.jsonl')
+    fs.writeFileSync(
+      path.join(mirror, 'pty-reattach.agy.jsonl'),
+      [
+        { event: 'SessionStart', input: { conversationId: REATTACH } },
+        { event: 'PreInvocation', input: { conversationId: REATTACH, invocationNum: 0 } },
+        {
+          event: 'PreToolUse',
+          input: {
+            conversationId: REATTACH,
+            stepIdx: 1,
+            toolCall: {
+              name: 'invoke_subagent',
+              args: { Subagents: [{ TypeName: 'self', Role: 'Still running' }] }
+            }
+          }
+        },
+        { event: 'SessionStart', input: { conversationId: CHILD } },
+        { event: 'Stop', input: { conversationId: REATTACH, fullyIdle: false } }
+      ]
+        .map((l) => JSON.stringify(l) + '\n')
+        .join('')
+    )
+    const reattached = await sessions.resume({
+      sessionId: agySessionKey(REATTACH, 'devbox'),
+      cwd: REMOTE_WS
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list().find((s) => s.tabId === reattached.id)?.background).toEqual([
+        { id: CHILD, kind: 'agent', label: 'Still running', state: 'working' }
+      ])
+    )
+    expect(runtime.statusOf(reattached.id)).toBe('working')
+    expect(runtime.turnOver(reattached.id)).toBe(true)
+  })
+
+  it('StoredSessions handles compacting and compacted events for both active and idle auto-compaction', async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    mirrored(id, [
+      { event: 'SessionStart', input: { conversationId: A } },
+      { event: 'Stop', input: { conversationId: A, fullyIdle: true } }
+    ])
+    expect(runtime.statusOf(id)).toBe('waiting')
+    sessions.observe(id, { type: 'compacting', trigger: 'auto' })
+    expect(runtime.statusOf(id)).toBe('waiting')
+    sessions.observe(id, { type: 'compacting', trigger: 'manual' })
+    expect(runtime.statusOf(id)).toBe('working')
+    sessions.observe(id, { type: 'compacted' })
+    expect(runtime.statusOf(id)).toBe('waiting')
+  })
+
+  it('resets mainTurnActive on remote idle and exits approval on reviewing -> idle without trapping /clear', async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    const brain = '/home/me/.koloft/agy/work/antigravity-cli/brain'
+    const planDir = path.join(home, 'mirror-gemini', 'antigravity-cli', 'brain', A)
+    fs.mkdirSync(planDir, { recursive: true })
+    fs.writeFileSync(path.join(planDir, 'implementation_plan.md'), '# Plan\n')
+    fs.writeFileSync(
+      path.join(planDir, 'implementation_plan.md.metadata.json'),
+      JSON.stringify({ requestFeedback: true, updatedAt: 'T1' })
+    )
+    mirrored(id, [
+      {
+        event: 'SessionStart',
+        input: { conversationId: A, artifactDirectoryPath: `${brain}/${A}` }
+      },
+      { event: 'PreInvocation', input: { conversationId: A } },
+      { conversation_id: A, agent_state: 'working' },
+      { conversation_id: A, agent_state: 'reviewing' }
+    ])
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('approval'))
+    mirrored(id, [{ conversation_id: A, agent_state: 'idle' }])
+    expect(sessions.openApproval(id)).toBeUndefined()
+    expect(runtime.statusOf(id)).toBe('waiting')
+
+    mirrored(id, [
+      { event: 'PreInvocation', input: { conversationId: A } },
+      { conversation_id: A, agent_state: 'working' },
+      { conversation_id: A, agent_state: 'idle' },
+      {
+        event: 'SessionStart',
+        input: { conversationId: B, artifactDirectoryPath: `${brain}/${B}` }
+      },
+      { conversation_id: B, agent_state: 'idle' }
+    ])
+    expect(sessions.list()[0].nativeSessionId).toBe(B)
+    expect(sessions.list()[0].background).toBeUndefined()
+  })
+
+  it('handles multi-anonymous and shrinking title.subagents, clears fromTitle and declined spawns on idle or /clear, and scopes replayTasks accurately', async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    mirrored(id, [
+      { event: 'SessionStart', input: { conversationId: A } },
+      { event: 'PreInvocation', input: { conversationId: A } },
+      {
+        event: 'PreToolUse',
+        input: {
+          conversationId: A,
+          stepIdx: 1,
+          toolCall: {
+            name: 'invoke_subagent',
+            args: { Subagents: [{ TypeName: 'research', Role: 'Check logs' }] }
+          }
+        }
+      },
+      { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true },
+      { conversation_id: A, agent_state: 'idle' }
+    ])
+    expect(sessions.list()[0].background).toBeUndefined()
+
+    mirrored(id, [
+      {
+        conversation_id: A,
+        agent_state: 'working',
+        subagents: [
+          { name: 'explorer', state: 'working' },
+          { name: 'worker', state: 'working' }
+        ]
+      }
+    ])
+    expect(sessions.list()[0].background).toEqual([
+      { id: 'title-subagent:0', kind: 'agent', label: 'explorer', state: 'working' },
+      { id: 'title-subagent:1', kind: 'agent', label: 'worker', state: 'working' }
+    ])
+
+    mirrored(id, [
+      {
+        conversation_id: A,
+        agent_state: 'working',
+        subagents: [
+          { conversation_id: 'sub-1', name: 'one', state: 'working' },
+          { conversation_id: 'sub-2', name: 'two', state: 'working' }
+        ]
+      }
+    ])
+    expect(sessions.list()[0].background?.map((b) => b.id)).toEqual(['sub-1', 'sub-2'])
+    mirrored(id, [
+      {
+        conversation_id: A,
+        agent_state: 'working',
+        subagents: [{ conversation_id: 'sub-2', name: 'two', state: 'working' }]
+      }
+    ])
+    expect(sessions.list()[0].background?.map((b) => b.id)).toEqual(['sub-2'])
+    mirrored(id, [{ conversation_id: B, agent_state: 'idle' }])
+    expect(sessions.list()[0].nativeSessionId).toBe(B)
+    expect(sessions.list()[0].background).toBeUndefined()
+
+    const REATTACH = '9f8e7d6c-5b4a-4321-8765-43210fedcba9'
+    machine.attach = true
+    machine.alive.add(REATTACH)
+    machine.held = true
+    remoteMember(REATTACH)
+    fs.writeFileSync(path.join(mirror, `k-${REATTACH}.agy-log`), 'pty-reattach-scoped.agy.jsonl')
+    fs.writeFileSync(
+      path.join(mirror, 'pty-reattach-scoped.agy.jsonl'),
+      [
+        {
+          conversation_id: A,
+          agent_state: 'idle',
+          subagents: [{ conversation_id: 'old-sub', name: 'stale', state: 'working' }]
+        },
+        { event: 'SessionStart', input: { conversationId: REATTACH } },
+        { event: 'PreInvocation', input: { conversationId: REATTACH, invocationNum: 0 } },
+        {
+          event: 'PreToolUse',
+          input: {
+            conversationId: REATTACH,
+            stepIdx: 1,
+            toolCall: {
+              name: 'invoke_subagent',
+              args: { Subagents: [{ TypeName: 'self', Role: 'Killed' }] }
+            }
+          }
+        },
+        { event: 'SessionStart', input: { conversationId: CHILD } },
+        {
+          event: 'PostToolUse',
+          input: {
+            conversationId: REATTACH,
+            stepIdx: 2,
+            error: '',
+            toolCall: {
+              name: 'manage_subagents',
+              args: { Action: 'kill', ConversationIds: [CHILD] }
+            }
+          }
+        },
+        {
+          event: 'PreToolUse',
+          input: {
+            conversationId: REATTACH,
+            stepIdx: 3,
+            toolCall: {
+              name: 'invoke_subagent',
+              args: { Subagents: [{ TypeName: 'self', Role: 'Sync done' }] }
+            }
+          }
+        },
+        {
+          event: 'PostToolUse',
+          input: {
+            conversationId: REATTACH,
+            stepIdx: 3,
+            error: '',
+            toolCall: { name: 'invoke_subagent', args: {} }
+          }
+        },
+        {
+          event: 'PreToolUse',
+          input: {
+            conversationId: REATTACH,
+            stepIdx: 4,
+            toolCall: { name: 'swarm', args: { action: 'add', name: 'scout', brief: 'Watch' } }
+          }
+        },
+        {
+          event: 'PostToolUse',
+          input: {
+            conversationId: REATTACH,
+            stepIdx: 4,
+            error: '',
+            toolCall: { name: 'swarm', args: { action: 'add', name: 'scout' } }
+          }
+        },
+        {
+          event: 'SessionStart',
+          input: { conversationId: CHILD }
+        },
+        {
+          event: 'PreToolUse',
+          input: {
+            conversationId: CHILD,
+            stepIdx: 1,
+            toolCall: { name: 'swarm_wait', args: { since: 1 } }
+          }
+        },
+        {
+          event: 'Stop',
+          input: { conversationId: CHILD, fullyIdle: true }
+        },
+        {
+          event: 'PreToolUse',
+          input: {
+            conversationId: REATTACH,
+            stepIdx: 6,
+            toolCall: { name: 'post_message', args: { text: '@scout go' } }
+          }
+        },
+        {
+          conversation_id: REATTACH,
+          agent_state: 'working',
+          subagents: [{ conversation_id: 'cur-sub', name: 'current', state: 'working' }]
+        }
+      ]
+        .map((l) => JSON.stringify(l) + '\n')
+        .join('')
+    )
+    const reattached = await sessions.resume({
+      sessionId: agySessionKey(REATTACH, 'devbox'),
+      cwd: REMOTE_WS
+    })
+    await vi.waitFor(() =>
+      expect(sessions.list().find((s) => s.tabId === reattached.id)?.background).toEqual([
+        { id: CHILD, kind: 'agent', label: 'scout', state: 'working' },
+        { id: 'cur-sub', kind: 'agent', label: 'current', state: 'working' }
+      ])
+    )
+  })
+
+  it('replays standing crons started before /clear on remote reattach', async () => {
+    machine.attach = true
+    machine.alive.add(B)
+    machine.held = true
+    remoteMember(B)
+    fs.writeFileSync(path.join(mirror, `k-${B}.agy-log`), 'pty-clear-cron.agy.jsonl')
+    fs.writeFileSync(
+      path.join(mirror, 'pty-clear-cron.agy.jsonl'),
+      [
+        { event: 'SessionStart', input: { conversationId: A } },
+        { event: 'PreToolUse', input: { conversationId: A, stepIdx: 2, toolCall: STANDING_CRON } },
+        { event: 'PreInvocation', input: { conversationId: A, invocationNum: 1 } },
+        { event: 'Stop', input: { conversationId: A, fullyIdle: true } },
+        { event: 'SessionStart', input: { conversationId: B } },
+        { conversation_id: B, agent_state: 'idle' }
+      ]
+        .map((l) => JSON.stringify(l) + '\n')
+        .join('')
+    )
+    const { id } = await sessions.resume({ sessionId: agySessionKey(B, 'devbox'), cwd: REMOTE_WS })
+    await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(B))
+    expect(sessions.list()[0].background).toEqual([
+      {
+        id: `${A}/task-2`,
+        kind: 'monitor',
+        label: 'Cron (0 * * * *): Check the build',
+        state: 'waiting'
+      }
+    ])
+    expect(await runtime.stillWorking(id)).toBe(true)
+  })
+
+  it('upgrades a fromTitle subagent on SessionStart hook so subsequent subagents: [] does not delete it early', async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    mirrored(id, [
+      { event: 'SessionStart', input: { conversationId: A } },
+      {
+        conversation_id: A,
+        agent_state: 'working',
+        subagents: [{ conversation_id: CHILD, name: 'research', state: 'working' }]
+      },
+      { event: 'SessionStart', input: { conversationId: CHILD } },
+      { conversation_id: A, agent_state: 'idle', subagents: [] }
+    ])
+    expect(sessions.list()[0].background).toEqual([
+      { id: CHILD, kind: 'agent', label: 'research', state: 'working' }
+    ])
+    mirrored(id, [{ event: 'Stop', input: { conversationId: CHILD, fullyIdle: true } }])
+    expect(sessions.list()[0].background).toBeUndefined()
+  })
+
+  it('exits approval on remote idle -> reviewing -> idle and exits working on working -> tool_use -> Esc idle', async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    const brain = '/home/me/.koloft/agy/work/antigravity-cli/brain'
+    const planDir = path.join(home, 'mirror-gemini', 'antigravity-cli', 'brain', A)
+    fs.mkdirSync(planDir, { recursive: true })
+    fs.writeFileSync(path.join(planDir, 'implementation_plan.md'), '# Plan\n')
+    fs.writeFileSync(
+      path.join(planDir, 'implementation_plan.md.metadata.json'),
+      JSON.stringify({ requestFeedback: true, updatedAt: 'T1' })
+    )
+    mirrored(id, [
+      {
+        event: 'SessionStart',
+        input: { conversationId: A, artifactDirectoryPath: `${brain}/${A}` }
+      },
+      { conversation_id: A, agent_state: 'idle' }
+    ])
+    expect(runtime.statusOf(id)).toBe('waiting')
+    mirrored(id, [{ conversation_id: A, agent_state: 'reviewing' }])
+    await vi.waitFor(() => expect(runtime.statusOf(id)).toBe('approval'))
+    mirrored(id, [{ conversation_id: A, agent_state: 'idle' }])
+    expect(sessions.openApproval(id)).toBeUndefined()
+    expect(runtime.statusOf(id)).toBe('waiting')
+
+    mirrored(id, [
+      { event: 'PreInvocation', input: { conversationId: A } },
+      { conversation_id: A, agent_state: 'working' },
+      { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: false },
+      { conversation_id: A, agent_state: 'idle' }
+    ])
+    expect(runtime.statusOf(id)).toBe('waiting')
+  })
+
+  it('prunes declined invoke_subagent pendingSpawns on remote idle even while an unrelated task_count > 0 command runs', async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    mirrored(id, [
+      { event: 'SessionStart', input: { conversationId: A } },
+      {
+        event: 'PreToolUse',
+        input: { conversationId: A, stepIdx: 1, toolCall: command('sleep 60') }
+      },
+      { event: 'PreInvocation', input: { conversationId: A, invocationNum: 1 } },
+      { conversation_id: A, agent_state: 'idle', task_count: 1 },
+      { event: 'PreInvocation', input: { conversationId: A, invocationNum: 2 } },
+      {
+        event: 'PreToolUse',
+        input: {
+          conversationId: A,
+          stepIdx: 2,
+          toolCall: {
+            name: 'invoke_subagent',
+            args: { Subagents: [{ TypeName: 'research', Role: 'Declined while cmd runs' }] }
+          }
+        }
+      },
+      { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true },
+      { conversation_id: A, agent_state: 'idle', task_count: 1 }
+    ])
+    expect(sessions.list()[0].background).toEqual([
+      { id: `${A}/task-1`, kind: 'command', label: 'sleep 60', state: 'working' }
+    ])
+  })
+
+  it('prunes declined IsDaemon schedule and run_command on remote idle even while an unrelated task_count > 0 command runs', async () => {
+    const { id } = await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    mirrored(id, [
+      { event: 'SessionStart', input: { conversationId: A } },
+      {
+        event: 'PreToolUse',
+        input: { conversationId: A, stepIdx: 1, toolCall: command('sleep 60') }
+      },
+      { event: 'PreInvocation', input: { conversationId: A, invocationNum: 1 } },
+      { conversation_id: A, agent_state: 'idle', task_count: 1 },
+      { event: 'PreInvocation', input: { conversationId: A, invocationNum: 2 } },
+      {
+        event: 'PreToolUse',
+        input: { conversationId: A, stepIdx: 2, toolCall: STANDING_CRON }
+      },
+      {
+        conversation_id: A,
+        agent_state: 'tool_use',
+        tool_confirmation_pending: true,
+        task_count: 1
+      },
+      { conversation_id: A, agent_state: 'idle', task_count: 1 },
+      {
+        event: 'PreToolUse',
+        input: { conversationId: A, stepIdx: 3, toolCall: command('rm -rf /tmp/bad') }
+      },
+      {
+        conversation_id: A,
+        agent_state: 'tool_use',
+        tool_confirmation_pending: true,
+        task_count: 1
+      },
+      { conversation_id: A, agent_state: 'idle', task_count: 1 },
+      { event: 'PreInvocation', input: { conversationId: A, invocationNum: 1 } },
+      { event: 'Stop', input: { conversationId: A, fullyIdle: false } }
+    ])
+    expect(sessions.list()[0].background).toEqual([
+      { id: `${A}/task-1`, kind: 'command', label: 'sleep 60', state: 'working' }
+    ])
+  })
+
+  it('replays 3 /clear hops without creating a zombie Subagent when the first conversation ended mid-turn', async () => {
+    const C = 'c3d4e5f6-a7b8-4c9d-8e0f-1a2b3c4d5e6f'
+    machine.attach = true
+    machine.alive.add(C)
+    machine.held = true
+    remoteMember(C)
+    fs.writeFileSync(path.join(mirror, `k-${C}.agy-log`), 'pty-3hops.agy.jsonl')
+    fs.writeFileSync(
+      path.join(mirror, 'pty-3hops.agy.jsonl'),
+      [
+        { event: 'SessionStart', input: { conversationId: A } },
+        { event: 'PreInvocation', input: { conversationId: A, invocationNum: 0 } },
+        { event: 'PreToolUse', input: { conversationId: A, stepIdx: 1, toolCall: STANDING_CRON } },
+        { event: 'PreInvocation', input: { conversationId: A, invocationNum: 1 } },
+        { event: 'SessionStart', input: { conversationId: B } },
+        { conversation_id: B, agent_state: 'idle' },
+        { event: 'SessionStart', input: { conversationId: C } },
+        { conversation_id: C, agent_state: 'idle' }
+      ]
+        .map((l) => JSON.stringify(l) + '\n')
+        .join('')
+    )
+    const { id } = await sessions.resume({ sessionId: agySessionKey(C, 'devbox'), cwd: REMOTE_WS })
+    await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(C))
+    expect(sessions.list()[0].background).toEqual([
+      {
+        id: `${A}/task-1`,
+        kind: 'monitor',
+        label: 'Cron (0 * * * *): Check the build',
+        state: 'waiting'
+      }
+    ])
+    expect(runtime.statusOf(id)).toBe('waiting')
+    expect(await runtime.stillWorking(id)).toBe(true)
+  })
+
+  it('replays declined invoke_subagent pendingSpawns while task_count > 0 on remote reattach', async () => {
+    machine.attach = true
+    machine.alive.add(A)
+    machine.held = true
+    remoteMember(A)
+    fs.writeFileSync(path.join(mirror, `k-${A}.agy-log`), 'pty-reattach-declined-spawn.agy.jsonl')
+    fs.writeFileSync(
+      path.join(mirror, 'pty-reattach-declined-spawn.agy.jsonl'),
+      [
+        { event: 'SessionStart', input: { conversationId: A } },
+        {
+          event: 'PreToolUse',
+          input: { conversationId: A, stepIdx: 1, toolCall: command('sleep 60') }
+        },
+        { event: 'PreInvocation', input: { conversationId: A, invocationNum: 1 } },
+        { conversation_id: A, agent_state: 'idle', task_count: 1 },
+        { event: 'PreInvocation', input: { conversationId: A, invocationNum: 2 } },
+        {
+          event: 'PreToolUse',
+          input: {
+            conversationId: A,
+            stepIdx: 2,
+            toolCall: {
+              name: 'invoke_subagent',
+              args: { Subagents: [{ TypeName: 'research', Role: 'Declined while cmd runs' }] }
+            }
+          }
+        },
+        { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true },
+        { conversation_id: A, agent_state: 'idle', task_count: 1 }
+      ]
+        .map((l) => JSON.stringify(l) + '\n')
+        .join('')
+    )
+    await sessions.resume({ sessionId: agySessionKey(A, 'devbox'), cwd: REMOTE_WS })
+    await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(A))
+    expect(sessions.list()[0].background).toEqual([
+      { id: `${A}/task-1`, kind: 'command', label: 'sleep 60', state: 'working' }
+    ])
+  })
+
+  it('preserves earlier-turn async subagents on remote reattach when the latest log line is tool_confirmation_pending', async () => {
+    machine.attach = true
+    machine.alive.add(A)
+    machine.held = true
+    remoteMember(A)
+    fs.writeFileSync(path.join(mirror, `k-${A}.agy-log`), 'pty-reattach-blocked.agy.jsonl')
+    fs.writeFileSync(
+      path.join(mirror, 'pty-reattach-blocked.agy.jsonl'),
+      [
+        { event: 'SessionStart', input: { conversationId: A } },
+        { event: 'PreInvocation', input: { conversationId: A, invocationNum: 0 } },
+        {
+          event: 'PreToolUse',
+          input: {
+            conversationId: A,
+            stepIdx: 1,
+            toolCall: {
+              name: 'invoke_subagent',
+              args: { Subagents: [{ TypeName: 'research', Role: 'Async worker' }] }
+            }
+          }
+        },
+        {
+          event: 'PostToolUse',
+          input: {
+            conversationId: A,
+            stepIdx: 1,
+            error: '',
+            toolCall: { name: 'invoke_subagent', args: {} }
+          }
+        },
+        { conversation_id: A, agent_state: 'idle', task_count: 1 },
+        { event: 'SessionStart', input: { conversationId: CHILD } },
+        { event: 'PreInvocation', input: { conversationId: A, invocationNum: 1 } },
+        {
+          event: 'PreToolUse',
+          input: { conversationId: A, stepIdx: 2, toolCall: command('rm -rf dist') }
+        },
+        { conversation_id: A, agent_state: 'tool_use', tool_confirmation_pending: true }
+      ]
+        .map((l) => JSON.stringify(l) + '\n')
+        .join('')
+    )
+    const { id } = await sessions.resume({ sessionId: agySessionKey(A, 'devbox'), cwd: REMOTE_WS })
+    await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(A))
+    expect(sessions.openApproval(id)).toMatchObject({ command: 'rm -rf dist' })
+    expect(sessions.list()[0].background).toEqual([
+      { id: CHILD, kind: 'agent', label: 'research: Async worker', state: 'working' }
+    ])
+  })
+
+  it('replays 3 /clear hops without creating a zombie Subagent when the intermediate conversation had no title line', async () => {
+    const C = 'c3d4e5f6-a7b8-4c9d-8e0f-1a2b3c4d5e6f'
+    machine.attach = true
+    machine.alive.add(C)
+    machine.held = true
+    remoteMember(C)
+    fs.writeFileSync(path.join(mirror, `k-${C}.agy-log`), 'pty-3hops-notitle.agy.jsonl')
+    fs.writeFileSync(
+      path.join(mirror, 'pty-3hops-notitle.agy.jsonl'),
+      [
+        { event: 'SessionStart', input: { conversationId: A } },
+        { event: 'PreInvocation', input: { conversationId: A, invocationNum: 0 } },
+        { event: 'PreToolUse', input: { conversationId: A, stepIdx: 1, toolCall: STANDING_CRON } },
+        { event: 'PreInvocation', input: { conversationId: A, invocationNum: 1 } },
+        { event: 'SessionStart', input: { conversationId: B } },
+        { event: 'SessionStart', input: { conversationId: C } }
+      ]
+        .map((l) => JSON.stringify(l) + '\n')
+        .join('')
+    )
+    await sessions.resume({ sessionId: agySessionKey(C, 'devbox'), cwd: REMOTE_WS })
+    await vi.waitFor(() => expect(sessions.list()[0]?.nativeSessionId).toBe(C))
+    expect(sessions.list()[0].background).toEqual([
+      {
+        id: `${A}/task-1`,
+        kind: 'monitor',
+        label: 'Cron (0 * * * *): Check the build',
+        state: 'waiting'
+      }
+    ])
+  })
+})

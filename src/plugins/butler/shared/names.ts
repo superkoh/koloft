@@ -16,7 +16,7 @@ export function butlerNames(b: ButlerSetting): string[] {
 }
 
 export function renamedButler(current: ButlerSetting, typed: string): ButlerSetting {
-  return butlerSetting(butlerName(typed), [...current.formerNames, current.name])
+  return { ...current, ...butlerSetting(butlerName(typed), [...current.formerNames, current.name]) }
 }
 
 export function butlerTitle(name: string): string {
@@ -28,6 +28,9 @@ export function asPeerName(title: string): string {
 }
 
 const OLD_BUTLER_PEER_NAMES = ['Global-Assist', 'Global-conductor']
+
+export const BUTLER_DOES =
+  'Your butler, whom you talk to from the top of the sidebar or from Discord.'
 
 export function peerNamesOf(name: string): string[] {
   return [asPeerName(name), ...OLD_BUTLER_PEER_NAMES]

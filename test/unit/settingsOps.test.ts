@@ -12,8 +12,7 @@ import {
   sanitizeLoadedSettings,
   DEFAULT_SETTINGS
 } from '@shared/settingsOps'
-import { HINT_IDS } from '@shared/types'
-import { GLOBAL_SCOPE } from '@shared/conductors'
+import { GLOBAL_SCOPE } from '@shared/scope'
 
 describe('buildResetPatch (FR-12)', () => {
   it('excludes the whole account domain: accounts, skipPermissions, fablePriority', () => {
@@ -52,6 +51,7 @@ describe('buildResetPatch (FR-12)', () => {
         'notifyApprovalSound',
         'notifyExited',
         'notifyTurnDone',
+        'pluginsOn',
         'sidebarHidden',
         'sidebarWidth',
         'statuslineBuiltin',
@@ -191,7 +191,7 @@ describe('U-OB-03: sanitizeLoadedSettings and the onboarding keys', () => {
   it('treats a document without onboardingSeen as an upgrade: welcome and tips seen', () => {
     const loaded = sanitizeLoadedSettings({ fontSize: 14 })
     expect(loaded.onboardingSeen).toBe(true)
-    expect(loaded.hintsSeen).toEqual([...HINT_IDS])
+    expect(loaded.hintsSeen).toEqual(['workbench', 'approval', 'agent-web', 'worktree', 'github'])
   })
 
   it('keeps the first-run defaults for an empty document', () => {
@@ -499,6 +499,20 @@ describe('loading settings written before the butler', () => {
     const twice = sanitizeLoadedSettings(once)
     expect(twice.butlerSession).toEqual(once.butlerSession)
     expect(twice.discord).toEqual(once.discord)
+  })
+
+  it('which plugins the butler’s conversation knows to be on or off survives a restart, without what is not a switch; a damaged record is dropped', () => {
+    const loaded = (pluginsSeen: unknown): unknown =>
+      sanitizeLoadedSettings({
+        butlerSession: { sessionIds: ['s1'], lastSessionKey: 's1', pluginsSeen }
+      }).butlerSession
+    expect(loaded({ key: 's1', on: { todo: false, passwords: true, github: 'off' } })).toEqual({
+      sessionIds: ['s1'],
+      lastSessionKey: 's1',
+      pluginsSeen: { key: 's1', on: { todo: false, passwords: true } }
+    })
+    expect(loaded({ on: { todo: false } })).toEqual({ sessionIds: ['s1'], lastSessionKey: 's1' })
+    expect(loaded('todo')).toEqual({ sessionIds: ['s1'], lastSessionKey: 's1' })
   })
 
   it('the tool Assist ran on is kept, so the owner is not asked to agree to skipping permissions again', () => {

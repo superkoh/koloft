@@ -1,39 +1,37 @@
 import { useState, type JSX } from 'react'
 import { IconPlus } from '@renderer/icons'
-import { butlerTitle } from '@plugins/butler/shared/names'
+import { butlerTitle } from '@plugins/butler/windowApi'
 import { channelLabel, setUpWith } from '../shared/channels'
 import { ageLabel } from '@shared/freshnessOps'
 import { useStore } from '@renderer/store'
+import { useNeverSetUp, usePluginStates } from '@renderer/pluginSwitches'
+import { plugin } from '../plugin'
 import { setUpDiscordWithButler } from './setUpWithButler'
 import { openBinding } from './state'
 import { messageContentByHand, statusClass, statusText, useDiscordStatus } from './status'
 import '@renderer/accounts.css'
 
-export function DiscordPane(): JSX.Element {
+export function DiscordPane(): JSX.Element | null {
   const discord = useStore((s) => s.settings.discord)
   const name = useStore((s) => s.settings.butler.name)
   const loaded = useDiscordStatus()
   const [assistError, setAssistError] = useState('')
   const channel = discord.channel
 
+  const neverSetUp = useNeverSetUp(plugin)
+  const on = usePluginStates()[plugin.id].on
+
   const setUpWithButler = async (): Promise<void> => {
     setAssistError((await setUpDiscordWithButler()) ?? '')
   }
 
-  const head = (
-    <div className="set-ph">
-      <h3>Discord</h3>
-      <p>Talk to {name} from Discord, in one channel of your server.</p>
-    </div>
-  )
-  if (!loaded) return head
+  if (!loaded) return null
   const status = loaded
   const candidate = status.candidate
-  const setUp = status.phase !== 'off'
+  const setUp = status.phase !== 'off' || !neverSetUp
 
   return (
     <>
-      {head}
       <div className="set-row">
         <div className="set-lab">
           <b>Let {name} set up Discord</b>
@@ -97,7 +95,11 @@ export function DiscordPane(): JSX.Element {
                   : 'The bot reads only the bound channel. Koloft keeps the bot’s Message Content on, so it can read what you type.'}
               </small>
             </div>
-            <div className={'acct-login-state' + statusClass(status)}>{statusText(status)}</div>
+            {on ? (
+              <div className={'acct-login-state' + statusClass(status)}>{statusText(status)}</div>
+            ) : (
+              <div className="acct-login-state">Off</div>
+            )}
           </div>
           <div className="set-row">
             <div className="set-lab">
@@ -120,13 +122,15 @@ export function DiscordPane(): JSX.Element {
                   <div className="acct-main">
                     <span className="acct-name">{butlerTitle(name)}</span>
                     <span className="acct-note">{channelLabel(channel)}</span>
-                    <button
-                      className="acct-x"
-                      title="Unbind"
-                      onClick={() => void window.api.conductors.unbind()}
-                    >
-                      Unbind
-                    </button>
+                    {on && (
+                      <button
+                        className="acct-x"
+                        title="Unbind"
+                        onClick={() => void window.api.conductors.unbind()}
+                      >
+                        Unbind
+                      </button>
+                    )}
                   </div>
                   {status.failing[channel.channelId] && (
                     <div className="acct-login-state bad">
@@ -136,17 +140,19 @@ export function DiscordPane(): JSX.Element {
                 </div>
               )}
             </div>
-            <div className="acct-foot">
-              <button className="mini" onClick={() => openBinding(true)}>
-                {channel ? (
-                  'Change channel…'
-                ) : (
-                  <>
-                    <IconPlus size={14} /> Bind a channel…
-                  </>
-                )}
-              </button>
-            </div>
+            {on && (
+              <div className="acct-foot">
+                <button className="mini" onClick={() => openBinding(true)}>
+                  {channel ? (
+                    'Change channel…'
+                  ) : (
+                    <>
+                      <IconPlus size={14} /> Bind a channel…
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         </>
       )}

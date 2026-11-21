@@ -29,14 +29,6 @@ export const CH = {
     quitDeclined: 'app:quit-declined',
     version: 'app:version'
   },
-  workbench: {
-    get: 'workbench:get',
-    setState: 'workbench:setState',
-    available: 'workbench:available',
-    findAvailable: 'workbench:findAvailable',
-    saveAvailable: 'workbench:saveAvailable',
-    dirtyTabs: 'workbench:dirtyTabs'
-  },
   tabs: {
     list: 'tabs:list',
     moved: 'tabs:moved'
@@ -45,29 +37,6 @@ export const CH = {
     killedByMain: 'tab:killedByMain',
     slept: 'tab:slept'
   },
-  sessions: {
-    backends: 'sessions:backends',
-    installTool: 'sessions:installTool',
-    toolsChanged: 'sessions:toolsChanged',
-    update: 'sessions:update',
-    activity: 'sessions:activity',
-    list: 'sessions:list',
-    resumePlan: 'sessions:resumePlan',
-    resume: 'sessions:resume',
-    archive: 'sessions:archive',
-    setResident: 'sessions:setResident',
-    forceClose: 'sessions:forceClose',
-    transcriptExists: 'sessions:transcriptExists',
-    noAccountToResume: 'sessions:noAccountToResume',
-    leftovers: 'sessions:leftovers',
-    stopLeftover: 'sessions:stopLeftover',
-    ports: 'sessions:ports',
-    search: 'sessions:search',
-    searchHits: 'sessions:search-hits'
-  },
-  session: {
-    relocated: 'session:relocated'
-  },
   usage: {
     read: 'usage:read',
     changed: 'usage:changed'
@@ -75,134 +44,22 @@ export const CH = {
   toast: {
     show: 'toast:show'
   },
-  sessionDefaults: {
-    read: 'sessionDefaults:read',
-    write: 'sessionDefaults:write'
-  },
   machine: {
     state: 'machine:state',
     now: 'machine:now',
     free: 'machine:free'
   },
-  conductors: {
-    bind: 'conductors:bind',
-    bindNewChannel: 'conductors:bindNewChannel',
-    unbind: 'conductors:unbind',
-    open: 'conductors:open',
-    startFresh: 'conductors:startFresh',
-    fromPalette: 'conductors:fromPalette'
-  },
   palette: {
     savePicture: 'palette:savePicture'
   },
-  discord: {
-    status: 'discord:status',
-    pair: 'discord:pair',
-    channels: 'discord:channels',
-    setUpWithButler: 'discord:setUpWithButler'
-  },
-  secret: {
-    asks: 'secret:asks',
-    list: 'secret:list',
-    answer: 'secret:answer',
-    done: 'secret:done',
-    decline: 'secret:decline'
-  },
-  attention: {
-    list: 'attention:list',
-    activeTab: 'attention:active-tab',
-    activateTab: 'attention:activate-tab',
-    changed: 'attention:changed'
-  },
-  preview: {
-    readText: 'preview:readText',
-    openFileDialog: 'preview:openFileDialog',
-    osOpen: 'preview:os-open',
-    openFile: 'preview:open-file'
-  },
-  browser: {
-    guestLimit: 'browser:guest-limit',
-    open: 'browser:open',
-    download: 'browser:download',
-    downloadEvent: 'browser:download-event',
-    downloadCancel: 'browser:download-cancel',
-    downloadRetry: 'browser:download-retry',
-    permissionAsk: 'browser:permission-ask',
-    permissionRefused: 'browser:permission-refused',
-    permissionDrop: 'browser:permission-drop',
-    permissionAnswer: 'browser:permission-answer',
-    permissionCancel: 'browser:permission-cancel',
-    audioState: 'browser:audio-state',
-    setMuted: 'browser:set-muted',
-    copyText: 'browser:copy-text',
-    fullscreen: 'browser:fullscreen',
-    blockedScheme: 'browser:blocked-scheme',
-    authChallenge: 'browser:auth-challenge',
-    authAnswer: 'browser:auth-answer',
-    jsDialog: 'browser:js-dialog',
-    jsDialogAnswer: 'browser:js-dialog-answer',
-    overlayReady: 'browser:overlay-ready',
-    overlayOpen: 'browser:overlay-open',
-    overlayGuest: 'browser:overlay-guest',
-    guestOwner: 'browser:guest-owner',
-    strip: 'browser:strip',
-    hostComposing: 'browser:host-composing',
-    cdpOp: 'browser:cdp-op',
-    cdpOpDone: 'browser:cdp-op-done',
-    cdpAttached: 'browser:cdp-attached',
-    memoryCritical: 'browser:memory-critical',
-    certProceed: 'browser:cert-proceed',
-    clearData: 'browser:clear-data',
-    openExternal: 'browser:open-external',
-    devtools: 'browser:devtools',
-    pickElement: 'browser:pick-element',
-    pickStop: 'browser:pick-stop',
-    permissionUndecided: 'browser:permission-undecided',
-    linkBlocked: 'browser:link-blocked',
-    openBackground: 'browser:open-background'
-  },
-  ext: {
-    list: 'ext:list',
-    setEnabled: 'ext:set-enabled',
-    uninstall: 'ext:uninstall',
-    changed: 'ext:changed',
-    activeGuest: 'ext:active-guest',
-    openDropped: 'ext:open-dropped',
-    popupAnchor: 'ext:popup-anchor',
-    dismissPopup: 'ext:dismiss-popup',
-    permissionRequest: 'ext:permission-request',
-    permissionAnswer: 'ext:permission-answer'
-  },
-  fs: {
-    listDir: 'fs:listDir',
-    dirExists: 'fs:dirExists',
-    fileExists: 'fs:fileExists',
-    search: 'fs:search',
-    gitChanges: 'fs:gitChanges',
-    gitHeadLog: 'fs:gitHeadLog',
-    watchDir: 'fs:watchDir',
-    unwatchDir: 'fs:unwatchDir',
-    dirChanged: 'fs:dir-changed',
-    watchFile: 'fs:watchFile',
-    unwatchFile: 'fs:unwatchFile',
-    fileChanged: 'fs:file-changed',
-    reveal: 'fs:reveal',
-    gitDiff: 'fs:gitDiff',
-    gitFileDiff: 'fs:gitFileDiff',
-    gitFileDiffFull: 'fs:gitFileDiffFull',
-    searchContent: 'fs:searchContent'
-  },
-  edit: {
-    open: 'edit:open',
-    write: 'edit:write',
-    create: 'edit:create'
-  },
-  notes: {
-    path: 'notes:path'
-  },
   git: {
     commit: 'github:commit',
-    push: 'github:push'
+    push: 'github:push',
+    readiness: 'git:readiness'
+  },
+  os: {
+    open: 'preview:os-open',
+    reveal: 'fs:reveal'
   },
   workspace: {
     pickFolder: 'workspace:pickFolder',
@@ -210,7 +67,6 @@ export const CH = {
     remove: 'workspace:remove',
     removeConfirmed: 'workspace:removeConfirmed',
     move: 'workspace:move',
-    worktrees: 'workspace:worktrees',
     historyRows: 'workspace:historyRows',
     rows: 'workspace:rows',
     fetchFreshness: 'workspace:fetchFreshness',

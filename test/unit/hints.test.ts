@@ -6,10 +6,40 @@ import {
   wbTabSelector,
   type HintSnapshot
 } from '../../src/renderer/src/hints'
+import { HINT_IDS, hintOn, tipNumber } from '../../src/core/hints'
+
+describe('tip n of N', () => {
+  const allOn = (): boolean => true
+  const githubOff = (plugin: string): boolean => plugin !== 'github'
+
+  it('counts every tip while every plugin is on', () => {
+    expect(tipNumber(['workbench', 'github'], allOn)).toEqual({ n: 3, of: HINT_IDS.length })
+  })
+
+  it('a turned-off plugin tip is off, so one already queued is dropped, not waited for; a core tip is always on', () => {
+    expect(hintOn('github', githubOff)).toBe(false)
+    expect(hintOn('github', allOn)).toBe(true)
+    expect(hintOn('workbench', githubOff)).toBe(true)
+  })
+
+  it('a seen tip that no longer exists does not push n past N', () => {
+    expect(tipNumber([...HINT_IDS, 'a-tip-since-removed'].slice(1), allOn)).toEqual({
+      n: HINT_IDS.length,
+      of: HINT_IDS.length
+    })
+  })
+
+  it('leaves a turned-off plugin tip out of both n and N, even one seen before', () => {
+    expect(tipNumber(['workbench', 'github'], githubOff)).toEqual({
+      n: 2,
+      of: HINT_IDS.length - 1
+    })
+  })
+})
 
 const empty: HintSnapshot = {
   activeTabId: null,
-  githubBtn: false,
+  partsShown: {},
   agentOpen: null,
   sessions: [],
   rows: []
@@ -221,25 +251,24 @@ describe('firedHints — worktree', () => {
   })
 })
 
-describe('firedHints — github', () => {
-  it('fires when the button appears', () => {
-    expect(firedHints(empty, snap({ githubBtn: true }))).toEqual([
-      { id: 'github', selector: '.wb-gh' }
-    ])
+describe('firedHints — a part a plugin shows', () => {
+  const parts = [{ id: 'github', part: 'github-button', selector: '.wb-gh' }]
+  const on = snap({ partsShown: { 'github-button': true } })
+
+  it('fires when the part appears', () => {
+    expect(firedHints(empty, on, parts)).toEqual([{ id: 'github', selector: '.wb-gh' }])
   })
 
   it('stays quiet while it is simply still there', () => {
-    const on = snap({ githubBtn: true })
-    expect(firedHints(on, on)).toEqual([])
+    expect(firedHints(on, on, parts)).toEqual([])
   })
 
   it('stays quiet when it goes away', () => {
-    expect(firedHints(snap({ githubBtn: true }), empty)).toEqual([])
+    expect(firedHints(on, empty, parts)).toEqual([])
   })
 
   it('fires again after the panel was collapsed and re-opened', () => {
-    const on = snap({ githubBtn: true })
-    expect(firedHints(on, empty)).toEqual([])
-    expect(firedHints(empty, on)).toEqual([{ id: 'github', selector: '.wb-gh' }])
+    expect(firedHints(on, empty, parts)).toEqual([])
+    expect(firedHints(empty, on, parts)).toEqual([{ id: 'github', selector: '.wb-gh' }])
   })
 })

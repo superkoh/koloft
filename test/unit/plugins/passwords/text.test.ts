@@ -6,8 +6,13 @@ import {
   SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS,
   SUDO_SHIM_FILES
 } from '../../../../src/plugins/passwords/main/sudoShim'
+import {
+  pageVerb,
+  type TapPage,
+  type TapRounds
+} from '../../../../src/plugins/passwords/main/pageVerb'
 import type { WebPage } from '../../../../src/core/webPage'
-import type { AgentCaller } from '../../../../src/main/agentRequests'
+import type { AgentCaller } from '../../../../src/core/command'
 import type { SessionInfo } from '../../../../src/shared/types'
 
 const caller: AgentCaller = {
@@ -87,6 +92,88 @@ describe('the full text of koloft secret and of the sudo files it rests on, pinn
       await said(['nope'], { typed: 'pw' })
     ]
     await expect(lines.join('\n') + '\n').toMatchFileSnapshot('./text/replies.txt')
+  })
+
+  it('what the owner is asked and what the agent hears from koloft page tap, and what each tap round says', async () => {
+    const part = { x: 10, y: 10, width: 100, height: 60 }
+    const view = { x: 0, y: 0, width: 800, height: 600 }
+    const tapPage = (count: number, inView = true): TapPage => ({
+      guestId: 7,
+      url: () => 'https://shop.example/checkout',
+      find: async () =>
+        count === 1
+          ? { count, box: inView ? part : { ...part, x: 2000 }, view, ratio: 2, frames: [] }
+          : { count },
+      picture: async () => Buffer.from('png'),
+      tap: async () => undefined
+    })
+    const tapSaid = async (
+      args: string[],
+      answer: SecretAnswer,
+      over: { asleep?: boolean; pages?: TapPage[] } = {}
+    ): Promise<string> => {
+      const asked: (SecretAsk & { taps: TapRounds })[] = []
+      const verb = pageVerb({
+        sessionTab: (tabId) => tabId,
+        ask: async (a) => {
+          asked.push(a)
+          return answer
+        },
+        ownerAsleep: () => !!over.asleep,
+        pages: () => over.pages ?? [tapPage(1)],
+        draw: async () => ({ name: 'grid.png', data: Buffer.from('grid') }),
+        sleep: async () => undefined
+      })
+      const reply = await verb(args, caller)
+      const ask = asked[0]
+      const rounds: string[] = []
+      if (ask && 'passed' in answer) {
+        rounds.push(`  tap before a picture: ${await ask.taps.tap('A1', () => true)}`)
+        const shot = await ask.taps.picture()
+        shot.seen()
+        rounds.push(`  picture: ${shot.file.name}`)
+        rounds.push(`  tap A1 B2: ${await ask.taps.tap('A1 B2', () => true)}`)
+        rounds.push(`  tap Z99 Q: ${await ask.taps.tap('Z99 Q', () => true)}`)
+        rounds.push(`  tap nothing: ${await ask.taps.tap('', () => true)}`)
+      }
+      return [
+        `$ koloft page ${args.join(' ')}  → ${JSON.stringify(answer)}`,
+        ...(ask
+          ? [`  header: ${ask.header('NAME')}`, `  body: ${ask.body}`, `  label: ${ask.label}`]
+          : []),
+        ...rounds,
+        `  exit ${reply.exit}: ${reply.text}`
+      ].join('\n')
+    }
+    const TAP = ['tap', 'iframe', '--', 'Pass the robot check']
+    let pictureError = ''
+    const outOfView = pageVerb({
+      sessionTab: (tabId) => tabId,
+      ask: async (a) => {
+        pictureError = await a.taps.picture().then(
+          () => 'none',
+          (e: Error) => e.message
+        )
+        return { ended: 'declined' }
+      },
+      ownerAsleep: () => false,
+      pages: () => [tapPage(1, false)],
+      draw: async () => ({ name: 'grid.png', data: Buffer.from('grid') }),
+      sleep: async () => undefined
+    })
+    await outOfView(TAP, caller)
+    const lines = [
+      await tapSaid(TAP, { passed: true }),
+      await tapSaid(TAP, { doneInKoloft: true }),
+      await tapSaid(TAP, { ended: 'declined' }),
+      await tapSaid(TAP, { ended: 'timeout' }),
+      await tapSaid(TAP, { passed: true }, { asleep: true }),
+      await tapSaid(TAP, { passed: true }, { pages: [tapPage(0)] }),
+      await tapSaid(TAP, { passed: true }, { pages: [tapPage(1), tapPage(1)] }),
+      await tapSaid(['tap', 'iframe'], { passed: true }),
+      `the picture of a part out of view fails with: ${pictureError}`
+    ]
+    await expect(lines.join('\n') + '\n').toMatchFileSnapshot('./text/page-tap.txt')
   })
 
   it('the sudo wrapper and askpass files, as each kind of session tab gets them', async () => {

@@ -12,6 +12,7 @@ import {
 } from '@plugins/passwords/main/sudoShim'
 import { ghWrapperScript, gitCredentialHelperScript } from './gitCredentialScripts'
 import { ENSURE_CLAUDE_MINIMUM_FN } from './cliMinimums'
+import { ADVISOR_OFF_ON_FABLE_FN } from './advisorOnFable'
 import { CLAUDE_AUTH_ENV_VARS } from './remote/launch'
 import { NO_USABLE_ACCOUNT, SHIM_FOUND_NO_ACCOUNT_EXIT } from '@shared/accountUsage'
 import { PLAYWRIGHT_CLI_SESSION_PREFIX, PLAYWRIGHT_OUTPUT_FOLDER } from '@shared/browserTabEnv'
@@ -460,6 +461,7 @@ pre=()
 [ -n "$KOLOFT_DOCS_PLUGIN" ] && pre+=(--plugin-dir "$KOLOFT_DOCS_PLUGIN")
 [ -n "$KOLOFT_AGENT_PLUGIN" ] && pre+=(--plugin-dir "$KOLOFT_AGENT_PLUGIN")
 [ -n "$KOLOFT_AGENT_PROMPT" ] && pre+=(--append-system-prompt-file "$KOLOFT_AGENT_PROMPT")
+[ -n "$KOLOFT_OWNER_TEXT" ] && pre+=(--append-system-prompt "$KOLOFT_OWNER_TEXT")
 
 ${NEWID_FN}
 
@@ -560,11 +562,14 @@ if [ "$noinj" = "0" ] && [ "$KOLOFT_ACCOUNT_PICKED" != "1" ]; then
   fi
 fi
 
+${ADVISOR_OFF_ON_FABLE_FN}
+advisor_off_on_fable "$@"
+
 # CC§7 CC§9
 kfp="$KOLOFT_FIRST_PROMPT"
 ksn="$KOLOFT_SESSION_NAME"
 kpf="$KOLOFT_PICTURE_FOLDER"
-unset KOLOFT_FIRST_PROMPT KOLOFT_SESSION_NAME KOLOFT_PICTURE_FOLDER
+unset KOLOFT_FIRST_PROMPT KOLOFT_SESSION_NAME KOLOFT_PICTURE_FOLDER KOLOFT_OWNER_TEXT
 
 if [ "$skip" = "1" ]; then
   exec "$real" "\${inj[@]}" "$@"

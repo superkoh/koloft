@@ -14,6 +14,7 @@ import {
 } from '@core/command'
 import type { Commands } from '@core/commands'
 import { mapAtMost } from '@core/mapAtMost'
+import { todoNotes, type TodoSettings } from './notes'
 import {
   GITHUB_NOT_ASKED,
   placedRows,
@@ -21,10 +22,11 @@ import {
   workspaceLabel,
   type MergedHeads,
   type PinnedWorkspace,
-  type PlacedRow
+  type PlacedRow,
+  type WorkLeft
 } from '@plugins/sessions/api'
-import type { TodoPull, TodoPulls } from '@plugins/github/api'
-import { TODO_METHOD } from './method'
+import type { TodoPull, TodoPulls } from './pulls'
+import { todoMethod } from '../api'
 
 export const TODO_ONLY_FOR_THE_BUTLER =
   'koloft todo: only the butler and the helpers it starts in its own folder can use it.'
@@ -51,7 +53,7 @@ export interface TodoVerbDeps {
   sessions(): SessionInfo[]
   asking(tabId: string): boolean
   asleep(sessionId: string): boolean
-  workLeft(row: SessionRow, merged: MergedHeads): Promise<string[] | null>
+  workLeft(row: SessionRow, merged: MergedHeads): Promise<WorkLeft[] | null>
   deleting(row: SessionRow): boolean
   worktrees(workspace: string): Promise<{ dir: string; branch?: string }[]>
   repoOf(workspace: string): Promise<string | null>
@@ -87,7 +89,7 @@ type WorktreeCheck =
   | { state: 'failed' }
   | { state: 'noWorktree' }
   | { state: 'deleting' }
-  | { state: 'checked'; left: string[] }
+  | { state: 'checked'; left: WorkLeft[] }
 
 interface PullsOfRepo {
   repo: string
@@ -138,7 +140,7 @@ function worktreeFacts(check: WorktreeCheck, group: SessionGroup): string[] {
 }
 
 async function checkWorktree(
-  workLeft: () => Promise<string[] | null>,
+  workLeft: () => Promise<WorkLeft[] | null>,
   deleting: () => boolean
 ): Promise<WorktreeCheck> {
   if (deleting()) return { state: 'deleting' }
@@ -151,13 +153,11 @@ async function checkWorktree(
   }
 }
 
-function leftSummary(left: string[]): string {
+function leftSummary(left: WorkLeft[]): string {
   return left
-    .map((block) => {
-      const [head, ...lines] = block.split('\n')
-      const items = lines.filter((l) => l !== GITHUB_NOT_ASKED)
-      const notAsked = items.length < lines.length ? ` (${GITHUB_NOT_ASKED})` : ''
-      return items.length ? `${head.replace(/:$/, '')}: ${items.length}${notAsked}` : head
+    .map(({ head, lines, githubNotAsked }) => {
+      const notAsked = githubNotAsked ? ` (${GITHUB_NOT_ASKED})` : ''
+      return lines.length ? `${head}: ${lines.length}${notAsked}` : head
     })
     .join('; ')
 }
@@ -312,7 +312,7 @@ function mcpLines(servers: McpServer[], mine: BackendId, myFolder: string): stri
 
 async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
   const now = d.now()
-  const sidebar = d.sidebar().filter((w) => !w.workspace.butler)
+  const sidebar = d.sidebar().filter((w) => !w.workspace.claim)
   const all = placedRows(sidebar, d.sessions())
   const notes = d.notes()
   const [workspaces, trees, servers] = await Promise.all([
@@ -403,7 +403,7 @@ async function gather(d: TodoVerbDeps, me: BackendId): Promise<string> {
     groups.has(g) ? [`${GROUP_TITLES[g]}:`, ...(groups.get(g) ?? [])] : []
   )
   return [
-    TODO_METHOD,
+    todoMethod(),
     '',
     'WORKSPACES',
     '',
@@ -456,8 +456,11 @@ async function fileVerb(d: TodoVerbDeps, rest: string[]): Promise<AgentReply> {
   return answered(cutForATurn(await d.readText(file.path)))
 }
 
-export function registerTodoCommand(commands: Commands, d: TodoVerbDeps): void {
-  commands.register({ todo: todoVerb(d) })
+export function registerTodoCommand(
+  commands: Commands,
+  { settings, ...d }: Omit<TodoVerbDeps, 'notes' | 'saveNote'> & { settings: TodoSettings }
+): void {
+  commands.register({ todo: todoVerb({ ...d, ...todoNotes(settings) }) })
 }
 
 export function todoVerb(d: TodoVerbDeps): AgentVerb {

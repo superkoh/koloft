@@ -1,20 +1,16 @@
 import { execFile } from 'node:child_process'
 import os from 'node:os'
-import type { AssistRowId, BackendId } from '@shared/types'
+import type { BackendId } from '@shared/types'
 import { assistBackendsFor, assistLaunchOn } from '@shared/assistPicks'
-import { EVERY_ACCOUNT_TAKES, type ModelAndEffort } from '@core/assistModels'
+import {
+  EVERY_ACCOUNT_TAKES,
+  type Assist,
+  type AssistJob,
+  type ModelAndEffort
+} from '@core/assistModels'
 import { takenEffort } from '@shared/cronModels'
 import { lastCompletedText } from './museSessionLog'
-import { envMs } from './sessionRuntime'
-
-export interface AssistJob {
-  row: AssistRowId
-  system: string
-  prompt: string
-  signal?: AbortSignal
-}
-
-export type Assist = (job: AssistJob) => Promise<string | null>
+import { envMs } from '@plugins/sessions/main/sessionRuntime'
 
 const ASSIST_TIMEOUT_MS = envMs('KOLOFT_ASSIST_TIMEOUT_MS', 15_000)
 export const ASSIST_ANSWERS_WITHIN_MS = 2 * ASSIST_TIMEOUT_MS
@@ -137,6 +133,7 @@ export interface AssistDeps {
   picks(): Parameters<typeof assistBackendsFor>[1]
   enabled(backend: BackendId): boolean
   target(backend: BackendId): Promise<AssistTarget | null>
+  onThisAccount(backend: BackendId, asked: ModelAndEffort): Promise<ModelAndEffort>
 }
 
 type OneRun = (signal: AbortSignal | undefined, timeoutMs: number) => Promise<string | null>
@@ -216,6 +213,7 @@ export function koloftAssist(deps: AssistDeps): Assist {
       const launch = assistLaunchOn(job.row, backend, picks)
       const limitMs = shot.secondTryWhenLate ? ASSIST_ANSWERS_WITHIN_MS : ASSIST_TIMEOUT_MS
       const started = Date.now()
+      const spentMs = (): number => Date.now() - started
       const safe = EVERY_ACCOUNT_TAKES[backend]
       let modelRefused = false
       const runWith =
@@ -230,10 +228,12 @@ export function koloftAssist(deps: AssistDeps): Assist {
             (said) => (modelRefused ||= !!shot.saysItHasNoSuchModel?.test(said))
           )
       const answered = async (): Promise<string | null> => {
+        const theAccountHas = await deps.onThisAccount(backend, launch)
+        if (job.signal?.aborted) return null
         const first = await (shot.secondTryWhenLate
-          ? withASecondTryWhenLate(runWith(launch), job.signal)
-          : runWith(launch)(job.signal, ASSIST_TIMEOUT_MS))
-        const leftMs = limitMs - (Date.now() - started)
+          ? withASecondTryWhenLate(runWith(theAccountHas), job.signal)
+          : runWith(theAccountHas)(job.signal, Math.max(1, ASSIST_TIMEOUT_MS - spentMs())))
+        const leftMs = limitMs - spentMs()
         const tableModelRefused =
           first === null && modelRefused && launch.modelFromTheTable && launch.model !== safe.model
         if (!tableModelRefused || leftMs < WORTH_ANOTHER_RUN_MS || job.signal?.aborted) return first
