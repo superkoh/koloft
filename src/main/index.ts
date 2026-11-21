@@ -3712,7 +3712,8 @@ app.whenReady().then(() => {
     }
     butlerHearsSoon()
   })
-  claudeBackend.agentReply = (tabId, raw) => agentRequests.replyFor(tabId, raw)
+  claudeBackend.agentReply = (tabId, raw, stillWaiting) =>
+    agentRequests.replyFor(tabId, raw, stillWaiting)
   claudeBackend.watchShimRegistrations(regDir)
   if (watchOpenRequests(openDir)) ptyMgr.openDir = openDir
   if (watchPickRequests(pickDir)) ptyMgr.pickDir = pickDir
