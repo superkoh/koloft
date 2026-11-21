@@ -28,7 +28,6 @@ import {
 // AGY§5
 const SIGN_IN_COMMAND: Record<SignInBackend, string> = {
   codex: 'codex login',
-  muse: 'muse login',
   agy: 'agy'
 }
 import {
@@ -203,9 +202,9 @@ export function AccountsPane(): JSX.Element {
           <b>Skip permission prompts</b>
           <small>
             Adds <code>--dangerously-skip-permissions</code> to Claude and Antigravity when Koloft
-            injects an account, starts Muse with <code>:unrestricted</code>, and starts new Codex
-            sessions with <code>-a never -s danger-full-access</code> — never overrides permission
-            flags you pass yourself.
+            injects an account, and starts new Codex sessions with{' '}
+            <code>-a never -s danger-full-access</code> — never overrides permission flags you pass
+            yourself.
           </small>
         </div>
         <Switch
@@ -274,23 +273,6 @@ export function AccountsPane(): JSX.Element {
             <IconWebPage size={14} /> Sign in to Codex
           </button>
           <button className="mini" onClick={() => openForm({ paste: 'codex-home' })}>
-            <IconPlus size={14} /> Paste API key
-          </button>
-        </>
-      )}
-      <div className="set-grp">Muse</div>
-      {section(
-        'muse',
-        'No Muse accounts yet — Muse sessions start only once there is one. Each account here is its own Muse sign-in or API key. Every Muse session picks the least-used sign-in, and an API key only when every sign-in is at its limit.',
-        <>
-          <button
-            className="mini"
-            onClick={() => openForm({ signIn: 'muse' })}
-            title="Runs muse login in a terminal tab for a new Muse account"
-          >
-            <IconWebPage size={14} /> Sign in to Muse
-          </button>
-          <button className="mini" onClick={() => openForm({ paste: 'muse-home' })}>
             <IconPlus size={14} /> Paste API key
           </button>
         </>
@@ -768,11 +750,9 @@ export function AddAccountDialog({
         ? 'Add API key'
         : kind === 'codex-home'
           ? 'Add OpenAI API key'
-          : kind === 'muse-home'
-            ? 'Add Muse API key'
-            : kind === 'agy-home'
-              ? 'Add Gemini API key'
-              : 'Add custom endpoint'
+          : kind === 'agy-home'
+            ? 'Add Gemini API key'
+            : 'Add custom endpoint'
 
   return (
     <div className="acct-add" ref={scrollIntoViewOnOpen}>
@@ -812,11 +792,9 @@ export function AddAccountDialog({
               ? 'sk-ant-api03-…'
               : kind === 'codex-home'
                 ? 'sk-proj-… (OpenAI API key)'
-                : kind === 'muse-home'
-                  ? 'Meta API key'
-                  : kind === 'agy-home'
-                    ? 'Gemini API key'
-                    : 'Key issued by that endpoint'
+                : kind === 'agy-home'
+                  ? 'Gemini API key'
+                  : 'Key issued by that endpoint'
         }
         value={secret}
         onChange={(e) => setSecret(e.target.value)}
@@ -845,11 +823,9 @@ export function AddAccountDialog({
       <span className="field-hint">
         {kind === 'codex-home'
           ? 'Koloft hands the key to codex login, which keeps it in this account’s own sign-in folder; Koloft itself never echoes or stores it. Codex does not check the key here: a wrong one shows as signed in and fails at the first message a session sends.'
-          : kind === 'muse-home'
-            ? 'Koloft hands the key to muse, which keeps it in this account’s own sign-in folder; Koloft itself never echoes or stores it. Muse does not check the key here: a wrong one shows as signed in and fails once a session starts.'
-            : kind === 'agy-home'
-              ? 'The key goes into your Keychain and is handed to agy when a session starts. Saving opens agy in a terminal tab once: pick a colour scheme and answer Google’s Terms screen there, then type /exit, and the account is ready.'
-              : 'What you paste is used only to verify and to write the Keychain entry — never echoed, never written to a file. A failed check still saves the account, marked UNVERIFIED.'}
+          : kind === 'agy-home'
+            ? 'The key goes into your Keychain and is handed to agy when a session starts. Saving opens agy in a terminal tab once: pick a colour scheme and answer Google’s Terms screen there, then type /exit, and the account is ready.'
+            : 'What you paste is used only to verify and to write the Keychain entry — never echoed, never written to a file. A failed check still saves the account, marked UNVERIFIED.'}
         {kind === 'custom' &&
           ' A custom endpoint exposes no quota to measure, so it is used only when every ' +
             'subscription is rate-limited — and it switches the session to that endpoint’s own model.'}

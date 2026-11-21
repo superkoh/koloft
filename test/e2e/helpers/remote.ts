@@ -8,7 +8,6 @@ import {
   agyCalls,
   installAgy,
   installCodex,
-  installMuse,
   killEveryProcessNaming,
   type AgyApiCall,
   type AgyCall,
@@ -361,43 +360,6 @@ export function machineCodexLog<T>(env: E2EEnv, name: string): T[] {
     .map((line) => JSON.parse(line) as T)
 }
 
-export function installMuseOnMachine(env: E2EEnv): void {
-  const machine = machineHome(env)
-  const bin = path.join(machine, '.local', 'bin')
-  fs.mkdirSync(bin, { recursive: true })
-  fs.copyFileSync(path.join(__dirname, '..', 'fixtures', 'fake-muse.js'), path.join(bin, 'muse'))
-  fs.chmodSync(path.join(bin, 'muse'), 0o755)
-  fs.mkdirSync(remoteDir(env), { recursive: true })
-  const config = path.join(machine, '.config', 'muse')
-  fs.mkdirSync(config, { recursive: true })
-  fs.writeFileSync(
-    path.join(config, 'trust.json'),
-    JSON.stringify({
-      schema_version: 1,
-      projects: { [fs.realpathSync(remoteDir(env))]: { decision: 'trusted' } }
-    })
-  )
-}
-
-export interface MachineMuseCall {
-  pid: number
-  argv: string[]
-  cwd: string
-  sessionId: string
-  configHome: string | null
-  credentials: string | null
-}
-
-export function machineMuseCalls(env: E2EEnv): MachineMuseCall[] {
-  const file = path.join(machineHome(env), 'fake-muse-calls.jsonl')
-  if (!fs.existsSync(file)) return []
-  return fs
-    .readFileSync(file, 'utf8')
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as MachineMuseCall)
-}
-
 export type OtherAgentName = Exclude<AgentName, 'Claude'>
 
 export const OTHER_AGENTS_ON_THE_MACHINE: {
@@ -406,13 +368,6 @@ export const OTHER_AGENTS_ON_THE_MACHINE: {
   bound?: (page: Page) => Promise<unknown>
 }[] = [
   { label: 'Codex', install: installCodexOnFakeRemote },
-  {
-    label: 'Muse',
-    install: (env) => {
-      installMuse(env)
-      installMuseOnMachine(env)
-    }
-  },
   {
     label: 'Antigravity',
     install: (env) => {

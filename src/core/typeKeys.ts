@@ -2,7 +2,7 @@ import type { TabKind } from '@shared/types'
 import { backendIdOf, pasteKeepsItsLastLineFeeds } from '@shared/sessionBackend'
 import { sleep } from './sleep'
 
-// CC§12 CC§18 MUSE§17
+// CC§12 CC§18
 const SUBMIT_AFTER_TEXT_MS = 300
 
 // CC§12
@@ -30,7 +30,7 @@ const LAST_LINE_FEEDS = /\n+$/
 
 const APART_FROM_WHAT_THE_INPUT_BOX_HOLDS = '\n\n'
 
-// CC§18 CODEX§23 MUSE§7 AGY§15
+// CC§18 CODEX§23 AGY§15
 export function pasteFor(text: string, kind: TabKind | undefined): string {
   const backend = backendIdOf(kind)
   const typedAfter =

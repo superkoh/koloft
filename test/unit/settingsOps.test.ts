@@ -382,7 +382,7 @@ describe('session methods', () => {
   it('loads old settings with Claude as default and every method enabled', () => {
     expect(sanitizeLoadedSettings({}).sessionMethods).toEqual({
       defaultBackend: 'claude',
-      enabled: { claude: true, codex: true, muse: true, agy: true }
+      enabled: { claude: true, codex: true, agy: true }
     })
     expect(buildResetPatch()).not.toHaveProperty('sessionMethods')
   })
@@ -397,8 +397,8 @@ describe('session methods', () => {
         sessionMethods: { defaultBackend: 'codex', enabled: { claude: false, codex: false } }
       }).sessionMethods
     ).toEqual({
-      defaultBackend: 'muse',
-      enabled: { claude: false, codex: false, muse: true, agy: true }
+      defaultBackend: 'agy',
+      enabled: { claude: false, codex: false, agy: true }
     })
     expect(
       sanitizeLoadedSettings({
@@ -411,40 +411,40 @@ describe('session methods', () => {
       sanitizeLoadedSettings({
         sessionMethods: {
           defaultBackend: 'claude',
-          enabled: { claude: false, codex: true, muse: false, agy: false }
+          enabled: { claude: false, codex: true, agy: false }
         }
       }).sessionMethods
     ).toEqual({
       defaultBackend: 'codex',
-      enabled: { claude: false, codex: true, muse: false, agy: false }
+      enabled: { claude: false, codex: true, agy: false }
     })
     expect(
       sanitizeLoadedSettings({
         sessionMethods: {
           defaultBackend: 'agy',
-          enabled: { claude: false, codex: false, muse: false, agy: false }
+          enabled: { claude: false, codex: false, agy: false }
         }
       }).sessionMethods
     ).toEqual({
       defaultBackend: 'claude',
-      enabled: { claude: true, codex: false, muse: false, agy: false }
+      enabled: { claude: true, codex: false, agy: false }
     })
   })
   it('moves Assist off a method that is switched off, to the default method, takes back a job’s pick of it, and leaves the picks of methods that are on', () => {
-    const off = { claude: false, codex: true, muse: true, agy: true }
+    const off = { claude: false, codex: true, agy: true }
     expect(
       sanitizeLoadedSettings({
         assist: {
           backend: 'claude',
           rows: { turn: { backend: 'claude', model: 'opus' }, route: { backend: 'agy' } }
         },
-        sessionMethods: { defaultBackend: 'muse', enabled: off }
+        sessionMethods: { defaultBackend: 'codex', enabled: off }
       }).assist
-    ).toEqual({ backend: 'muse', rows: { route: { backend: 'agy' } } })
+    ).toEqual({ backend: 'codex', rows: { route: { backend: 'agy' } } })
     expect(
       sanitizeLoadedSettings({
         assist: { backend: 'agy' },
-        sessionMethods: { defaultBackend: 'muse', enabled: off }
+        sessionMethods: { defaultBackend: 'codex', enabled: off }
       }).assist
     ).toEqual({ backend: 'agy' })
   })

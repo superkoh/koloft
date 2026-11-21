@@ -10,7 +10,7 @@ export interface ConfigText {
   onlyIn?: string
 }
 
-// CC§22 MUSE§18
+// CC§22
 export const PROJECT_MCP_FILE = '.mcp.json'
 // AGY§30
 export const AGY_PROJECT_MCP_FILE = '.agents/mcp_config.json'
@@ -21,7 +21,7 @@ export function foldersUpToRoot(folder: string): string[] {
   return parent === folder ? [folder] : [folder, ...foldersUpToRoot(parent)]
 }
 
-// MUSE§18 AGY§30
+// AGY§30
 export async function foldersUpToRepoTop(
   folder: string,
   holdsGit: (folder: string) => Promise<boolean>

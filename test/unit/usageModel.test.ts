@@ -62,7 +62,7 @@ describe('usageModel', () => {
 
   it('marks a line whose every model has no price, and counts its tokens', () => {
     const lines = grouped(
-      [row({ model: 'muse-model', backend: 'muse', sessionId: 'm1' }), row({})],
+      [row({ model: 'unknown-model', backend: 'agy', sessionId: 'm1' }), row({})],
       'session'
     )
     expect(lines.map((l) => [l.key, l.priced, l.tokens])).toEqual([

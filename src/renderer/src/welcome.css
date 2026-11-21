@@ -19,10 +19,6 @@
 .wl-agent.codex {
   --c: #2fc4b2;
 }
-.wl-blob.muse,
-.wl-agent.muse {
-  --c: #7a5cff;
-}
 .wl-blob.agy,
 .wl-agent.agy {
   --c: #f0609e;
@@ -84,11 +80,6 @@
   left: 10vmax;
   bottom: -34vmax;
   animation-duration: 19s;
-}
-.wl-blob.muse {
-  right: -8vmax;
-  top: -26vmax;
-  animation-duration: 25s;
 }
 .wl-blob.agy {
   right: -22vmax;

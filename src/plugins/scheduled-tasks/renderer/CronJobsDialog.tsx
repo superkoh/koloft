@@ -96,11 +96,10 @@ const effortHint = (label: string): string =>
 const NEVER_ASK_HINT =
   '"Never ask" can change files anywhere on this Mac, not only in the run\'s folder.'
 const NO_GIT_NOTE = 'This folder is not a git repo, so the run works in the folder itself.'
-// CC§9 CODEX§14 MUSE§10 AGY§5
+// CC§9 CODEX§14 AGY§5
 const TRUST_QUESTION: Record<BackendId, string> = {
   claude: 'do you trust this project?',
   codex: 'do you trust the contents of this directory?',
-  muse: 'Do you trust this workspace?',
   agy: 'Do you trust the contents of this project?'
 }
 const trustHint = (backend: BackendId): string =>

@@ -26,7 +26,7 @@ export interface ToolShim {
   release(): void
 }
 
-// CODEX§12 MUSE§8
+// CODEX§12
 export function startToolShim(
   deps: ToolShimDeps,
   opts: {

@@ -47,10 +47,18 @@ describe('sanitizeCron (BB-E29: the whole file)', () => {
 })
 
 describe('sanitizeCron (which method a job runs in)', () => {
-  it('keeps a Codex job on Codex, and reads a job saved before the choice existed, or with an unknown method, as Claude', () => {
+  it('keeps a Codex job on Codex, reads a job saved before the choice existed as Claude, and pauses a job whose saved agent is no longer known with a note instead of running it on Claude', () => {
     expect(one({ backend: 'codex' })?.backend).toBe('codex')
     expect(one({})?.backend).toBeUndefined()
-    expect(one({ backend: 'gemini' })?.backend).toBeUndefined()
+    const unknown = sanitizeCron(
+      file([job({ backend: 'gemini', enabled: true, model: 'old-model', effort: 'high' })]),
+      PINNED
+    )
+    expect(unknown.jobs[0].enabled).toBe(false)
+    expect(unknown.jobs[0].backend).toBeUndefined()
+    expect(unknown.jobs[0].model).toBeUndefined()
+    expect(unknown.jobs[0].effort).toBeUndefined()
+    expect(unknown.notes[unknown.jobs[0].id]).toContain('no longer supported')
   })
 })
 

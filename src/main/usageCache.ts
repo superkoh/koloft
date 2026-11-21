@@ -52,8 +52,6 @@ export interface UsageCacheDeps {
 
 const FILES_AT_ONCE = 16
 export const CODEX_ROLLOUT_FOLDERS = ['sessions', 'archived_sessions']
-const MUSE_SESSION_FILE_PREFIX = 'session.'
-const MUSE_DATE_DEPTH = 3
 export class UsageCache {
   private reading = false
   private readonly cached: PrivateRecordFile<CachedFile>
@@ -188,7 +186,6 @@ export class UsageCache {
 export interface UsageHome {
   host?: string
   codexHome: string
-  museHome: string
   geminiDir: string
 }
 
@@ -198,18 +195,6 @@ async function codexFiles({ host, codexHome }: UsageHome): Promise<UsageFile[]> 
     CODEX_ROLLOUT_FOLDERS.map((folder) => jsonlUnder(path.join(codexHome, folder), 'rollout-'))
   )
   return found.flat().map((file) => ({ file, backend: 'codex' as const, workspace: '', host }))
-}
-
-// MUSE§2
-async function museFiles({ host, museHome }: UsageHome): Promise<UsageFile[]> {
-  const sessions = path.join(museHome, 'sessions')
-  return (await jsonlUnder(sessions, MUSE_SESSION_FILE_PREFIX)).map((file) => ({
-    file,
-    backend: 'muse' as const,
-    workspace: '',
-    sessionId: path.relative(sessions, file).split(path.sep)[MUSE_DATE_DEPTH],
-    host
-  }))
 }
 
 // AGY§8
@@ -260,9 +245,7 @@ export async function listUsageFiles(
       workspace
     }))
   })
-  const others = await Promise.all(
-    homes.flatMap((home) => [codexFiles(home), museFiles(home), agyFiles(home)])
-  )
+  const others = await Promise.all(homes.flatMap((home) => [codexFiles(home), agyFiles(home)]))
   return [...claude.flat(), ...others.flat()]
 }
 

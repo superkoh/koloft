@@ -18,6 +18,8 @@ export function cronFilePath(userData: string): string {
 }
 
 const BAD_MODEL_NOTE = 'The saved model was not valid and was ignored.'
+const UNKNOWN_BACKEND_NOTE =
+  'The saved agent is no longer supported; this job was paused. Pick another agent to run it again.'
 
 const HISTORY_STATES = new Set<string>(Object.keys(HIST_WORDS))
 const MAX_HISTORY = 20
@@ -134,6 +136,12 @@ export function sanitizeCron(
       job.waitFrom = item.waitFrom
     const backend = backendIdOf(item.backend)
     if (backend) job.backend = backend
+    else if (item.backend !== undefined) {
+      job.enabled = false
+      delete job.model
+      delete job.effort
+      notes[id] = UNKNOWN_BACKEND_NOTE
+    }
     seen.add(id)
     jobs.push(job)
   }

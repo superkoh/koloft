@@ -197,10 +197,10 @@ describe('firedHints — worktree', () => {
     expect(firedHints(prev, next)).toEqual([])
   })
 
-  it('stays quiet when a lone launch row gives way to the session it started, as a Muse, Antigravity or remote tab’s does', () => {
+  it('stays quiet when a lone launch row gives way to the session it started, as an Antigravity or remote tab’s does', () => {
     const starting = { id: 'pty-1', worktree: 'main', running: true, pending: true }
     const prev = snap({ rows: [ws('/a', [starting])] })
-    const next = snap({ rows: [ws('/a', [running('muse:devbox:s1')])] })
+    const next = snap({ rows: [ws('/a', [running('agy:devbox:s1')])] })
     expect(firedHints(prev, next)).toEqual([])
   })
 
@@ -214,7 +214,7 @@ describe('firedHints — worktree', () => {
     const starting = { id: 'pty-1', worktree: 'main', running: true, pending: true }
     const prev = snap({ rows: [ws('/a', [starting])] })
     const next = snap({
-      rows: [ws('/a', [running('muse:devbox:s1'), { ...starting, id: 'pty-2' }])]
+      rows: [ws('/a', [running('agy:devbox:s1'), { ...starting, id: 'pty-2' }])]
     })
     expect(firedHints(prev, next)).toEqual([{ id: 'worktree', selector: rowSelector('pty-2') }])
   })

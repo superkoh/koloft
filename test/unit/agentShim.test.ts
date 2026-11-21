@@ -269,10 +269,9 @@ describe('koloft command in a Codex session', () => {
   })
 })
 
-describe('koloft command in a Codex, Muse or Antigravity session says which agent it runs in, and what stops it', () => {
+describe('koloft command in a Codex or Antigravity session says which agent it runs in, and what stops it', () => {
   it.each([
     ['codex', 'Codex'],
-    ['muse', 'Muse'],
     ['agy', 'Antigravity']
   ] as const)(
     'once Koloft lets go of it, a %s session says it is a %s session no longer linked to Koloft, and exits 1',
@@ -286,7 +285,6 @@ describe('koloft command in a Codex, Muse or Antigravity session says which agen
 
   it.each([
     ['codex', 'koloft: this sandbox is read-only, so koloft cannot run here.'],
-    ['muse', 'koloft: could not reach Koloft.'],
     ['agy', 'koloft: could not reach Koloft.']
   ] as const)(
     'a %s session that cannot write its request prints only "%s", and exits 1',

@@ -113,7 +113,7 @@ export const TAKE_NOTICE_FN = `take_notice() {
 export const OWNER_ASLEEP_FILE = 'owner-asleep'
 const ASLEEP_PUSHED_SUFFIX = '.asleep'
 
-// CC§21 CODEX§27 MUSE§9 AGY§12
+// CC§21 CODEX§27 AGY§12
 export const KEEP_GOING_FOR_THE_NOTICE_FN = `keep_going_for_the_notice() {
   pushed="$notice${ASLEEP_PUSHED_SUFFIX}"
   case "$input" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) [ -z "$notice" ] || rm -f "$pushed"; return 1 ;; esac
@@ -188,7 +188,7 @@ export const shellCall = (keyField: string): string =>
 export const SHELL_WROTE_FIELD = 'wrote'
 export const SHELL_WROTE_EVENT = 'shell-wrote'
 
-// CC§15 CODEX§27 MUSE§9 AGY§12
+// CC§15 CODEX§27 AGY§12
 export const SHELL_WRITES_FNS = `files_now() {
   top="$(cd "$1" 2>/dev/null && inside="$(git rev-parse --show-prefix 2>/dev/null)" && here="$PWD/" && printf '%s' "\${here%"$inside"}")"
   top="\${top%/}"
@@ -225,7 +225,7 @@ export const QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS = `if [ -f "$said${HANDE
        save_quote
      fi`
 
-// ADR-0028 CODEX§33 MUSE§9
+// ADR-0028 CODEX§33
 export const QUOTE_THE_OWNER_OR_FLAG_A_FORGERY = `words_key() {
   LC_ALL=C sed -E -e 's/\\\\(u[0-9a-fA-F]{4}|.)//g' -e $'s/[^A-Za-z0-9\\x80-\\xff]//g'
 }
@@ -755,7 +755,7 @@ export function sentWordsFile(regDir: string, tabId: string): string {
 
 export type SentNote = { id: string } | { words: string }
 
-// ADR-0028 CC§13 CODEX§33 MUSE§9 AGY§16
+// ADR-0028 CC§13 CODEX§33 AGY§16
 export function noteOfWhatKoloftSends(
   backend: BackendId | undefined,
   text: string,
@@ -764,7 +764,7 @@ export function noteOfWhatKoloftSends(
   if (![FROM_DISCORD, ...OPENINGS_ONLY_KOLOFT_SENDS].some((o) => text.startsWith(o)))
     return undefined
   if (backend === 'claude') return id === undefined ? undefined : { id }
-  return backend === 'codex' || backend === 'muse' ? { words: text } : undefined
+  return backend === 'codex' ? { words: text } : undefined
 }
 
 export function noteSent(regDir: string, tabId: string, note: SentNote): void {

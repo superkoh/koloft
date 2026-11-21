@@ -96,7 +96,7 @@ describe('store: claude → shell revert, only after a session actually bound', 
     })
   })
 
-  for (const kind of ['claude', 'codex', 'muse', 'agy'] as const)
+  for (const kind of ['claude', 'codex', 'agy'] as const)
     it(`a ${kind} tab whose session left the list before its terminal exited is still that agent on the exit path, and an unexpected exit keeps it as that agent`, () => {
       useStore.setState({
         claimedWorkspaces: [],
@@ -153,7 +153,7 @@ describe('store: claude → shell revert, only after a session actually bound', 
       worktreeResourceId: undefined,
       firstPrompt: 'go'
     })
-    const rebuilt = { kind: 'muse' as const, cwd: '/w', worktreeResourceId: 'r1' }
+    const rebuilt = { kind: 'agy' as const, cwd: '/w', worktreeResourceId: 'r1' }
     expect(launchToStartAgain(rebuilt, '/w/.wt/r1')).toMatchObject({
       cwd: '/w/.wt/r1',
       worktreeResourceId: undefined

@@ -21,10 +21,6 @@ export function mirrorCodexHome(userData: string, host: string): string {
   return path.join(remoteBase(userData, host), 'codex-home')
 }
 
-export function mirrorMuseHome(userData: string, host: string): string {
-  return path.join(remoteBase(userData, host), 'muse')
-}
-
 export function machinePackageBase(userData: string): string {
   return path.join(userData, 'remote', 'pkg')
 }

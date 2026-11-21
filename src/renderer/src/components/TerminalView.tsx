@@ -31,7 +31,7 @@ const ACK_FLUSH_AFTER_MS = 100
 const CAP_SLACK_AGAINST_FIT_ROUNDING_PX = 1
 export const NO_FOCUS_SIGNAL = 0
 
-// CC§12 CODEX§25 MUSE§17 AGY§15 PLATFORM§2 PLATFORM§21
+// CC§12 CODEX§25 AGY§15 PLATFORM§2 PLATFORM§21
 const COMMAND_KEY_LINE_EDITS = new Map([
   ['ArrowLeft', TO_LINE_START],
   ['ArrowRight', TO_LINE_END],
@@ -397,7 +397,7 @@ function LiveTerminal({
         // PLATFORM§22
         if (compositionHelper?._isSendingComposition === false) commitGrace = false
       }
-      // CC§12 CODEX§2 MUSE§7 AGY§15
+      // CC§12 CODEX§2 AGY§15
       if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
         if (e.type === 'keydown') window.api.terminal.write(id, '\n')
         return false

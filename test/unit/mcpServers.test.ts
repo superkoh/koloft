@@ -97,8 +97,8 @@ describe('the MCP servers koloft todo reads from each agent’s own config', () 
     ).toEqual(['b', 'd'])
   })
 
-  // MUSE§18 AGY§30
-  it('Muse and Antigravity: the mcpServers of their own settings reach every folder, a project file’s only that project, and one turned off is left out', () => {
+  // AGY§30
+  it('Antigravity: the mcpServers of its own settings reach every folder, a project file’s only that project, and one turned off is left out', () => {
     expect(
       jsonServers('agy', [
         {
@@ -115,8 +115,8 @@ describe('the MCP servers koloft todo reads from each agent’s own config', () 
     ])
   })
 
-  // CC§22 MUSE§18 AGY§30
-  it('a workspace in a sub-folder: Claude reads the project file of every folder up to /, Muse and Antigravity only up to the nearest folder holding .git even inside another repository, or only the workspace’s own outside a repository', async () => {
+  // CC§22 AGY§30
+  it('a workspace in a sub-folder: Claude reads the project file of every folder up to /, Antigravity only up to the nearest folder holding .git even inside another repository, or only the workspace’s own outside a repository', async () => {
     expect(foldersUpToRoot('/work/mono/app')).toEqual([
       '/work/mono/app',
       '/work/mono',

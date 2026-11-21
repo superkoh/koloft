@@ -7,11 +7,8 @@ import {
   agySessionCalls,
   installAgy,
   installCodex,
-  installMuse,
-  museCalls,
   seedSettings,
   trustInAgy,
-  trustInMuse,
   type E2EEnv
 } from './helpers/env'
 import { closeSettings, openSettings } from './helpers/extensions'
@@ -164,7 +161,6 @@ function centerLayout(page: Page): Promise<{
 
 const LOCAL_OTHER_AGENTS: { label: OtherAgentName; install: (env: E2EEnv) => void }[] = [
   { label: 'Codex', install: (env) => installCodex(env) },
-  { label: 'Muse', install: installMuse },
   { label: 'Antigravity', install: installAgy }
 ]
 
@@ -255,17 +251,6 @@ const EVERY_SESSION_TAB_KIND: SessionTabKind[] = [
     startWidths: agentStart(CODEX_SCREEN),
     install: (env) => installCodex(env),
     startOnScreen: (page) => newSessionInWith(page, 'ws-a', 'Codex')
-  },
-  {
-    kind: 'local Muse',
-    backend: 'muse',
-    remote: false,
-    startWidths: agentStart((env) => museCalls(env).map((c) => c.cols)),
-    install: (env) => {
-      installMuse(env)
-      trustInMuse(env, env.workspaces.a)
-    },
-    startOnScreen: (page) => newSessionInWith(page, 'ws-a', 'Muse')
   },
   {
     kind: 'local Antigravity',

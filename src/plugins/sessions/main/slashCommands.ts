@@ -22,20 +22,17 @@ const EMPTY_THE_BOX = TO_LINE_END + CLEAR_TO_LINE_START
 const BACK_TO_AN_EMPTY_BOX: Record<BackendId, string[]> = {
   claude: [ESC],
   codex: [ESC, CLOSE_PAGER, EMPTY_THE_BOX],
-  muse: [ESC],
   agy: [ESC, EMPTY_THE_BOX]
 }
 const BEFORE_A_COMMAND: Record<BackendId, string[]> = {
   claude: [],
   codex: [EMPTY_THE_BOX],
-  muse: [],
   agy: []
 }
 // CC§12 AGY§23
 const MENU_CLOSER: Record<BackendId, string[]> = {
   claude: [CLOSE_THE_COMMAND_MENU],
   codex: [CLOSE_THE_COMMAND_MENU],
-  muse: [CLOSE_THE_COMMAND_MENU],
   agy: []
 }
 // CC§11 CC§12
@@ -43,11 +40,10 @@ const PANEL_CLOSES_WITHIN_MS = 500
 const ESC_PRESSES_AT_MOST = 3
 // AGY§23
 export const SCREEN_SHOWS_THE_OUTPUT_MS = 1500
-// CC§12 CODEX§21 MUSE§11 AGY§23
+// CC§12 CODEX§21 AGY§23
 const DRAFT_ON_SCREEN: Record<BackendId, (lines: string[]) => string | undefined> = {
   claude: inputBoxDraft,
   codex: codexComposerDraft,
-  muse: inputBoxDraft,
   agy: agyInputBoxDraft
 }
 export const AN_ENTER_LANDS_WITHIN_MS = 2000
@@ -121,7 +117,7 @@ export function commandKeys(text: string, backend: BackendId | undefined): strin
 
 const SCREEN_LINES_IN_A_RESULT = 40
 
-// CODEX§21 MUSE§19
+// CODEX§21
 function screenShot(lines: string[] | undefined): string | undefined {
   const shown = withoutBlankEdges(lines ?? [])
   if (!shown.length) return undefined
@@ -233,7 +229,7 @@ export class SlashCommands {
     return !!backend && DRAFT_ON_SCREEN[backend](lines) === text.trim()
   }
 
-  // CC§12 CODEX§21 MUSE§11 AGY§23
+  // CC§12 CODEX§21 AGY§23
   private checkTheEnterLanded(tab: string, p: Pending): void {
     const enterAgainIfStillTyped = async (): Promise<void> => {
       if (!this.unanswered(tab, p)) return

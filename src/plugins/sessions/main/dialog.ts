@@ -430,7 +430,6 @@ function onePickHow(q: Asked): string {
 const fewestOf = (q: Question): number => q.fewest ?? 1
 const mostOf = (q: Question): number => q.most ?? q.options.length
 
-// MUSE§11
 function pickCountRule(q: Question): string[] {
   if (q.fewest === undefined && q.most === undefined) return []
   return [`“${q.question}” takes ${fewestOf(q)} to ${mostOf(q)} picks.`]
@@ -462,7 +461,7 @@ function replyLines(text: string): string[] {
     .filter(Boolean)
 }
 
-// CODEX§20 MUSE§11 AGY§14
+// CODEX§20 AGY§14
 export function questionAnswers(q: Asked, reply: string): QuestionAnswer[] | undefined {
   const lines = linesPerQuestion(q.questions, reply)
   if (!lines) return undefined
@@ -471,43 +470,16 @@ export function questionAnswers(q: Asked, reply: string): QuestionAnswer[] | und
 }
 
 export interface AnswerKeys {
-  pick(n: number): string[]
   ticks(q: Question, picks: number[]): string[]
   words(q: Question, text: string): string[]
-  submit(answers: QuestionAnswer[]): string[]
-  untickAll?(q: Asked): string[] | undefined
 }
 
-// CODEX§20 MUSE§11
+// CODEX§20
 const noteUnderNoneOfTheAbove = (q: Question, text: string): string[] => [
   ...keysFor([...q.options.map(() => 'Down'), 'Tab']),
   ...typedPieces(text),
   '\r'
 ]
-
-// MUSE§11
-const museNoneOfTheAboveRow = (q: Question): string => String(q.options.length + 1)
-const museSubmitRow = (q: Question): string => String(q.options.length + 2)
-
-// MUSE§11
-function museTicks(q: Question, picks: number[]): string[] {
-  return [...picks.flatMap((n) => [String(n), ...keysFor(['Space'])]), museSubmitRow(q), '\r']
-}
-
-// MUSE§11
-function museReviewKeys(answers: QuestionAnswer[]): string[] {
-  return answers.length > 1 || answers.some((a) => 'words' in a || 'picks' in a) ? ['\r'] : []
-}
-
-// MUSE§11
-function museUntickAll(q: Asked): string[] | undefined {
-  if (q.questions.length !== 1) return undefined
-  const only = q.questions[0]!
-  return [
-    museSubmitRow(only),
-    ...keysFor(['Down', 'Down', 'Enter', museNoneOfTheAboveRow(only), 'Space', '1'])
-  ]
-}
 
 // AGY§14
 const agyTicks = (_q: Question, picks: number[]): string[] => [...picks.map(String), '\r']
@@ -515,35 +487,24 @@ const agyTicks = (_q: Question, picks: number[]): string[] => [...picks.map(Stri
 // CODEX§20
 const codexAsksNoQuestionTakingSeveralPicks = (): string[] => []
 
-// CODEX§20 MUSE§11 AGY§14
+// CODEX§20 AGY§14
 export const ANSWER_KEYS: Record<Exclude<BackendId, 'claude'>, AnswerKeys> = {
   codex: {
-    pick: (n) => [String(n)],
     ticks: codexAsksNoQuestionTakingSeveralPicks,
-    words: noteUnderNoneOfTheAbove,
-    submit: () => []
-  },
-  muse: {
-    pick: (n) => [String(n), '\r'],
-    ticks: museTicks,
-    words: noteUnderNoneOfTheAbove,
-    submit: museReviewKeys,
-    untickAll: museUntickAll
+    words: noteUnderNoneOfTheAbove
   },
   agy: {
-    pick: (n) => [String(n)],
     ticks: agyTicks,
-    words: ownWordsAfterTheLastOption,
-    submit: () => []
+    words: ownWordsAfterTheLastOption
   }
 }
 
 function keysOf(keys: AnswerKeys, q: Question, a: QuestionAnswer): string[] {
-  if ('pick' in a) return keys.pick(a.pick)
+  if ('pick' in a) return [String(a.pick)]
   if ('picks' in a) return keys.ticks(q, a.picks)
   return keys.words(q, a.words)
 }
 
 export function answerKeys(keys: AnswerKeys, q: Asked, answers: QuestionAnswer[]): string[] {
-  return [...answers.flatMap((a, i) => keysOf(keys, q.questions[i]!, a)), ...keys.submit(answers)]
+  return answers.flatMap((a, i) => keysOf(keys, q.questions[i]!, a))
 }

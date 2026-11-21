@@ -162,18 +162,18 @@ describe('UsageCache', () => {
     expect((await usage.read()).reading).toBe(false)
   })
 
-  it('puts a Muse or Antigravity file under the workspace and title of the session row with its id', async () => {
-    const M = '/home/.local/share/muse/sessions/2026/10/15/m1/session.jsonl'
-    listed = [{ file: M, backend: 'muse', workspace: '', sessionId: 'm1' }]
+  it('puts an Antigravity file under the workspace and title of the session row with its id', async () => {
+    const M = '/home/.gemini/antigravity-cli/brain/m1/transcript.jsonl'
+    listed = [{ file: M, backend: 'agy', workspace: '', sessionId: 'm1' }]
     stats = new Map([[M, { mtimeMs: 1, size: 10 }]])
-    places.set('m1', { workspace: '/ws-muse', title: 'Sort the fixtures' })
+    places.set('m1', { workspace: '/ws-agy', title: 'Sort the fixtures' })
     const usage = cache()
     await usage.read()
     finish(runs[0], { [M]: [record('m1', 5)] })
 
     const read = await usage.read()
 
-    expect(read.rows).toMatchObject([{ sessionId: 'm1', backend: 'muse', workspace: '/ws-muse' }])
+    expect(read.rows).toMatchObject([{ sessionId: 'm1', backend: 'agy', workspace: '/ws-agy' }])
     expect(read.titles).toEqual({ m1: 'Sort the fixtures' })
   })
 

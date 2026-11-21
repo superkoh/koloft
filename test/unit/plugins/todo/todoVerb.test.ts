@@ -218,7 +218,7 @@ describe('koloft todo', () => {
     const working = row('working', { running: true, cwd: `${SHOP}/.claude/worktrees/busy` })
     const asleep = row('asleep', {
       running: true,
-      backendId: 'muse',
+      backendId: 'agy',
       cwd: `${SHOP}/.claude/worktrees/nap`
     })
     const dirty = row('dirty', { cwd: `${SHOP}/.claude/worktrees/fix`, mtime: NOW - 3 * DAY })
@@ -272,7 +272,7 @@ describe('koloft todo', () => {
       /Closed, nothing left in a worktree .*\n- "old title" .*last active 40 days ago · id: old/
     )
     expect(sessions).toMatch(
-      /Open, asleep: .*\n- "asleep title" · Muse .* · branch: nap · Changes not committed: 1\n- "rested title" · Codex .* · branch: rest · nothing left in its worktree\n- "on-box title" · Antigravity · .* · box · /
+      /Open, asleep: .*\n- "asleep title" · Antigravity .* · branch: nap · Changes not committed: 1\n- "rested title" · Codex .* · branch: rest · nothing left in its worktree\n- "on-box title" · Antigravity · .* · box · /
     )
     expect(sessions).not.toContain('working title')
     expect(sessions).not.toContain('no-tab-here title')

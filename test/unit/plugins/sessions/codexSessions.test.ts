@@ -341,7 +341,7 @@ describe('CodexSessions', () => {
     expect(sessions.members().has(codexSessionKey(A))).toBe(true)
   })
 
-  it('looks at each history folder on disk once per history list, not on every rows read (the shared stored-sessions rows, so Muse and Antigravity too)', async () => {
+  it('looks at each history folder on disk once per history list, not on every rows read (the shared stored-sessions rows, so Antigravity too)', async () => {
     mocks.request.mockImplementation(async (_method, params) =>
       params.archived
         ? { data: [] }
@@ -385,8 +385,8 @@ describe('CodexSessions', () => {
     expect(sessions.threadGone(unlisted)).toBe(true)
   })
 
-  // CODEX§15 MUSE§5 AGY§8
-  it('a remembered session leaves the sessions list once a finished listing left its thread out, and comes back once listed again; an archived one stays for its unarchive hint, and so do one bound under half a minute ago and one that ran after that listing (the shared stored-sessions rows, so Muse and Antigravity too)', async () => {
+  // CODEX§15 AGY§8
+  it('a remembered session leaves the sessions list once a finished listing left its thread out, and comes back once listed again; an archived one stays for its unarchive hint, and so do one bound under half a minute ago and one that ran after that listing (the shared stored-sessions rows, so Antigravity too)', async () => {
     const C = '33333333-3333-4333-8333-333333333333'
     const D = '44444444-4444-4444-8444-444444444444'
     addMember(A)
@@ -2063,11 +2063,11 @@ describe('CodexSessions', () => {
     gate.resolve()
   })
 
-  it('rejects a Claude or a Muse identity at the Codex resume boundary', async () => {
+  it('rejects a Claude or an Antigravity identity at the Codex resume boundary', async () => {
     await expect(sessions.resume({ sessionId: A, cwd: repo })).rejects.toThrow(
       'A Codex session is required'
     )
-    await expect(sessions.resume({ sessionId: `muse:local:${A}`, cwd: repo })).rejects.toThrow(
+    await expect(sessions.resume({ sessionId: `agy:local:${A}`, cwd: repo })).rejects.toThrow(
       'A Codex session is required'
     )
     expect(mocks.create).not.toHaveBeenCalled()

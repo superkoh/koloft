@@ -28,7 +28,7 @@ describe('the koloft-docs plugin Koloft writes for Claude Code', () => {
   })
 })
 
-describe("the skills Koloft keeps in a Muse or Antigravity account's skills folder", () => {
+describe("the skills Koloft keeps in an Antigravity account's skills folder", () => {
   it('keeps koloft-docs while Docs writing is on and takes it away once it is off, leaving the koloft skill as it was', () => {
     const skills = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-skills-'))
     roots.push(skills)

@@ -55,8 +55,6 @@ function logUnder(home: string, name: string): LogLine[] {
 
 const CODEX_INSTRUCTIONS = 'developer_instructions='
 
-export const MUSE_IS_TOLD_ON_A_FIRST_MESSAGE = 'first words'
-
 export function sessionPromptsHandedOut(home: string): Record<BackendId, string[]> {
   return {
     claude: filesNamedUnder(home, 'koloft-prompt.md')
@@ -66,11 +64,6 @@ export function sessionPromptsHandedOut(home: string): Record<BackendId, string[
       ((call.argv as string[] | undefined) ?? [])
         .filter((a) => a.startsWith(CODEX_INSTRUCTIONS))
         .map((a) => JSON.parse(a.slice(CODEX_INSTRUCTIONS.length)) as string)
-    ),
-    muse: logUnder(home, 'fake-muse-told.jsonl').map(
-      ({ out }) =>
-        (JSON.parse(out as string) as { hookSpecificOutput: { additionalContext: string } })
-          .hookSpecificOutput.additionalContext
     ),
     agy: logUnder(home, 'fake-agy-injected.jsonl')
       .filter((r) => r.event === 'SessionStart')

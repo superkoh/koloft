@@ -76,7 +76,7 @@ shell.
     and **Browse**, a tree of the workspace. A folder the agent keeps outside the project
     shows there too, as `Scratchpad`: Claude's scratchpad, the pictures a Codex session
     made, or an Antigravity session's own files (its plans, task lists and `scratch`
-    folder). Muse keeps none.
+    folder).
   - File tabs: rendered Markdown / images / PDF, a diff view, the source, and an
     editor with ⌘S save. An HTML file opens as a web tab.
   - Web tabs: a real in-app browser (logins, downloads, popups, Chrome extensions) so an
@@ -104,9 +104,9 @@ shell.
   file, page or diff in its Workbench, add to the workspace note, set up scheduled jobs,
   and start, message and read other sessions. A bundled `playwright-cli` drives the
   session's own web tabs.
-- **Multi-account balancing** — register several Claude, Codex, Muse and Antigravity
+- **Multi-account balancing** — register several Claude, Codex and Antigravity
   accounts. Every launch looks at their live rate limits and starts on the account that
-  has used the least. A pasted Codex, Muse or Antigravity API (application programming
+  has used the least. A pasted Codex or Antigravity API (application programming
   interface) key is paid for each use, so it is only a backup. A Claude API key or
   custom endpoint added by an older Koloft still works as a backup too, but Settings no
   longer adds a new one. The
@@ -289,9 +289,9 @@ Everything lives in **Settings** (⌘, or the gear at the left of the title bar)
     share your Codex settings and trusted folders. New Codex sessions start on the
     least-used one. `Paste API key` adds an OpenAI API key (paid for each use) as a
     backup, used only when no Codex sign-in can be used or every one is at its limit.
-  - Muse and Antigravity: `Sign in to Muse` or `Sign in with Google` runs the agent's own
-    sign-in in a terminal tab, and each account keeps it in its own folder. A pasted
-    Muse API key or Gemini API key is the same backup as Codex's.
+  - Antigravity: `Sign in with Google` runs the agent's own sign-in in a terminal tab,
+    and each account keeps it in its own folder. A pasted Gemini API key is the same
+    backup as Codex's.
   - Git accounts: add one for GitHub or GitHub Enterprise (a one-time code and the
     server's sign-in page in your own browser, or a pasted token), GitLab.com, Bitbucket
     or Gitea / Forgejo / Codeberg (sign in on the site), your own GitLab or Azure DevOps
@@ -343,8 +343,8 @@ and approvals go to your own bot. The only hosts it ever reaches on its own are:
 | `api.github.com`, `github.com` | checks for a newer Koloft and downloads its `.dmg`; through `gh`, reads a GitHub workspace's open issue and pull request counts, and the statusline asks `gh` about the branch's pull request; for a **remote** workspace's machine that lacks them, downloads `gh` itself and Git Credential Manager; signs in a GitHub git account and checks its token |
 | `gitlab.com`, `api.bitbucket.org`, `dev.azure.com`, `codeberg.org`, or your own git server | the server of a git account you add, only after you add one there. To check the token and read the username: when it is added, when Koloft starts, every 6 hours, when `Settings ▸ Accounts` opens, and when the server turns the token down during a git call (an account added as "Other server" is never checked). To see whether the account can push to a workspace's repository: when a workspace is added, and when the git panel's Account list opens. Bitbucket also reaches `bitbucket.org` for the browser sign-in |
 | your workspace's git remote (often `github.com`) | every 5 minutes, to see whether the branch is behind — `Settings ▸ Appearance` turns auto-fetch off |
-| `claude.ai`, `chatgpt.com`, `dev.meta.ai`, `antigravity.google` | the official installers of `claude`, `codex`, `muse` and `agy`, only when you ask for a tool this Mac lacks: its Install button on the welcome, its "Click to install." card (when you set up Assist, or on the start page of a folder on this Mac while this Mac has none of the four), or signing in to it (on the welcome or in Settings ▸ Accounts) |
-| `claude.ai`, `dev.meta.ai`, `antigravity.google`, `nodejs.org`, `unofficial-builds.nodejs.org` | only for a **remote** workspace, and only to install what that machine is missing — `claude`, `muse` and `agy` from their official installers, Node from `nodejs.org` (or, on an old Linux, the unofficial build); `codex` and, for Claude Code sessions, `playwright-cli` come from `npm`, which fetches them from npm's own site; `bash`, `tmux`, `rsync` and `python3` come from the machine's own package manager |
+| `claude.ai`, `chatgpt.com`, `antigravity.google` | the official installers of `claude`, `codex` and `agy`, only when you ask for a tool this Mac lacks: its Install button on the welcome, its "Click to install." card (when you set up Assist, or on the start page of a folder on this Mac while this Mac has none of the three), or signing in to it (on the welcome or in Settings ▸ Accounts) |
+| `claude.ai`, `antigravity.google`, `nodejs.org`, `unofficial-builds.nodejs.org` | only for a **remote** workspace, and only to install what that machine is missing — `claude` and `agy` from their official installers, Node from `nodejs.org` (or, on an old Linux, the unofficial build); `codex` and, for Claude Code sessions, `playwright-cli` come from `npm`, which fetches them from npm's own site; `bash`, `tmux`, `rsync` and `python3` come from the machine's own package manager |
 | `chromewebstore.google.com`, `clients2.google.com`, `update.googleapis.com` | only for Chrome extensions in the in-app browser: the store page, the extension download, and a once-per-launch update check |
 | `discord.com`, `gateway.discord.gg` | only once a bot token is set in `Settings ▸ Plugins ▸ Discord`; files sent from Discord are fetched from Discord's own file host |
 | `duckduckgo.com` | whatever you type in the browser's address bar that is not a URL |

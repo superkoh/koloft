@@ -146,14 +146,14 @@ describe('session backend boundary', () => {
     await expect(registry.historyRows('/repo', () => {})).rejects.toThrow('app-server gone')
   })
 
-  it('keeps native ids from different backends separate, Muse included, and accepts legacy Claude references', () => {
+  it('keeps native ids from different backends separate and accepts legacy Claude references', () => {
     const nativeSessionId = '00000000-0000-4000-8000-000000000001'
     const claude = sessionKey({ backendId: 'claude', sourceId: 'local', nativeSessionId })
     const codex = sessionKey({ backendId: 'codex', sourceId: 'local', nativeSessionId })
     expect(claude).not.toBe(codex)
     expect(identityOf(codex)).toEqual({ backendId: 'codex', sourceId: 'local', nativeSessionId })
-    const muse = sessionKey({ backendId: 'muse', sourceId: 'local', nativeSessionId })
-    expect(identityOf(muse)).toEqual({ backendId: 'muse', sourceId: 'local', nativeSessionId })
+    const agy = sessionKey({ backendId: 'agy', sourceId: 'local', nativeSessionId })
+    expect(identityOf(agy)).toEqual({ backendId: 'agy', sourceId: 'local', nativeSessionId })
     expect(identityOf(nativeSessionId).backendId).toBe('claude')
   })
 
@@ -266,9 +266,9 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
       ['claude/local']
     ],
     [
-      'Koloft sees whether a menu or panel is open in Claude Code (its session registry, read over ssh on a machine) and in Codex and Muse (their screen), on this Mac and on a machine; in an Antigravity tab a slash command from Discord presses Esc to be safe',
+      'Koloft sees whether a menu or panel is open in Claude Code (its session registry, read over ssh on a machine) and in Codex (its screen), on this Mac and on a machine; in an Antigravity tab a slash command from Discord presses Esc to be safe',
       'panelSeen',
-      ['claude/local', 'claude/ssh', 'codex/local', 'codex/ssh', 'muse/local', 'muse/ssh']
+      ['claude/local', 'claude/ssh', 'codex/local', 'codex/ssh']
     ],
     [
       'Koloft follows Claude Code removing its worktree at /exit, and says so when it fails, on this Mac and on a machine, where its tmux passes the title code on; other agents remove no worktree at exit',
@@ -278,7 +278,7 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     [
       'every tab on this Mac drives the Workbench browser, and on a machine only Claude Code does, through a tunnel on its ssh connection and the playwright-cli Koloft installs there; the other agents there are not probed yet',
       'browserControl',
-      ['claude/local', 'claude/ssh', 'codex/local', 'muse/local', 'agy/local']
+      ['claude/local', 'claude/ssh', 'codex/local', 'agy/local']
     ]
   ]
   const sharedRowsOf = (backend: BackendId, host: HostId): Partial<Capabilities> =>
@@ -289,13 +289,13 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     )
   const HOSTS: HostId[] = ['local', 'ssh']
 
-  it('gives a Codex, Muse or Antigravity session on this Mac a Workbench, scheduled tasks, the koloft command and browser control', () => {
+  it('gives a Codex or Antigravity session on this Mac a Workbench, scheduled tasks, the koloft command and browser control', () => {
     for (const backend of SESSION_BACKENDS)
       expect(sharedRowsOf(backend, 'local')).toEqual(sharedRowsOf('claude', 'local'))
   })
 
   // CODEX§16
-  it('gives a remote Codex, Muse or Antigravity tab what a remote Claude tab has', () => {
+  it('gives a remote Codex or Antigravity tab what a remote Claude tab has', () => {
     for (const backend of SESSION_BACKENDS)
       expect(sharedRowsOf(backend, 'ssh')).toEqual(sharedRowsOf('claude', 'ssh'))
   })
@@ -326,7 +326,7 @@ describe('shownAsInstalled (which tools a dialog offers while the installed-tool
 
 const methods = (defaultBackend: BackendId, codex = true) => ({
   defaultBackend,
-  enabled: { claude: true, codex, muse: true, agy: true }
+  enabled: { claude: true, codex, agy: true }
 })
 
 describe('effectiveBackend (what every direct entrance starts on a Mac that may have only one of the two CLIs)', () => {
@@ -343,8 +343,8 @@ describe('effectiveBackend (what every direct entrance starts on a Mac that may 
   })
 
   it('starts the first method that can run when the default cannot and several can', () => {
-    expect(effectiveBackend(methods('claude'), have('codex', 'muse'))).toBe('codex')
-    expect(effectiveBackend(methods('muse'), have('claude', 'codex'))).toBe('claude')
+    expect(effectiveBackend(methods('claude'), have('codex', 'agy'))).toBe('codex')
+    expect(effectiveBackend(methods('agy'), have('claude', 'codex'))).toBe('claude')
   })
 
   it('ignores an installed method the user switched off', () => {
@@ -372,16 +372,15 @@ describe('launchMenus (the agents a New session menu offers, by where the worksp
     })
   })
 
-  it('a remote workspace offers Codex, Muse and Antigravity only when this Mac has them, as their tabs need this Mac', () => {
-    expect(launchMenus(methods('muse'), only()).ssh).toEqual({
+  it('a remote workspace offers Codex and Antigravity only when this Mac has them, as their tabs need this Mac', () => {
+    expect(launchMenus(methods('agy'), only()).ssh).toEqual({
       listed: ['claude'],
       named: null,
       sole: 'claude'
     })
-    expect(launchMenus(methods('claude'), only('codex', 'muse', 'agy')).ssh.listed).toEqual([
+    expect(launchMenus(methods('claude'), only('codex', 'agy')).ssh.listed).toEqual([
       'claude',
       'codex',
-      'muse',
       'agy'
     ])
   })

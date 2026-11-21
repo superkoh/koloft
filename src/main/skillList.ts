@@ -87,7 +87,6 @@ type Source = SkillSuggestion['source']
 export interface SkillPlaces {
   workspace: string
   home: string
-  configHome: string
   codexHome?: string
 }
 
@@ -96,7 +95,7 @@ export interface SkillFolders {
   commands?: string[]
 }
 
-// CC§9 CODEX§17 MUSE§16 AGY§31
+// CC§9 CODEX§17 AGY§31
 export function skillFolders(backend: BackendId, p: SkillPlaces): Record<Source, SkillFolders> {
   const ws = (...rel: string[]): string => path.join(p.workspace, ...rel)
   const home = (...rel: string[]): string => path.join(p.home, ...rel)
@@ -113,18 +112,6 @@ export function skillFolders(backend: BackendId, p: SkillPlaces): Record<Source,
           skills: [
             ...(p.codexHome ? [path.join(p.codexHome, 'skills')] : []),
             home('.agents', 'skills')
-          ]
-        }
-      }
-    case 'muse':
-      return {
-        project: { skills: [ws('.agents', 'skills'), ws('.claude', 'skills')] },
-        home: {
-          skills: [
-            path.join(p.configHome, 'muse', 'skills'),
-            home('.agents', 'skills'),
-            home('.claude', 'skills'),
-            home('.codex', 'skills')
           ]
         }
       }

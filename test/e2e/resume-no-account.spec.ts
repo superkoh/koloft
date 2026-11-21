@@ -5,7 +5,6 @@ import {
   agySessionCalls,
   E2E_CLAUDE_ACCOUNT,
   installAgentFor,
-  museCalls,
   seedSettings,
   type E2EEnv
 } from './helpers/env'
@@ -16,7 +15,6 @@ import {
   launchWithRemote,
   machineAgyCalls,
   machineCodexLog,
-  machineMuseCalls,
   OTHER_AGENTS_ON_THE_MACHINE,
   REMOTE_WS_NAME
 } from './helpers/remote'
@@ -50,14 +48,6 @@ const FIRST_PROMPT = 'first words'
 const START: Record<BackendId, (page: Page, wsName: string) => Promise<void>> = {
   claude: (page, wsName) => startSessionIn(page, wsName),
   codex: (page, wsName) => newSessionInWith(page, wsName, 'Codex'),
-  muse: async (page, wsName) => {
-    const row = wsRows(page, wsName).first()
-    await newSessionInWith(page, wsName, 'Muse')
-    await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
-    await runIn(page, centerTerm(page), FIRST_PROMPT)
-    await expect(row.locator('.ws-tab-title')).toHaveText(FIRST_PROMPT, { timeout: 60_000 })
-    await expect(row.locator('.ws-tab-unread')).toHaveCount(1, { timeout: 60_000 })
-  },
   agy: async (page, wsName) => {
     await newSessionInWith(page, wsName, 'Antigravity')
     await agyReady(page)
@@ -78,7 +68,6 @@ const LOCAL_LAUNCHES: Record<BackendId, (env: E2EEnv) => number> = {
   codex: (env) =>
     codexCalls(env).length +
     fakeCodexLog<CodexServerCall>(env, SERVER_CALLS).filter((c) => c.tabId).length,
-  muse: (env) => museCalls(env).length,
   agy: (env) => agySessionCalls(env).length
 }
 
@@ -87,7 +76,6 @@ const REMOTE_LAUNCHES: Record<Exclude<BackendId, 'claude'>, (env: E2EEnv) => num
     codexCalls(env).length +
     machineCodexLog<CodexServerCall>(env, SERVER_CALLS).filter((c) => c.argv.includes('--listen'))
       .length,
-  muse: (env) => machineMuseCalls(env).length,
   agy: (env) => machineAgyCalls(env).length
 }
 

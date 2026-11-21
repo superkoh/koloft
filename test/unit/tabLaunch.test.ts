@@ -130,7 +130,7 @@ async function claudeTab(
         agentPlugin: () => (withPlugin ? '/koloft/agent-plugin' : undefined),
         docsPlugin: () => '/koloft/docs-plugin',
         assistOf: () => assist,
-        agentHomes: () => ({ codexHome: '/nowhere', configHome: '/nowhere' }),
+        agentHomes: () => ({ codexHome: '/nowhere' }),
         pastedPicturesDir: () => path.join(userData, 'palette-pictures')
       }),
       (machine) =>

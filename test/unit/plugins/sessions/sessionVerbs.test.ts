@@ -66,7 +66,6 @@ const PINNED: PinnedWorkspace[] = [
 ]
 const CODEX_THREAD = '0199c3f2-7a41-7c30-9e55-1d2b8f6a0c11'
 const OTHER_THREAD = '0199c3f2-7a41-7c30-9e55-1d2b8f6a0c22'
-const MUSE_ID = '01a13795-6b09-7531-bdd6-84ce54f976ea'
 const PICKED = ['--model', 'any', '--effort', 'low']
 
 function session(
@@ -382,9 +381,6 @@ describe('the handover put before the first message', () => {
     expect(handoverPreamble({ id: CODEX_THREAD, label: 'Codex' })).toContain(
       `the Codex session ${CODEX_THREAD}`
     )
-    expect(handoverPreamble({ id: MUSE_ID, label: 'Muse' })).toContain(
-      `the Muse session ${MUSE_ID}`
-    )
   })
 
   it('tells a child Assist started that only the words Assist quotes in « » are the owner’s, so Assist’s own guesses never pass as the owner’s orders', () => {
@@ -412,7 +408,7 @@ describe('the handover put before the first message', () => {
 })
 
 describe('koloft session list', () => {
-  it('shows each session’s state, a Claude or Muse session’s name, the transcript of a session of any kind that has one, a Codex session’s id, and marks the caller; a session showing a question reads apart from one that only finished its turn', async () => {
+  it('shows each session’s state, a Claude session’s name, the transcript of a session of any kind that has one, a Codex session’s id, and marks the caller; a session showing a question reads apart from one that only finished its turn', async () => {
     const { verb } = harness(
       [
         session('me', 'claude', { status: 'working' }),
@@ -420,17 +416,15 @@ describe('koloft session list', () => {
         session('q', 'codex', { status: 'waiting', nativeSessionId: OTHER_THREAD }),
         session('done', 'claude', { status: 'waiting' }),
         session('idle', 'claude', { status: 'idle' }),
-        session('mu', 'muse', { status: 'working', nativeSessionId: MUSE_ID }),
         session('ag', 'agy', { status: 'idle' })
       ],
-      { 'me-session': 'planner', 'mu-session': 'iron-libra' },
+      { 'me-session': 'planner' },
       [],
       {
         asking: ['q'],
         transcripts: {
           'me-session': { onThisMac: '/home/.claude/projects/app/me.jsonl' },
           'cx-session': { onThisMac: '/home/.codex/sessions/rollout-cx.jsonl' },
-          'mu-session': { onThisMac: '/home/.local/share/muse/sessions/mu/session.jsonl' },
           'ag-session': { onThisMac: '/home/.gemini/antigravity-cli/brain/ag/transcript.jsonl' }
         }
       }
@@ -443,7 +437,6 @@ describe('koloft session list', () => {
       `q title · Codex · asking the owner a question · id: ${OTHER_THREAD}`,
       'done title · Claude · finished its turn',
       'idle title · Claude · idle',
-      `mu title · Muse · working · id: ${MUSE_ID} · name: iron-libra · transcript: /home/.local/share/muse/sessions/mu/session.jsonl`,
       'ag title · Antigravity · idle · id: ag-session · transcript: /home/.gemini/antigravity-cli/brain/ag/transcript.jsonl'
     ])
   })
@@ -496,21 +489,6 @@ describe('koloft session list', () => {
     )
     expect((await verb(['list', '--workspace', 'nope'], from('me'))).exit).not.toBe(0)
     expect(await verb(['list', '--all'], from('me'))).toMatchObject({ exit: EXIT_USAGE })
-  })
-})
-
-describe('koloft session new from a Muse session', () => {
-  it('starts a Muse sibling under the name it was given, or a short title from its task, and says to reach it by its tab id', async () => {
-    const { verb, launched } = harness([session('me', 'muse', { nativeSessionId: MUSE_ID })])
-    const named = await verb(
-      ['new', ...PICKED, '--name', 'Fix links', '--', 'Fix the links.'],
-      from('me')
-    )
-    expect(named.exit).toBe(0)
-    expect(launched[0]).toMatchObject({ kind: 'muse', name: 'Fix links' })
-    expect(launched[0].firstPrompt).toContain(`the Muse session ${MUSE_ID}`)
-    expect(named.text).toContain('koloft session send new-tab')
-    expect(named.text).not.toContain('SendMessage')
   })
 })
 
@@ -688,15 +666,6 @@ describe('koloft session new: the starter picks the model and effort', () => {
     expect(launched).toEqual([])
   })
 
-  it('asks a Muse session, which has no model names to pick from, only for its effort', async () => {
-    const { verb, launched } = harness([session('me', 'muse', { nativeSessionId: MUSE_ID })])
-    const unpicked = await verb(['new', '--', 'go'], from('me'))
-    expect(unpicked.text).toContain('needs --effort.')
-    expect(unpicked.text).toContain('Muse: very simple: --effort low; normal: --effort medium')
-    expect((await verb(['new', '--effort', 'low', '--', 'go'], from('me'))).exit).toBe(0)
-    expect(launched[0]).toMatchObject({ kind: 'muse', effort: 'low' })
-  })
-
   it('refuses a model named for another agent, so a Claude caller cannot start Codex on opus', async () => {
     const { verb, launched } = harness([session('me', 'claude')])
     const reply = await verb(
@@ -726,10 +695,10 @@ describe('koloft session new', () => {
     expect(named.exit).not.toBe(0)
     expect(named.text).toContain('Claude is turned off in Settings ▸ Sessions')
     expect(launched).toEqual([])
-    expect((await verb(['new', ...PICKED, '--backend', 'muse', '--', 'go'], from('me'))).exit).toBe(
+    expect((await verb(['new', ...PICKED, '--backend', 'agy', '--', 'go'], from('me'))).exit).toBe(
       0
     )
-    expect(launched.map((l) => l.kind)).toEqual(['muse'])
+    expect(launched.map((l) => l.kind)).toEqual(['agy'])
   })
 
   it('a Claude caller starts a named Claude sibling in its workspace whose first message says who to report to, since the transcript replays that message on every resume while a SessionStart note lives only as long as its tab', async () => {
@@ -968,10 +937,10 @@ describe('koloft session new', () => {
     expect(launched[0].firstPrompt).toContain('koloft session send me-session')
   })
 
-  it('--workspace starts a Codex, Muse or Antigravity sibling in a remote workspace too, reached by its tab id; an Antigravity one there takes no --name', async () => {
+  it('--workspace starts a Codex or Antigravity sibling in a remote workspace too, reached by its tab id; an Antigravity one there takes no --name', async () => {
     const REMOTE = 'ssh://box/srv/api'
     const { verb, launched } = harness([session('me', 'claude')])
-    for (const backend of ['codex', 'muse', 'agy']) {
+    for (const backend of ['codex', 'agy']) {
       const reply = await verb(
         ['new', ...PICKED, '--backend', backend, '--workspace', REMOTE, '--', 'go'],
         from('me')
@@ -986,7 +955,6 @@ describe('koloft session new', () => {
     expect(named.exit).toBe(EXIT_USAGE)
     expect(launched.map((l) => [l.kind, l.cwd])).toEqual([
       ['codex', REMOTE],
-      ['muse', REMOTE],
       ['agy', REMOTE]
     ])
   })
@@ -1074,25 +1042,6 @@ describe('koloft session send', () => {
     expect(waitsOnAnother(me)).toBe(true)
   })
 
-  it('a Muse session reaches an open Muse or Codex session: typed into a Muse one once it is idle, queued on a Codex one, both marked with who sent it', async () => {
-    const { verb, pressed, queued } = harness([
-      session('me', 'muse', { nativeSessionId: MUSE_ID, title: 'Docs fixer' }),
-      session('mu', 'muse', { title: 'Test runner' }),
-      session('cx', 'codex', { nativeSessionId: OTHER_THREAD, title: 'Linter' })
-    ])
-    expect((await verb(['send', 'Test runner', 'Run', 'it'], from('me'))).exit).toBe(0)
-    expect((await verb(['send', 'cx', 'Lint', 'it'], from('me'))).exit).toBe(0)
-    expect(pressed).toHaveLength(1)
-    expect(pressed[0]).toMatchObject({
-      tabId: 'mu',
-      keys: [expect.stringContaining('Run it'), '\r']
-    })
-    expect(pressed[0].keys[0]).toContain('Docs fixer')
-    expect(queued.map((q) => [q.tabId, q.text])).toEqual([
-      ['cx', expect.stringContaining('Lint it')]
-    ])
-  })
-
   it('points a Claude caller to SendMessage for a Claude target and sends nothing', async () => {
     const { verb, lines } = harness([
       ...sessions(),
@@ -1124,24 +1073,20 @@ describe('koloft session send', () => {
     expect(lines.map((l) => l.tabId)).toEqual(['far', 'cc'])
   })
 
-  it('a Codex or Muse session reaches an open Claude session on its message line, marked with who sent it, and the Claude session answers it with koloft session send', async () => {
-    const { verb, lines, queued, pressed } = harness([
-      ...sessions(),
-      session('mu', 'muse', { nativeSessionId: MUSE_ID, title: 'Docs fixer' })
-    ])
-    expect((await verb(['send', 'Planner', 'Check', 'it'], from('mu'))).exit).toBe(0)
+  it('a Codex session reaches an open Claude session on its message line, marked with who sent it, and the Claude session answers it with koloft session send', async () => {
+    const { verb, lines, queued } = harness(sessions())
     expect((await verb(['send', 'Planner', 'Lint', 'it'], from('me'))).exit).toBe(0)
-    expect(lines.map((l) => l.tabId)).toEqual(['cc', 'cc'])
+    expect(lines.map((l) => l.tabId)).toEqual(['cc'])
     expect(lines[0].line).toContain('from-mode=')
-    expect(lines[0].line).toContain(`(From the session \\"Docs fixer\\", id ${MUSE_ID}:) Check it`)
-    expect((await verb(['send', MUSE_ID, 'Done'], from('cc'))).exit).toBe(0)
+    expect(lines[0].line).toContain(
+      `(From the session \\"me title\\", id ${CODEX_THREAD}:) Lint it`
+    )
     expect((await verb(['send', CODEX_THREAD, 'Done'], from('cc'))).exit).toBe(0)
-    expect(pressed.map((p) => p.tabId)).toEqual(['mu'])
     expect(queued.map((q) => q.tabId)).toEqual(['me'])
   })
 
   it.each(
-    (['codex', 'muse', 'agy'] as const).flatMap((caller) => [
+    (['codex', 'agy'] as const).flatMap((caller) => [
       { caller, machine: 'this Mac', cwd: WS, remote: undefined },
       { caller, machine: 'another machine', cwd: 'ssh://box/srv/api', remote: { host: 'box' } }
     ])
@@ -1415,7 +1360,7 @@ describe('koloft session close', () => {
       treeRoot
     })
     const { verb, closed, startedSessions } = harness(
-      [session('me', 'claude'), session('busy-tab', 'muse', { title: 'Still working' })],
+      [session('me', 'claude'), session('busy-tab', 'agy', { title: 'Still working' })],
       {},
       [],
       {
@@ -2202,16 +2147,16 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
       { ...live[0], tabId: 'butler-reopened' },
       { prompt: 'Sort the inbox.', ownerWords: 'sort it', backend: 'claude' }
     )
-    await h.verb(['new', ...PICKED, '--backend', 'muse', '--', 'look into it'], from('butler'))
-    const [byNew, codexByNew, byPalette, byHelper, afterAReopen, museByNew] = h.launched
+    await h.verb(['new', ...PICKED, '--backend', 'agy', '--', 'look into it'], from('butler'))
+    const [byNew, codexByNew, byPalette, byHelper, afterAReopen, agyByNew] = h.launched
     expect(afterAReopen.trustFolder).toBe(true)
     expect(afterAReopen.firstPrompt?.startsWith(`${BUTLER_HELPER_ROLE}\n\n`)).toBe(true)
-    expect(museByNew.role).toBeUndefined()
+    expect(agyByNew.role).toBeUndefined()
     for (const told of [
       byNew.firstPrompt,
       codexByNew.role,
       byPalette.firstPrompt,
-      museByNew.firstPrompt
+      agyByNew.firstPrompt
     ])
       expect(
         told?.startsWith(
@@ -2237,14 +2182,14 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
     await verb(['new', ...PICKED, '--', 'look around'], from('stray'))
     await verb(['new', ...PICKED, '-w', 'kid', '--', 'try it'], from('fix'))
     await verb(
-      ['new', ...PICKED, '--workspace', 'ssh://box/srv/api', '--backend', 'muse', '--', 'check'],
+      ['new', ...PICKED, '--workspace', 'ssh://box/srv/api', '--backend', 'agy', '--', 'check'],
       from('fix')
     )
     expect(launched.map((l) => [l.kind, l.cwd, l.worktree, l.trustFolder])).toEqual([
       ['codex', WS, undefined, true],
       ['claude', '/Users/me', undefined, false],
       ['claude', WS, 'kid', false],
-      ['muse', 'ssh://box/srv/api', undefined, true]
+      ['agy', 'ssh://box/srv/api', undefined, true]
     ])
   })
 

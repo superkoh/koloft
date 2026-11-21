@@ -15,7 +15,7 @@ const PS = [
   `  700     1  200000 ${AT} /opt/homebrew/bin/node /opt/homebrew/bin/claude --settings y KOLOFT_TAB_ID=pty-3`,
   `  800   100  150000 ${AT} /Users/me/.local/bin/codex app-server --stdio KOLOFT_TAB_ID=pty-4`,
   `  801   800   90000 ${AT} /bin/zsh -lc npm test`,
-  `  900   100  120000 ${AT} /Users/me/.local/share/muse/muse-bin-1.4.11 KOLOFT_TAB_ID=pty-5`,
+  `  900   100  120000 ${AT} /Users/me/.local/share/agy/agy-bin-1.4.0 KOLOFT_TAB_ID=pty-5`,
   `  901   900   30000 ${AT} node srv.mjs`,
   `  950   100   20000 ${AT} /bin/zsh -l KOLOFT_TAB_ID=pty-6`,
   `  951   950   20000 ${AT} /bin/sh /Users/me/rc-helper`

@@ -389,68 +389,19 @@ exit 0`
   })
 })
 
-describe('ensure.sh for a Muse tab', () => {
-  const MUSE_INSTALLER = `
-printf '%s\\n' "$*" >> "$LOGS/curl.log"
-printf '%s\\n' 'printf "#!/bin/sh\\necho Muse Code 1.4.9\\n" > "$HOME/.local/bin/muse"; chmod +x "$HOME/.local/bin/muse"'`
-
-  const forMuse = (m: Machine, python: 'runs' | 'is a stub'): void => {
-    m.give('bash', 'exec /bin/bash "$@"')
-    m.give('tmux', 'exit 0')
-    m.give('rsync', 'exit 0')
-    m.give('gh', 'exit 0')
-    m.give('python3', python === 'runs' ? 'exit 0' : 'exit 1')
-    m.give('curl', `LOGS=${JSON.stringify(m.logs)}\n${MUSE_INSTALLER}`)
-    m.giveLogger('sudo', 1)
-    m.giveLogger('apt-get')
-  }
-
-  it("installs muse with Meta's installer, and never claude or the statusline's node", () => {
-    const m = machine()
-    forMuse(m, 'runs')
-    const res = m.run('muse')
-    expect(res.status).toBe(0)
-    expect(m.calls('curl')).toEqual(['-fsSL https://dev.meta.ai/install.sh'])
-    expect(fs.existsSync(path.join(m.home, '.local', 'bin', 'muse'))).toBe(true)
-    expect(fs.existsSync(path.join(m.home, '.koloft', 'node'))).toBe(false)
-  })
-
-  it('stops with what is missing when python3 there does not run, as the macOS stand-in does', () => {
-    const m = machine()
-    forMuse(m, 'is a stub')
-    const res = m.run('muse')
-    expect(res.status).toBe(4)
-    expect(res.stdout).toContain('Muse sessions need python3 on this machine')
-    expect(m.calls('curl')).toEqual([])
-  })
-
-  it('runs the python3 brew just installed, not the stub the shell already found, as on a Mac without the Command Line Tools', () => {
-    const m = machine()
-    forMuse(m, 'runs')
-    const bin = path.join(m.home, '.local', 'bin')
-    fs.rmSync(path.join(bin, 'python3'))
-    fs.rmSync(path.join(bin, 'apt-get'))
-    const stubLaterOnPath = path.join(m.home, '.koloft', 'node', 'bin')
-    fs.mkdirSync(stubLaterOnPath, { recursive: true })
-    fs.writeFileSync(path.join(stubLaterOnPath, 'python3'), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
-    m.give(
-      'brew',
-      `printf '%s\\n' "$*" >> ${JSON.stringify(path.join(m.logs, 'brew.log'))}
-printf '#!/bin/sh\\nexit 0\\n' > ${JSON.stringify(path.join(bin, 'python3'))}
-chmod +x ${JSON.stringify(path.join(bin, 'python3'))}`
-    )
-    const res = m.run('muse')
-    expect(m.calls('brew')).toEqual(['install python3'])
-    expect(res.stdout).not.toContain('Muse sessions need python3')
-    expect(res.status).toBe(0)
-    expect(m.calls('curl')).toEqual(['-fsSL https://dev.meta.ai/install.sh'])
-  })
-
+describe('ensure.sh when neither curl nor wget is present', () => {
   it.skipIf(HOMEBREW_FETCHERS_THE_PATH_CANNOT_HIDE.length > 0)(
     'on a machine with neither curl nor wget, as a bare container is, curl is installed with the package manager before the installer runs',
     () => {
       const m = machine()
-      forMuse(m, 'runs')
+      m.give('bash', 'exec /bin/bash "$@"')
+      m.give('tmux', 'exit 0')
+      m.give('rsync', 'exit 0')
+      m.give('gh', 'exit 0')
+      m.give('node', 'echo v22.12.0')
+      const installer = `printf '%s\\n' "$*" >> "$LOGS/curl.log"\nprintf '%s\\n' 'printf "#!/bin/sh\\necho 2.1.293\\n" > "$HOME/.local/bin/claude"; chmod +x "$HOME/.local/bin/claude"'`
+      m.give('curl', `LOGS=${JSON.stringify(m.logs)}\n${installer}`)
+      m.giveLogger('sudo', 1)
       const curl = path.join(m.home, '.local', 'bin', 'curl')
       const packaged = path.join(m.home, 'curl-from-the-package')
       fs.renameSync(curl, packaged)
@@ -461,21 +412,12 @@ chmod +x ${JSON.stringify(path.join(bin, 'python3'))}`
 [ "$*" = "install -y curl" ] && cat ${JSON.stringify(packaged)} > ${JSON.stringify(curl)} && chmod +x ${JSON.stringify(curl)}
 exit 0`
       )
-      const res = m.run('muse')
+      const res = m.run()
       expect(res.status).toBe(0)
       expect(m.calls('apt-get')).toEqual(['update', 'install -y curl'])
-      expect(m.calls('curl')).toEqual(['-fsSL https://dev.meta.ai/install.sh'])
+      expect(m.calls('curl')).toEqual(['-fsSL https://claude.ai/install.sh'])
     }
   )
-
-  it('a Claude tab never reaches for muse or python3', () => {
-    const m = machine()
-    complete(m)
-    m.giveLogger('python3')
-    expect(m.run().status).toBe(0)
-    expect(m.calls('python3')).toEqual([])
-    expect(m.calls('curl')).toEqual([])
-  })
 })
 
 describe('the hook bell on the machine', () => {

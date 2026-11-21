@@ -109,8 +109,8 @@ export function AppearancePane(): JSX.Element {
           <b>Built-in status line</b>
           <small>
             Shows Koloft&rsquo;s own status line under the prompt of every Claude Code, Codex and
-            Antigravity session, in place of the one you set yourself (Muse Code cannot take one).
-            Applies to sessions started after a change; off brings back your own setting.
+            Antigravity session, in place of the one you set yourself. Applies to sessions started
+            after a change; off brings back your own setting.
           </small>
         </div>
         <Switch

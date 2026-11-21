@@ -18,8 +18,6 @@ export const NAMED_MODELS: Record<BackendId, NamedModel[]> = {
     { id: 'gpt-6-astra', label: 'GPT-6-Astra' },
     { id: 'gpt-6-luna', label: 'GPT-6-Luna' }
   ],
-  // MUSE§1
-  muse: [],
   // AGY§21
   agy: [
     { id: 'gemini-4-carbon', label: 'Gemini 4 Carbon', notOnEveryAccount: true },
@@ -54,8 +52,6 @@ export function effortsFor(backend: BackendId, model: string | undefined): reado
   if (named) return [named]
   return (model && AGY_EFFORTS_OF.get(model)) || AGY_EFFORTS_EVERY_MODEL_TAKES
 }
-
-export const needsModel = (backend: BackendId): boolean => NAMED_MODELS[backend].length > 0
 
 export function effortNotTaken(
   backend: BackendId,

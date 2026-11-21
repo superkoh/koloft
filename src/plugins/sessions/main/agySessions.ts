@@ -72,8 +72,8 @@ import {
   titleCommandIn,
   trustsIn
 } from '../../../main/agyAccounts'
-import { readJson } from '../../../main/museAccounts'
-import { LineTail } from '../../../main/museSessionLog'
+import { readJson } from '../../../main/jsonDrops'
+import { LineTail } from '../../../main/lineTail'
 import { bracketedPaste } from '@core/typeKeys'
 import { TAB_TMUX_NAME_SH, tmuxSessionName } from '../../../main/remote/launch'
 import {

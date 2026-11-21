@@ -5,10 +5,9 @@ import { OTHER_AGENTS_ON_THE_MACHINE, REMOTE_WS_NAME } from './remote'
 import type { InstructionsVersion } from '../../../src/core/ownerInstructions'
 import type { BackendId } from '../../../src/shared/types'
 
-export const AGENT_LABEL: Record<BackendId, 'Claude' | 'Codex' | 'Muse' | 'Antigravity'> = {
+export const AGENT_LABEL: Record<BackendId, 'Claude' | 'Codex' | 'Antigravity'> = {
   claude: 'Claude',
   codex: 'Codex',
-  muse: 'Muse',
   agy: 'Antigravity'
 }
 const AN_ASK_SHOWS_WITHIN_MS = 20_000

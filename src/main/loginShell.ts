@@ -59,7 +59,7 @@ export async function readLoginShell(opts: {
   return { probed, env }
 }
 
-const AGENT_COMMANDS = ['claude', 'codex', 'muse', 'agy'] as const
+const AGENT_COMMANDS = ['claude', 'codex', 'agy'] as const
 export type AgentCommand = (typeof AGENT_COMMANDS)[number]
 
 interface AgentsInLoginShell {
