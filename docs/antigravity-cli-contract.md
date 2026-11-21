@@ -1312,20 +1312,27 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
   to keep "standing rules … from user instructions"; only the transcript file keeps the
   step. No `SessionStart` fires on the resume or the compaction, so a newer text the
   relaunch had never arrived either.
-- **A `PreInvocation` `ephemeralMessage` puts them back.** Same build and set-up, the hook
-  rendered from `AGY_HOOK_SCRIPT` and installed as Koloft installs it, with texts of
-  24,000 characters (about 28.9 KB) holding newlines, tabs, quotes, backticks, `$HOME`,
-  `$(whoami)`, `\`, `%s`, `!!`, `{{x}}`, Chinese and an emoji. The hook's `transcriptPath`
-  holds the `"type":"CHECKPOINT"` step from the compaction on. Before the compaction the
-  text was in each request once (the `SessionStart` copy); after it, every request held
-  the text of the launch it ran in once, as one exact string: the first launch's without
-  a resume, the relaunch's after a `--conversation` resume (2 runs each). After a
-  `run_command` it rode at the end of `functionResponse.response.output`. The previous
-  call's copy is not sent again, but the transcript keeps each as an `EPHEMERAL_MESSAGE`
-  step (about 25.5 KB each here; 33 KB → 159 KB over 5 calls). Automatic compaction was
-  not reached (a 1.26 MB injected text arrived cut, a 1 MB pasted prompt was never sent),
-  so that it writes the same step for the hook to see is inferred from the bullet above,
-  not checked. The Mac build was not run.
+- **A `systemMessage` step a `PreInvocation` hook prints is kept like a `SessionStart`
+  one.** Same build and set-up. Printed once after a compaction, it is stored once (a
+  `{"source":"SYSTEM_SDK","type":"SYSTEM_MESSAGE"}` step whose content says "injected by
+  a PreInvocation hook:") and sent once in every later request (`contents[2]`, after the
+  summary), also after a `run_command` and after a `--conversation` resume. Printed on
+  every call, the copies pile up, one more each call. One `injectSteps` array holding a
+  `systemMessage` and an `ephemeralMessage` makes both arrive in the same request.
+  - The hook rendered from `AGY_HOOK_SCRIPT` and installed as Koloft installs it, with
+    texts of 24,000 characters (about 28.9 KB) holding newlines, tabs, quotes,
+    backticks, `$HOME`, `$(whoami)`, `\`, `%s`, `!!`, `{{x}}`, Chinese and an emoji, 2
+    runs each: before a compaction the text was in each request once (the `SessionStart`
+    copy); after it, every request held the text once, as one exact string — the first
+    launch's without a resume, the relaunch's when the compaction came after a
+    `--conversation` resume, still the same one after a second resume. A second
+    `/compact` dropped the older copy and the hook put it back once. A `/fork` after a
+    compaction carried the copy: the fork's own `transcript_full.jsonl` starts at the
+    fork and holds no `CHECKPOINT`, and no `SessionStart` fires for it.
+  - Automatic compaction was not reached (a 1.26 MB injected text arrived cut, a 1 MB
+    pasted prompt was never sent), so that it writes the same `CHECKPOINT` step for the
+    hook to see is inferred from the bullet above, not checked. The Mac build was not
+    run.
 
 ## §18 Fork
 
