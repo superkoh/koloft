@@ -4388,6 +4388,7 @@ app.whenReady().then(() => {
   const butlerNow = butler
   const roomsNow = new Rooms({
     link,
+    on: discordOn,
     owner: () => bindingNow.owner(),
     lobby: () => bindingNow.channel(),
     rooms: () => bindingNow.rooms(),
