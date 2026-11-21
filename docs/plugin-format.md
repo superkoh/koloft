@@ -990,12 +990,12 @@ parts it builds and hands to the starts as deps, and the types and helpers they 
 
 `npm run check:plugin-imports` lists each import under `src/` that breaks the rule; it does
 not read the tests. It only reports and never fails the build. On `main` at the commit this
-page was last checked against, it listed 646 imports, in five kinds:
+page was last checked against, it listed 649 imports, in five kinds:
 
 | Kind | Count | What it is |
 |---|---|---|
 | names a plugin outside the lists | 144 | app code, mostly `src/main/`, that imports a plugin's `api.ts`, `main/` or `shared/` files directly |
-| imports `src/shared/` | 268 | plugin code that imports `src/shared/`, which is not core |
+| imports `src/shared/` | 271 | plugin code that imports `src/shared/`, which is not core |
 | imports app code outside `src/core` | 224 | plugin code that imports the app's own code, such as `src/main/` modules or the window's store, icons and slots |
 | imports the `api.ts` of a plugin not in its needs | 6 | Discord's code using Sessions core's `api.ts`, and Sessions core's hook scripts using Discord's and the Butler's |
 | imports a plugin past its `api.ts` and `windowApi.ts` | 4 | Discord's code that imports Sessions core's `main/` files for its question cards |
