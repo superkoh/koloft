@@ -1361,6 +1361,7 @@ const MENU_SHORTCUT_CHANNEL: {
   'new-session': CH.shortcut.newSession,
   'new-worktree-session': CH.shortcut.newWorktreeSession,
   'close-tab': CH.shortcut.closeTab,
+  'close-session': CH.shortcut.closeSession,
   find: CH.shortcut.find,
   'find-files': CH.shortcut.findFiles,
   'check-update': CH.shortcut.checkUpdate,
@@ -2153,11 +2154,7 @@ const sessionDeps: SessionVerbDeps = {
           tellTheOwner(text)
           tellStarter(target, text)
         }
-        const closed = await closeSessionFully(target, undefined, tell).catch((error) => {
-          tell(`${target.title}: ${String(error)}`)
-          return false
-        })
-        if (!closed) return
+        if (!(await closeOrTell(target, tell))) return
       }
     }, CLOSE_AFTER_THE_CALLER_READS_ITS_REPLY_MS),
   overseer: { is: isButlerNow, target: butlerTarget, folder: butlerFolderNow, ...butlersWords },
@@ -4519,7 +4516,7 @@ app.whenReady().then(() => {
       if (
         pageRouting.keptBySignInWindow(
           from,
-          action === 'close-tab' ? 'closes-it' : 'acts-on-the-app'
+          action === 'close-tab' || action === 'close-session' ? 'closes-it' : 'acts-on-the-app'
         )
       )
         return
@@ -5180,10 +5177,15 @@ async function closeSessionFully(
   info?: ProjectInfo,
   tell = tellTheOwner
 ): Promise<boolean> {
-  await treeRemovals.settled(target.treeRoot)
-  const where = info ?? projectInfoFor(target.treeRoot)
-  const close = (): Promise<boolean> => endAndRemove(target, where, tell)
-  return where.worktreeName ? treeRemovals.run(where.treeRoot, close) : close()
+  workspaceMgr?.hideWhileClosing(target.sessionId)
+  try {
+    await treeRemovals.settled(target.treeRoot)
+    const where = info ?? projectInfoFor(target.treeRoot)
+    const close = (): Promise<boolean> => endAndRemove(target, where, tell)
+    return await (where.worktreeName ? treeRemovals.run(where.treeRoot, close) : close())
+  } finally {
+    workspaceMgr?.closingEnded(target.sessionId)
+  }
 }
 
 async function endAndRemove(
@@ -5256,6 +5258,27 @@ function cronRunTree(root: string, worktree?: string): ProjectInfo {
 }
 
 const NO_SESSION_FOR_THE_RUN = "Koloft cannot find this run's session."
+const NO_SESSION_TO_CLOSE = 'Koloft cannot find this session in the list.'
+const ON_ANOTHER_MACHINE =
+  'It runs on another machine, where Koloft cannot check what closing it would lose.'
+const THE_OWNERS_AI = 'It is your AI helper, which Koloft keeps open.'
+
+function closableInTab(sessionId: string, tabId: string): ClosableSession | string {
+  const live = sessionOfTab(tabId)
+  if (live?.sessionId && live.sessionId !== sessionId) return NO_SESSION_TO_CLOSE
+  const found = live?.sessionId ? live : closableSessions().find((s) => s.sessionId === sessionId)
+  if (!found || (found.tabId && found.tabId !== tabId)) return NO_SESSION_TO_CLOSE
+  if (hostOfTab(tabId) === 'ssh' || isRemoteKey(found.treeRoot)) return ON_ANOTHER_MACHINE
+  if (isButlerNow(tabId)) return THE_OWNERS_AI
+  return { ...found, sessionId, tabId }
+}
+
+function closeOrTell(target: ClosableSession, tell: (text: string) => void): Promise<boolean> {
+  return closeSessionFully(target, undefined, tell).catch((error) => {
+    tell(`${target.title}: ${String(error)}`)
+    return false
+  })
+}
 
 async function whatClosingTheRunWouldLose(
   tabId: string,
@@ -6648,6 +6671,29 @@ const startedPlugins: PluginsStarted = startPlugins(
         archive: archiveSession,
         setResident: (id, on) => workspaceMgr?.setResident(id, on),
         killTab: (tabId) => killTabPty(tabId),
+        closingLoses: async (id, tabId) => {
+          const found = closableInTab(id, tabId)
+          if (typeof found === 'string') return [found]
+          return whatClosingWouldLose(
+            found,
+            undefined,
+            Date.now() + A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS
+          )
+        },
+        closeFully: async (id, tabId) => {
+          const found = closableInTab(id, tabId)
+          if (typeof found === 'string') return tellTheOwner(found)
+          const left = await whatClosingWouldLose(
+            found,
+            undefined,
+            Date.now() + A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS
+          )
+          if (left.length)
+            return tellTheOwner(
+              `Koloft did not close ${found.title}: closing it now would lose this.\n${left.join('\n')}`
+            )
+          await closeOrTell(found, tellTheOwner)
+        },
         leftovers: () => leftovers,
         stopLeftover: async (sessionId, pid) => {
           const stopped = await stopLeftover(sessionId, pid)

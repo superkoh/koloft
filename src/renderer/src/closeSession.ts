@@ -3,10 +3,10 @@ import { SHIM_FOUND_NO_ACCOUNT_EXIT, SHIM_FOUND_NO_ACCOUNT_NOTICE } from '@share
 import { isSessionKind, type SessionBackend } from './agentUi'
 import type { SessionInfo, TabKind, TerminalExit } from '@shared/types'
 
+export type BusyStatus = 'working' | 'approval'
+
 export type CloseIntent =
-  | { kind: 'none' }
-  | { kind: 'close' }
-  | { kind: 'confirm'; status: 'working' | 'approval'; title: string }
+  { kind: 'none' } | { kind: 'close' } | { kind: 'confirm'; status: BusyStatus; title: string }
 
 export const CLOSE_CONFIRM_TITLE = 'Close running session?'
 
@@ -23,19 +23,61 @@ export function closeTabIntent(
   return { kind: 'close' }
 }
 
-export function closeConfirmBody(
-  title: string,
-  status: 'working' | 'approval',
-  dirty: string[] = []
-): string {
-  const lead =
-    status === 'approval'
-      ? `"${title}" has a pending permission prompt. Closing will discard it.`
-      : `"${title}" is still working on a task. Closing will interrupt the current turn.`
+function busyLead(title: string, status: BusyStatus): string {
+  return status === 'approval'
+    ? `"${title}" has a pending permission prompt. Closing will discard it.`
+    : `"${title}" is still working on a task. Closing will interrupt the current turn.`
+}
+
+export function closeConfirmBody(title: string, status: BusyStatus, dirty: string[] = []): string {
   const files = dirty.length
     ? ` It also has unsaved changes in ${unsavedFilesPhrase(dirty)}, which closing will lose.`
     : ''
-  return `${lead}${files} The session stays in the list and can be resumed anytime.`
+  return `${busyLead(title, status)}${files} The session stays in the list and can be resumed anytime.`
+}
+
+export interface FullCloseTarget {
+  tabId: string
+  sessionId: string
+  title: string
+  status?: BusyStatus
+}
+
+export function fullCloseTarget(
+  tab:
+    | (Parameters<typeof closeTabIntent>[0] & {
+        jobId?: string
+        sessionId?: string
+        resuming?: boolean
+        asleep?: true
+      })
+    | undefined,
+  sessions: SessionInfo[]
+): FullCloseTarget | null {
+  if (!tab || !isSessionKind(tab.kind) || tab.ended || tab.jobId !== undefined) return null
+  const bound = sessions.find((s) => s.tabId === tab.id)
+  if (bound?.overseer) return null
+  const sessionId = bound?.sessionId || ((tab.resuming || tab.asleep) && tab.sessionId)
+  if (!sessionId) return null
+  const intent = closeTabIntent(tab, sessions)
+  return {
+    tabId: tab.id,
+    sessionId,
+    title: bound?.title || tab.title,
+    ...(intent.kind === 'confirm' && { status: intent.status })
+  }
+}
+
+export const FULL_CLOSE_TITLE = 'Close session for good?'
+export const FULL_CLOSE_CHECKING = 'Checking what closing would lose…'
+
+export function fullCloseBody(title: string, status?: BusyStatus): string {
+  const busy = status ? `${busyLead(title, status)} ` : ''
+  return `${busy}Closing "${title}" for good ends it, takes its row out of the list and deletes its git worktree and branch if it has one. It cannot be resumed from the list afterwards.`
+}
+
+export function fullCloseRefusedBody(title: string): string {
+  return `Koloft cannot close "${title}" for good. You can still close just its tab: the session stays in the list.`
 }
 
 export const UNSAVED_TITLE = 'Unsaved changes'

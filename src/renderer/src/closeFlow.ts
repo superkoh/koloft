@@ -1,4 +1,4 @@
-import { closeTabIntent } from './closeSession'
+import { closeTabIntent, fullCloseTarget } from './closeSession'
 import { releaseResume } from './resumeFlow'
 import { useStore } from './store'
 import { dirtyIn, discardAll, labelPaths, saveAll } from './unsavedGuard'
@@ -48,4 +48,20 @@ export function requestCloseTab(tabId: string | null): void {
     return
   }
   close()
+}
+
+export function requestCloseSession(tabId: string | null): void {
+  const st = useStore.getState()
+  const tab = st.tabs.find((t) => t.id === tabId)
+  const target = fullCloseTarget(tab, st.sessions)
+  if (!target) return requestCloseTab(tabId)
+  st.setFullClose({ ...target, left: null })
+  const answer = (left: string[]): void => {
+    const shown = useStore.getState().fullClose
+    if (shown?.tabId === target.tabId && shown.sessionId === target.sessionId)
+      useStore.getState().setFullClose({ ...shown, left })
+  }
+  window.api.sessions
+    .closingLoses(target.sessionId, target.tabId)
+    .then(answer, (error: unknown) => answer([String(error)]))
 }
