@@ -31,7 +31,7 @@ export const bytesLeft = (left: number): string =>
 export const overTheLimit = (over: number): string =>
   `The instructions are ${over.toLocaleString('en-US')} over the limit.`
 
-export function withNewVersion(
+function withNewVersion(
   versions: readonly InstructionsVersion[] | undefined,
   text: string,
   by: string,
@@ -64,11 +64,12 @@ export function savedVersions(
   raw: string,
   by: string,
   at: number,
-  maxBytes: number
+  maxBytes: number,
+  sayHowFarOver: (over: number) => string = overTheLimit
 ): VersionsSaved {
   const text = cleanInstructions(raw)
   const over = instructionsBytes(text) - maxBytes
-  if (over > 0) return { ok: false, error: overTheLimit(over) }
+  if (over > 0) return { ok: false, error: sayHowFarOver(over) }
   return { ok: true, versions: withNewVersion(versions, text, by, at) }
 }
 
