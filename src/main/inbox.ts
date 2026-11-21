@@ -221,8 +221,7 @@ export class Inbox {
       'blocks',
       'suggestion',
       'actions',
-      'links',
-      'dismissButton'
+      'links'
     ]
     const merged: InboxCardInput = { key, title: card.title, level: card.level }
     for (const k of keys) (merged as Record<string, unknown>)[k] = card[k]

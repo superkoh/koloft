@@ -693,7 +693,6 @@ export interface AttentionEvent extends AttentionSubject {
   fyi?: boolean
   wasAsking?: boolean
   stoppedByRestart?: boolean
-  note?: string
 }
 
 export interface OsOutletsSeenByTests {
@@ -1172,7 +1171,6 @@ export interface CoreApi {
     removeConfirmed(path: string): Promise<void>
     move(path: string, before: string | null): Promise<void>
     historyRows(path: string, opts?: { quiet: boolean }): Promise<SessionRow[]>
-    pluginOwnRow(ref: string): Promise<{ row: SessionRow; workspace: string } | null>
     rows(): Promise<WorkspaceRows[]>
     onRows(cb: (rows: WorkspaceRows[]) => void): () => void
     fetchFreshness(path: string): Promise<WorkspaceFreshness | null>
@@ -1490,7 +1488,6 @@ export interface BackendSessionRow {
 export interface SessionRow extends BackendSessionRow, SessionSource {
   resident?: boolean
   parentId?: string
-  pluginOwn?: true
 }
 
 export interface SearchSnippet {

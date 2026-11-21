@@ -286,48 +286,6 @@ test('a card a session posts with koloft inbox shows in the Inbox; its button se
   await expect(await doneStatus(page, 'Pull request 8')).toContainText('Merged')
 })
 
-test('a card with buttons that asks for its Dismiss as a button shows it beside them, and it closes the card as Dismissed; a card that does not ask keeps it in ⋯', async ({
-  page
-}) => {
-  await waitBooted(page)
-  await startSessionIn(page, 'ws-a')
-  const row = wsRows(page, 'ws-a').first()
-  await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 15_000 })
-  const tabId = (await row.getAttribute('data-tab-id')) as string
-  const card = (title: string, dismissButton: boolean): string =>
-    JSON.stringify({
-      title,
-      level: 'high',
-      blocks: [{ type: 'input', id: 'note', placeholder: 'Tell it otherwise…' }],
-      actions: [
-        {
-          id: 'send',
-          label: 'Send',
-          style: 'main',
-          takes: ['note'],
-          run: { type: 'session', session: 'card', message: '{answer:note}' }
-        }
-      ],
-      ...(dismissButton && { dismissButton })
-    })
-  await runIn(page, centerTerm(page), `/koloft inbox add plain -- '${card('Plain card', false)}'`)
-  await runIn(page, centerTerm(page), `/koloft inbox add seen -- '${card('Seen card', true)}'`)
-  await expect
-    .poll(() => terminalText(page, tabId), { timeout: 15_000 })
-    .toContain('Added card seen.')
-  await openInbox(page)
-  const seen = inboxCard(page, 'Seen card')
-  await seen.click()
-  await expect(seen.locator('.ibx-foot .ibx-btn')).toHaveText(['Dismiss', 'Send'])
-  const plain = inboxCard(page, 'Plain card')
-  await plain.click()
-  await expect(plain.locator('.ibx-foot .ibx-btn')).toHaveText(['Send'])
-  await seen.click()
-  await seen.locator('.ibx-foot .ibx-btn', { hasText: 'Dismiss' }).click()
-  await expect(seen).toHaveCount(0)
-  await expect(await doneStatus(page, 'Seen card')).toContainText('Dismissed')
-})
-
 test('the Inbox menus — a card’s ⋯, More ▾, Sort and a filter — close on Escape like the app’s other menus, and on a click outside, even on another card’s Open button', async ({
   page
 }) => {

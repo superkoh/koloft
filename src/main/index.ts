@@ -509,23 +509,19 @@ import { roomLink, Rooms, whereOf, type RoomSubject } from '@plugins/discord/mai
 import { accentOf } from '@plugins/discord/main/cards'
 import { AskButtons } from '@plugins/discord/main/buttons'
 import { SlashCommands, toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
-import { folderOf, startBeside } from '@plugins/sessions/main/sessionTabs'
 import { toChannel } from '@plugins/discord/main/slash'
 import { TabLifecycle, subscribeTabSubsystems } from '@plugins/sessions/main/tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from '@plugins/discord/main/interactions'
 import { clicksTheMouse, pressesAKey, typeKeys } from '@core/typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import {
-  askFromClaude,
-  askFromCodex,
   claudeDialog,
   codexDialog,
   isAskedCall,
   questionsOf,
   type CodexApproval,
   type CodexQuestion,
-  type DialogView,
-  type KoloftAsk
+  type DialogView
 } from '@plugins/sessions/main/dialog'
 import { sleep } from '@core/sleep'
 import {
@@ -577,7 +573,6 @@ import {
   TURN_OVER,
   ATTENTION_CHANGED,
   DIALOG_CLOSED,
-  STEP_LET_GO,
   TURN_STARTED,
   type LeftTab,
   type Moment,
@@ -596,7 +591,15 @@ import { pushAsks as pushSecretAsks } from '@plugins/passwords/main/channels'
 import { pushOpenFile } from '@plugins/workbench/main/channels'
 import { INBOX_SENDER, Inbox } from './inbox'
 import { flushInbox, loadInbox, saveInbox } from './inboxFile'
-import { inboxFooter, where, KoloftInbox, type AskedSession } from './koloftInbox'
+import {
+  askFromClaude,
+  askFromCodex,
+  inboxFooter,
+  where,
+  KoloftInbox,
+  type AskedSession,
+  type KoloftAsk
+} from './koloftInbox'
 import { ClaudeDialogWatch } from './claudeDialogWatch'
 import {
   A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS,
@@ -628,10 +631,8 @@ import {
 import { TODO_NEWS } from '@plugins/todo/api'
 import { docsWritingOn } from '@plugins/docs-writing/api'
 import { StartedSessions } from '@plugins/sessions/main/startedSessions'
-import { PluginSessions } from '@plugins/sessions/main/pluginSessions'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
-import { HeldSteps } from '@plugins/sessions/main/heldSteps'
 import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
 import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
@@ -746,10 +747,6 @@ function storedOwnerOf(tabId: string): SessionsWithStore | undefined {
 const startedSessions = new StartedSessions(() =>
   path.join(app.getPath('userData'), 'started-sessions.json')
 )
-const shownUnder = new StartedSessions(() => path.join(app.getPath('userData'), 'shown-under.json'))
-const pluginSessions = new PluginSessions(() =>
-  path.join(app.getPath('userData'), 'plugin-sessions.json')
-)
 const readerDocs = new ReaderDocs({
   file: () => path.join(app.getPath('userData'), 'doc-verdicts.json'),
   assist: (job) => assist(job),
@@ -769,9 +766,6 @@ const sessionBackends = new SessionBackends({
     if (!idleCompaction) attention.bound(tabId, key)
     announceNow(SESSION_BOUND, { tabId, key, idleCompaction })
     startedSessions.bound(tabId, key)
-    shownUnder.bound(tabId, key)
-    pluginSessions.bound(tabId, key)
-    if (pluginSessions.own(tabId)) pluginTabStaysAwake()
     ptyMgr.agentBound(tabId)
     ptyMgr.wakeReady(tabId)
   },
@@ -787,7 +781,6 @@ const sessionBackends = new SessionBackends({
   }
 })
 sessionBackends.isOverseerSession = (id) => !!butler?.isButlerSession(id)
-sessionBackends.ownedByAPlugin = (id) => pluginSessions.own(id)
 sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
 sessionBackends.askingOf = (tabId) => {
   if (tracker.statusOf(tabId) !== 'approval') return undefined
@@ -808,13 +801,10 @@ function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
 
-const heldSteps = new HeldSteps()
 const newsJudge = new NewsJudge({
   judge: (turn) => judgeTurn(assist, turn),
   awaitingVerdict: (tabId) => attention.awaitingVerdict(tabId),
-  markFyi: (tabId) => attention.markFyi(tabId),
-  holdsTurn: (tabId) => attention.holdsTurn(tabId),
-  judgedWhileHeld: (tabId, verdict) => heldSteps.judged(tabId, verdict)
+  markFyi: (tabId) => attention.markFyi(tabId)
 })
 newsJudge.onVerdict((tabId, verdict) => koloftInbox.judged(tabId, verdict))
 
@@ -977,8 +967,6 @@ const attention = new AttentionTracker((pending, event) => {
 attention.asleep = (tabId) => sleepers.has(tabId)
 attention.watching = () => (windowFocused() ? uiActiveTabId : null)
 attention.turnDone = (tabId) => newsJudge.marked(tabId)
-attention.claim = (tabId, step) => heldSteps.reached(tabId, step)
-attention.ownedByAPlugin = (tabId) => pluginSessions.own(tabId)
 // ADR-0039
 attention.outlivesKoloft = (tabId) => !!remoteHostOfTab(tabId)
 attention.waitsOnAnother = (tabId) => {
@@ -1036,7 +1024,7 @@ function openTabOf(s: SessionInfo): OpenTab {
     sessionId: s.sessionId,
     kind: s.backendId,
     title: sidebarTitle(s) ?? s.title,
-    cwd: folderOf(s),
+    cwd: s.remote ? formatRemoteKey(s.remote.host, s.cwd) : s.cwd,
     tabIds: tabIdsOf(s.tabId)
   }
 }
@@ -1105,7 +1093,6 @@ function sleepTab(tabId: string): void {
 
 function forgetSleeper(tabId: string): void {
   sleepers.forget(tabId)
-  answerableForAPlugin.delete(tabId)
   attention.clearKeepingExit(tabId)
   sendToRenderer(CH.tab.killedByMain, tabId)
   tabLifecycle.emit('forgotten', tabId)
@@ -1150,12 +1137,6 @@ const presence = new OwnerPresence({
   }
 })
 const AWAY_CHECKED_EVERY_MS = 30_000
-const A_PLUGIN_SESSION_IS_LOOKED_FOR_MS = 10_000
-
-function pluginTabStaysAwake(): void {
-  ownerAsleep.awakeTabsChanged()
-  syncAnswerable()
-}
 function handsOnKoloft(_e: unknown, input: { type: string }): void {
   if (isHandsOn(input.type)) presence.handsOn()
 }
@@ -1175,9 +1156,8 @@ const ownerAsleep = new OwnerAsleep({
   },
   awakeTabs: () => {
     const tab = butler?.liveTab()
-    return [...(tab ? [tab] : []), ...agentTabIds().filter((t) => pluginSessions.own(t))]
+    return tab ? [tab] : []
   },
-  askClaimed: (tabId) => heldSteps.askClaimed(tabId),
   tabs: agentTabIds,
   asked: async (tabId) => {
     const stored = await pendingAskOf(tabId)
@@ -1556,7 +1536,6 @@ type OwnerAsk = SecretAsk & { taps?: TapRounds }
 let secretAsks: SecretAsks<OwnerAsk> | null = null
 let instructionAsks: InstructionAsks | null = null
 const answerable = new Set<string>()
-const answerableForAPlugin = new Set<string>()
 let hookRegDir: string | undefined
 let guard: ResourceGuard | undefined
 let writeHookSettings:
@@ -1654,9 +1633,7 @@ function syncAnswerable(): void {
   for (const s of allSessions()) {
     if (!s.alive || capabilitiesFor(s.backendId, s.host).askHookWaitsForDiscord !== true) continue
     const on =
-      ownerAsleep.answersFor(s.tabId) ||
-      (discordConnected && !!binding.channelOfTab(s.tabId)) ||
-      answerableForAPlugin.has(s.tabId)
+      ownerAsleep.answersFor(s.tabId) || (discordConnected && !!binding.channelOfTab(s.tabId))
     if (on === answerable.has(s.tabId)) continue
     if (on) answerable.add(s.tabId)
     else answerable.delete(s.tabId)
@@ -2548,7 +2525,6 @@ const agentRequests = new AgentRequests({
     const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
     return !!backend && agentToolsFor(backend, hostOfTab(tabId))
   },
-  commandsOf: (tabId) => pluginSessions.of(tabId)?.commands,
   alive: pidAlive
 })
 
@@ -3812,7 +3788,6 @@ app.whenReady().then(() => {
     if (!restarting) earlierTabIds.delete(e.id)
     ownerTouchedAt.delete(e.id)
     questionSeen.delete(e.id)
-    if (!restarting && !asleep) answerableForAPlugin.delete(e.id)
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     guard?.forget(e.id)
@@ -4131,8 +4106,7 @@ app.whenReady().then(() => {
     killRemoteSession: (host, sessionId) =>
       claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
     hiddenRow: (id) => sessionBackends.isOverseerSession(id),
-    parentOf: (rowId) => startedSessions.parentOfRow(rowId) ?? shownUnder.parentOfRow(rowId),
-    ownedByAPlugin: (rowId) => pluginSessions.own(rowId),
+    parentOf: (rowId) => startedSessions.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
     scratchRoots: scratchRootsAround(os.homedir(), os.tmpdir()),
     claimedFolder: butlersFolderClaim(userData),
@@ -4157,6 +4131,7 @@ app.whenReady().then(() => {
     isButlerTab: (tabId) => !!butler?.isButlerTab(tabId)
   })
   discordBinding = bindingNow
+  attention.turnTakenElsewhere = discordChannels.turnTakenOnDiscord
   butler = new Butler({
     userData,
     realpath: realpathSafe,
@@ -4448,7 +4423,6 @@ app.whenReady().then(() => {
     },
     owner: () => bindingNow.owner(),
     ownerAway,
-    askClaimed: (tabId) => heldSteps.askClaimed(tabId),
     ownerWrote: ownerCameBack,
     butlerName: butlerNameNow,
     destinationOf: (channelId) =>
@@ -4807,8 +4781,6 @@ app.on('before-quit', (e) => {
     browserTunnels.cancelOnQuit()
     pageForwards.cancelOnQuit()
   }
-  const heldMarks = attention.heldMarks()
-  if (!quitCommitted && heldMarks.length) saveAttention([...attention.list(), ...heldMarks])
   quitCommitted = true
   guard?.liftAllBeforeQuitting()
   if (!storedQuitStopped && storedSessions().some((s) => s.hasProcesses())) {
@@ -5287,8 +5259,6 @@ function archiveSession(id: string): boolean {
     koloftInbox.sessionGone(id, 'Its session was deleted')
     attention.clearSession(id)
     startedSessions.forget(id)
-    shownUnder.forget(id)
-    pluginSessions.forget(id)
     readerDocs.forget(id)
   }
   return archived
@@ -6400,13 +6370,6 @@ function registerIpc(): void {
     if (typeof oldTabId !== 'string' || typeof newTabId !== 'string') return
     ptyMgr.moveOwner(oldTabId, newTabId)
     startedSessions.moved(oldTabId, newTabId)
-    shownUnder.moved(oldTabId, newTabId)
-    pluginSessions.moved(oldTabId, newTabId)
-    if (pluginSessions.own(newTabId)) pluginTabStaysAwake()
-    if (answerableForAPlugin.delete(oldTabId)) {
-      answerableForAPlugin.add(newTabId)
-      syncAnswerable()
-    }
     sessionCommand.tabMoved(oldTabId, newTabId)
     koloftInbox.rebound(oldTabId, newTabId)
     cronRunner?.tabMoved(oldTabId, newTabId)
@@ -6664,23 +6627,6 @@ function registerIpc(): void {
   ipcMain.handle(CH.workspace.historyRows, (_e, p: string, opts?: { quiet: boolean }) =>
     sessionBackends.historyRows(p, opts?.quiet ? () => {} : historyPartlyUnread)
   )
-  ipcMain.handle(CH.workspace.pluginOwnRow, async (_e, ref: string) => {
-    if (typeof ref !== 'string' || !pluginSessions.own(ref)) return null
-    const known = workspaceMgr?.workspaceOf(ref)
-    const workspaces = known ? [{ path: known }] : (workspaceMgr?.pinnedPaths() ?? [])
-    return Promise.any(
-      workspaces.map(async ({ path: workspace }) => {
-        const rows = await within(
-          sessionBackends.historyRows(workspace, () => {}, true),
-          A_PLUGIN_SESSION_IS_LOOKED_FOR_MS,
-          'its history did not come'
-        )
-        const row = rows.find((r) => r.id === ref)
-        if (!row) throw new Error('not in this workspace')
-        return { row, workspace }
-      })
-    ).catch(() => null)
-  })
 
   const usageCache = new UsageCache({
     cacheFile: () => path.join(app.getPath('userData'), 'usage-cache-4.json'),
@@ -6916,56 +6862,6 @@ const startedPlugins: PluginsStarted = startPlugins(
         worktrees: async (p) => (await workspaceMgr?.worktrees(p)) ?? [],
         storedSessions,
         dirExists: (dir) => hosts.of(dir).dirExists(dir)
-      },
-      tabs: {
-        askOf: inboxAskOf,
-        answer: answerSession,
-        placeOf: (tabId) => {
-          const s = sessionOfTab(tabId)
-          const workspace = sessionBackends.workspaceOfTab(tabId)
-          return s && workspace
-            ? { workspace, folder: folderOf(s), machine: s.remote?.host }
-            : undefined
-        },
-        ownerWordsOf: (tabId) => sessionCommand.ownerWordsIn(tabId),
-        lookedAt: () => attention.watching(),
-        ownerTypedSince: (tabId, at) => (touchedAt.get(tabId) ?? 0) >= at,
-        waitsOnAnother: (tabId) => attention.waitsOnAnother(tabId),
-        butlerSide,
-        markAnswerable: (tabId, on) => {
-          if (on) answerableForAPlugin.add(tabId)
-          else answerableForAPlugin.delete(tabId)
-          syncAnswerable()
-        },
-        tellAs: (tabId, opening, text) => sessionCommand.tellAs(tabId, opening, text),
-        holdSteps: (holder) => heldSteps.hold(holder),
-        letGo: (tabId, note) => {
-          const markHeld = attention.letGo(tabId, note)
-          const askHeld = heldSteps.letGo(tabId)
-          if (markHeld) newsJudge.letGo(tabId)
-          if (markHeld || askHeld) announceNow(STEP_LET_GO, tabId)
-        },
-        take: (tabId) => {
-          attention.take(tabId)
-          heldSteps.letGo(tabId)
-          newsJudge.taken(tabId)
-        },
-        startBeside: async (tabId, spec) => {
-          const started = await startBeside(
-            {
-              sessionOfTab: (tab) => sessionDeps.allSessions().find((s) => s.tabId === tab),
-              launch: sessionDeps.launch,
-              pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
-              turnedOff: sessionDeps.turnedOff,
-              shownUnder,
-              keptForAPlugin: pluginSessions
-            },
-            tabId,
-            spec
-          )
-          if (started.ok && spec.own) pluginTabStaysAwake()
-          return started
-        }
       }
     },
     workbench: {
@@ -7039,11 +6935,9 @@ const startedPlugins: PluginsStarted = startPlugins(
         save: (butler) => {
           commitSettings({ butler })
         }
-      },
-      morning: ownerAsleep
+      }
     },
     inbox: {
-      sources: inbox,
       eachTurn: {
         inbox: koloftInbox,
         tookTheTurn: (tabId) => startedPlugins.sessions.tookTheTurn(tabId)
@@ -7096,10 +6990,6 @@ const startedPlugins: PluginsStarted = startPlugins(
         askChannelOf: askChannelOfTab,
         pendingAskOf,
         askUnreadablySoon
-      },
-      carriedTurns: {
-        steps: heldSteps,
-        carriedOnDiscord: discordChannels.turnTakenOnDiscord
       },
       endedTabs: {
         typing: () => discordTyping,

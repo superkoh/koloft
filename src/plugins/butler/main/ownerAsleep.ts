@@ -34,7 +34,6 @@ export interface OwnerAsleepDeps {
   machines(): string[]
   mark(machine: string, awakeTabs: string[] | null): Promise<boolean>
   awakeTabs(): string[]
-  askClaimed(tabId: string): boolean
   tabs(): string[]
   asked(tabId: string): Promise<AskedOwner | undefined>
   answer(tabId: string, reply: string): Promise<string | undefined>
@@ -82,10 +81,9 @@ function answeredLine(a: AnsweredForOwner, n: number): string {
 export function morningReport(
   sleptMs: number,
   changed: DigestItem[],
-  answered: AnsweredForOwner[],
-  fromPlugins: readonly string[] = []
+  answered: AnsweredForOwner[]
 ): string | undefined {
-  if (!changed.length && !answered.length && !fromPlugins.length) return undefined
+  if (!changed.length && !answered.length) return undefined
   const parts = [
     `${FROM_KOLOFT}The owner was asleep for ${howLong(sleptMs)} and is back now. Tell them in a few short sentences, in their language: what the sessions below got done, which are stuck and what each needs from them, and what Koloft answered for them while they slept.`
   ]
@@ -97,7 +95,7 @@ export function morningReport(
     parts.push(
       `Koloft answered for the owner: ${answered.map((a, i) => answeredLine(a, i + 1)).join(' ')}`
     )
-  return [...parts, ...fromPlugins].join(' ')
+  return parts.join(' ')
 }
 
 function repliesTo(asked: AskedOwner): string[] {
@@ -106,11 +104,8 @@ function repliesTo(asked: AskedOwner): string[] {
   return [each(OWNER_ASLEEP_ANSWER), each(FIRST_OPTION)]
 }
 
-export type MorningLines = (sleptAt: number) => readonly string[]
-
 export class OwnerAsleep {
   private answered: AnsweredForOwner[]
-  private morningLines: MorningLines[] = []
   private settled = new Set<string>()
   private everMarked = new Set<string>()
   private generation = 0
@@ -149,23 +144,12 @@ export class OwnerAsleep {
       const text = morningReport(
         this.d.now() - sleptAt,
         this.d.changedSince(sleptAt),
-        this.answered,
-        this.morningLines.flatMap((lines) => {
-          try {
-            return lines(sleptAt)
-          } catch {
-            return []
-          }
-        })
+        this.answered
       )
       this.keepAnswered([])
       if (text) this.d.report(text)
     }
     this.awakeTabsChanged()
-  }
-
-  addToMorningReport(lines: MorningLines): void {
-    this.morningLines.push(lines)
   }
 
   awakeTabsChanged(): void {
@@ -198,7 +182,7 @@ export class OwnerAsleep {
   }
 
   async asks(tabId: string): Promise<void> {
-    if (!this.answersFor(tabId) || this.d.askClaimed(tabId)) return
+    if (!this.answersFor(tabId)) return
     const answering = this.answering.get(tabId)
     if (answering) return void (answering.askedAgain = true)
     const run = { askedAgain: false }
@@ -208,7 +192,7 @@ export class OwnerAsleep {
       do {
         run.askedAgain = false
         answeredText = await this.answerShowing(tabId, answeredText)
-      } while (run.askedAgain && this.answersFor(tabId) && !this.d.askClaimed(tabId))
+      } while (run.askedAgain && this.answersFor(tabId))
     } finally {
       this.answering.delete(tabId)
     }

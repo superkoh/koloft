@@ -2,12 +2,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { spawnSync } from 'child_process'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-
-const { A_PLUGINS_OPENING } = vi.hoisted(() => ({
-  A_PLUGINS_OPENING: "(From a plugin's watch, for the owner:) "
-}))
-vi.mock('../../../../src/core/openings', () => ({ PLUGIN_OPENINGS: [A_PLUGINS_OPENING] }))
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   agyLogLine,
   koloftHookEntry,
@@ -237,14 +232,13 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
   })
 
   // ADR-0031
-  it("quotes the owner's own newest words past a message from another session, a notice from Koloft, a message under an opening a plugin registered, and the note Koloft opens a butler with for a ⌘P request, in its older wording too", () => {
+  it("quotes the owner's own newest words past a message from another session, a notice from Koloft and the note Koloft opens a butler with for a ⌘P request, in its older wording too", () => {
     expect(
       quoteBeforeModelCall(
         transcriptWith(
           'mira primero la barra lateral',
           `${FROM_A_SESSION}"Fix docs", id abc:) Done: PR #12 is open.`,
           `${FROM_KOLOFT}origin/main moved from aaaaaaa to bbbbbbb.`,
-          `${A_PLUGINS_OPENING}Yes, merge pull request 212.`,
           A_HELPER_HAS_IT,
           '(From Koloft: the owner asked for something, and Koloft hands it to a helper of yours, which has the request and reports back to you. Nothing is needed from you now.)'
         )

@@ -99,7 +99,6 @@ function setup(
     download: async () => Buffer.from(''),
     owner: () => OWNER,
     ownerAway: () => true,
-    askClaimed: () => false,
     ownerWrote: () => {},
     butlerName: () => 'Assist',
     destinationOf: (c) => (c === CHANNEL ? conductor : undefined),
@@ -632,31 +631,6 @@ describe('DiscordRelay: an answer typed as keys counts only once the session sho
     relay.onMessage(message('602', OWNER, '2'))
     await vi.advanceTimersByTimeAsync(0)
     expect(reactions).toContain('602 +✅')
-  })
-})
-
-describe('DiscordRelay: a question a plugin claims', () => {
-  it('is not posted while the plugin claims it, and is posted once when the plugin lets it go', async () => {
-    let claimed = true
-    const question: CodexQuestion = {
-      id: 'q9',
-      questions: [{ question: 'Which colour?', options: [{ label: 'Red' }, { label: 'Green' }] }]
-    }
-    const { relay, posts } = setup({}, [], {
-      backendOf: () => 'codex',
-      pendingQuestion: () => question,
-      askClaimed: () => claimed
-    })
-    relay.codexAsked(TAB, question)
-    relay.askLetGo(TAB)
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(posts).toEqual([])
-    claimed = false
-    relay.askLetGo(TAB)
-    relay.askLetGo(TAB)
-    await vi.waitFor(() =>
-      expect(posts.map((p) => p.text)).toEqual([expect.stringContaining('Which colour?')])
-    )
   })
 })
 

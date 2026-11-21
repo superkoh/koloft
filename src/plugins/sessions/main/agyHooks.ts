@@ -22,7 +22,6 @@ import {
   TRANSCRIPT_LINES_SEARCHED_FOR_THE_LAST_NOTE
 } from './hooks'
 import { UUID } from './sessionStore'
-import { PLUGIN_OPENINGS } from '@core/openings'
 
 export const AGY_LOG_ENV = 'KOLOFT_AGY_LOG'
 export const AGY_START_ENV = 'KOLOFT_AGY_START'
@@ -34,12 +33,7 @@ export const AGY_COST_ENV = 'KOLOFT_AGY_COST'
 const EVENTS = ['SessionStart', 'PreInvocation', 'PreToolUse', 'PostToolUse', 'Stop'] as const
 type AgyHookName = (typeof EVENTS)[number]
 
-const NOT_THE_OWNERS_WORDS = [
-  FROM_A_SESSION,
-  FROM_KOLOFT,
-  A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
-  ...PLUGIN_OPENINGS
-]
+const NOT_THE_OWNERS_WORDS = [FROM_A_SESSION, FROM_KOLOFT, A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS]
   .map((opening) => `-e ${shq(`"content":"<USER_REQUEST>\\n${opening}`)}`)
   .join(' ')
 

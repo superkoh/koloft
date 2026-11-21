@@ -86,7 +86,6 @@ export interface RelayDeps {
   download(url: string): Promise<Buffer>
   owner(): string | undefined
   ownerAway(): boolean
-  askClaimed(tabId: string): boolean
   ownerWrote(): void
   butlerName(): string
   destinationOf(channelId: string): Destination | undefined
@@ -149,7 +148,6 @@ export class DiscordRelay {
   }
 
   private holds(tab: string): boolean {
-    if (this.d.askClaimed(tab)) return true
     if (this.reaches(tab)) {
       this.held.delete(tab)
       return false
@@ -175,10 +173,6 @@ export class DiscordRelay {
     this.answersDiscord(tab, 'turn')
     this.held.delete(tab)
     this.postOpenAsk(tab)
-  }
-
-  askLetGo(tab: string): void {
-    if (this.d.asks.dialogOpen(tab) || this.d.status(tab) === 'approval') this.postOpenAsk(tab)
   }
 
   private postOpenAsk(tab: string): void {
