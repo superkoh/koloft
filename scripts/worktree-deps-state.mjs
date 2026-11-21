@@ -3,7 +3,7 @@ import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 
 export const REINSTALL = 'node scripts/worktree-deps.mjs --here'
-const LONGEST_INSTALL_MS = 30 * 60_000
+const LONGEST_STEP_MS = 30 * 60_000
 
 const gitPath = (cwd, ...args) =>
   spawnSync('git', ['-C', cwd, 'rev-parse', '--path-format=absolute', ...args], {
@@ -32,14 +32,34 @@ function isAlive(pid) {
   }
 }
 
+function readLock(w) {
+  try {
+    return { text: fs.readFileSync(w.lock, 'utf8'), mtimeMs: fs.statSync(w.lock).mtimeMs }
+  } catch {
+    return undefined
+  }
+}
+
 export function depsState(w) {
   if (!w.linked) return 'ready'
-  if (fs.existsSync(w.lock)) {
-    const pid = Number(fs.readFileSync(w.lock, 'utf8'))
-    const young = Date.now() - fs.statSync(w.lock).mtimeMs < LONGEST_INSTALL_MS
+  const lock = readLock(w)
+  if (lock) {
+    const pid = Number(lock.text)
+    const young = Date.now() - lock.mtimeMs < LONGEST_STEP_MS
     return young && pid > 0 && isAlive(pid) ? 'installing' : 'failed'
   }
   return fs.existsSync(w.failed) ? 'failed' : 'ready'
+}
+
+export const lockText = (w) => readLock(w)?.text
+
+export function removeLockIfStill(w, text) {
+  if (text !== undefined && lockText(w) === text) fs.rmSync(w.lock, { force: true })
+}
+
+export function stillInstalling(w) {
+  const now = new Date()
+  fs.utimesSync(w.lock, now, now)
 }
 
 export function claimInstall(w) {
@@ -59,5 +79,5 @@ export function failureNote(w) {
   const said = fs.existsSync(w.failed)
     ? fs.readFileSync(w.failed, 'utf8').trim()
     : `Installing this worktree's node_modules stopped before it finished (log: ${w.log}).`
-  return `${said} Run \`${REINSTALL}\` in this worktree, then try again.`
+  return `${said} Run \`${REINSTALL}\` in this worktree (it installs node_modules from scratch), then try again.`
 }

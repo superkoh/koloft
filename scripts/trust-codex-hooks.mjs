@@ -131,6 +131,10 @@ function listProjectHooks(codex, codexHome, repo) {
         } catch {
           continue
         }
+        if (message.error && (message.id === 1 || message.id === 2))
+          fail(
+            `codex app-server answered: ${message.error.message ?? JSON.stringify(message.error)}`
+          )
         if (message.id === 1) {
           child.stdin.write(`${JSON.stringify({ method: 'initialized' })}\n`)
           child.stdin.write(

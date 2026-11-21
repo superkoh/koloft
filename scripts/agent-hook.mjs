@@ -12,8 +12,8 @@ const PATCHED_FILE = /^\*\*\* (?:Add File|Update File|Move to): (.+)$/gm
 const AGY_NOTES_FILE = 'koloft-dev-notes.txt'
 
 const [agent, check] = process.argv.slice(2)
-const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}')
-const cwd = input.cwd || ROOT
+let input = {}
+let cwd = ROOT
 
 const runScript = (name, args, stdin) =>
   spawnSync(process.execPath, [path.join(ROOT, 'scripts', name), ...args], {
@@ -42,7 +42,7 @@ function sessionStart() {
     detached: true,
     stdio: 'ignore'
   }).unref()
-  const said = `This worktree's node_modules is being installed in the background (log: ${worktree.log}). Until it finishes, Node resolves packages from the parent checkout: wait before building or testing here. A push waits for it too.`
+  const said = `This worktree's node_modules started installing in the background as this session began (log: ${worktree.log}). Until it finishes, Node resolves packages from the parent checkout: before building or testing here, check that the log has ended. A push waits for it on its own.`
   if (agent === 'codex') tellCodex('SessionStart', said)
   else console.log(JSON.stringify({ injectSteps: [{ systemMessage: { systemMessage: said } }] }))
 }
@@ -56,7 +56,8 @@ function shellCommand() {
 function beforeShellCommand() {
   const command = shellCommand()
   if (typeof command !== 'string' || !COULD_PUSH.test(command)) return
-  const r = runScript('push-checks.mjs', [], { cwd, tool_input: { command } })
+  const where = agent === 'agy' ? (input.toolCall.args?.Cwd ?? cwd) : cwd
+  const r = runScript('push-checks.mjs', [], { cwd: where, tool_input: { command } })
   if (r.status === 2) {
     const reason = r.stderr.trim()
     if (agent === 'agy') return console.log(JSON.stringify({ decision: 'deny', reason }))
@@ -106,4 +107,11 @@ const CHECKS = {
   'after-file-edit': afterFileEdit,
   'before-model-call': beforeModelCall
 }
-CHECKS[check]?.()
+try {
+  input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}')
+  cwd = input.cwd || ROOT
+  CHECKS[check]?.()
+} catch (e) {
+  console.error(`agent-hook: ${e.message}`)
+  process.exit(0)
+}

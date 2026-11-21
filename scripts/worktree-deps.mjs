@@ -1,6 +1,13 @@
 import fs from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { claimInstall, depsState, worktreeOf } from './worktree-deps-state.mjs'
+import {
+  claimInstall,
+  depsState,
+  lockText,
+  removeLockIfStill,
+  stillInstalling,
+  worktreeOf
+} from './worktree-deps-state.mjs'
 
 const SETUP_STEPS = [
   ['npm', ['ci']],
@@ -14,16 +21,18 @@ const cwd = process.argv.includes('--here')
   : JSON.parse(fs.readFileSync(0, 'utf8')).cwd
 const w = worktreeOf(cwd)
 if (!w.linked) process.exit(0)
+const deadLock = lockText(w)
 const state = depsState(w)
 if (state === 'installing' || (state === 'ready' && fs.existsSync(w.nodeModules))) process.exit(0)
-if (state === 'failed') fs.rmSync(w.lock, { force: true })
+if (state === 'failed') removeLockIfStill(w, deadLock)
 if (!claimInstall(w)) process.exit(0)
 if (state === 'failed') fs.rmSync(w.nodeModules, { recursive: true, force: true })
 
 const out = fs.openSync(w.log, 'w')
-const failedStep = SETUP_STEPS.find(
-  ([cmd, args]) => spawnSync(cmd, args, { cwd: w.root, stdio: ['ignore', out, out] }).status !== 0
-)
+const failedStep = SETUP_STEPS.find(([cmd, args]) => {
+  stillInstalling(w)
+  return spawnSync(cmd, args, { cwd: w.root, stdio: ['ignore', out, out] }).status !== 0
+})
 if (failedStep) {
   fs.rmSync(w.nodeModules, { recursive: true, force: true })
   const said =
