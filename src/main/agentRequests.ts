@@ -145,8 +145,7 @@ export class AgentRequests {
     if (!session) return refused(UNKNOWN_TAB)
     const [verb = 'help', ...args] = asksForHelp(req.argv) ? ['help'] : req.argv
     const allowed = this.deps.commandsOf?.(tabId)
-    const named = splitAtDashes(req.argv).before.filter((w) => w !== '--help')
-    if (allowed && !commandAllowed(named.length ? named : ['help'], allowed))
+    if (allowed && !commandAllowed([verb, ...args], allowed))
       return refused(onlyTheseCommands(allowed))
     return this.deps.commands.dispatch(verb, args, {
       tabId,

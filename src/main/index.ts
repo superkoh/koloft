@@ -771,7 +771,7 @@ const sessionBackends = new SessionBackends({
     startedSessions.bound(tabId, key)
     shownUnder.bound(tabId, key)
     pluginSessions.bound(tabId, key)
-    if (pluginSessions.own(tabId)) ownerAsleep.awakeTabsChanged()
+    if (pluginSessions.own(tabId)) pluginTabStaysAwake()
     ptyMgr.agentBound(tabId)
     ptyMgr.wakeReady(tabId)
   },
@@ -1150,6 +1150,12 @@ const presence = new OwnerPresence({
   }
 })
 const AWAY_CHECKED_EVERY_MS = 30_000
+const A_PLUGIN_SESSION_IS_LOOKED_FOR_MS = 10_000
+
+function pluginTabStaysAwake(): void {
+  ownerAsleep.awakeTabsChanged()
+  syncAnswerable()
+}
 function handsOnKoloft(_e: unknown, input: { type: string }): void {
   if (isHandsOn(input.type)) presence.handsOn()
 }
@@ -6396,7 +6402,7 @@ function registerIpc(): void {
     startedSessions.moved(oldTabId, newTabId)
     shownUnder.moved(oldTabId, newTabId)
     pluginSessions.moved(oldTabId, newTabId)
-    if (pluginSessions.own(newTabId)) ownerAsleep.awakeTabsChanged()
+    if (pluginSessions.own(newTabId)) pluginTabStaysAwake()
     if (answerableForAPlugin.delete(oldTabId)) {
       answerableForAPlugin.add(newTabId)
       syncAnswerable()
@@ -6552,7 +6558,14 @@ function registerIpc(): void {
     )
     for (const [id, error] of unread) historyPartlyUnread(id, error)
     sessionBackends.adopt(
-      lists.flatMap((l) => (l.status === 'fulfilled' ? rowsToAdopt(l.value, now) : []))
+      lists.flatMap((l) =>
+        l.status === 'fulfilled'
+          ? rowsToAdopt(
+              l.value.filter((r) => !r.pluginOwn),
+              now
+            )
+          : []
+      )
     )
     await workspaceMgr.whenScanned()
     if (lists.some((l) => l.status === 'rejected')) throw new Error('history unread')
@@ -6660,13 +6673,17 @@ function registerIpc(): void {
   )
   ipcMain.handle(CH.workspace.pluginOwnRow, async (_e, ref: string) => {
     if (typeof ref !== 'string' || !pluginSessions.own(ref)) return null
-    const workspaces = workspaceMgr?.pinnedPaths() ?? []
+    const known = workspaceMgr?.workspaceOf(ref)
+    const workspaces = known ? [{ path: known }] : (workspaceMgr?.pinnedPaths() ?? [])
     return new Promise((resolve) => {
       let left = workspaces.length
       if (!left) return resolve(null)
       for (const { path: workspace } of workspaces)
-        void sessionBackends
-          .historyRows(workspace, () => {})
+        void within(
+          sessionBackends.historyRows(workspace, () => {}),
+          A_PLUGIN_SESSION_IS_LOOKED_FOR_MS,
+          'its history did not come'
+        )
           .catch(() => [])
           .then((rows) => {
             const row = rows.find((r) => r.id === ref)
@@ -6957,7 +6974,7 @@ const startedPlugins: PluginsStarted = startPlugins(
             tabId,
             spec
           )
-          if (started.ok && spec.own) ownerAsleep.awakeTabsChanged()
+          if (started.ok && spec.own) pluginTabStaysAwake()
           return started
         }
       }
