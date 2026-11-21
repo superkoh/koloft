@@ -38,12 +38,34 @@ import {
   writeTo,
   wsRows
 } from './helpers/p1'
-import { WORKBENCH } from './helpers/workbench'
+import { WORKBENCH, layoutState } from './helpers/workbench'
 
 const ROOM_FOR_A_WRONG_OPEN_MS = 1500
 const ROWS_SWEPT = 12
 const RESTING_LONGER_THAN_THE_LOOKUP_WAITS_MS = 400
 const ROOM_FOR_MORE_LOOKUPS_TO_START_MS = 1500
+
+async function waitTerminalRefittedBesideTheOpenWorkbench(
+  page: Page,
+  tabId: string
+): Promise<void> {
+  await expect.poll(() => layoutState(page), { timeout: 30_000 }).toBe('T2')
+  await expect
+    .poll(
+      () =>
+        page.evaluate((id) => {
+          const term = (
+            window as unknown as { __koloftTerms: Record<string, { element?: HTMLElement }> }
+          ).__koloftTerms[id]
+          const screen = term?.element?.querySelector('.xterm-screen')
+          const island = term?.element?.closest('.term-island')
+          if (!screen || !island) return false
+          return screen.getBoundingClientRect().right <= island.getBoundingClientRect().right
+        }, tabId),
+      { timeout: 30_000 }
+    )
+    .toBe(true)
+}
 
 function numberedTs(tag: string): string {
   return Array.from({ length: 60 }, (_, i) => `export const l${i + 1} = '${tag}-${i + 1}'`).join(
@@ -362,6 +384,7 @@ test.describe('a file path an agent printed in its terminal opens in the Workben
       writeIn(env.workspaces.a, 'src/w.ts', numberedTs('tfmain'))
       writeIn(tree, 'src/w.ts', numberedTs('tftree'))
       const tabId = await shownTabId(page)
+      await waitTerminalRefittedBesideTheOpenWorkbench(page, tabId)
 
       await writeTo(page, tabId, '\r\ntfw-mark src/w.ts:30\r\n')
       await expect
