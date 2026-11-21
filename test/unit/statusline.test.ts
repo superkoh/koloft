@@ -145,7 +145,7 @@ describe('built-in statusline', () => {
 })
 
 describe('Antigravity statusline', () => {
-  it('renders agy’s status JSON through the vendored bundle with the cost Koloft priced added', () => {
+  it('renders agy’s status JSON through the vendored bundle with the cost Koloft priced and model effort mapped', () => {
     const command = setupAgyStatusline({ wrapper, config })
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-agy-sl-'))
     const costFile = path.join(dir, 'agy-cost')
@@ -155,9 +155,13 @@ describe('Antigravity statusline', () => {
         input: JSON.stringify({
           cwd: dir,
           session_id: 'agy-statusline-unit',
-          model: { id: 'gemini-3.1-pro', display_name: 'Gemini 3.1 Pro' },
+          model: {
+            id: 'Gemini 4 Neon (High)',
+            display_name: 'Gemini 4 Neon (High)',
+            effort: 'high'
+          },
           workspace: { current_dir: dir, project_dir: dir },
-          version: '1.4.7',
+          version: '1.5.14',
           product: 'antigravity'
         }),
         encoding: 'utf8',
@@ -165,10 +169,86 @@ describe('Antigravity statusline', () => {
         timeout: 25_000
       })
       expect(res.status).toBe(0)
-      expect(res.stdout).toMatch(/Gemini.3\.1.Pro/)
+      expect(res.stdout).toMatch(/Gemini.4.Neon/)
+      expect(res.stdout).toContain('high')
       expect(res.stdout).toContain('$0.43')
     } finally {
       fs.rmSync(dir, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it('shows default instead of Claude Code’s effortLevel when an Antigravity model carries no effort', () => {
+    const command = setupAgyStatusline({ wrapper, config })
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-agy-no-effort-'))
+    fs.mkdirSync(path.join(home, '.claude'), { recursive: true })
+    fs.writeFileSync(
+      path.join(home, '.claude', 'settings.json'),
+      JSON.stringify({ effortLevel: 'max' })
+    )
+    try {
+      const res = spawnSync('/bin/sh', ['-c', command], {
+        input: JSON.stringify({
+          cwd: home,
+          session_id: 'agy-no-effort-unit',
+          model: { id: 'gemini-3.1-pro', display_name: 'Gemini 3.1 Pro' },
+          workspace: { current_dir: home, project_dir: home },
+          version: '1.5.14',
+          product: 'antigravity'
+        }),
+        encoding: 'utf8',
+        env: { ...process.env, HOME: home, COLUMNS: '120' },
+        timeout: 25_000
+      })
+      expect(res.status).toBe(0)
+      expect(res.stdout).toContain('default')
+      expect(res.stdout).not.toContain('max')
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it('still renders with exit 0 when the session’s working directory was removed (e.g. a deleted worktree)', () => {
+    const command = setupAgyStatusline({ wrapper, config })
+    const gone = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-agy-gone-cwd-'))
+    const goneCc = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-cc-gone-cwd-'))
+    const payload = JSON.stringify({
+      cwd: gone,
+      session_id: 'agy-gone-cwd-unit',
+      model: { id: 'Gemini 4 Neon (High)', display_name: 'Gemini 4 Neon (High)', effort: 'xhigh' },
+      workspace: { current_dir: gone, project_dir: gone },
+      version: '1.5.14',
+      product: 'antigravity'
+    })
+    try {
+      const agyRes = spawnSync(
+        '/bin/sh',
+        ['-c', `cd "$1" && rmdir "$1" && ${command}`, '_', gone],
+        {
+          input: payload,
+          encoding: 'utf8',
+          env: { ...process.env, COLUMNS: '120' },
+          timeout: 25_000
+        }
+      )
+      expect(agyRes.status).toBe(0)
+      expect(agyRes.stdout).toMatch(/Gemini.4.Neon/)
+      expect(agyRes.stdout).toContain('xhigh')
+
+      const ccRes = spawnSync(
+        '/bin/sh',
+        ['-c', 'cd "$1" && rmdir "$1" && exec "$2"', '_', goneCc, wrapper],
+        {
+          input: PAYLOAD,
+          encoding: 'utf8',
+          env: { ...process.env, COLUMNS: '120' },
+          timeout: 25_000
+        }
+      )
+      expect(ccRes.status).toBe(0)
+      expect(ccRes.stdout.length).toBeGreaterThan(0)
+    } finally {
+      fs.rmSync(gone, { recursive: true, force: true })
+      fs.rmSync(goneCc, { recursive: true, force: true })
     }
   }, 30_000)
 
@@ -186,25 +266,31 @@ describe('Antigravity statusline', () => {
     fs.symlinkSync(process.execPath, path.join(bin, 'node'))
     const costFile = path.join(home, 'agy-cost')
     fs.writeFileSync(costFile, '1.25')
+    const gone = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-agy-remote-gone-'))
     try {
-      const res = spawnSync('/bin/sh', [path.join(dir, 'agy.sh')], {
-        input: JSON.stringify({
-          cwd: home,
-          session_id: 'agy-remote-statusline-unit',
-          model: { id: 'gemini-3.1-pro', display_name: 'Gemini 3.1 Pro' },
-          workspace: { current_dir: home, project_dir: home },
-          version: '1.4.7'
-        }),
-        cwd: home,
-        encoding: 'utf8',
-        env: { HOME: home, PATH: '/usr/bin:/bin', COLUMNS: '120', [AGY_COST_ENV]: costFile },
-        timeout: 25_000
-      })
+      const res = spawnSync(
+        '/bin/sh',
+        ['-c', 'cd "$1" && rmdir "$1" && exec /bin/sh "$2"', '_', gone, path.join(dir, 'agy.sh')],
+        {
+          input: JSON.stringify({
+            cwd: gone,
+            session_id: 'agy-remote-statusline-unit',
+            model: { id: 'gemini-3.1-pro', display_name: 'Gemini 3.1 Pro', effort: 'medium' },
+            workspace: { current_dir: gone, project_dir: gone },
+            version: '1.4.7'
+          }),
+          encoding: 'utf8',
+          env: { HOME: home, PATH: '/usr/bin:/bin', COLUMNS: '120', [AGY_COST_ENV]: costFile },
+          timeout: 25_000
+        }
+      )
       expect(res.status).toBe(0)
       expect(res.stdout).toMatch(/Gemini.3\.1.Pro/)
+      expect(res.stdout).toContain('medium')
       expect(res.stdout).toContain('$1.25')
     } finally {
       fs.rmSync(home, { recursive: true, force: true })
+      fs.rmSync(gone, { recursive: true, force: true })
     }
   }, 30_000)
 })

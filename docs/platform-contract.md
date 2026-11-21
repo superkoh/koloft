@@ -2531,6 +2531,20 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   `{"type":"module"}` folder also renders on node 22.12.0 (Docker
   `node:22.12.0-bookworm-slim`), and that node creates the `NODE_COMPILE_CACHE`
   folder itself.
+- **Loading the bundle crashes with `ENOENT` (`uv_cwd`) if the process's cwd was
+  removed** (2.2.34, read and run 2026-11-21 on macOS arm64): `stack-utils`, eagerly
+  imported by `ink`'s `ErrorOverview.js`, calls `process.cwd()` at module load time.
+  When a session deletes its own working directory (such as removing its git worktree),
+  `[ -d . ]` and `cd .` still succeed on macOS while `pwd -P` fails (`getcwd` returns
+  `ENOENT`). Falling back with `pwd -P >/dev/null 2>&1 || cd / 2>/dev/null` before
+  starting the runtime (and `process.chdir('/')` on a failed `process.cwd()`) lets
+  ccstatusline render cleanly with exit 0 even when `input.cwd` no longer exists.
+- **`thinking-effort` reads `effort.level` from status JSON** (2.2.34, read and run
+  2026-11-21): if `effort` is absent or lacks a `level` key, ccstatusline parses
+  `transcript_path` and then falls back to Claude Code's `~/.claude/settings.json`
+  `effortLevel`. Antigravity reports effort at `model.effort` (AGY§11), so translating
+  `model.effort` to `effort: { level: effort || null }` shows Antigravity's effort and
+  keeps an effort-less model at `default` instead of reading Claude Code's settings.
 
 ## §37 Shell tools on a remote machine (for the remote Workbench)
 
