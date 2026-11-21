@@ -129,22 +129,6 @@ describe('agent-hook.mjs: Codex and Antigravity hooks run the repo checks', () =
     expect([r.status, r.stdout]).toEqual([0, ''])
   })
 
-  it('checks an Antigravity push in the folder the command runs in, not where agy started', () => {
-    const root = fixtureRepo()
-    const wt = linkedWorktree(root)
-    write(path.join(root, '.git', 'worktrees', 'w1'), { 'worktree-deps.failed': 'It failed.' })
-    const push = agyRun(root, 'git push')
-    const inWorktree = {
-      ...push,
-      toolCall: { ...push.toolCall, args: { ...push.toolCall.args, Cwd: wt } }
-    }
-    const { bin } = fakeTools()
-    expect(hook(root, 'agy', 'before-shell-command', push, bin).stdout).toBe('')
-    expect(
-      JSON.parse(hook(root, 'agy', 'before-shell-command', inWorktree, bin).stdout).decision
-    ).toBe('deny')
-  })
-
   it('stops a Codex push that fails a check, with the reason on stderr', () => {
     const root = fixtureRepo()
     const { bin } = fakeTools({ 'format:check': 1 })

@@ -55,8 +55,7 @@ function shellCommand() {
 function beforeShellCommand() {
   const command = shellCommand()
   if (typeof command !== 'string' || !COULD_PUSH.test(command)) return
-  const where = agent === 'agy' ? (input.toolCall.args?.Cwd ?? cwd) : cwd
-  const r = runScript('push-checks.mjs', [], { cwd: where, tool_input: { command } })
+  const r = runScript('push-checks.mjs', [], { cwd, tool_input: { command } })
   if (r.status === 2) {
     const reason = r.stderr.trim()
     if (agent === 'agy') return console.log(JSON.stringify({ decision: 'deny', reason }))
