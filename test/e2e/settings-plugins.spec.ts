@@ -2,7 +2,14 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedNoClaudeAccountButStillSetUp, seedSettings, type E2EEnv } from './helpers/env'
 import { openPluginPage, openSettings, settingsNavItems } from './helpers/extensions'
-import { butlerHelperRows, sendShortcut, settingsOnDisk, waitBooted } from './helpers/p1'
+import {
+  butlerHelperRows,
+  butlerRow,
+  openMenu,
+  sendShortcut,
+  settingsOnDisk,
+  waitBooted
+} from './helpers/p1'
 
 const DISCORD_SET_UP = {
   userId: '555555555555555555',
@@ -240,6 +247,55 @@ test.describe('Settings ▸ Plugins: one row per plugin, a switch for each optio
       await expect.poll(() => pluginsOn(env)).toEqual({ discord: false })
       await main.getByRole('switch', { name: 'Turn on Discord' }).check()
       await expect(main.getByRole('button', { name: 'Change channel…' })).toBeVisible()
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('while Discord is on, Settings ▸ Assist, the butler’s row there and its rename dialog say the owner reaches the butler from Discord too; once Discord is turned off none of them names it', async ({
+    env
+  }) => {
+    const { app, page } = await launched(env, { discord: DISCORD_SET_UP })
+    try {
+      const assistLines = async (): Promise<Locator> => {
+        await page.locator('.set-ni', { hasText: 'Assist' }).click()
+        const main = page.locator('.set-main')
+        await expect(main.locator('.set-ph h3')).toHaveText('Assist')
+        return main
+      }
+      const renameHint = async (): Promise<Locator> => {
+        await openMenu(page, butlerRow(page))
+        await page.locator('.menu .mi', { hasText: 'Rename…' }).click()
+        return page.locator('.modal', { hasText: 'Rename your butler' }).locator('.field-hint')
+      }
+
+      await openSettings(page)
+      let main = await assistLines()
+      await expect(main.locator('.set-ph p')).toContainText(
+        'whom you talk to from the top of the sidebar or from Discord.'
+      )
+      await expect(main).toContainText(
+        'Your butler, whom you talk to from the top of the sidebar or from Discord.'
+      )
+      await page.keyboard.press('Escape')
+      await expect(await renameHint()).toContainText(
+        'Shown as “Alfred · Butler” in the sidebar and in Discord.'
+      )
+      await page.keyboard.press('Escape')
+
+      main = await openPluginsPane(page)
+      await main.getByRole('switch', { name: 'Discord', exact: true }).uncheck()
+      await expect.poll(() => pluginsOn(env)).toEqual({ discord: false })
+      main = await assistLines()
+      await expect(main.locator('.set-ph p')).toContainText(
+        'whom you talk to from the top of the sidebar.'
+      )
+      await expect(main).toContainText('Your butler, whom you talk to from the top of the sidebar.')
+      await expect(main).not.toContainText('Discord')
+      await page.keyboard.press('Escape')
+      await expect(await renameHint()).toHaveText(
+        'Shown as “Alfred · Butler” in the sidebar. Other sessions reach it by this name.'
+      )
     } finally {
       await quitAndClose(app)
     }

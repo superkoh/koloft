@@ -389,6 +389,9 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
       await expect(welcome(page).locator('.wl-perm')).toContainText(
         'Sessions run each step without stopping to ask.'
       )
+      await expect(welcome(page).locator('.wl-phone')).toContainText(
+        'Connect Discord any time, and I’ll ask you here when a session needs you.'
+      )
       await snap(page, 'T-OB-05')
       await page.keyboard.press('Enter')
 
@@ -402,6 +405,27 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
       await expect(welcome(page)).toHaveCount(0, { timeout: 20_000 })
       await expect.poll(() => settingsOnDisk(env).onboardingSeen, { timeout: 20_000 }).toBe(true)
       expect(settingsOnDisk(env).skipPermissionsAgreed).toBe(true)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('T-OB-24: with Discord turned off in Settings ▸ Plugins, the last screen shows no phone inviting the owner to connect Discord', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    firstRun(env, { pluginsOn: { discord: false } })
+    terminalSession(env, env.workspaces.a, 'Fix login bug', HOUR)
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await page.waitForLoadState('domcontentloaded')
+      await advanceTo(page, 4)
+      await expect(primary(page)).toHaveText(/Resume “Fix login bug”/)
+      await expect(welcome(page).locator('.wl-cue')).toHaveCount(2)
+      await expect(welcome(page).locator('.wl-phone')).toHaveCount(0)
+      await expect(welcome(page)).not.toContainText('Discord')
     } finally {
       await quitAndClose(app)
     }
