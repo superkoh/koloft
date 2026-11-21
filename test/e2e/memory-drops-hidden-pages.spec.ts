@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import type { ElectronApplication, Page } from '@playwright/test'
+import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { koloftReadMemoryPressure, memoryPressure, seedSettings } from './helpers/env'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
@@ -33,10 +33,13 @@ function pageNamed(name: string, body = ''): string {
   return server.page(`/${name}`, `<!doctype html><title>${name}</title><p>${name}</p>${body}`)
 }
 
+function loadedTab(page: Page, name: string): Locator {
+  return wbTabByTitle(page, new RegExp(`^${name}$`))
+}
+
 async function openAndShow(page: Page, name: string, body = ''): Promise<void> {
   await runIn(page, centerTerm(page), `/open ${pageNamed(name, body)}`)
-  await wbTabByTitle(page, name).click()
-  await expect.poll(() => server.count(`/${name}`), { timeout: 30_000 }).toBeGreaterThan(0)
+  await loadedTab(page, name).click()
 }
 
 async function pagesAlive(app: ElectronApplication): Promise<string[]> {
@@ -213,7 +216,7 @@ for (const backend of SESSION_BACKENDS)
       await switchToRow(page, remoteRow)
       await agentOnTheMachineOpens(page, remoteTab, hidden)
       await agentOnTheMachineOpens(page, remoteTab, shown)
-      await wbTabByTitle(page, shown).click()
+      await loadedTab(page, shown).click()
 
       await startSessionIn(page, 'ws-a', backend === 'claude' ? {} : { method: 'Claude' })
       await openAndShow(page, localHidden)
