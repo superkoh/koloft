@@ -4086,3 +4086,23 @@ the measurement. One run per row, except where two are given.
 Koloft dependents: `ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE` in `src/main/agentLift.ts`
 lifts an agent program only on a machine with `/usr/sbin/taskpolicy` (§59); on a Linux
 machine it leaves the agent and its tools as they start.
+
+## §73 The umask of `docker exec` under OrbStack
+
+- **`docker exec` runs with umask 0000, whoever it runs as.** `docker exec -u kuser … sh -c
+  umask` and the same as root both printed `0000`; a file written there came out `-rw-rw-rw-`.
+  The container's own first process (`/proc/1/status`) and `docker run … sh -c umask` both
+  read `0022`, and so did `ssh kuser@127.0.0.1 umask` from inside the container: an ssh
+  login there gets 0022.
+- **ssh refuses such a file as its config.** With `~/.ssh/config` at 0666 `ssh x true`
+  stopped at "Bad owner or permissions on /home/kuser/.ssh/config"; at 0644 the same
+  command went on to check the host key.
+- Measured 2026-11-17: OrbStack (kernel `7.2.12-orbstack`), Docker Engine 29.8.2, on
+  macOS 27.2.1; the `koloft-e2e-sshd` image (Debian 12, OpenSSH 9.2p1). Inferred, not
+  checked: that colima's `docker exec` gave 0022, since the same e2e setup passed there
+  until the move to OrbStack.
+
+Koloft dependents: none in the app. Every `docker exec` in test/e2e/helpers/docker.ts goes
+through `labExec`, which sets umask 022, the umask an ssh login there gets, before its
+command. The `docker exec` calls remote-git-accounts.spec.ts makes itself (a port relay,
+a `chown`, a `chmod`) write no file, and do not.
