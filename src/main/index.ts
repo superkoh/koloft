@@ -508,7 +508,17 @@ import { OldThreads } from '@plugins/discord/main/oldThreads'
 import { roomLink, Rooms, whereOf, type RoomSubject } from '@plugins/discord/main/rooms'
 import { accentOf } from '@plugins/discord/main/cards'
 import { AskButtons } from '@plugins/discord/main/buttons'
-import { SlashCommands, toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
+import {
+  SlashCommands,
+  askFromClaude,
+  askFromCodex,
+  folderOf,
+  startBeside,
+  toCaller,
+  type KoloftAsk,
+  type SlashReplyTo,
+  type SlashTarget
+} from '@plugins/sessions/api'
 import { toChannel } from '@plugins/discord/main/slash'
 import { TabLifecycle, subscribeTabSubsystems } from '@plugins/sessions/main/tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from '@plugins/discord/main/interactions'
@@ -591,15 +601,7 @@ import { pushAsks as pushSecretAsks } from '@plugins/passwords/main/channels'
 import { pushOpenFile } from '@plugins/workbench/main/channels'
 import { INBOX_SENDER, Inbox } from './inbox'
 import { flushInbox, loadInbox, saveInbox } from './inboxFile'
-import {
-  askFromClaude,
-  askFromCodex,
-  inboxFooter,
-  where,
-  KoloftInbox,
-  type AskedSession,
-  type KoloftAsk
-} from './koloftInbox'
+import { inboxFooter, where, KoloftInbox, type AskedSession } from './koloftInbox'
 import { ClaudeDialogWatch } from './claudeDialogWatch'
 import {
   A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS,
@@ -747,6 +749,7 @@ function storedOwnerOf(tabId: string): SessionsWithStore | undefined {
 const startedSessions = new StartedSessions(() =>
   path.join(app.getPath('userData'), 'started-sessions.json')
 )
+const shownUnder = new StartedSessions(() => path.join(app.getPath('userData'), 'shown-under.json'))
 const readerDocs = new ReaderDocs({
   file: () => path.join(app.getPath('userData'), 'doc-verdicts.json'),
   assist: (job) => assist(job),
@@ -766,6 +769,7 @@ const sessionBackends = new SessionBackends({
     if (!idleCompaction) attention.bound(tabId, key)
     announceNow(SESSION_BOUND, { tabId, key, idleCompaction })
     startedSessions.bound(tabId, key)
+    shownUnder.bound(tabId, key)
     ptyMgr.agentBound(tabId)
     ptyMgr.wakeReady(tabId)
   },
@@ -1536,6 +1540,7 @@ type OwnerAsk = SecretAsk & { taps?: TapRounds }
 let secretAsks: SecretAsks<OwnerAsk> | null = null
 let instructionAsks: InstructionAsks | null = null
 const answerable = new Set<string>()
+const answerableForAPlugin = new Set<string>()
 let hookRegDir: string | undefined
 let guard: ResourceGuard | undefined
 let writeHookSettings:
@@ -1633,7 +1638,9 @@ function syncAnswerable(): void {
   for (const s of allSessions()) {
     if (!s.alive || capabilitiesFor(s.backendId, s.host).askHookWaitsForDiscord !== true) continue
     const on =
-      ownerAsleep.answersFor(s.tabId) || (discordConnected && !!binding.channelOfTab(s.tabId))
+      ownerAsleep.answersFor(s.tabId) ||
+      (discordConnected && !!binding.channelOfTab(s.tabId)) ||
+      answerableForAPlugin.has(s.tabId)
     if (on === answerable.has(s.tabId)) continue
     if (on) answerable.add(s.tabId)
     else answerable.delete(s.tabId)
@@ -3774,6 +3781,7 @@ app.whenReady().then(() => {
     if (!restarting) earlierTabIds.delete(e.id)
     ownerTouchedAt.delete(e.id)
     questionSeen.delete(e.id)
+    answerableForAPlugin.delete(e.id)
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     guard?.forget(e.id)
@@ -4092,7 +4100,7 @@ app.whenReady().then(() => {
     killRemoteSession: (host, sessionId) =>
       claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
     hiddenRow: (id) => sessionBackends.isOverseerSession(id),
-    parentOf: (rowId) => startedSessions.parentOfRow(rowId),
+    parentOf: (rowId) => startedSessions.parentOfRow(rowId) ?? shownUnder.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
     scratchRoots: scratchRootsAround(os.homedir(), os.tmpdir()),
     claimedFolder: butlersFolderClaim(userData),
@@ -5254,6 +5262,7 @@ function archiveSession(id: string): boolean {
     koloftInbox.sessionGone(id, 'Its session was deleted')
     attention.clearSession(id)
     startedSessions.forget(id)
+    shownUnder.forget(id)
     readerDocs.forget(id)
   }
   return archived
@@ -6364,6 +6373,7 @@ function registerIpc(): void {
     if (typeof oldTabId !== 'string' || typeof newTabId !== 'string') return
     ptyMgr.moveOwner(oldTabId, newTabId)
     startedSessions.moved(oldTabId, newTabId)
+    shownUnder.moved(oldTabId, newTabId)
     sessionCommand.tabMoved(oldTabId, newTabId)
     koloftInbox.rebound(oldTabId, newTabId)
     cronRunner?.tabMoved(oldTabId, newTabId)
@@ -6856,6 +6866,38 @@ const startedPlugins: PluginsStarted = startPlugins(
         worktrees: async (p) => (await workspaceMgr?.worktrees(p)) ?? [],
         storedSessions,
         dirExists: (dir) => hosts.of(dir).dirExists(dir)
+      },
+      tabs: {
+        askOf: inboxAskOf,
+        answer: answerSession,
+        placeOf: (tabId) => {
+          const s = sessionOfTab(tabId)
+          const workspace = sessionBackends.workspaceOfTab(tabId)
+          return s && workspace
+            ? { workspace, folder: folderOf(s), machine: s.remote?.host }
+            : undefined
+        },
+        ownerWordsOf: (tabId) => sessionCommand.ownerWordsIn(tabId),
+        lookedAt: () => attention.watching(),
+        ownerTypedSince: (tabId, at) => (touchedAt.get(tabId) ?? 0) >= at,
+        waitsOnAnother: (tabId) => attention.waitsOnAnother(tabId),
+        butlerSide,
+        markAnswerable: (tabId, on) => {
+          if (on) answerableForAPlugin.add(tabId)
+          else answerableForAPlugin.delete(tabId)
+          syncAnswerable()
+        },
+        startBeside: (tabId, spec) =>
+          startBeside(
+            {
+              sessionOfTab,
+              launch: sessionDeps.launch,
+              pinnedWorkspaces: sessionDeps.pinnedWorkspaces,
+              shownUnder
+            },
+            tabId,
+            spec
+          )
       }
     },
     workbench: {

@@ -994,6 +994,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     permission: 'bypass' | 'default',
     onReply: ReplyListener
   ): Promise<StartResult>
+  ownerWordsIn(tabId: string): Promise<string | undefined>
 } {
   const opening = new Map<string, Promise<string | null>>()
   const names = launchNames(d)
@@ -1532,7 +1533,11 @@ export function sessionVerb(d: SessionVerbDeps): {
     tabMoved,
     sendFrom,
     tellFromKoloft,
-    startForReply
+    startForReply,
+    ownerWordsIn: async (tabId) => {
+      const s = d.allSessions().find((s) => s.tabId === tabId)
+      return s?.sessionId ? ownerWordsOf(s) : undefined
+    }
   }
 }
 

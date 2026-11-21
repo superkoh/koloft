@@ -184,6 +184,7 @@ the types a plugin registers with.
 | `src/core/webPage.ts` | `WebPage`: one Workbench web page a plugin may run a script in |
 | `src/core/gh.ts` | what running `gh` gives back, for core and plugins alike: `GhResult`, `Gh`, `GH_SIGNED_OUT`, `slug`, `ghJsonArray`, and the shape of the GitHub fixture that Koloft's end-to-end tests use (`GithubFixture`) |
 | `src/core/worktree.ts` | `GitOut`, `branchExists` and `TidyResult`, for the worktree git helpers |
+| `src/core/folderFingerprint.ts` | `folderFingerprint(git, folder)`: one text that changes when anything git does not ignore changes in the folder's repository (the commit it is on, its branches, tags and stash, and the content of every changed or new file); `null` when git cannot read it, as in a folder that is no git repository. It runs only git commands that change nothing, through the `GitOut` it is given, so it works on the machine the folder is on |
 | `src/core/typeKeys.ts` | `typeKeys`, `pressesAKey`, `clicksTheMouse` and their helpers: what Koloft types into a session's terminal |
 | `src/core/transcriptPlaces.ts` | `TranscriptPlaces`: where a session's transcript is, on this Mac or on its machine |
 | `src/core/privateFile.ts` | `PrivateRecordFile`: a JSON record file only the owner can read |
@@ -208,7 +209,7 @@ today.
 | `plugin.ts` | the plugin's manifest | all |
 | `prompts/` | its text blocks for prompts | sessions, browser-control, butler, github, discord, todo |
 | `skill/` | its text blocks for `koloft help` and the `koloft` skill | all but butler and docs-writing |
-| `api.ts` | what other plugins may import | all but inbox and scheduled-tasks |
+| `api.ts` | what other plugins may import | all but inbox |
 | `windowApi.ts` | what other plugins' window code may import: the part of its public surface with no main-process code and no text for agents. It may not import its own `main/` or `prompts/` | butler |
 | `main/` | code that runs in the main process; `start.ts` there is its start function | all but docs-writing |
 | `preload/` | `bridge.ts`, its part of `window.api` | all but todo and docs-writing |
@@ -870,7 +871,26 @@ export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments,
   list of plugins, and returns what each gave back, keyed by plugin id (`PluginsStarted`).
   GitHub's start gives back its `GithubMain`, whose `followSwitch` and `sweepNow` the app
   calls. Sessions core's gives back `tookTheTurn`, which the butler's and the Inbox's deps read
-  when a turn ends.
+  when a turn ends. Scheduled tasks' gives back `runStartedIn(tabId)`: whether a scheduled run
+  started in that tab (`ScheduledRuns`, from its `api.ts`).
+- Sessions core's start also gives back what another plugin may know about, and do with, a
+  session tab (`SessionTabs`, typed in its `api.ts`). The app builds these from its own parts
+  and hands them in as the start's `tabs` deps, and the start gives them back as they are, so
+  another plugin's deps take them from `PluginsStarted` like `tookTheTurn`. No plugin uses
+  them yet:
+
+  | Name | What it answers or does |
+  |---|---|
+  | `askOf(tabId)` | the question or approval the tab shows, one shape for every agent (`KoloftAsk`), or nothing |
+  | `answer(tabId, reply, byTheOverseer)` | answers it as `koloft session answer` does; the reply is a sentence when it could not |
+  | `placeOf(tabId)` | its workspace, the folder its session runs in (a remote key on another machine) and that machine |
+  | `ownerWordsOf(tabId)` | the owner's last words to it, as a session it starts would be handed them |
+  | `lookedAt()` | the tab the owner has in front of them in a focused Koloft window, or nothing |
+  | `ownerTypedSince(tabId, at)` | whether the owner typed or pasted into it since `at` |
+  | `waitsOnAnother(tabId)` | whether it waits on other work: a session it started, a reply it is owed, or a monitor |
+  | `butlerSide(tabId)` | whether it is the butler or a session in the butler's folder |
+  | `markAnswerable(tabId, on)` | asks a Claude Code tab on this Mac to hold its question for Koloft's answer, as it does while the owner sleeps; the mark goes when the tab ends. On any other tab it does nothing |
+  | `startBeside(tabId, spec)` | starts a session in that session's own folder, on its machine, with the role, task, agent, model, effort and permission the plugin gives, and shows its row under that session's. It is no session that session started: it owes it no reply, does not count as work that session waits on, and is not closed with it. It announces neither `session-starting` nor `session-started` |
 - The app calls `startPlugins` as its main module finishes loading, after every part a deps
   object hands in exists, and before Electron is ready, so before any session runs, any
   `koloft` command arrives or the window opens.
@@ -990,12 +1010,12 @@ parts it builds and hands to the starts as deps, and the types and helpers they 
 
 `npm run check:plugin-imports` lists each import under `src/` that breaks the rule; it does
 not read the tests. It only reports and never fails the build. On `main` at the commit this
-page was last checked against, it listed 646 imports, in five kinds:
+page was last checked against, it listed 649 imports, in five kinds:
 
 | Kind | Count | What it is |
 |---|---|---|
 | names a plugin outside the lists | 144 | app code, mostly `src/main/`, that imports a plugin's `api.ts`, `main/` or `shared/` files directly |
-| imports `src/shared/` | 268 | plugin code that imports `src/shared/`, which is not core |
+| imports `src/shared/` | 271 | plugin code that imports `src/shared/`, which is not core |
 | imports app code outside `src/core` | 224 | plugin code that imports the app's own code, such as `src/main/` modules or the window's store, icons and slots |
 | imports the `api.ts` of a plugin not in its needs | 6 | Discord's code using Sessions core's `api.ts`, and Sessions core's hook scripts using Discord's and the Butler's |
 | imports a plugin past its `api.ts` and `windowApi.ts` | 4 | Discord's code that imports Sessions core's `main/` files for its question cards |

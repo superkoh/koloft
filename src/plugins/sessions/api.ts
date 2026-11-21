@@ -17,7 +17,17 @@ export {
   type SlashResult
 } from './main/slashCommands'
 export { RepliesOwed, type ReplyListener } from './main/repliesOwed'
-export { ANSWER_NOT_TAKEN } from './main/dialog'
+export { ANSWER_NOT_TAKEN, askFromClaude, askFromCodex, type KoloftAsk } from './main/dialog'
+export type { SessionsStarted } from './main/start'
+export {
+  folderOf,
+  startBeside,
+  type BesideDeps,
+  type BesideResult,
+  type BesideSpec,
+  type SessionTabs,
+  type TabPlace
+} from './main/sessionTabs'
 export { HandOver, type HandOverDeps, type HandingMarks, type Recipient } from './main/handOver'
 export type { SendResult, StartResult, StartSpec } from './main/sendAndStart'
 export {
