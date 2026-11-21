@@ -41,14 +41,27 @@ const POLLUTANTS = {
   CLAUDE_JOB_DIR: '/Users/me/.claude/jobs/5d5cfc93',
   CLAUDE_PID: '54978',
   AI_AGENT: '1',
+  ANTIGRAVITY_AGENT: '1',
+  ANTIGRAVITY_CONVERSATION_ID: 'bd1ae5c8-096d-4407-97a5-e64ac5f8fb1b',
   TERM_SESSION_ID: 'w0t1p0:ABC',
   KOLOFT_SESSION_DIR: '/parent-koloft/reg',
   KOLOFT_OPEN_DIR: '/parent-koloft/opens',
+  KOLOFT_PICK_DIR: '/parent-koloft/picks',
   KOLOFT_HOOK_SETTINGS: '/parent-koloft/hooks/pty-x-1.json',
   KOLOFT_AGENT_DIR: '/parent-koloft/agent',
   KOLOFT_AGENT_PLUGIN: '/parent-koloft/agent-plugin',
   KOLOFT_DOCS_PLUGIN: '/parent-koloft/docs-plugin',
   KOLOFT_HOLD_TAB: 'pty-parent-1',
+  KOLOFT_AGY_LOG: '/parent-koloft/agy-open/parent/agy.jsonl',
+  KOLOFT_AGY_START: '/parent-koloft/agy-open/parent/agy-session-start.json',
+  KOLOFT_AGY_COST: '/parent-koloft/agy-open/parent/agy-cost',
+  KOLOFT_AGY_OWNER_TITLE: '/parent-koloft/owner-title.sh',
+  KOLOFT_NOTICE: '/parent-koloft/hook-sessions/pty-parent-1.notice',
+  KOLOFT_CODEX_SAID: '/parent-koloft/codex-open/parent/said',
+  KOLOFT_CODEX_DISCORD_SAID: '/parent-koloft/hook-sessions/pty-parent-1.discord-said',
+  KOLOFT_CODEX_REPLY_LANGUAGE: '/parent-koloft/codex-reply-language.sh',
+  KOLOFT_SHELL_WROTE: '/parent-koloft/hook-sessions/pty-parent-1.shell-wrote.jsonl',
+  TBH_MANAGED_HOOKS_PATH: '/parent-koloft/muse-open/parent/hooks.json',
   ANT_ACCOUNT: 'whoever-started-koloft'
 }
 
@@ -89,6 +102,44 @@ describe('PtyManager per-tab environment', () => {
     const env = spawnedEnv()
     for (const k of Object.keys(POLLUTANTS)) expect(env[k]).toBeUndefined()
     expect(Object.keys(env).some((k) => k.startsWith('CLAUDE_CODE_'))).toBe(false)
+    expect(Object.keys(env).some((k) => k.startsWith('ANTIGRAVITY_'))).toBe(false)
+  })
+
+  it('keeps the hook log and notice a local Antigravity launch passes and the managed hooks path a local Muse launch passes, while stripping inherited ones when a remote tab starts without processEnv', () => {
+    const mgr = new PtyManager()
+    const envOf = (args: Parameters<PtyManager['create']>[0]): Record<string, string> => {
+      mocks.spawn.mockClear()
+      mgr.create(args)
+      return spawnedEnv()
+    }
+    const localAgy = envOf({
+      kind: 'agy',
+      koloftShim: false,
+      cwd: os.tmpdir(),
+      processEnv: {
+        PATH: '/usr/bin:/bin',
+        KOLOFT_AGY_LOG: '/tab/agy.jsonl',
+        KOLOFT_NOTICE: '/tab/pty-1.notice'
+      }
+    })
+    expect(localAgy.KOLOFT_AGY_LOG).toBe('/tab/agy.jsonl')
+    expect(localAgy.KOLOFT_NOTICE).toBe('/tab/pty-1.notice')
+    expect(localAgy.ANTIGRAVITY_CONVERSATION_ID).toBeUndefined()
+
+    const remoteAgy = envOf({ kind: 'agy', koloftShim: SHIM, cwd: os.tmpdir() })
+    expect(remoteAgy.KOLOFT_AGY_LOG).toBeUndefined()
+    expect(remoteAgy.KOLOFT_NOTICE).toBeUndefined()
+
+    const localMuse = envOf({
+      kind: 'muse',
+      koloftShim: false,
+      cwd: os.tmpdir(),
+      processEnv: { PATH: '/usr/bin:/bin', TBH_MANAGED_HOOKS_PATH: '/tab/hooks.json' }
+    })
+    expect(localMuse.TBH_MANAGED_HOOKS_PATH).toBe('/tab/hooks.json')
+
+    const remoteMuse = envOf({ kind: 'muse', koloftShim: SHIM, cwd: os.tmpdir() })
+    expect(remoteMuse.TBH_MANAGED_HOOKS_PATH).toBeUndefined()
   })
 
   it("a Workbench shell's processes carry its session tab's id, so what they start counts as the session's after its tab id changes; a placeholder id such as a sleeping tab's asleep-1, which later runs hand out again, is never carried", () => {

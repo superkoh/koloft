@@ -59,6 +59,14 @@ This session is not {{butler-name}} itself: {{butler-name}} started you in its o
   },
   {
     slot: 'butler-plugins-changed',
-    text: 'The owner changed Settings ▸ Plugins after this conversation began: {{plugins-now}}. A plugin that is off takes away its commands and what your instructions say about it; run koloft help to see what you can use now. There is nothing to answer now.'
+    text: 'The owner changed Settings ▸ Plugins after this conversation began: {{plugins-now}}. A plugin that is off takes away its commands and what your instructions say about it; run koloft help to see what you can use now.{{lines-gained}} There is nothing to answer now.'
+  },
+  {
+    slot: 'butler-lines-gained',
+    text: ' Your instructions now also say:{{lines}}'
+  },
+  {
+    slot: 'butler-lines-came',
+    text: 'After this conversation began, Koloft added to your instructions:{{lines}} There is nothing to answer now.'
   }
 ]

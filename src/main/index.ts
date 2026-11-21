@@ -99,6 +99,7 @@ import {
   familyEfforts,
   resolveOwnPick,
   listsModels,
+  needsTheAccountsModels,
   type ListedModel,
   type OwnPickResolved
 } from '@shared/sessionPicks'
@@ -1973,7 +1974,8 @@ const assistTargets: Record<BackendId, () => Promise<AssistTarget | null>> = {
 const assist = koloftAssist({
   picks: loadSettings,
   enabled: (backend) => !turnedOffNow(backend),
-  target: (backend) => assistTargets[backend]()
+  target: (backend) => assistTargets[backend](),
+  onThisAccount: assistJobPick
 })
 const assistRuns = new Map<number, AbortController>()
 
@@ -2002,8 +2004,15 @@ async function assistBackendChoice(): Promise<AssistBackendChoice> {
   const notOnPreferred = 'error' in choice ? choice.inFull : choice.because
   if (notOnPreferred) logWhyButlerIsNotOn(preferred, inputs, notOnPreferred)
   if ('error' in choice) return choice
-  const { model, effort } = assistLaunchOn('butler', choice.backend, settings)
-  return { ...choice, ...(model && { model }), ...(effort && { effort }) }
+  const asked = assistLaunchOn('butler', choice.backend, settings)
+  const { pick, note } = await ownPick(choice.backend, asked, modelsAssistGoesBy)
+  const { model, effort } = pick
+  return {
+    ...choice,
+    ...(model && { model }),
+    ...(effort && { effort }),
+    ...(note && { modelNote: note })
+  }
 }
 
 function logWhyButlerIsNotOn(
@@ -2116,12 +2125,25 @@ function listedModels(backend: BackendId): Promise<ListedModel[] | undefined> {
   const listed = readModelList(backend).catch(() => undefined)
   modelLists.set(backend, { at: Date.now(), listed })
   void listed.then((models) => {
-    if (!models?.length && modelLists.get(backend)?.listed === listed) modelLists.delete(backend)
+    if (models?.length) modelsLastRead.set(backend, models)
+    else if (modelLists.get(backend)?.listed === listed) modelLists.delete(backend)
   })
   return listed
 }
 
 const THE_DIALOG_WAITS_FOR_THE_ACCOUNTS_MODELS_MS = 2000
+// AGY§21
+const ASSIST_WAITS_FOR_ITS_FIRST_MODEL_LIST_MS = 5000
+
+const listedModelsWithin = (backend: BackendId, ms: number): Promise<ListedModel[] | undefined> =>
+  within(listedModels(backend), ms, 'the model list').catch(() => undefined)
+
+const modelsLastRead = new Map<BackendId, ListedModel[]>()
+
+async function modelsAssistGoesBy(backend: BackendId): Promise<ListedModel[] | undefined> {
+  const reading = listedModelsWithin(backend, ASSIST_WAITS_FOR_ITS_FIRST_MODEL_LIST_MS)
+  return modelsLastRead.get(backend) ?? reading
+}
 
 const defaultsOfProjects = projectDefaults({
   rootOf: (dir) => projectInfoOnHost(dir).root,
@@ -2153,18 +2175,34 @@ const saveEveryWorkspaceVersions = (everyWorkspaceInstructions: InstructionsVers
   commitSettings({ everyWorkspaceInstructions })
 }
 
-async function ownPick(backend: BackendId, asked: OwnPick): Promise<OwnPickResolved> {
-  const listed = asked.model && listsModels(backend) ? await listedModels(backend) : undefined
-  const resolved = resolveOwnPick(backend, asked, listed)
-  if (resolved.note) sendToRenderer(CH.toast.show, resolved.note)
-  return resolved
+async function ownPick(
+  backend: BackendId,
+  asked: OwnPick,
+  models: (backend: BackendId) => Promise<ListedModel[] | undefined> = listedModels
+): Promise<OwnPickResolved> {
+  const listed = needsTheAccountsModels(backend, asked.model) ? await models(backend) : undefined
+  return resolveOwnPick(backend, asked, listed)
+}
+
+const assistNotesSaid = new Set<string>()
+
+async function assistJobPick(backend: BackendId, asked: OwnPick): Promise<OwnPick> {
+  const { pick, note } = await ownPick(backend, asked, modelsAssistGoesBy)
+  if (note && !assistNotesSaid.has(note)) {
+    assistNotesSaid.add(note)
+    sendToRenderer(CH.toast.show, `Koloft Assist: ${note}`)
+  }
+  return pick
 }
 
 async function withOwnDefaults(opts: CreateTabOptions): Promise<CreateTabOptions> {
   const backend = backendIdOf(opts.kind)
   if (!backend || typeof opts.cwd !== 'string' || !takesOwnDefaults(opts)) return opts
   const asked = (await defaultsOfProjects.of(opts.cwd))?.picks[backend]
-  return asked ? { ...opts, ...(await ownPick(backend, asked)).pick } : opts
+  if (!asked) return opts
+  const { pick, note } = await ownPick(backend, asked)
+  if (note) sendToRenderer(CH.toast.show, note)
+  return { ...opts, ...pick }
 }
 
 const butlerFolderNow = (): string => conductorFolder(app.getPath('userData'))
@@ -3653,6 +3691,13 @@ app.whenReady().then(() => {
     claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))
   }
   let butlerHearsOfSwitches: ReturnType<typeof setTimeout> | undefined
+  const butlerHearsSoon = (): void => {
+    clearTimeout(butlerHearsOfSwitches)
+    butlerHearsOfSwitches = setTimeout(
+      () => butler?.whatItKnowsMayHaveChanged(),
+      SWITCH_FLIPS_GATHER_MS
+    )
+  }
   onSwitchesChanged(() => {
     checkSkillsAgain()
     machinePkg = null
@@ -3665,8 +3710,7 @@ app.whenReady().then(() => {
     } catch (err) {
       console.error('[koloft] could not rewrite what a plugin switch changed:', err)
     }
-    clearTimeout(butlerHearsOfSwitches)
-    butlerHearsOfSwitches = setTimeout(() => butler?.pluginsSwitched(), SWITCH_FLIPS_GATHER_MS)
+    butlerHearsSoon()
   })
   claudeBackend.agentReply = (tabId, raw) => agentRequests.replyFor(tabId, raw)
   claudeBackend.watchShimRegistrations(regDir)
@@ -4173,6 +4217,7 @@ app.whenReady().then(() => {
     save: (discord) => {
       void commitSettings({ discord })
       syncAnswerable()
+      butlerHearsSoon()
     },
     saveQuietly: (discord) => void saveSettings({ discord }),
     rowsChanged: () => workspaceMgr?.refresh(),
@@ -4245,9 +4290,10 @@ app.whenReady().then(() => {
         discordOn() ? discordRelay?.quietMarks : undefined
       )) ?? false,
     pluginsOn: switchesThatAct,
-    pluginsNews: (changed) =>
+    pluginsNews: (changed, lines) =>
       pluginsChangedNews(
-        PLUGINS.filter((p) => p.id in changed).map((p) => ({ name: p.name, on: changed[p.id] }))
+        PLUGINS.filter((p) => p.id in changed).map((p) => ({ name: p.name, on: changed[p.id] })),
+        lines
       ),
     showsPromptBeforeBind,
     bindDeadlineMs: cronBindDeadlineMs()
@@ -6171,29 +6217,30 @@ function butlerTarget(ref: string): Target | undefined {
   }
 }
 
-async function cronPick(req: LaunchRequest): Promise<OwnPick> {
+async function cronPick(req: LaunchRequest): Promise<OwnPickResolved> {
   const job = { model: req.model, effort: req.effort }
   const filled =
     job.model && job.effort
       ? undefined
       : cronPickFor(req.backend, job, await defaultsOfProjects.of(req.cwd))
-  return filled ? (await ownPick(req.backend, filled)).pick : job
+  return ownPick(req.backend, filled ?? job)
 }
 
 async function launchCronRun(req: LaunchRequest): Promise<LaunchResult> {
   try {
+    const { pick, note } = await cronPick(req)
     const options: CreateTabOptions & { kind: BackendId } = {
       kind: req.backend,
       cwd: req.cwd,
       worktree: req.worktree,
-      ...(await cronPick(req)),
+      ...pick,
       permission: req.permission,
       firstPrompt: req.firstPrompt,
       name: req.name,
       scheduled: true
     }
     const tabId = await launchQuietTab(options, req.name, { jobId: req.jobId })
-    return tabId ? { ok: true, tabId } : { ok: false }
+    return tabId ? { ok: true, tabId, ...(note && { note }) } : { ok: false }
   } catch (err) {
     console.error('[koloft] a scheduled run could not be launched:', err)
     return { ok: false }
@@ -6805,12 +6852,7 @@ function registerIpc(): void {
       const [defaults, listed] = await Promise.all([
         defaultsOfProjects.read(workspacePath),
         loadSettings().sessionMethods.enabled.agy
-          ? Promise.race([
-              listedModels('agy'),
-              new Promise<undefined>((done) =>
-                setTimeout(() => done(undefined), THE_DIALOG_WAITS_FOR_THE_ACCOUNTS_MODELS_MS)
-              )
-            ])
+          ? listedModelsWithin('agy', THE_DIALOG_WAITS_FOR_THE_ACCOUNTS_MODELS_MS)
           : undefined
       ])
       return { defaults, familyEfforts: familyEfforts('agy', listed) }

@@ -421,6 +421,14 @@ only downloaded the public release.
     `title:"…"`) can hold the title while `conversation_summaries.db` still shows
     `step_count` 0. `/rename` updates `title`. A `/new` that is never used stays as a
     row with `step_count` 0.
+  - The row can stay at `step_count` 0, an empty `title` and "never" times for good,
+    however many turns the conversation has (2026-11-20, agy 1.5.13 on macOS, the
+    owner's own `~/.gemini`, read with a script): 3 of the 4 top-level rows at 0 had
+    a transcript of 155–365 lines, one of them a Koloft tab's with its title only in
+    `annotations/<id>.pbtxt`; the 4th, with no transcript, was the only one never
+    used. The `cli-*.log` of that tab's launches shows the first message and later
+    turns, and no line about its summary. So `step_count` 0 does not tell an unused
+    conversation; a transcript with something in it does.
   - `status` (`CASCADE_RUN_STATUS_IDLE` / `RUNNING`) does not tell whether a process
     is live: a finished `-p` leaves `IDLE`, opening the `/resume` picker sets every
     row not live to `""`, an open ask reads `RUNNING` with `not_fully_idle=1`, a
@@ -1400,6 +1408,10 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
   off its ids only, not run. That an account without Neon lists Argon, as this one
   still does, is inferred, not checked: Carbon was not open to every account (above),
   so Koloft's normal tier runs Argon where Neon is missing.
+- **How long `agy models` takes** (2026-11-20, agy 1.5.13 on macOS, the same copied-token
+  route, four runs one after another): 1.3 to 1.5 s each, exit 0, the same 27 rows. So an
+  Assist job set to Neon or Carbon goes by the list Koloft last read, and only while none
+  has come back since Koloft started does it wait for one: at most 5 s of the 15 s it has.
 - `/model`, Down, Esc leaves the model unchanged.
 
 - **`-p` on a real Google account, by model and effort** (2026-11-11, agy 1.5.6 on
