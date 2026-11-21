@@ -7,6 +7,7 @@ import { PageRouting, type PageRoutingDeps } from './pageRouting'
 import { pagePushes, registerPageChannels } from './pageChannels'
 import { pagesInUse, type PagesInUseDeps } from './pagesInUse'
 import { PageTools, type PageToolsDeps } from './pageTools'
+import { ReaderDocs, type ReaderDocsDeps } from './readerDocs'
 import { pickDocsOfEachTurn } from './sessionHooks'
 import { SitePermissions, type SitePermissionsDeps } from './sitePermissions'
 import { WebPages, type WebPagesDeps } from './webPages'
@@ -30,7 +31,7 @@ export type WorkbenchPagesDeps = Omit<
 export interface WorkbenchStartDeps {
   pages: WorkbenchPagesDeps
   commands: Parameters<typeof registerWorkbenchCommands>[1]
-  readerDocs: Parameters<typeof pickDocsOfEachTurn>[1]
+  readerDocs: ReaderDocsDeps
   channels: Parameters<typeof registerChannels>[1]
 }
 
@@ -69,14 +70,15 @@ function buildPages(ipc: MainIpc, d: WorkbenchPagesDeps) {
   }
 }
 
-export const start: PluginStart<WorkbenchStartDeps, ReturnType<typeof buildPages>> = (
-  { commands, moments, ipc },
-  d
-) => {
+export const start: PluginStart<
+  WorkbenchStartDeps,
+  ReturnType<typeof buildPages> & { readerDocs: ReaderDocs }
+> = ({ commands, moments, ipc }, d) => {
   const pages = buildPages(ipc, d.pages)
+  const readerDocs = new ReaderDocs(d.readerDocs)
   registerWorkbenchCommands(commands, d.commands)
-  pickDocsOfEachTurn(moments, d.readerDocs)
+  pickDocsOfEachTurn(moments, readerDocs)
   registerPageChannels(ipc, { ...pages, openExternal: d.pages.openExternally })
   registerChannels(ipc, d.channels)
-  return pages
+  return { ...pages, readerDocs }
 }

@@ -872,8 +872,8 @@ export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments,
   calls. Sessions core's gives back `tookTheTurn`, which the butler's and the Inbox's deps read
   when a turn ends. Workbench's gives back the web-page parts it builds (`WebPages`,
   `SitePermissions`, `PageDialogs`, `PageDownloads`, `PageRouting`, `PageTools`),
-  `pagesInUse`, and the two ways it pushes to the window (an open file request, and
-  `pagePushes`), which the app's own code calls from then on. Browser control's gives back
+  `pagesInUse`, the `ReaderDocs` it builds, and the two ways it pushes to the window (an
+  open file request, and `pagePushes`), which the app's own code calls from then on. Browser control's gives back
   the `CdpOps` it builds and the CDP relay's functions the app calls (`startRelay`,
   `setRelayEnabled`, `writeRelayEnv`, `relayEndpoint`, `sessionDrivingGuest`, …). Todo's
   gives back `TODO_NEWS`, which the app hands the butler.

@@ -586,7 +586,7 @@ import { A_HELPER_HAS_IT, writeLineInTurn } from '@plugins/sessions/main/crossSe
 import { docsWritingOn } from '@plugins/docs-writing/api'
 import { StartedSessions } from '@plugins/sessions/main/startedSessions'
 import { worktreeNameForTask } from '@plugins/sessions/main/sessionTitle'
-import { ReaderDocs } from './readerDocs'
+import { localFile } from './realFiles'
 import { NewsJudge, judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
 import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
 import { koloftAssist, type AssistTarget } from './assist'
@@ -696,13 +696,14 @@ function storedOwnerOf(tabId: string): SessionsWithStore | undefined {
 const startedSessions = new StartedSessions(() =>
   path.join(app.getPath('userData'), 'started-sessions.json')
 )
-const readerDocs = new ReaderDocs({
+const workbenchReaderDocs: PluginStartDeps['workbench']['readerDocs'] = {
   file: () => path.join(app.getPath('userData'), 'doc-verdicts.json'),
   assist: (job) => assist(job),
   session: sessionOfTab,
   remoteFileExists: (host, keyed) => hosts.machine(host).fileExists(keyed),
+  localFile,
   changed: () => pushToSessions.sessions(onSessionsChanged())
-})
+}
 const sessionBackends = new SessionBackends({
   turnEnded: (tabId, turn) => announceNow(TURN_ENDED, { tabId, turn }),
   prompted: (tabId) => {
@@ -6700,7 +6701,7 @@ const startedPlugins: PluginsStarted = startPlugins(
     workbench: {
       pages: workbenchPages,
       commands: workbenchCommands,
-      readerDocs,
+      readerDocs: workbenchReaderDocs,
       channels: {
         files: (p) => hosts.of(p),
         base: sanitizeBase,
@@ -6856,7 +6857,8 @@ const {
   pageTools,
   pagesInUse,
   pushOpenRequest,
-  pushToPages
+  pushToPages,
+  readerDocs
 } = startedPlugins.workbench
 const {
   cdpOps,
