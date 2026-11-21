@@ -184,7 +184,7 @@ the types a plugin registers with.
 | `src/core/webPage.ts` | `WebPage`: one Workbench web page a plugin may run a script in |
 | `src/core/gh.ts` | what running `gh` gives back, for core and plugins alike: `GhResult`, `Gh`, `GH_SIGNED_OUT`, `slug`, `ghJsonArray`, and the shape of the GitHub fixture that Koloft's end-to-end tests use (`GithubFixture`) |
 | `src/core/worktree.ts` | `GitOut`, `branchExists` and `TidyResult`, for the worktree git helpers |
-| `src/core/folderFingerprint.ts` | `folderFingerprint(git, folder)`: one text that changes when anything git does not ignore changes in the folder's repository (the commit it is on, its branches, tags and stash, and the content of every changed or new file); `null` when git cannot read it, as in a folder that is no git repository. It runs only git commands that change nothing, through the `GitOut` it is given, so it works on the machine the folder is on |
+| `src/core/folderFingerprint.ts` | `folderFingerprint(git, folder)`: one text that changes when anything git does not ignore changes in the folder's repository (the commit it is on, its branches, tags and stash, and the content of every changed or new file); what changes inside a submodule or inside another git checkout in it does not count; `null` when git cannot read it, as in a folder that is no git repository. It runs only git commands that change nothing, through the `GitOut` it is given, so it works on the machine the folder is on |
 | `src/core/typeKeys.ts` | `typeKeys`, `pressesAKey`, `clicksTheMouse` and their helpers: what Koloft types into a session's terminal |
 | `src/core/transcriptPlaces.ts` | `TranscriptPlaces`: where a session's transcript is, on this Mac or on its machine |
 | `src/core/privateFile.ts` | `PrivateRecordFile`: a JSON record file only the owner can read |
@@ -890,7 +890,7 @@ export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments,
   | `waitsOnAnother(tabId)` | whether it waits on other work: a session it started, a reply it is owed, or a monitor |
   | `butlerSide(tabId)` | whether it is the butler or a session in the butler's folder |
   | `markAnswerable(tabId, on)` | asks a Claude Code tab on this Mac to hold its question for Koloft's answer, as it does while the owner sleeps; the mark goes when the tab ends. On any other tab it does nothing |
-  | `startBeside(tabId, spec)` | starts a session in that session's own folder, on its machine, with the role, task, agent, model, effort and permission the plugin gives, and shows its row under that session's. It is no session that session started: it owes it no reply, does not count as work that session waits on, and is not closed with it. It announces neither `session-starting` nor `session-started` |
+  | `startBeside(tabId, spec)` | starts a session in that session's own folder, on its machine, with the role, task, agent, model, effort and permission the plugin gives, and shows its row under that session's. When that folder is a sidebar workspace or lies inside one, the new session's agent is told to trust it ([ADR-0026](adr/0026-worktree-launch-accepts-claude-trust.md)). It is no session that session started: it owes it no reply, does not count as work that session waits on, and is not closed with it. It announces neither `session-starting` nor `session-started` |
 - The app calls `startPlugins` as its main module finishes loading, after every part a deps
   object hands in exists, and before Electron is ready, so before any session runs, any
   `koloft` command arrives or the window opens.
@@ -1010,11 +1010,11 @@ parts it builds and hands to the starts as deps, and the types and helpers they 
 
 `npm run check:plugin-imports` lists each import under `src/` that breaks the rule; it does
 not read the tests. It only reports and never fails the build. On `main` at the commit this
-page was last checked against, it listed 649 imports, in five kinds:
+page was last checked against, it listed 650 imports, in five kinds:
 
 | Kind | Count | What it is |
 |---|---|---|
-| names a plugin outside the lists | 144 | app code, mostly `src/main/`, that imports a plugin's `api.ts`, `main/` or `shared/` files directly |
+| names a plugin outside the lists | 145 | app code, mostly `src/main/`, that imports a plugin's `api.ts`, `main/` or `shared/` files directly |
 | imports `src/shared/` | 271 | plugin code that imports `src/shared/`, which is not core |
 | imports app code outside `src/core` | 224 | plugin code that imports the app's own code, such as `src/main/` modules or the window's store, icons and slots |
 | imports the `api.ts` of a plugin not in its needs | 6 | Discord's code using Sessions core's `api.ts`, and Sessions core's hook scripts using Discord's and the Butler's |

@@ -119,6 +119,43 @@ describe('folderFingerprint', () => {
     expect(await fingerprint(inside)).not.toBe(before)
   })
 
+  it('still answers with a git checkout of its own inside, or a link that points nowhere', async () => {
+    const inner = path.join(repo, 'vendor', 'lib')
+    fs.mkdirSync(inner, { recursive: true })
+    execFileSync('git', ['-C', inner, 'init', '-q'])
+    fs.symlinkSync(path.join(directory, 'gone'), path.join(repo, 'dangling'))
+    const before = await fingerprint()
+    expect(before).not.toBeNull()
+    write('notes.txt', 'changed\n')
+    expect(await fingerprint()).not.toBe(before)
+  })
+
+  it('answers for a repository with no commit yet, and changes as files appear', async () => {
+    const fresh = path.join(directory, 'fresh')
+    fs.mkdirSync(fresh)
+    execFileSync('git', ['-C', fresh, 'init', '-q'])
+    fs.writeFileSync(path.join(fresh, 'a.txt'), 'a\n')
+    const before = await fingerprint(fresh)
+    expect(before).not.toBeNull()
+    fs.writeFileSync(path.join(fresh, 'a.txt'), 'b\n')
+    expect(await fingerprint(fresh)).not.toBe(before)
+  })
+
+  it('changes when a file kept through a merge conflict is edited', async () => {
+    git('add', '.')
+    git('commit', '-q', '-m', 'all')
+    git('checkout', '-q', '-b', 'gone')
+    git('rm', '-q', 'README.md')
+    git('commit', '-q', '-m', 'remove')
+    git('checkout', '-q', 'main')
+    write('README.md', 'changed here\n')
+    git('commit', '-q', '-am', 'change')
+    expect(() => git('merge', '-q', 'gone')).toThrow()
+    const before = await fingerprint()
+    write('README.md', 'resolved\n')
+    expect(await fingerprint()).not.toBe(before)
+  })
+
   it('answers nothing for a folder that is no git repository', async () => {
     const plain = path.join(directory, 'plain')
     fs.mkdirSync(plain)

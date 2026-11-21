@@ -46,6 +46,19 @@ export interface BesideDeps {
 export const folderOf = (s: SessionInfo): string =>
   s.remote ? formatRemoteKey(s.remote.host, s.cwd) : s.cwd
 
+// CODEX§17
+export const roleAndTask = (
+  backend: BackendId,
+  role: string,
+  task: string
+): Pick<CreateTabOptions, 'role' | 'firstPrompt'> =>
+  PEER_TRAITS[backend].handoverAsRole
+    ? { role, firstPrompt: task }
+    : { firstPrompt: withHandover(role, task) }
+
+const inAWorkspace = (folder: string, workspaces: { path: string }[]): boolean =>
+  workspaces.some((w) => folder === w.path || folder.startsWith(`${w.path}/`))
+
 export async function startBeside(
   d: BesideDeps,
   tabId: string,
@@ -65,11 +78,8 @@ export async function startBeside(
       effort: spec.effort,
       permission: spec.permission,
       // ADR-0026
-      trustFolder: d.pinnedWorkspaces().some((w) => w.path === folder),
-      // CODEX§17
-      ...(PEER_TRAITS[backend].handoverAsRole
-        ? { role: spec.role, firstPrompt: spec.task }
-        : { firstPrompt: withHandover(spec.role, spec.task) })
+      trustFolder: inAWorkspace(folder, d.pinnedWorkspaces()),
+      ...roleAndTask(backend, spec.role, spec.task)
     })
     .catch(() => null)
   if (!tab) return { ok: false, why: 'Koloft could not start the session' }

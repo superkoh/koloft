@@ -76,6 +76,7 @@ import type { Assist } from '@core/assistModels'
 import type { SessionsAssistJobId } from '../shared/assistJobs'
 import { keysFor } from '@core/typeKeys'
 import type { StartedSessions } from './startedSessions'
+import { roleAndTask } from './sessionTabs'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
 
 export const helpVerb =
@@ -635,7 +636,6 @@ async function launchSibling(
   helper: boolean
 ): Promise<{ tabId: string; name: string | undefined } | null> {
   const backend = args.backend ?? me.backendId
-  const traits = PEER_TRAITS[backend]
   const caller: SessionCaller = {
     name: (await d.peerNames()(me)) ?? (reachedBySendMessage(me.backendId) ? me.title : undefined),
     id: idToReach(me),
@@ -676,10 +676,7 @@ async function launchSibling(
       ownerWords,
       // ADR-0026
       trustFolder: !worktree && (helper || d.pinnedWorkspaces().some((w) => w.path === workspace)),
-      // CODEX§17
-      ...(traits.handoverAsRole
-        ? { role: preamble, firstPrompt: args.prompt }
-        : { firstPrompt: withHandover(preamble, args.prompt) })
+      ...roleAndTask(backend, preamble, args.prompt)
     })
   } finally {
     if (held) names.launched(held, tabId)

@@ -508,30 +508,24 @@ import { OldThreads } from '@plugins/discord/main/oldThreads'
 import { roomLink, Rooms, whereOf, type RoomSubject } from '@plugins/discord/main/rooms'
 import { accentOf } from '@plugins/discord/main/cards'
 import { AskButtons } from '@plugins/discord/main/buttons'
-import {
-  SlashCommands,
-  askFromClaude,
-  askFromCodex,
-  folderOf,
-  startBeside,
-  toCaller,
-  type KoloftAsk,
-  type SlashReplyTo,
-  type SlashTarget
-} from '@plugins/sessions/api'
+import { SlashCommands, toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
+import { folderOf, startBeside } from '@plugins/sessions/main/sessionTabs'
 import { toChannel } from '@plugins/discord/main/slash'
 import { TabLifecycle, subscribeTabSubsystems } from '@plugins/sessions/main/tabLifecycle'
 import { Interactions, SLASH_COMMANDS } from '@plugins/discord/main/interactions'
 import { clicksTheMouse, pressesAKey, typeKeys } from '@core/typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import {
+  askFromClaude,
+  askFromCodex,
   claudeDialog,
   codexDialog,
   isAskedCall,
   questionsOf,
   type CodexApproval,
   type CodexQuestion,
-  type DialogView
+  type DialogView,
+  type KoloftAsk
 } from '@plugins/sessions/main/dialog'
 import { sleep } from '@core/sleep'
 import {
@@ -1028,7 +1022,7 @@ function openTabOf(s: SessionInfo): OpenTab {
     sessionId: s.sessionId,
     kind: s.backendId,
     title: sidebarTitle(s) ?? s.title,
-    cwd: s.remote ? formatRemoteKey(s.remote.host, s.cwd) : s.cwd,
+    cwd: folderOf(s),
     tabIds: tabIdsOf(s.tabId)
   }
 }
@@ -3781,7 +3775,7 @@ app.whenReady().then(() => {
     if (!restarting) earlierTabIds.delete(e.id)
     ownerTouchedAt.delete(e.id)
     questionSeen.delete(e.id)
-    answerableForAPlugin.delete(e.id)
+    if (!restarting) answerableForAPlugin.delete(e.id)
     if (answerable.delete(e.id) && hookRegDir) markAnswerable(hookRegDir, e.id, false)
     if (hookRegDir) forgetAssistMarkers(hookRegDir, e.id)
     guard?.forget(e.id)
@@ -6374,6 +6368,10 @@ function registerIpc(): void {
     ptyMgr.moveOwner(oldTabId, newTabId)
     startedSessions.moved(oldTabId, newTabId)
     shownUnder.moved(oldTabId, newTabId)
+    if (answerableForAPlugin.delete(oldTabId)) {
+      answerableForAPlugin.add(newTabId)
+      syncAnswerable()
+    }
     sessionCommand.tabMoved(oldTabId, newTabId)
     koloftInbox.rebound(oldTabId, newTabId)
     cronRunner?.tabMoved(oldTabId, newTabId)

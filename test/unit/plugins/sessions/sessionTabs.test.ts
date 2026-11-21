@@ -92,10 +92,12 @@ describe('startBeside', () => {
     expect(launched[0]).toMatchObject({ kind: 'codex', role: spec.role, firstPrompt: spec.task })
   })
 
-  it('trusts the folder for the agent only when it is a workspace in the sidebar', async () => {
+  it('trusts the folder for the agent only when it is a sidebar workspace or inside one', async () => {
     const atTheRoot = session({ cwd: '/work/app', treeRoot: '/work/app' })
     await startBeside(deps(atTheRoot, ['/work/app']), 'tab-watched', spec)
-    expect(launched[0]).toMatchObject({ trustFolder: true })
+    await startBeside(deps(session(), ['/work/app']), 'tab-watched', spec)
+    await startBeside(deps(session(), ['/work/ap']), 'tab-watched', spec)
+    expect(launched.map((l) => l.trustFolder)).toEqual([true, true, false])
   })
 
   it('is shown under the session in the sidebar, once it binds too', async () => {

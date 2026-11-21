@@ -24,8 +24,6 @@ export const CARRY_ON =
 export const CLOSE_YOURSELF =
   'Wrap up and close this session: commit what is still open, then run koloft session close as your very last step. If Koloft refuses, say why and stop.'
 
-export type { KoloftAsk }
-
 export interface AskedSession {
   sessionId: string
   title: string
