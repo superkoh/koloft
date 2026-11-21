@@ -4,6 +4,8 @@ import type { Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { runGit, setupGitFixture } from './helpers/gitFixture'
 import { installStallingGit } from './helpers/gitSpawnLog'
+import { codexRows, startCodex } from './helpers/codex'
+import { installCodex } from './helpers/env'
 import {
   centerTerm,
   gitInit,
@@ -234,6 +236,29 @@ test.describe('Keyboard shortcuts · native accelerators are driven as shortcut:
       await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
       expect(runGit(fx.clone, 'branch', '--list', 'worktree-done').trim()).toBe('')
       await expect(rows).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('T-KEY-09: ⌘W closes a Codex session for good the same way: its tab and its row go', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    installCodex(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await expect(codexRows(page)).toHaveCount(1)
+
+      await sendShortcut(app, 'shortcut:close-session')
+      const go = fullCloseDialog(page).getByRole('button', { name: 'Close for good' })
+      await expect(go).toBeEnabled({ timeout: 30_000 })
+      await go.click()
+      await expect(codexRows(page)).toHaveCount(0, { timeout: 15_000 })
+      await expect(page.locator('.modal-backdrop')).toHaveCount(0)
     } finally {
       await quitAndClose(app)
     }
