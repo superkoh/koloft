@@ -7,9 +7,12 @@ const A = `${DIR}/0b0e7a52-6f0c-4c1e-9f44-2f1d1c5a9a10.png`
 const B = `${DIR}/7c9e6679-7425-40de-944b-e07fc1f90ae7.jpg`
 
 describe('a prompt with pasted pictures', () => {
-  it('names the folder its pictures are in, and none when it has no picture', () => {
-    expect(pictureFolderIn(`fix it\n\nPicture: ${A}\nPicture: ${B}`)).toBe(DIR)
-    expect(pictureFolderIn('fix it')).toBeUndefined()
+  it("names Koloft's own folder its pictures are in, past a picture line naming any other folder, and none when no picture is in Koloft's own folder", () => {
+    const own = (folder: string): boolean => folder === DIR
+    expect(pictureFolderIn(`fix it\n\nPicture: ${A}\nPicture: ${B}`, own)).toBe(DIR)
+    expect(pictureFolderIn(`Picture: /tmp/x.png\nfix it\n\nPicture: ${A}`, own)).toBe(DIR)
+    expect(pictureFolderIn('fix it\n\nPicture: /Users/me/Desktop/a.png', own)).toBeUndefined()
+    expect(pictureFolderIn('fix it', own)).toBeUndefined()
   })
 
   it('titles its session by the words alone, never by a picture’s path', () => {

@@ -130,7 +130,8 @@ async function claudeTab(
         agentPlugin: () => (withPlugin ? '/koloft/agent-plugin' : undefined),
         docsPlugin: () => '/koloft/docs-plugin',
         assistOf: () => assist,
-        agentHomes: () => ({ codexHome: '/nowhere', configHome: '/nowhere' })
+        agentHomes: () => ({ codexHome: '/nowhere', configHome: '/nowhere' }),
+        pastedPicturesDir: () => path.join(userData, 'palette-pictures')
       }),
       (machine) =>
         new SshHost(machine, {
@@ -428,6 +429,23 @@ describe('what each of the four kinds of session tab is handed for each launch f
         expect(withFeature).not.toContain(s)
       }
     })
+  })
+})
+
+// CC§18 ADR-0026
+it("trusts Koloft's pasted-pictures folder and hands it to a Claude Code tab on this Mac whose first prompt names a picture there, and neither trusts nor hands a folder a picture line elsewhere names", async () => {
+  const pictures = path.join(userData, 'palette-pictures')
+  const elsewhere = path.join(home, 'elsewhere')
+  for (const dir of [pictures, elsewhere]) fs.mkdirSync(dir)
+
+  const other = await claudeTab(repo, { firstPrompt: `look\n\nPicture: ${elsewhere}/a.png` })
+  expect(other).not.toContain('KOLOFT_PICTURE_FOLDER')
+  expect(ownFile('.claude.json')).not.toContain('hasTrustDialogAccepted')
+
+  const own = await claudeTab(repo, { firstPrompt: `look\n\nPicture: ${pictures}/a.png` })
+  expect(own).toContain(`"KOLOFT_PICTURE_FOLDER":"${pictures}"`)
+  expect(JSON.parse(ownFile('.claude.json')).projects).toEqual({
+    [pictures]: { hasTrustDialogAccepted: true }
   })
 })
 

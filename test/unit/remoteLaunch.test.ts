@@ -142,6 +142,7 @@ const spec = ({
   agentPlugin,
   docsPlugin = true,
   trustFolder,
+  pictureFolder,
   program,
   ...over
 }: Partial<TabSpec & ClaudeTab> = {}): TabSpec => {
@@ -155,7 +156,14 @@ const spec = ({
   }
   return program
     ? { ...tab, program }
-    : claudeTabSpec(tab, { settings, claudeArgs, agentPlugin, docsPlugin, trustFolder })
+    : claudeTabSpec(tab, {
+        settings,
+        claudeArgs,
+        agentPlugin,
+        docsPlugin,
+        trustFolder,
+        pictureFolder
+      })
 }
 
 function stage(r: Remote, files: Record<string, string | Buffer>, s: TabSpec) {
@@ -1110,6 +1118,23 @@ describe('U-TAB-*: the tab script on the machine', () => {
     fs.writeFileSync(cj(plain), seeded)
     expect(plain.run().status).toBe(0)
     expect(fs.readFileSync(cj(plain), 'utf8')).toBe(seeded)
+  })
+
+  // CC§18 ADR-0026
+  it('a tab that hands claude a picture folder trusts that very folder under its real path; a tab that hands none leaves .claude.json alone', () => {
+    const pictures = path.join(mkroot('pictures'), 'element-picks')
+    fs.mkdirSync(pictures)
+    const claudeJsonAfter = (pictureFolder?: string): string => {
+      const b = box(spec({ pictureFolder }), { ensureBringsNode: true })
+      expect(b.run().status).toBe(0)
+      const cj = path.join(b.home, '.claude.json')
+      return fs.existsSync(cj) ? fs.readFileSync(cj, 'utf8') : ''
+    }
+
+    expect(claudeJsonAfter()).toBe('')
+    expect(JSON.parse(claudeJsonAfter(pictures))).toEqual({
+      projects: { [fs.realpathSync(pictures)]: { hasTrustDialogAccepted: true } }
+    })
   })
 
   // CC§10

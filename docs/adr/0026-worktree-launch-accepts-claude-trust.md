@@ -1,4 +1,4 @@
-# 0026 Only a worktree session the person starts or opens, a scheduled run's worktree under a folder they trusted, a session an agent starts in a sidebar workspace, a session a plugin starts beside another in a sidebar workspace, or an Antigravity resume on another account in a folder an account trusts, writes an agent's folder trust
+# 0026 Only a worktree session the person starts or opens, a scheduled run's worktree under a folder they trusted, a session an agent starts in a sidebar workspace, a session a plugin starts beside another in a sidebar workspace, an Antigravity resume on another account in a folder an account trusts, or a Claude Code launch handed Koloft's own picture folder, writes an agent's folder trust
 
 **Constraint**: `claude -w <name>` in a repo Claude has never been trusted in does not
 ask the trust question — it prints an error and exits at once (`CC§9`). In a folder it
@@ -42,6 +42,16 @@ for good.
   wrote under the rules above, since those were the owner's as well), where
   it stays like any yes agy records. A fresh launch never carries trust over: on an
   account that has not had such a resume in the folder, agy still asks.
+- a Claude Code session starts with a first prompt whose picture sits in Koloft's own
+  picture folder (`palette-pictures` in Koloft's data folder on the Mac,
+  a folder ending in `/.koloft/element-picks` on a remote machine, where Koloft copies
+  pictures): Koloft hands claude that folder with `--add-dir`, and since 2.1.326 claude stops on its own "Adding a new directory"
+  question for a folder it does not trust, sends no first prompt and tells Koloft
+  nothing (`CC§18`). The folder holds only pictures Koloft saved, so trusting it gives
+  nothing away. A `Picture:` line naming any other folder (typed words, an agent's
+  task, a picture that failed to copy to the machine) gets no entry, as that folder
+  would trust whatever sits under it, and no `--add-dir` either: claude then asks
+  before reading the picture, in the open, instead of stopping unseen.
 Nothing else writes it: a main session the person starts at the Mac gets the agent's
 own question in the terminal, a scheduled run in a workspace the agent does not trust
 keeps the jobs form's warning and stops on the question, and a launch that fell back to
