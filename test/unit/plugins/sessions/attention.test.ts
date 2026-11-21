@@ -450,6 +450,16 @@ describe('attention — a step a plugin holds', () => {
     expect(changes).toEqual([])
   })
 
+  it('Koloft’s own asks and a tab’s exit are never held', () => {
+    const { t } = holding()
+    t.waitsOnTheOwner('tab-A', { title: 'A' })
+    t.onExited('tab-B')
+    expect(t.list().map((e) => [e.tabId, e.kind])).toEqual([
+      ['tab-A', 'approval'],
+      ['tab-B', 'exited']
+    ])
+  })
+
   it('a held finished turn stays held while its row only goes idle', () => {
     const { t } = holding()
     t.onStatusChange('tab-A', 'working', 'waiting')
