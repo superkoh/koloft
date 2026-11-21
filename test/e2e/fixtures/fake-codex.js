@@ -485,6 +485,7 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
             status: 'completed',
             senderThreadId: thread.id,
             receiverThreadIds: [childId],
+            prompt: 'Check the lint config',
             agentsStates: { [childId]: { status: 'pendingInit' } }
           }
         })

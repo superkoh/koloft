@@ -767,7 +767,7 @@ describe('CodexObservation', () => {
     expect(did()).toHaveLength(8)
   })
 
-  it('says on the row that the session searched the web, opened a page or started a helper, the way Claude and Antigravity rows do', () => {
+  it('says on the row that the session searched the web, opened a page, searched in it or started a helper, the way Claude and Antigravity rows do, and nothing for a spawn that started no child', () => {
     const f = fixture()
     const did = () => f.events.flatMap((e) => (e.type === 'did' ? [e.what] : []))
     const done = (item: object) =>
@@ -798,6 +798,21 @@ describe('CodexObservation', () => {
       agentsStates: { 'child-1': { status: 'pendingInit', message: null } }
     })
     done({
+      type: 'webSearch',
+      query: 'https://example.com/page',
+      action: { type: 'findInPage', url: 'https://example.com/page', pattern: 'timeout' },
+      results: null
+    })
+    done({
+      type: 'collabAgentToolCall',
+      tool: 'spawnAgent',
+      status: 'completed',
+      senderThreadId: A,
+      receiverThreadIds: [],
+      prompt: 'Never started',
+      agentsStates: {}
+    })
+    done({
       type: 'collabAgentToolCall',
       tool: 'wait',
       status: 'completed',
@@ -821,6 +836,7 @@ describe('CodexObservation', () => {
       'Searched the web for vitest workspaces',
       'Opened https://example.com/page',
       'Started a helper: Check the lint config',
+      'Searched for timeout',
       'Started a helper: lint_checker'
     ])
   })
