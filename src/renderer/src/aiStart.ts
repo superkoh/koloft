@@ -25,6 +25,28 @@ export function askRoute(message: string): {
   }
 }
 
+export function askPinnedRoute(
+  wsPath: string,
+  message: string
+): {
+  result: Promise<SessionRoute>
+  cancel: () => void
+} {
+  const id = ++lastAsk
+  return {
+    result: window.api.assist
+      .nameWorktree(id, message)
+      .catch(() => null)
+      .then((name) => ({
+        title: '',
+        kind: 'workspace',
+        path: wsPath,
+        worktree: name ? { kind: 'new', name } : null
+      })),
+    cancel: () => window.api.assist.cancel(id)
+  }
+}
+
 export async function pendingOptions(
   ws: Pick<WorkspaceRows['workspace'], 'path' | 'isGit'>,
   pending: PendingStart

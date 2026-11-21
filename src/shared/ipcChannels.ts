@@ -79,6 +79,7 @@ export const CH = {
   },
   assist: {
     route: 'assist:route',
+    nameWorktree: 'assist:name-worktree',
     cancel: 'assist:cancel'
   },
   settings: {

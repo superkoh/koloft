@@ -607,6 +607,7 @@ import { A_HELPER_HAS_IT, writeLineInTurn } from '@plugins/sessions/main/crossSe
 import { TODO_NEWS } from '@plugins/todo/api'
 import { docsWritingOn } from '@plugins/docs-writing/api'
 import { StartedSessions } from '@plugins/sessions/main/startedSessions'
+import { worktreeNameForTask } from '@plugins/sessions/main/sessionTitle'
 import { ReaderDocs } from './readerDocs'
 import { NewsJudge, judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
 import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
@@ -6314,6 +6315,16 @@ function registerIpc(): void {
         message,
         run.signal
       )
+    } finally {
+      assistRuns.delete(id)
+    }
+  })
+  ipcMain.handle(CH.assist.nameWorktree, async (_e, id: unknown, task: unknown) => {
+    if (typeof id !== 'number' || typeof task !== 'string') return null
+    const run = new AbortController()
+    assistRuns.set(id, run)
+    try {
+      return await worktreeNameForTask(task, assist, run.signal)
     } finally {
       assistRuns.delete(id)
     }

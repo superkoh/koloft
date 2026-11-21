@@ -16,7 +16,7 @@ import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { basename } from '@shared/preview'
 import { hostOf, parseRemoteKey } from '@shared/remoteKey'
 import type { PastedPicture } from '@shared/pastedPictures'
-import { askRoute } from '../aiStart'
+import { askPinnedRoute, askRoute } from '../aiStart'
 import { isComposing } from '../keys'
 import {
   completeMention,
@@ -224,17 +224,18 @@ export function CommandPalette({
 
   const start = (backend: BackendId = choice.lead): void => {
     if (mode !== 'ask' || !startable) return
-    if (!asksAssist) {
+    const pinnedGit = pin && rows.some((w) => w.workspace.path === pin.wsPath && w.workspace.isGit)
+    if (pin && !pinnedGit) {
       onRouted(
         typed,
         backend,
-        pin && { title: '', kind: 'workspace', path: pin.wsPath, worktree: null },
+        { title: '', kind: 'workspace', path: pin.wsPath, worktree: null },
         pictures
       )
       return
     }
     setMode('thinking')
-    const ask = askRoute(typed)
+    const ask = pin ? askPinnedRoute(pin.wsPath, typed) : askRoute(typed)
     asking.current = ask
     void ask.result.then((route) => {
       if (asking.current !== ask) return
@@ -429,7 +430,7 @@ export function CommandPalette({
     if (mode === 'thinking')
       return (
         <div className="pal-status">
-          <BusyLine>Working out who should take this…</BusyLine>
+          <BusyLine>{pin ? 'Naming its worktree…' : 'Working out who should take this…'}</BusyLine>
         </div>
       )
     if (mode === 'search')

@@ -2,7 +2,10 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { titleForTask } from '../../../../src/plugins/sessions/main/sessionTitle'
+import {
+  titleForTask,
+  worktreeNameForTask
+} from '../../../../src/plugins/sessions/main/sessionTitle'
 import { koloftAssist } from '../../../../src/main/assist'
 import { DEFAULT_SETTINGS } from '../../../../src/shared/settingsOps'
 
@@ -100,6 +103,21 @@ describe('the title behind koloft session new', () => {
     const bin = fakeClaude('cat >/dev/null\nprintf "<br>\\n</p>\\n"')
     expect(await titleForTask('研究侧栏标题\n背景：…', claudeAssist(bin))).toBe('研究侧栏标题')
   })
+
+  it.each([
+    ['fix-cmdp-worktree-names', 'fix-cmdp-worktree-names'],
+    ['`Fix_Login_Bug`.', 'fix-login-bug'],
+    ['The task asks to rename worktrees.\n\nworktree-names', 'worktree-names'],
+    ['a-name-far-longer-than-thirty-characters-allows', 'a-name-far-longer-than-thirty'],
+    ['{"workspace": 1, "worktree": "main"}', null],
+    ['修侧栏标题', null],
+    ['main', null]
+  ])(
+    'a worktree name reply %j is taken as %j: the last line that is a bare name, kebab-cased and cut to 30 characters, else none',
+    async (reply, name) => {
+      expect(await worktreeNameForTask('修侧栏标题', async () => reply)).toBe(name)
+    }
+  )
 
   it('an error claude prints before exiting non-zero is never taken as a name — the task’s first line is', async () => {
     const bin = fakeClaude(

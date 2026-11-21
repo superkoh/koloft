@@ -101,6 +101,7 @@ interface Conducting {
   bypass?: string[]
   answer?: (tabId: string, reply: string) => string | undefined
   titleReply?: string | null
+  worktreeNameReply?: string | null
   translation?: string | null
   asking?: string[]
   worktrees?: string[]
@@ -192,7 +193,11 @@ function harness(
       return 'new-tab'
     },
     assist: async (job) =>
-      (job.system === 'You translate.' ? conducting.translation : conducting.titleReply) ?? null,
+      (job.system === 'You translate.'
+        ? conducting.translation
+        : job.system === 'You name git worktrees.'
+          ? conducting.worktreeNameReply
+          : conducting.titleReply) ?? null,
     queue: async (tabId, text, clientId) => {
       queued.push({ tabId, text, clientId })
     },
@@ -2269,6 +2274,29 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
       ['claude', WS, 'docs-2'],
       ['claude', WS, undefined],
       ['claude', WS, 'docs-2']
+    ])
+  })
+
+  it('a session the butler starts in a git workspace without -w is named for its task by Assist, the next free -N when that name is taken; another session’s start never asks it', async () => {
+    const { verb, launched } = harness(
+      live,
+      {},
+      [],
+      conducting({ worktrees: ['docs'], worktreeNameReply: '`fix-sidebar-title`\n' })
+    )
+    await verb(['new', ...PICKED, '--workspace', WS, '--', '修侧栏标题'], from('butler'))
+    await verb(['new', ...PICKED, '--', 'go'], from('fix'))
+    const taken = harness(
+      live,
+      {},
+      [],
+      conducting({ worktrees: ['docs'], worktreeNameReply: 'Docs' })
+    )
+    await taken.verb(['new', ...PICKED, '--workspace', WS, '--', 'tidy the docs'], from('butler'))
+    expect([...launched, ...taken.launched].map((l) => l.worktree)).toEqual([
+      'fix-sidebar-title',
+      undefined,
+      'docs-2'
     ])
   })
 
