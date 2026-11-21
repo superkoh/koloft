@@ -35,7 +35,6 @@ const GROUPS: { id: UsageGroup; label: string; title: string }[] = [
 
 const BADGE: Record<Exclude<BackendId, 'claude'>, string> = {
   codex: 'CODEX',
-  muse: 'MUSE',
   agy: 'ANTIGRAVITY'
 }
 
@@ -344,8 +343,8 @@ export function UsagePane(): JSX.Element {
 
       <div className="costs-foot">
         <span className="acct-note">
-          Claude Code, Codex, Muse and Antigravity sessions are read from the files each tool keeps,
-          on this Mac and on your SSH machines, so days before this version count too.
+          Claude Code, Codex and Antigravity sessions are read from the files each tool keeps, on
+          this Mac and on your SSH machines, so days before this version count too.
         </span>
         <span className="acct-note">
           Cost uses the list price Koloft keeps for each model. A model with no price shows its

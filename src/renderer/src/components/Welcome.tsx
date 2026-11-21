@@ -52,7 +52,6 @@ interface Folder {
 const MAKER: Record<BackendId, string> = {
   claude: 'Anthropic',
   codex: 'OpenAI',
-  muse: 'Meta',
   agy: 'Google'
 }
 
@@ -60,11 +59,10 @@ const SIGN_IN_HOW: Record<BackendId, string> = {
   claude: 'Your browser opens once. Koloft keeps the account: no terminal, nothing to paste.',
   codex:
     'A terminal tab opens and Codex sends you to your browser. It closes by itself once you are in.',
-  muse: 'A terminal tab opens with a code to enter in your browser. It closes by itself once you are in.',
   agy: 'A terminal tab opens: sign in with Google, pick colours and accept Google’s terms, then type /exit.'
 }
 
-// CC§9 CC§14 CODEX§11 MUSE§15 AGY§26
+// CC§9 CC§14 CODEX§11 AGY§26
 const WHAT_SESSIONS_ASK: Record<BackendId, { asks: string; instead: string }> = {
   claude: {
     asks: 'Claude Code asks only about risky steps (its auto mode). Press Shift+Tab in a session to be asked every step.',
@@ -72,10 +70,6 @@ const WHAT_SESSIONS_ASK: Record<BackendId, { asks: string; instead: string }> = 
   },
   codex: {
     asks: 'Codex asks only about some steps, like one that leaves its sandbox.',
-    instead: 'Ask about some steps instead'
-  },
-  muse: {
-    asks: 'Muse Code asks only about some steps, like one that leaves its sandbox.',
     instead: 'Ask about some steps instead'
   },
   agy: {
@@ -466,8 +460,8 @@ export function Welcome({
                 ? 'Looking around your Mac…'
                 : `${readyCount} of ${SESSION_BACKENDS.length} ready on this Mac`}
             </Chip>
-            <Title plain="Four agents." script="One window." />
-            <p className="wl-sub">Koloft runs Claude Code, Codex, Muse and Antigravity.</p>
+            <Title plain="Three agents." script="One window." />
+            <p className="wl-sub">Koloft runs Claude Code, Codex and Antigravity.</p>
             <div className="wl-agents">
               {SESSION_BACKENDS.map((b, i) => {
                 const t = tally[b]

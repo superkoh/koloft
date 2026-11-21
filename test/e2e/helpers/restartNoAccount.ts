@@ -1,19 +1,17 @@
 import type { ElectronApplication, Page } from '@playwright/test'
 import { expect } from './app'
-import { E2E_AGY_ACCOUNT, E2E_CODEX_ACCOUNT, E2E_MUSE_ACCOUNT } from './env'
+import { E2E_AGY_ACCOUNT, E2E_CODEX_ACCOUNT } from './env'
 import { sendShortcut } from './p1'
 import { SIGN_IN_FOLDER_OF, type BackendId, type SignInBackend } from '../../../src/shared/types'
 
 export const ONLY_ACCOUNT: Record<SignInBackend, string> = {
   codex: E2E_CODEX_ACCOUNT,
-  muse: E2E_MUSE_ACCOUNT,
   agy: E2E_AGY_ACCOUNT
 }
 
 export const NO_ACCOUNT_CAN_BE_USED: Record<BackendId, string> = {
   claude: 'No Claude account can be used — check Settings ▸ Accounts.',
   codex: 'No Codex account can be used — check Settings ▸ Accounts.',
-  muse: 'No Muse account can be used — check Settings ▸ Accounts.',
   agy: 'No Antigravity account can be used — check Settings ▸ Accounts.'
 }
 

@@ -5,12 +5,9 @@ import type { ElectronApplication, Page } from '@playwright/test'
 import {
   E2E_AGY_ACCOUNT,
   E2E_CODEX_ACCOUNT,
-  E2E_MUSE_ACCOUNT,
   addAgyAccount,
   addCodexAccount,
-  addMuseAccount,
   installCodex,
-  installMuse,
   seededAccount,
   seedSettings,
   type E2EEnv
@@ -353,12 +350,11 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
     })
 
     // ADR-0030
-    test('T-WT-05b: codex exec, muse exec and agy -p in a terminal tab run on the account Koloft picks from Settings ▸ Accounts, not on the Mac’s own login', async ({
+    test('T-WT-05b: codex exec and agy -p in a terminal tab run on the account Koloft picks from Settings ▸ Accounts, not on the Mac’s own login', async ({
       env
     }) => {
       test.setTimeout(240_000)
       addCodexAccount(env, '{}')
-      addMuseAccount(env)
       addAgyAccount(env)
       fs.writeFileSync(
         path.join(env.userData, 'agy-homes', E2E_AGY_ACCOUNT, 'antigravity-cli', 'settings.json'),
@@ -377,10 +373,6 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
         `[ "$CODEX_HOME" = '${path.join(env.userData, 'codex-homes', E2E_CODEX_ACCOUNT)}' ]`
       )
       recorder(
-        'muse',
-        `[ "$XDG_CONFIG_HOME" = '${path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT)}' ] && [ "$TBH_CREDENTIAL_BACKEND" = file ]`
-      )
-      recorder(
         'agy',
         `[ "$1" = '--gemini_dir=${path.join(env.userData, 'agy-homes', E2E_AGY_ACCOUNT)}' ] && [ "$WSL_INTEROP" = koloft ] && [ "$GEMINI_API_KEY" = fake-gemini-key ]`
       )
@@ -392,9 +384,9 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
         await runIn(
           page,
           panelTerm(page),
-          `export PATH="${env.shimDir}:${recorders}:$PATH"; hash -r; codex exec hi; muse exec hi; agy -p hi`
+          `export PATH="${env.shimDir}:${recorders}:$PATH"; hash -r; codex exec hi; agy -p hi`
         )
-        for (const name of ['codex', 'muse', 'agy'])
+        for (const name of ['codex', 'agy'])
           await expect(panelTerm(page)).toContainText(`WT05B_${name}_OK`, { timeout: 25_000 })
         await expect(panelTerm(page)).not.toContainText('_BAD')
       } finally {
@@ -402,20 +394,11 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
       }
     })
 
-    test('T-WT-05c: with every account of that agent at its limit, codex exec, muse exec and agy -p in a terminal tab each say so on a line of their own, then still run', async ({
+    test('T-WT-05c: with every account of that agent at its limit, codex exec and agy -p in a terminal tab each say so on a line of their own, then still run', async ({
       env
     }) => {
       test.setTimeout(240_000)
       installCodex(env, JSON.stringify({ usedPercent: 100 }))
-      installMuse(env)
-      fs.writeFileSync(
-        path.join(env.userData, 'muse-homes', E2E_MUSE_ACCOUNT, 'muse', 'auth.json'),
-        JSON.stringify({ schema_version: 1, providers: { meta: { access_token: 'fake' } } })
-      )
-      fs.writeFileSync(
-        path.join(env.home, 'fake-muse-quota.json'),
-        JSON.stringify({ current: 100, weekly: 100 })
-      )
       const agy = path.join(env.fakeBin, 'agy')
       fs.symlinkSync(path.join(__dirname, 'fixtures', 'fake-agy.js'), agy)
       env.launchEnv.KOLOFT_AGY_CMD = agy
@@ -457,7 +440,7 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
       )
       const recorders = path.join(env.home, 'recorders')
       fs.mkdirSync(recorders)
-      for (const name of ['codex', 'muse', 'agy'])
+      for (const name of ['codex', 'agy'])
         fs.writeFileSync(path.join(recorders, name), `#!/bin/sh\necho WT05C_${name}_RAN\n`, {
           mode: 0o755
         })
@@ -471,9 +454,9 @@ test.describe('Workbench terminal tabs: a shell is a tab owned by a conversation
         await runIn(
           page,
           panelTerm(page),
-          `export PATH="${env.shimDir}:${recorders}:$PATH"; hash -r; codex exec hi; muse exec hi; agy -p hi`
+          `export PATH="${env.shimDir}:${recorders}:$PATH"; hash -r; codex exec hi; agy -p hi`
         )
-        for (const name of ['codex', 'muse', 'agy'] as const) {
+        for (const name of ['codex', 'agy'] as const) {
           await expect(panelTerm(page)).toContainText(`WT05C_${name}_RAN`, { timeout: 25_000 })
           await expect(panelTerm(page)).toContainText(
             `Every ${BACKEND_LABEL[name]} account is at its limit`

@@ -12,7 +12,7 @@ function draftBetweenTheLastTwoRules(lines: string[], rowMark: string): string |
   return row.slice(rowMark.length).trim()
 }
 
-// CC§12 MUSE§11
+// CC§12
 export function inputBoxDraft(lines: string[]): string | undefined {
   return draftBetweenTheLastTwoRules(lines, INPUT_ROW_MARK)
 }

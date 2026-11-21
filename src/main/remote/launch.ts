@@ -149,7 +149,7 @@ export interface TabSpec {
 export interface TabProgram {
   run: string
   beforeEnsure: string
-  ensureTool?: 'muse' | 'agy'
+  ensureTool?: 'agy'
   beforeTmux: string
   files: Record<string, string>
 }
@@ -168,7 +168,7 @@ export interface ClaudeTab {
 export const MACHINE_PICTURES_DIR_TAIL = '/.koloft/element-picks'
 export const MACHINE_PICTURES_DIR = `$HOME${MACHINE_PICTURES_DIR_TAIL}`
 
-// PLATFORM§35 MUSE§17
+// PLATFORM§35
 const SETTINGS_ON_A_TMUX_ALREADY_RUNNING = `tmux -L koloft ${[
   ...TMUX_PASSES_THE_PANE_TITLE_ON,
   'allow-passthrough on'
@@ -193,7 +193,7 @@ export const claudeTabSpec = (tab: Omit<TabSpec, 'program'>, c: ClaudeTab): TabS
 })
 
 export const machineToolProgram = (
-  name: 'muse' | 'agy',
+  name: 'agy',
   run: string,
   files: Record<string, string>
 ): TabProgram => ({
@@ -267,7 +267,7 @@ export function tabScript(spec: TabSpec): string {
   const program = spec.program
   // PLATFORM§35
   const attachTo = `"$(cat "${T}.tmux" 2>/dev/null || echo '${spec.tmuxName}')"`
-  // PLATFORM§33 CC§3 AGY§25 MUSE§17
+  // PLATFORM§33 CC§3 AGY§25
   const loginPathToo = spec.loginPath ? `  PATH="$PATH":${shq(spec.loginPath)}\n` : ''
   // PLATFORM§35
   return `#!/bin/sh

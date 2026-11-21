@@ -10,7 +10,6 @@ import {
   codexMissingWhoseCheckAnswersOnlyWhenLetGo,
   installAgy,
   installCodex,
-  installMuse,
   ownersGemini,
   seedSettings,
   type E2EEnv
@@ -169,18 +168,17 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
       await expectStep(page, 1)
-      await expect(welcome(page).locator('.wl-title')).toHaveText('Four agents. One window.')
+      await expect(welcome(page).locator('.wl-title')).toHaveText('Three agents. One window.')
       await expect(welcome(page).locator('.wl-sub')).toHaveText(
-        'Koloft runs Claude Code, Codex, Muse and Antigravity.'
+        'Koloft runs Claude Code, Codex and Antigravity.'
       )
       await expect(welcome(page).locator('.wl-agent-name')).toHaveText([
         'Claude Code',
         'Codex',
-        'Muse Code',
         'Antigravity CLI'
       ])
       await expect(agentCard(page, 'Claude Code')).toHaveClass(/\bready\b/, { timeout: 20_000 })
-      for (const missing of ['Codex', 'Muse Code', 'Antigravity CLI']) {
+      for (const missing of ['Codex', 'Antigravity CLI']) {
         await expect(agentCard(page, missing)).toContainText('Not on this Mac')
         await expect(
           agentCard(page, missing).locator('button', { hasText: 'Install' })
@@ -240,31 +238,15 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
     }
   })
 
-  // CODEX§15 MUSE§5 AGY§8
-  test('T-OB-17: the welcome also finds the folders Codex, Muse and Antigravity were used in, with no Claude Code history at all, and counts each agent’s sessions', async ({
+  // CODEX§15 AGY§8
+  test('T-OB-17: the welcome also finds the folders Codex and Antigravity were used in, with no Claude Code history at all, and counts each agent’s sessions', async ({
     env
   }) => {
     test.setTimeout(120_000)
     firstRun(env)
     installCodex(env)
-    installMuse(env)
     installAgy(env)
-    const now = Math.floor(Date.now() / 1000)
     codexThreadIn(env, env.workspaces.a, 'Codex in ws-a', 60)
-    const museSession = '01a17db8-7cda-7722-8212-7f60790ea9c8'
-    const museListed = path.join(env.home, '.local', 'share', 'muse', 'sessions', 'fake')
-    fs.mkdirSync(museListed, { recursive: true })
-    fs.writeFileSync(
-      path.join(museListed, museSession + '.json'),
-      JSON.stringify({
-        id: museSession,
-        cwd: fs.realpathSync(env.workspaces.b),
-        title: 'Muse in ws-b',
-        createdAt: new Date((now - 120) * 1000).toISOString(),
-        updatedAt: new Date((now - 120) * 1000).toISOString(),
-        items: []
-      })
-    )
     fs.mkdirSync(path.join(env.home, 'agy-ws'))
     const agyFolder = fs.realpathSync(path.join(env.home, 'agy-ws'))
     const agyApp = path.join(ownersGemini(env), 'antigravity-cli')
@@ -287,14 +269,14 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
       await expectStep(page, 1)
-      for (const agent of ['Codex', 'Muse Code', 'Antigravity CLI'])
+      for (const agent of ['Codex', 'Antigravity CLI'])
         await expect(agentCard(page, agent)).toContainText('1 session · 1 folder', {
           timeout: 20_000
         })
       await expect(agentCard(page, 'Claude Code')).toContainText('No sessions yet')
 
       await advanceTo(page, 2)
-      await expect(sidebarFolders(page)).toHaveText(['agy-ws', 'ws-a', 'ws-b'], {
+      await expect(sidebarFolders(page)).toHaveText(['agy-ws', 'ws-a'], {
         timeout: 20_000
       })
       await snap(page, 'T-OB-17')
@@ -450,9 +432,6 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
       await expect(tag).toContainText('Codex')
       await expect(perm).toContainText(/Codex asks only about some steps/)
       await ask.press('Tab')
-      await expect(tag).toContainText('Muse')
-      await expect(perm).toContainText(/Muse Code asks only about some steps/)
-      await ask.press('Tab')
       await expect(tag).toContainText('Antigravity')
       await expect(perm).toContainText(/before each step/)
       await ask.press('Tab')
@@ -487,9 +466,9 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
       const page = await app.firstWindow()
       await page.waitForLoadState('domcontentloaded')
       await expectStep(page, 1)
-      for (const agent of ['Claude Code', 'Codex', 'Muse Code', 'Antigravity CLI'])
+      for (const agent of ['Claude Code', 'Codex', 'Antigravity CLI'])
         await expect(agentCard(page, agent)).toContainText('Not on this Mac', { timeout: 20_000 })
-      await expect(welcome(page).locator('.wl-chip')).toHaveText(/0 of 4 ready/)
+      await expect(welcome(page).locator('.wl-chip')).toHaveText(/0 of 3 ready/)
       await expect(welcome(page)).not.toContainText('npm')
       await snap(page, 'T-OB-06')
 
@@ -570,7 +549,7 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
       await page.waitForLoadState('domcontentloaded')
       const panel = page.locator('.w-empty')
       const cards = panel.locator('.ob-choices .choice')
-      await expect(cards).toHaveText([/^Claude/, /^Codex/, /^Muse/, /^Antigravity/], {
+      await expect(cards).toHaveText([/^Claude/, /^Codex/, /^Antigravity/], {
         timeout: 30_000
       })
       await expect(panel.locator('button[data-default]')).toHaveCount(0)
@@ -681,7 +660,7 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
     firstRun(env, {
       sessionMethods: {
         defaultBackend: 'claude',
-        enabled: { claude: true, codex: false, muse: true, agy: true }
+        enabled: { claude: true, codex: false, agy: true }
       }
     })
     installCodex(env)
@@ -694,7 +673,7 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
       await page.waitForLoadState('domcontentloaded')
       await advanceTo(page, 3)
       const tabs = welcome(page).locator('.wl-seg button')
-      await expect(tabs).toHaveText([/Claude Code/, /Muse/, /Antigravity/])
+      await expect(tabs).toHaveText([/Claude Code/, /Antigravity/])
       await expect(welcome(page).locator('.wl-seg button.on')).toContainText('Claude Code')
       await expect(primary(page)).toBeEnabled()
       await primary(page).click()
@@ -704,7 +683,7 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
       const tag = welcome(page).locator('.wl-agtag')
       await expect(tag).toContainText('Claude')
       await ask.press('Tab')
-      await expect(tag).toContainText('Muse')
+      await expect(tag).toContainText('Antigravity')
     } finally {
       await quitAndClose(app)
     }
@@ -815,12 +794,11 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
     }
   })
 
-  test('T-OB-22: in the Assist question from the butler row, with no account yet, only one sign-in or paste form shows at a time: Claude’s, Paste it, Codex’s, Muse’s or Antigravity’s, each opened closing the one before, and one opened while Claude’s sign-in runs taking its place', async ({
+  test('T-OB-22: in the Assist question from the butler row, with no account yet, only one sign-in or paste form shows at a time: Claude’s, Paste it, Codex’s or Antigravity’s, each opened closing the one before, and one opened while Claude’s sign-in runs taking its place', async ({
     env
   }) => {
     test.setTimeout(120_000)
     installCodex(env)
-    installMuse(env)
     installAgy(env)
     seedSettings(env, { onboardingSeen: true, assist: null, accounts: [] })
 
@@ -846,8 +824,6 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
       await onlyForm('Paste token')
       await choice('Codex').click()
       await onlyForm('Sign in to Codex')
-      await choice('Muse').click()
-      await onlyForm('Sign in to Muse')
       await choice('Antigravity').click()
       await onlyForm('Sign in to Antigravity')
       await assist.getByRole('button', { name: 'Paste it' }).click()
@@ -884,7 +860,7 @@ test.describe('first-run help: the welcome and Settings ▸ Welcome', () => {
 
       const pane = page.locator('.settings-modal .set-main')
       await expect(pane).toContainText('What Koloft does')
-      await expect(pane).toContainText('Claude Code, Codex, Muse and Antigravity sessions')
+      await expect(pane).toContainText('Claude Code, Codex and Antigravity sessions')
       await expect(pane.locator('.wp-cards .wp-card')).toHaveCount(8)
       await expect(pane.locator('table.wp-diff tbody tr')).toHaveCount(7)
       await expect(pane.locator('table.wp-diff')).toContainText('Plain terminal')

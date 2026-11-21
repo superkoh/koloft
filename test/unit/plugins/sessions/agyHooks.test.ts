@@ -14,7 +14,7 @@ import {
   handoverPreamble,
   withHandover
 } from '../../../../src/plugins/sessions/main/handoverPreamble'
-import { LineTail } from '../../../../src/main/museSessionLog'
+import { LineTail } from '../../../../src/main/lineTail'
 import {
   A_HELPER_HAS_IT,
   FROM_A_SESSION,

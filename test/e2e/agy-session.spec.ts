@@ -1302,7 +1302,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     }
   })
 
-  test('the first Antigravity tab after Koloft reopens, started while no quota can be read, prints the quota read before the restart with how long ago it was read, as a Codex or Muse tab does', async ({
+  test('the first Antigravity tab after Koloft reopens, started while no quota can be read, prints the quota read before the restart with how long ago it was read, as a Codex tab does', async ({
     env
   }) => {
     installAgyWithNoAccount(env)

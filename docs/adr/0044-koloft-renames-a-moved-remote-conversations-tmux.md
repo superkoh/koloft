@@ -22,22 +22,22 @@ back failed (the link drops, the name file cannot be written).
 A `/clear`'s rename is the hook's, on the machine, and reaches the tracker only one mirror
 pull later, so a tab's kill then tries, last, the name in the tab's `tabs/<tab>.tmux`, never
 an empty one (tmux would pick a session itself: another tab's), and prints the name it
-ended. Whatever renames on the machine (Claude Code's hook, Antigravity's title script,
-the Muse relay) writes the new name to that file before it renames the session, so a kill
+ended. Whatever renames on the machine (Claude Code's hook, Antigravity's title script)
+writes the new name to that file before it renames the session, so a kill
 landing between the two finds the session under the old name or under the file's. Koloft
 books the session a kill ended as ended by it, and a launch of a
 conversation the machine still lists waits for every kill on the wire there (any one of
 them may be ending it under its new name) before choosing between attach and start. A
 tab's start deletes the file, so a name left by an earlier run of that tab id never
-reaches a kill. Muse and Antigravity tabs read the file in a separate ssh call first and
+reaches a kill. Antigravity tabs read the file in a separate ssh call first and
 kill under that name, so a launch of the conversation it names waits for the kill; they
 pass their tab as well, so the kill reads the file again in case a rename landed after
 that read.
 When the rename fails (another session has that name, PLATFORM§35), the file goes back to
 the name the tab's session still has, so a reconnect still attaches to it and a close does
 not end the other session. Claude Code's hook puts back what the file held, as Koloft
-learns a Claude tab's real name from that hook's report. Antigravity's title script and
-the Muse relay ask tmux for the pane's session name instead: Koloft sets their tab's name
+learns a Claude tab's real name from that hook's report. Antigravity's title script
+asks tmux for the pane's session name instead: Koloft sets its tab's name
 to `k-<new id>` itself, and a tab's first rename finds no file to put back, so with no file
 a close would aim at the session that has the new name.
 **Rejected**: renaming in the hook script on any report whose session id differs from the

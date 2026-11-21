@@ -107,7 +107,7 @@ ${body(
 
 const CODEX_SANDBOX_IS_READ_ONLY = 'koloft: this sandbox is read-only, so koloft cannot run here.'
 
-// CODEX§12 CODEX§17 MUSE§8 AGY§25
+// CODEX§12 CODEX§17 AGY§25
 function folderAgentShim(backend: BackendId, requestDir: string, guide: string): string {
   return `${HEAD}
 case "\${1:-help}" in help|--help) cat ${shq(guide)}; exit 0 ;; esac

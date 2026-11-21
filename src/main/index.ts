@@ -26,16 +26,8 @@ import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from '@plugins/sessions/main/sessionRuntime'
 import { CodexSessions } from '@plugins/sessions/main/codexSessions'
 import { codexShowsAPanel } from './inputBox'
-import {
-  MuseSessions,
-  museShowsItsInputBox,
-  type MuseHomePick,
-  type MuseRemoteDeps
-} from '@plugins/sessions/main/museSessions'
-import { MUSE_HOOK_FILE, MUSE_WRAP_FILE, MUSE_WRAP_PY, REMOTE_MUSE_HOOK_SH } from './museRemote'
 import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from './remote/statusRelay'
 import type { TreeIo } from './sessionWorktrees'
-import { museServersAmong } from './taskProcs'
 import { sharedProcessTable, type ProcessTable } from './processTable'
 import { AgySessions, type AgyHomePick } from '@plugins/sessions/main/agySessions'
 import {
@@ -61,11 +53,8 @@ import {
   agyStatuslineScript
 } from './remote/agyTab'
 import { agyBackend } from '@plugins/sessions/main/backends/agy'
-import { museAccountEnv, museHomeOf, prepareMuseHome } from './museAccounts'
 import { homeKeyOnDisk } from './homeKeyOnDisk'
-import { museConfigHome, museHome } from './museSessionLog'
 import { watchHistoryOf } from './historyWatch'
-import { museSignIn, storeMuseKey } from './museServe'
 import {
   MARK_OUTPUT_START,
   SignInOutput,
@@ -73,7 +62,6 @@ import {
   outputStartCarry,
   plainTerminalTail
 } from './signInOutput'
-import { readMuseQuota } from './museQuota'
 import type { SessionsWithStore } from '@plugins/sessions/main/storedSessions'
 import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
 import { claudeAskLine, storedAskLine } from './rowActivity'
@@ -95,7 +83,6 @@ import {
   backendIdOf,
   capabilitiesFor,
   identityOf,
-  messagingOf,
   reachedBySendMessage,
   effectiveBackend,
   turnedOffLine,
@@ -134,8 +121,6 @@ import {
   noticeFile,
   pruneStale,
   quotedPrompt,
-  saidFile,
-  seedOwnerWords,
   setupHooks,
   writeTabHookSettings,
   type NoticeFile
@@ -289,7 +274,6 @@ import {
   pickMachineAccount
 } from '@plugins/sessions/main/backends/claude'
 import { codexBackend, trustCodexFolder } from '@plugins/sessions/main/backends/codex'
-import { museBackend } from '@plugins/sessions/main/backends/muse'
 import { codexConfigFile } from './codexTrust'
 import {
   HomeAccountPicker,
@@ -417,7 +401,6 @@ import type {
   AccountView,
   ArtifactView,
   BackendId,
-  CodexLimits,
   CodexResetOutcome,
   SignInResult,
   SignInFailure,
@@ -432,7 +415,6 @@ import type {
   ConductorOpenResult,
   PaletteRequest,
   ConductorSaveResult,
-  ProbeErrorKind,
   LeftoverProcess,
   ProjectInfo,
   SessionInfo,
@@ -447,16 +429,14 @@ import type {
   AdoptableTab,
   TabInventoryReply,
   OpenRequest,
-  UsageSnapshot,
   WindowCommand,
   Settings,
   HostId,
-  GitStepResult,
   WorkspaceAddResult
 } from '@shared/types'
 import { copyWorktreeIncludes } from './sessionWorktrees'
 import { AgentRequests, tabSpokenFor } from './agentRequests'
-import { answered, refused, type AgentReply, type AgentVerb } from '@core/command'
+import { answered, refused, type AgentReply } from '@core/command'
 import { errorText } from '@core/errorText'
 import { projectRulesForTheButler } from '@shared/agentGuide'
 import {
@@ -561,7 +541,7 @@ import {
 } from './claudeSessionRegistry'
 import { GLOBAL_SCOPE, scopeName } from '@shared/scope'
 import { asPeerName } from '@plugins/butler/shared/names'
-import { inviteLink, NEW_CHANNEL_NAME } from '@plugins/discord/shared/channels'
+import { inviteLink } from '@plugins/discord/shared/channels'
 import { Commands } from '@core/commands'
 import { PLUGINS } from '@plugins/list'
 import { PLUGIN_STARTS, type PluginStartDeps, type PluginsStarted } from '@plugins/starts'
@@ -629,11 +609,7 @@ import {
   type PlacedRow,
   type Recipient
 } from '@plugins/sessions/api'
-import {
-  A_HELPER_HAS_IT,
-  crossSessionLine,
-  writeLineInTurn
-} from '@plugins/sessions/main/crossSessionMessage'
+import { A_HELPER_HAS_IT, writeLineInTurn } from '@plugins/sessions/main/crossSessionMessage'
 import { TODO_NEWS } from '@plugins/todo/api'
 import { docsWritingOn } from '@plugins/docs-writing/api'
 import { StartedSessions } from '@plugins/sessions/main/startedSessions'
@@ -738,14 +714,11 @@ const terminalOutput = new TerminalOutput({
 const tracker = new SessionTracker()
 const claudeAsks = new Map<string, AskPayload>()
 let codexSessions: CodexSessions | null = null
-let museSessions: MuseSessions | null = null
 let agySessions: AgySessions | null = null
 const startupErrors: Partial<Record<BackendId, string>> = {}
 
 function storedSessions(): SessionsWithStore[] {
-  return [codexSessions, museSessions, agySessions].filter(
-    (s): s is CodexSessions | MuseSessions | AgySessions => !!s
-  )
+  return [codexSessions, agySessions].filter((s): s is CodexSessions | AgySessions => !!s)
 }
 function storedOwnerOf(tabId: string): SessionsWithStore | undefined {
   return storedSessions().find((s) => s.hasTab(tabId))
@@ -842,7 +815,6 @@ const panelOpenOn: Record<BackendId, PanelOpen> = {
     return registry === undefined ? undefined : claudeShowsAPanelOnMachine(registry, sessionId)
   },
   codex: panelOnScreen(codexShowsAPanel),
-  muse: panelOnScreen((lines) => !museShowsItsInputBox(lines)),
   agy: async () => undefined
 }
 
@@ -1477,16 +1449,13 @@ function machinePackage(): MachinePackage {
     [UTIL_BASH_LOGIN_FILE]: UTIL_BASH_LOGIN,
     [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard('claude'),
     [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex'),
-    [`${UTIL_BIN_DIR}muse`]: utilTerminalGuard('muse'),
     [`${UTIL_BIN_DIR}agy`]: utilTerminalGuard('agy'),
     [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM,
     [`${SESSION_BIN_DIR}open`]: REMOTE_OPEN_SHIM,
     [`${SESSION_BIN_DIR}gh`]: machineGhWrapperScript(),
     [`${CLAUDE_BIN_DIR}playwright-cli`]: MACHINE_PLAYWRIGHT_CLI,
     [`${UTIL_BIN_DIR}gh`]: machineGhWrapperScript(),
-    [MUSE_WRAP_FILE]: MUSE_WRAP_PY,
     [STATUS_RELAY_FILE]: STATUS_RELAY_PY,
-    [MUSE_HOOK_FILE]: REMOTE_MUSE_HOOK_SH,
     [AGY_HOOK_FILE]: AGY_HOOK_SCRIPT,
     [AGY_TITLE_FILE]: AGY_TITLE_SCRIPT,
     [AGY_LIST_FILE]: AGY_LIST_JS
@@ -1622,7 +1591,7 @@ async function withPastedPicturesOnItsMachine(
   return { ...options, firstPrompt }
 }
 
-// CODEX§3 CODEX§20 MUSE§5
+// CODEX§3 CODEX§20
 async function pendingAskOf(tabId: string): Promise<CodexApproval | CodexQuestion | undefined> {
   for (let polls = CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS; ; polls--) {
     const owner = storedOwnerOf(tabId)
@@ -1791,15 +1760,14 @@ function machineTreeIo(cwd: string): TreeIo {
   }
 }
 
-const museOnMachines: MuseRemoteDeps = {
-  machine: (host) => hosts.machine(host),
+const machineRemoteDeps = {
+  machine: (host: string) => hosts.machine(host),
   hosts: () => workspaceMgr?.remoteTargets().map((t) => t.host) ?? [],
   keyed: pinnedKeyOn,
-  mirrorDir: (host) => mirrorHookDir(app.getPath('userData'), host),
-  gone: (host, sessionId) =>
+  mirrorDir: (host: string) => mirrorHookDir(app.getPath('userData'), host),
+  gone: (host: string, sessionId: string) =>
     !!remoteSync?.connected(host) && !remoteSync.alive(host).has(sessionId),
-  connected: (host) => !!remoteSync?.connected(host),
-  poke: (host) => remoteSync?.pokeNow(host),
+  connected: (host: string) => !!remoteSync?.connected(host),
   setupLine: () => setupLine(playwrightCliBin),
   hookSettings: PLAIN_KOLOFT_SHIM.hookSettings
 }
@@ -1849,21 +1817,13 @@ async function mcpServersNow(): Promise<McpServer[]> {
         }))
       )
     )
-  const museSettings = path.join(
-    museConfigHome(museSessions?.defaultEnv ?? process.env),
-    'muse',
-    'settings.json'
-  )
-  const [claudeJson, projectFiles, museProjectFiles, agyProjectFiles, codexToml, muse, agy] =
-    await Promise.all([
-      textOrNull(claudeJsonPath()),
-      inFolders(PROJECT_MCP_FILE, 'toRoot'),
-      inFolders(PROJECT_MCP_FILE, 'toRepoTop'),
-      inFolders(AGY_PROJECT_MCP_FILE, 'toRepoTop'),
-      textOrNull(codexSharedConfig()),
-      textOrNull(museSettings),
-      textOrNull(path.join(ownersGemini(), 'config', 'mcp_config.json'))
-    ])
+  const [claudeJson, projectFiles, agyProjectFiles, codexToml, agy] = await Promise.all([
+    textOrNull(claudeJsonPath()),
+    inFolders(PROJECT_MCP_FILE, 'toRoot'),
+    inFolders(AGY_PROJECT_MCP_FILE, 'toRepoTop'),
+    textOrNull(codexSharedConfig()),
+    textOrNull(path.join(ownersGemini(), 'config', 'mcp_config.json'))
+  ])
   const claudeFolders = folders.map((folder) => ({
     folder,
     projectKey: claudeProjectKey(folder)
@@ -1871,7 +1831,6 @@ async function mcpServersNow(): Promise<McpServer[]> {
   return [
     ...claudeServers(claudeJson, projectFiles, claudeFolders),
     ...codexServers(codexToml),
-    ...jsonServers('muse', [{ text: muse }, ...museProjectFiles]),
     ...jsonServers('agy', [{ text: agy }, ...agyProjectFiles])
   ]
 }
@@ -1919,10 +1878,6 @@ const assistTargets: Record<BackendId, () => Promise<AssistTarget | null>> = {
     const binary = codexSessions.cliBinary
     if (!binary) return null
     return { binary, env: { ...codexSessions.defaultEnv, CODEX_HOME: picked.home } }
-  },
-  muse: async () => {
-    const picked = musePicker.pick(accountViews())
-    return picked ? ((await museServeFor(picked.name)) ?? null) : null
   },
   agy: () => agyOneShotTarget()
 }
@@ -2381,7 +2336,7 @@ const sessionsCommands: PluginStartDeps['sessions']['commands'] = {
   session: sessionCommand.verb,
   workspace: { sidebar: projectRows },
   instructions: {
-    // CC§28 CODEX§4 AGY§13 MUSE§8
+    // CC§28 CODEX§4 AGY§13
     askTheOwner: (ask, write, stillWaiting) =>
       instructionAsks
         ? instructionAsks.ask(
@@ -2575,7 +2530,6 @@ const utilTerminalPicks: Record<
   () => UtilTerminalPick | undefined
 > = {
   codex: () => terminalPickOf(pickCodexHome()),
-  muse: () => terminalPickOf(pickMuseHome()),
   agy: () => {
     const picked = terminalPickOf(pickAgyHome())
     return picked && (agyApiKeyRoute(picked.home) ? { ...picked, kind: 'apikey' } : picked)
@@ -2605,6 +2559,12 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
   if (!/^[A-Za-z0-9-]+$/.test(id)) return
   const resPath = path.join(pickDir, `res-${id}.json`)
   const backend = backendIdOf(obj.backend)
+  if (obj.backend !== undefined && !backend) {
+    try {
+      writeWholeBeforeVisible(resPath, '{}')
+    } catch {}
+    return
+  }
   if (backend && backend !== 'claude') {
     let picked: UtilTerminalPick | undefined
     try {
@@ -2824,9 +2784,7 @@ let probeAllInFlight: Promise<AccountView[]> | null = null
 let probeOnceTheRendererIsUp: LaunchUsageProbe = null
 
 function probeSignInFolderAccounts(): Promise<void> {
-  return Promise.all([probeCodexAccounts(), probeMuseAccounts(), probeAgyAccounts()]).then(
-    () => undefined
-  )
+  return Promise.all([probeCodexAccounts(), probeAgyAccounts()]).then(() => undefined)
 }
 
 function probeAllForPanel(): Promise<AccountView[]> {
@@ -2916,8 +2874,6 @@ function foldHomeSignIn(name: string, kind: SignInFolderKind, signedIn: boolean)
 }
 
 const codexPicker = new HomeAccountPicker('codex-home', savedHomeUsageOf)
-const MUSE_QUOTA_FOLDER = 'muse-quota'
-const museProbedAt = new Map<string, number>()
 
 function codexSharedConfig(): string {
   return codexConfigFile(codexSessions?.defaultEnv)
@@ -3052,11 +3008,6 @@ const homeLogin: Record<
     prepareCodexHome(home, codexSharedConfig())
     return { binary: available ? codexSessions?.cliBinary : undefined, env: { CODEX_HOME: home } }
   },
-  // MUSE§13
-  'muse-home': async (name) => ({
-    binary: (await museServeFor(name))?.binary,
-    env: museAccountEnv(museHomeFor(name))
-  }),
   // AGY§5 AGY§7
   'agy-home': async (name) => {
     const binary = await agyBinary()
@@ -3072,7 +3023,6 @@ const probeHomeAccount: Record<SignInFolderKind, (name: string) => Promise<void>
     await codexSessions?.rereadSignIn(codexHomeOf(app.getPath('userData'), name))
     await probeCodexAccount(name)
   },
-  'muse-home': (name) => probeMuseAccount(name),
   'agy-home': (name) => probeAgyAccount(name)
 }
 
@@ -3108,86 +3058,6 @@ async function signInToHome(
   signInPtys.set(tab.tabId, { kind, name, again, output: new SignInOutput() })
   if (!login.binary) toolInstallPtys.add(tab.tabId)
   return { ok: true, ...tab }
-}
-
-const musePicker = new HomeAccountPicker('muse-home', savedHomeUsageOf)
-const preparedMuseHomes = new Set<string>()
-
-// MUSE§2 MUSE§13
-function museHomeFor(name: string): string {
-  const home = museHomeOf(app.getPath('userData'), name)
-  if (preparedMuseHomes.has(home)) return home
-  const env = museSessions?.defaultEnv ?? process.env
-  prepareMuseHome(home, museConfigHome(env))
-  preparedMuseHomes.add(home)
-  return home
-}
-
-// ADR-0030 MUSE§13
-function pickMuseHome(resumeSessionId?: string): (MuseHomePick & { home: string }) | undefined {
-  const views = accountViews()
-  const picked = musePicker.pick(
-    views,
-    sessionAccounts?.of('muse', resumeSessionId),
-    museSessions?.launchedSessions()
-  )
-  const stale = (a: AccountView): boolean =>
-    Date.now() - (museProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
-  if (views.some((a) => a.kind === 'muse-home' && a.enabled && stale(a))) void probeMuseAccounts()
-  if (!picked) return undefined
-  const home = museHomeFor(picked.name)
-  return {
-    account: picked.name,
-    home,
-    env: museAccountEnv(home),
-    banner: launchLine(picked, Date.now()),
-    notice: allLimitedNotice(picked, 'muse')
-  }
-}
-
-async function museServeFor(
-  name: string
-): Promise<{ binary: string; env: NodeJS.ProcessEnv } | undefined> {
-  const binary = (await museSessions?.availability())?.available && museSessions?.cliBinary
-  if (!binary) return undefined
-  return { binary, env: { ...museSessions?.defaultEnv, ...museAccountEnv(museHomeFor(name)) } }
-}
-
-// MUSE§13
-async function probeMuseAccount(name: string): Promise<void> {
-  const acct = findAccount(name, 'muse-home')
-  const serve = acct && (await museServeFor(name))
-  if (!acct || !serve) return
-  const key = viewKey(name, 'muse-home')
-  museProbedAt.set(name, Date.now())
-  try {
-    const signIn = await museSignIn(serve)
-    foldHomeSignIn(name, 'muse-home', signIn !== 'none')
-    if (signIn === 'apiKey') usageViews.set(key, { apiKey: true })
-    else if (signIn === 'none') usageViews.delete(key)
-    else {
-      const dir = path.join(app.getPath('userData'), MUSE_QUOTA_FOLDER)
-      fs.mkdirSync(dir, { recursive: true })
-      const limits = await readMuseQuota(serve.binary, serve.env, dir, ptyMgr)
-      usageViews.set(key, { limits: limits ?? usageViews.get(key)?.limits })
-    }
-  } catch {
-    usageViews.set(key, { ...usageViews.get(key), probeError: 'network' })
-  }
-  pushHomeAccount(name, 'muse-home')
-}
-
-let museProbeRound: Promise<void> | null = null
-
-function probeMuseAccounts(): Promise<void> {
-  museProbeRound ??= Promise.all(
-    listAccounts()
-      .filter((a) => a.kind === 'muse-home' && a.enabled)
-      .map((a) => probeMuseAccount(a.name))
-  ).then(() => {
-    museProbeRound = null
-  })
-  return museProbeRound
 }
 
 const agyPicker = new HomeAccountPicker('agy-home', savedHomeUsageOf)
@@ -3292,12 +3162,6 @@ const storeHomeKey: Record<SignInFolderKind, (name: string, key: string) => Prom
     const home = codexHomeOf(app.getPath('userData'), name)
     prepareCodexHome(home, codexSharedConfig())
     await codexSessions.storeApiKey(home, key)
-  },
-  // MUSE§13
-  'muse-home': async (name, key) => {
-    const serve = await museServeFor(name)
-    if (!serve) throw new Error('Muse is not installed.')
-    await storeMuseKey(serve, key)
   },
   // AGY§6
   'agy-home': async (name, key) => {
@@ -3614,6 +3478,10 @@ app.whenReady().then(() => {
   pageTools.watchFullscreen()
 
   sweepStaleGitRequestDirs(pidAlive)
+  for (const old of ['muse-homes', 'muse-sessions.json', 'muse-open', 'muse-quota'])
+    void fs.promises
+      .rm(path.join(app.getPath('userData'), old), { recursive: true, force: true })
+      .catch(() => {})
   const gitRequestDir = newGitRequestDir()
   const { shimDir, regDir, openDir, pickDir, agentDir, gitHelper, ghWrapper } = setupShim(
     gitRequestDir,
@@ -3771,7 +3639,7 @@ app.whenReady().then(() => {
   ptyMgr.on('exit', (e) => {
     const exited = ptyMgr.get(e.id)
     if (!exited?.alive) claudeDialogs.forget(e.id)
-    // CC§12 CODEX§5 MUSE§1 AGY§1
+    // CC§12 CODEX§5 AGY§1
     const unexpected =
       !e.endedByKoloft &&
       !closedTabs.has(e.id) &&
@@ -3959,39 +3827,12 @@ app.whenReady().then(() => {
     startupErrors.codex = `Codex session data could not be loaded; the original file is preserved. ${String(error)}`
   }
   try {
-    museSessions = new MuseSessions(path.join(userData, 'muse-sessions.json'), {
-      ...storedDeps,
-      remote: museOnMachines,
-      leftWorktree: (resource) => removeUntouchedWorktree(museSessions, resource),
-      openShimRoot: path.join(userData, 'muse-open'),
-      pickHome: pickMuseHome,
-      assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
-      skipPermissions: () => loadSettings().skipPermissions,
-      serversAmong: async (pid, commands) =>
-        museServersAmong(await sharedProcessTable.fresh(), pid, commands),
-      browserEndpoint: relayEndpoint,
-      playwrightBin,
-      fallbackBin,
-      gitBin: gitFirstBin,
-      agent: {
-        enabled: (remote) => agentToolsFor('muse', remote ? 'ssh' : 'local'),
-        answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
-      },
-      gitAccounts: {
-        configEnv: (env) => gitAccounts!.configEnv(env),
-        ghWrapper
-      }
-    })
-  } catch (error) {
-    startupErrors.muse = `Muse session data could not be loaded; the original file is preserved. ${String(error)}`
-  }
-  try {
     agySessions = new AgySessions(path.join(userData, 'agy-sessions.json'), {
       ...storedDeps,
       projectInfo: projectInfoOnHost,
       remoteTreeIo: machineTreeIo,
       remote: {
-        ...museOnMachines,
+        ...machineRemoteDeps,
         machine: (host) => hosts.machine(host),
         mirrorGemini: (host) => mirrorAgyGemini(userData, host),
         nextPull: (host) => {
@@ -4034,13 +3875,6 @@ app.whenReady().then(() => {
       .then((agy) => (agy.available ? agySessions!.refreshHistory() : undefined))
       .catch((error) => sendToRenderer(CH.toast.show, String(error)))
   }
-  if (museSessions) {
-    sessionBackends.register(museBackend(museSessions, resumeProbes, machineProbes))
-    void museSessions
-      .availability()
-      .then((muse) => (muse.available ? museSessions!.refreshHistory() : undefined))
-      .catch((error) => sendToRenderer(CH.toast.show, String(error)))
-  }
   if (codexSessions) {
     sessionBackends.register(codexBackend(codexSessions, resumeProbes, machineProbes))
     void codexSessions
@@ -4053,7 +3887,7 @@ app.whenReady().then(() => {
       })
       .catch((error) => sendToRenderer(CH.toast.show, String(error)))
   }
-  for (const stored of [codexSessions, museSessions, agySessions])
+  for (const stored of [codexSessions, agySessions])
     if (stored) void watchHistoryOf(stored).catch(() => undefined)
   workspaceMgr = new WorkspaceManager({
     additionalRows: (wsPath) =>
@@ -4559,7 +4393,6 @@ app.whenReady().then(() => {
             : []),
           ...usagePulls(userData, t.host, {
             codex: codexMachines.has(t.host) || !!codexSessions?.hasHistoryOn(t.host),
-            muse: !!museSessions?.hasHistoryOn(t.host),
             agy: !!agySessions?.usesHost(t.host)
           })
         ],
@@ -5399,7 +5232,7 @@ async function endAndRemove(
   }
   archiveSession(target.sessionId)
   for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
-  // CC§9 MUSE§8
+  // CC§9
   closedSessionsStoppedUntil.set(
     target.sessionId,
     Date.now() + LEFTOVERS_OF_A_CLOSED_SESSION_STOPPED_FOR_MS
@@ -6212,8 +6045,7 @@ const hosts = new Hosts(
     docsPlugin: docsPluginWhileOn,
     assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
     agentHomes: () => ({
-      codexHome: path.dirname(codexSharedConfig()),
-      configHome: museConfigHome(museSessions?.defaultEnv ?? process.env)
+      codexHome: path.dirname(codexSharedConfig())
     }),
     pastedPicturesDir
   }),
@@ -6442,7 +6274,7 @@ function registerIpc(): void {
     ) => addAccount(name, kind, secret, endpoint)
   )
   ipcMain.handle(CH.accounts.remove, async (_e, name: string, kind: AccountKind) => {
-    // CODEX§15 MUSE§13
+    // CODEX§15
     if (!SIGN_IN_FOLDER_KINDS.includes(kind)) await keychainDelete(kind, name)
     forgetAccount(name, kind)
   })
@@ -6647,7 +6479,6 @@ function registerIpc(): void {
       return listUsageFiles(workspaceMgr?.transcriptFiles() ?? [], [
         {
           codexHome: path.dirname(codexSharedConfig()),
-          museHome: museHome(museSessions?.defaultEnv ?? process.env),
           geminiDir: ownersGemini()
         },
         ...(workspaceMgr?.remoteTargets() ?? []).map(({ host }) => machineUsageDirs(userData, host))

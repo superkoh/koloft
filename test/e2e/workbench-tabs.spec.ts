@@ -7,10 +7,8 @@ import {
   installAgentFor,
   installAgy,
   installCodex,
-  installMuse,
   seedSettings,
-  trustInAgy,
-  trustInMuse
+  trustInAgy
 } from './helpers/env'
 import { startCodex } from './helpers/codex'
 import {
@@ -736,7 +734,6 @@ type LocalAgent = {
 const LOCAL_AGENTS: LocalAgent[] = [
   { label: 'Claude', startsTheServer: { by: 'the session', typed: (c) => `/sh ${c}` } },
   { label: 'Codex', startsTheServer: { by: 'its Workbench shell' } },
-  { label: 'Muse', startsTheServer: { by: 'the session', typed: (c) => `/sh ${c}` } },
   { label: 'Antigravity', startsTheServer: { by: 'the session', typed: (c) => `!${c}` } }
 ]
 
@@ -815,12 +812,10 @@ test.describe('Workbench + menu: the ports a session’s processes listen on', (
     await openThePortItLists(app, page, port)
   })
 
-  test('WB-T28: a Codex and a Muse session each list the server it started, though it left its shell', async ({
+  test('WB-T28: a Codex session lists the server it started, though it left its shell', async ({
     env
   }) => {
     installCodex(env)
-    installMuse(env)
-    trustInMuse(env, env.workspaces.a)
     const app = await launchApp(env)
     try {
       const page = await app.firstWindow()
@@ -830,13 +825,6 @@ test.describe('Workbench + menu: the ports a session’s processes listen on', (
       await runIn(page, centerTerm(page), `/sh ${servesAFolderOn(port)}`)
       await expect.poll(() => answers(port), { timeout: 30_000 }).toBe(true)
       await openThePortItLists(app, page, port)
-
-      await newSessionInWith(page, 'ws-a', 'Muse')
-      await expect(wsRows(page, 'ws-a')).toHaveCount(2, { timeout: 30_000 })
-      const musePort = await portFreeOnTheMac()
-      await runIn(page, centerTerm(page), `/sh ${servesAFolderOn(musePort)}`)
-      await expect.poll(() => answers(musePort), { timeout: 30_000 }).toBe(true)
-      await openThePortItLists(app, page, musePort)
     } finally {
       await quitAndClose(app)
     }

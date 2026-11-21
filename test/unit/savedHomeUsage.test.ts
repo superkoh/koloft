@@ -59,10 +59,9 @@ function pickerOver(kind: SignInFolderKind, store: SavedUsage<HomeUsage>): HomeA
   return new HomeAccountPicker(kind, (a) => store.get(a.name))
 }
 
-describe('usage of Codex, Muse and Antigravity accounts kept across a restart', () => {
+describe('usage of Codex and Antigravity accounts kept across a restart', () => {
   it.each<[SignInFolderKind, (used: number, nowMs: number) => Partial<AccountView>]>([
     ['codex-home', (used, nowMs) => ({ limits: weekLimits(used, nowMs) })],
-    ['muse-home', (used, nowMs) => ({ limits: weekLimits(used, nowMs) })],
     ['agy-home', (used, nowMs) => ({ quota: weekQuota(used, nowMs), quotaAt: nowMs })]
   ])(
     'a %s account read as full before Koloft closed is passed over on the first pick after it reopens, with no read answered yet',
@@ -83,7 +82,6 @@ describe('usage of Codex, Muse and Antigravity accounts kept across a restart', 
 
   it.each<[SignInFolderKind, (used: number, at: number) => Partial<AccountView>]>([
     ['codex-home', (used, at) => ({ limits: weekLimits(used, at) })],
-    ['muse-home', (used, at) => ({ limits: weekLimits(used, at) })],
     ['agy-home', (used, at) => ({ quota: weekQuota(used, at), quotaAt: at })]
   ])(
     'a %s account picked on usage read two hours before Koloft reopened says on its launch line that the usage is 2 h old',

@@ -1,8 +1,4 @@
-import fs from 'fs'
-import os from 'os'
-import path from 'path'
-import { execFileSync } from 'child_process'
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   OWNER,
   instructionsBytes,
@@ -22,7 +18,6 @@ import {
   WORKSPACE_TEXT_MAX_BYTES,
   workspaceTextBytes
 } from '../../../../src/plugins/sessions/shared/workspaceInstructions'
-import { sessionStartContext, writeMuseHooks } from '../../../../src/main/museHooks'
 import { sanitizeLoadedSettings } from '../../../../src/shared/settingsOps'
 import type { SessionDefaults } from '../../../../src/shared/types'
 
@@ -77,17 +72,6 @@ describe('what a new session gets of the instructions the owner wrote', () => {
 })
 
 describe('how long the instructions for every workspace may be', () => {
-  it.each([
-    ['plain letters', 'a'],
-    ['line breaks, which a Muse hook doubles', '\n'],
-    ['quotes, which a Muse hook doubles', '"'],
-    ['Chinese', '中'],
-    ['emoji', '😀']
-  ])('at the limit, written in %s, they fit one Muse start hook of their own', (_, unit) => {
-    const text = textOfBytes(unit, EVERY_WORKSPACE_TEXT_MAX_BYTES)
-    expect(() => sessionStartContext(everyWorkspacePart(text))).not.toThrow()
-  })
-
   it('a Codex session with both blocks at their limits stays within the length seen reaching the model whole', () => {
     const own = textOfBytes('中', WORKSPACE_TEXT_MAX_BYTES - workspaceTextBytes('', ''))
     const shared = textOfBytes('中', EVERY_WORKSPACE_TEXT_MAX_BYTES)
@@ -140,28 +124,5 @@ describe('the instructions for every workspace, changed by an agent', () => {
     expect(await block.writeIfStill('Answer me in Chinese.', 'Be brief.', 'Fix login')).toBe(true)
     expect(versions.at(-1)).toEqual({ text: 'Be brief.', at: 9, by: 'Fix login' })
     expect(textInUse(versions)).toBe(await block.read())
-  })
-})
-
-describe('a Muse session’s start hooks', () => {
-  const dirs: string[] = []
-  afterEach(() => dirs.splice(0).forEach((d) => fs.rmSync(d, { recursive: true, force: true })))
-
-  it('print each part of its text from a start hook of its own, in order', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'muse-hooks-'))
-    dirs.push(dir)
-    const parts = [
-      'Koloft prompt.',
-      everyWorkspacePart('Shared "rule".'),
-      workspaceInstructionsPart('Own rule.')
-    ]
-    const file = writeMuseHooks(dir, dir, parts)
-    const starts = JSON.parse(fs.readFileSync(file, 'utf8')).hooks.SessionStart[0].hooks as {
-      command: string
-    }[]
-    const printed = starts.map(({ command }) =>
-      execFileSync('/bin/bash', ['-c', command], { input: '{}', encoding: 'utf8' }).trim()
-    )
-    expect(printed).toEqual(parts.map(sessionStartContext))
   })
 })

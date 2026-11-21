@@ -6,10 +6,8 @@ import { resolveCliRuntime, type CliSpec } from '../../src/main/cliRuntime'
 import {
   MIN_AGY_VERSION,
   MIN_CODEX_VERSION,
-  MIN_MUSE_VERSION,
   TESTED_AGY_LINE,
-  TESTED_CODEX_LINE,
-  TESTED_MUSE_LINE
+  TESTED_CODEX_LINE
 } from '../../src/main/cliMinimums'
 import { isNewer } from '../../src/main/releaseNotes'
 
@@ -101,7 +99,6 @@ describe('resolveCliRuntime when the login shell names a function or alias of th
 describe('the tested line of each agent', () => {
   it.each([
     { agent: 'Codex', min: MIN_CODEX_VERSION, tested: TESTED_CODEX_LINE },
-    { agent: 'Muse Code', min: MIN_MUSE_VERSION, tested: TESTED_MUSE_LINE },
     { agent: 'Antigravity', min: MIN_AGY_VERSION, tested: TESTED_AGY_LINE }
   ])(
     'never sits below the minimum, or the oldest $agent Koloft accepts would warn as untested',

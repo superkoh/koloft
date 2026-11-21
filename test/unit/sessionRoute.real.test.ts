@@ -12,7 +12,6 @@ import {
 const BINARIES: Record<BackendId, string | undefined> = {
   claude: process.env.KOLOFT_REAL_ROUTE_CLAUDE,
   codex: process.env.KOLOFT_REAL_ROUTE_CODEX,
-  muse: process.env.KOLOFT_REAL_ROUTE_MUSE,
   agy: process.env.KOLOFT_REAL_ROUTE_AGY
 }
 
@@ -100,7 +99,7 @@ const CASES: [string, string[]][] = [
   ['blog 写一篇 Rust 入门', ['workspace:blog']]
 ]
 
-for (const backend of ['claude', 'codex', 'muse'] as const) {
+for (const backend of ['claude', 'codex', 'agy'] as const) {
   const binary = BINARIES[backend]
   const assist = koloftAssist({
     picks: () => ({

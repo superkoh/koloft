@@ -2,14 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import {
-  agySessionCalls,
-  installAgy,
-  installMuse,
-  museCalls,
-  seedSettings,
-  type E2EEnv
-} from './helpers/env'
+import { agySessionCalls, installAgy, seedSettings, type E2EEnv } from './helpers/env'
 import {
   butlerHelperRows,
   readAllCalls,
@@ -328,7 +321,6 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
   })
 
   const helperOf = {
-    muse: { install: installMuse, calls: museCalls },
     agy: { install: installAgy, calls: agySessionCalls }
   }
   for (const [backend, agent] of Object.entries(helperOf)) {
@@ -340,7 +332,7 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
         assist: { backend },
         sessionMethods: {
           defaultBackend: 'claude',
-          enabled: { claude: true, codex: true, muse: true, agy: true }
+          enabled: { claude: true, codex: true, agy: true }
         }
       })
       const { page, close } = await launched(env, { token: '' })

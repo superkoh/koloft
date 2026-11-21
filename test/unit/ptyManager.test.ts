@@ -61,7 +61,6 @@ const POLLUTANTS = {
   KOLOFT_CODEX_DISCORD_SAID: '/parent-koloft/hook-sessions/pty-parent-1.discord-said',
   KOLOFT_CODEX_REPLY_LANGUAGE: '/parent-koloft/codex-reply-language.sh',
   KOLOFT_SHELL_WROTE: '/parent-koloft/hook-sessions/pty-parent-1.shell-wrote.jsonl',
-  TBH_MANAGED_HOOKS_PATH: '/parent-koloft/muse-open/parent/hooks.json',
   ANT_ACCOUNT: 'whoever-started-koloft'
 }
 
@@ -105,7 +104,7 @@ describe('PtyManager per-tab environment', () => {
     expect(Object.keys(env).some((k) => k.startsWith('ANTIGRAVITY_'))).toBe(false)
   })
 
-  it('keeps the hook log and notice a local Antigravity launch passes and the managed hooks path a local Muse launch passes, while stripping inherited ones when a remote tab starts without processEnv', () => {
+  it('keeps the hook log and notice a local Antigravity launch passes, while stripping inherited ones when a remote tab starts without processEnv', () => {
     const mgr = new PtyManager()
     const envOf = (args: Parameters<PtyManager['create']>[0]): Record<string, string> => {
       mocks.spawn.mockClear()
@@ -129,17 +128,6 @@ describe('PtyManager per-tab environment', () => {
     const remoteAgy = envOf({ kind: 'agy', koloftShim: SHIM, cwd: os.tmpdir() })
     expect(remoteAgy.KOLOFT_AGY_LOG).toBeUndefined()
     expect(remoteAgy.KOLOFT_NOTICE).toBeUndefined()
-
-    const localMuse = envOf({
-      kind: 'muse',
-      koloftShim: false,
-      cwd: os.tmpdir(),
-      processEnv: { PATH: '/usr/bin:/bin', TBH_MANAGED_HOOKS_PATH: '/tab/hooks.json' }
-    })
-    expect(localMuse.TBH_MANAGED_HOOKS_PATH).toBe('/tab/hooks.json')
-
-    const remoteMuse = envOf({ kind: 'muse', koloftShim: SHIM, cwd: os.tmpdir() })
-    expect(remoteMuse.TBH_MANAGED_HOOKS_PATH).toBeUndefined()
   })
 
   it("a Workbench shell's processes carry its session tab's id, so what they start counts as the session's after its tab id changes; a placeholder id such as a sleeping tab's asleep-1, which later runs hand out again, is never carried", () => {
@@ -221,10 +209,10 @@ describe('PtyManager per-tab environment', () => {
       envFor({ kind: 'shell', koloftShim: SHIM, cwd: os.tmpdir(), util: true }).KOLOFT_AGENT_DIR
     ).toBe('/koloft/agent')
     const own = envFor({
-      kind: 'muse',
+      kind: 'agy',
       koloftShim: false,
       cwd: os.tmpdir(),
-      executable: '/bin/muse',
+      executable: '/bin/agy',
       processEnv: { PATH: '/own/tools' }
     })
     expect(own.KOLOFT_AGENT_DIR).toBeUndefined()
@@ -474,7 +462,7 @@ it("puts a tab's account line above the program's first output, once, the way th
   const seen: string[] = []
   mgr.on('data', (d: { data: string }) => seen.push(d.data))
   mgr.create({
-    kind: 'muse',
+    kind: 'agy',
     koloftShim: false,
     cwd: os.tmpdir(),
     banner: 'koloft: → ann · 5h 10%'
@@ -738,10 +726,10 @@ describe('PtyManager opens a session tab at the size the session screen was last
     expect(sizeOfSpawn(1)).toEqual({ cols: 80, rows: 24 })
 
     mocks.spawn.mockClear()
-    for (const kind of ['claude', 'codex', 'muse', 'agy', 'shell'] as const)
+    for (const kind of ['claude', 'codex', 'agy', 'shell'] as const)
       mgr.create({ kind, koloftShim: SHIM, cwd: os.tmpdir() })
     expect(mocks.spawn.mock.calls.map((_, call) => sizeOfSpawn(call))).toEqual(
-      Array(5).fill({ cols: 140, rows: 49 })
+      Array(4).fill({ cols: 140, rows: 49 })
     )
   })
 })
@@ -1017,12 +1005,12 @@ describe("foregroundName: node-pty's report is untrusted input whatever its typi
 
 it('starts a program asked to sit above its tools through taskpolicy -a, its own arguments after it, and any other program directly', () => {
   const mgr = new PtyManager()
-  const tab = { kind: 'muse', koloftShim: false, cwd: '/repo', executable: '/bin/muse' } as const
+  const tab = { kind: 'agy', koloftShim: false, cwd: '/repo', executable: '/bin/agy' } as const
   mgr.create({ ...tab, argv: ['resume', 'abc'], aboveItsTools: true })
   mgr.create({ ...tab, argv: ['resume', 'abc'] })
   expect(mocks.spawn.mock.calls.map(([file, args]) => [file, args])).toEqual([
-    ['/usr/sbin/taskpolicy', ['-a', '/bin/muse', 'resume', 'abc']],
-    ['/bin/muse', ['resume', 'abc']]
+    ['/usr/sbin/taskpolicy', ['-a', '/bin/agy', 'resume', 'abc']],
+    ['/bin/agy', ['resume', 'abc']]
   ])
 })
 

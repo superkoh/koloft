@@ -33,7 +33,7 @@ export async function startRemoteTab(page: Page, env: E2EEnv, backend: BackendId
 async function koloftExits(page: Page, tabId: string): Promise<string[]> {
   return [
     ...(await terminalText(page, tabId)).matchAll(
-      /\[fake-(?:claude|codex|muse|agy)\] koloft exit=(\d+)/g
+      /\[fake-(?:claude|codex|agy)\] koloft exit=(\d+)/g
     )
   ].map((m) => m[1])
 }

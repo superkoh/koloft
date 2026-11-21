@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  agyToolDid,
-  claudeAskLine,
-  claudeToolDid,
-  museToolDid,
-  storedAskLine
-} from '../../src/main/rowActivity'
+import { agyToolDid, claudeAskLine, claudeToolDid, storedAskLine } from '../../src/main/rowActivity'
 
 describe('what a row says each agent did, in plain words', () => {
   it('Claude Code: a command, a file it changed, wrote or read, a search, a helper, any other tool', () => {
@@ -23,14 +17,6 @@ describe('what a row says each agent did, in plain words', () => {
   it('Claude Code: asking you is not something it did', () => {
     expect(claudeToolDid('AskUserQuestion', { questions: [] })).toBeUndefined()
     expect(claudeToolDid('ExitPlanMode', { plan: 'x' })).toBeUndefined()
-  })
-
-  it('Muse Code: its own tool names, the written file from the tool reply', () => {
-    expect(museToolDid('bash', { command: 'ls' }, {})).toBe('Ran ls')
-    expect(museToolDid('edit_file', {}, { filePath: '/r/b.ts' })).toBe('Edited b.ts')
-    expect(museToolDid('write_file', {}, { filePath: '/r/c.ts' })).toBe('Wrote c.ts')
-    expect(museToolDid('read_file', { path: 'docs/d.md' }, {})).toBe('Read d.md')
-    expect(museToolDid('monitor', {}, {})).toBe('Used monitor')
   })
 
   it('Antigravity: its own tool names, and no line for its question tool', () => {
@@ -116,7 +102,7 @@ describe('what a row says while the session waits on you', () => {
     expect(ask('mcp__fs__read_file', { path: '/a/b.txt' })).toBe('Wants to use: read_file')
   })
 
-  it('an ask kept for Codex, Muse Code or Antigravity: a question, a command, a file edit, a file read or a plan', () => {
+  it('an ask kept for Codex or Antigravity: a question, a command, a file edit, a file read or a plan', () => {
     expect(
       storedAskLine({
         id: 1,

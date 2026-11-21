@@ -36,9 +36,9 @@ describe('a bracketed paste', () => {
 })
 
 describe('a paste from the Workbench into a session', () => {
-  // CC§18 CODEX§23 MUSE§7
+  // CC§18 CODEX§23
   it('starts with two line feeds, so a picked element or failing checks put in before Enter do not run on from the note typed after a comment', () => {
-    for (const kind of ['claude', 'codex', 'muse'] as const)
+    for (const kind of ['claude', 'codex'] as const)
       expect(pasteFor('checks\n\n', kind)).toBe('\x1b[200~\n\nchecks\n\n\x1b[201~')
   })
 

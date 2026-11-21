@@ -32,6 +32,17 @@ export function readJsonDrop(
   })
 }
 
+export function readJson(file: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(fs.readFileSync(file, 'utf8'))
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {}
+  } catch {
+    return {}
+  }
+}
+
 export function writeWholeBeforeVisible(dest: string, text: string): void {
   const tmp = `${dest}.tmp`
   fs.writeFileSync(tmp, text)

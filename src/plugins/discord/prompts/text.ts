@@ -6,7 +6,6 @@ import { DISCORD_BOUND, DISCORD_PREFIX } from '../api'
 const HOW_DISCORD_WORDS_ARRIVE: Record<BackendId, string> = {
   claude: ", and reaches you as a message from another session, sent by Koloft's Discord relay",
   codex: '',
-  muse: '',
   agy: ''
 }
 
