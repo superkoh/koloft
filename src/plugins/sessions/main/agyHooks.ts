@@ -53,7 +53,7 @@ const STEP_THIS_HOOK_INJECTED = 'injected by a PreInvocation hook:'
 // AGY§12 AGY§17
 const START_STEP_ONCE_COMPACTED_FN = `start_step_once_compacted() {
   [ -f "$${AGY_START_ENV}" ] || return 0
-  awk ${shq(`/"type":"SYSTEM_MESSAGE"/ && index($0, "${STEP_THIS_HOOK_INJECTED}") { put = 1 } /"type":"CHECKPOINT"/ { compacted = 1; put = 0 } END { exit !(compacted && !put) }`)} "$tp" 2>/dev/null || return 0
+  LC_ALL=C grep -F -e '"type":"CHECKPOINT"' -e ${shq(STEP_THIS_HOOK_INJECTED)} "$tp" 2>/dev/null | awk ${shq(`/"type":"SYSTEM_MESSAGE"/ && index($0, "${STEP_THIS_HOOK_INJECTED}") { put = 1 } /"type":"CHECKPOINT"/ { compacted = 1; put = 0 } END { exit !(compacted && !put) }`)} || return 0
   st="$(cat "$${AGY_START_ENV}")"
   st="\${st#${shq(INJECT_STEPS_OPEN)}}"
   printf '%s' "\${st%${shq(INJECT_STEPS_CLOSE)}}"
