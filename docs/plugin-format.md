@@ -888,12 +888,13 @@ export const start: PluginStart<
   calls. Sessions core's gives back `tookTheTurn`, which the butler's and the Inbox's deps read
   when a turn ends. It gives back three parts it builds first, as the app loads, because
   they hold each other: the `SessionTracker`, the `SessionBackends` and the `ClaudeBackend`.
-  The deps hand in the functions set on the tracker (`tracker`) and on the backends
-  (`backendHooks`) and each part's own deps; the start sets them right after it builds
-  each part, in the order the app wrote them, and registers the Claude backend before the
-  app registers Antigravity's and Codex's. It also gives back `subscribeTabSubsystems`,
-  which the app calls once Electron is ready to sign up the `TabLifecycle`'s listeners. It
-  also gives back six parts it builds as the app loads, which the app's
+  The deps hand in the backends' `backendLifecycle` and the Claude backend's deps
+  (`claude`, all but the tracker), and the functions set on the tracker (`tracker`) and on
+  the backends (`backendHooks`), which the start sets right after it builds each part, in
+  the order the app wrote them. It registers the Claude backend before the app registers
+  Antigravity's and Codex's, and gives back `subscribeTabSubsystems`, which the app calls
+  once Electron is ready to sign up the `TabLifecycle`'s listeners. It also gives back six
+  parts it builds as the app loads, which the app's
   own code calls from then on: `StartedSessions`, `NewsJudge`, `SlashCommands`,
   `TabLifecycle`, `SleepingTabs` and `SessionSync`. Its own moment listeners use two of them,
   `NewsJudge` and `SlashCommands`. The judge has one verdict listener: the deps hand it in
