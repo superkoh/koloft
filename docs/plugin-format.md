@@ -887,8 +887,9 @@ export const start: PluginStart<
   GitHub's start gives back its `GithubMain`, whose `followSwitch` and `sweepNow` the app
   calls. Sessions core's gives back `tookTheTurn`, which the butler's and the Inbox's deps read
   when a turn ends, the `AttentionTracker` it builds as the app loads (from last run's marks,
-  with the five functions its deps hand in set on it right after), which the app's own code
-  tells of each turn, ask and tab and reads the marks from, and `buildAsks`, `buildInstructionAsks`, `buildHandOver` and
+  with the five functions its deps hand in set on it right after; the app sets a sixth,
+  `turnTakenElsewhere`, once Electron is ready, from Discord's `turnTakenOnDiscord`), which
+  the app's own code tells of each turn, ask and tab and reads the marks from, and `buildAsks`, `buildInstructionAsks`, `buildHandOver` and
   `buildWorkspaces`, which build its `SessionAsks`, `InstructionAsks`, `HandOver` and
   `WorkspaceManager` once Electron is ready. Workbench's gives back the web-page parts it builds (`WebPages`,
   `SitePermissions`, `PageDialogs`, `PageDownloads`, `PageRouting`, `PageTools`),

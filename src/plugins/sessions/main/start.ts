@@ -38,12 +38,8 @@ export const start: PluginStart<
     buildWorkspaces: BuildLater<WorkspaceManagerDeps, WorkspaceManager>
   }
 > = ({ commands, moments, ipc }, d) => {
-  const attention = new AttentionTracker(d.attention.onChange, d.attention.lastRun)
-  attention.asleep = d.attention.asleep
-  attention.watching = d.attention.watching
-  attention.turnDone = d.attention.turnDone
-  attention.outlivesKoloft = d.attention.outlivesKoloft
-  attention.waitsOnAnother = d.attention.waitsOnAnother
+  const { onChange, lastRun, ...attentionHooks } = d.attention
+  const attention = Object.assign(new AttentionTracker(onChange, lastRun), attentionHooks)
   let asks: SessionAsks | null = null
   let instructionAsks: InstructionAsks | null = null
   const asksBuilt: MadeLater<SessionAsks> = () => asks
