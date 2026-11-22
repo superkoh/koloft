@@ -39,8 +39,8 @@ function withTableLine(text, header, line, keyOfLine) {
 
 export function folderTrustLevel(text, realDir) {
   return tableBody(text, projectHeader(realDir))
-    ?.map((line) => /^trust_level\s*=\s*["']([^"']*)["']/.exec(line)?.[1])
-    .find(Boolean)
+    ?.map((line) => /^trust_level\s*=\s*(["'])([^"']*)\1\s*(#.*)?$/.exec(line)?.[2])
+    .find((level) => level !== undefined)
 }
 
 export const withTrustedFolder = (text, realDir) =>
