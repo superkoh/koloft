@@ -29,11 +29,13 @@ import type { ClaudeLaunch, Host } from '../../../../main/host/host'
 import type { RemoteSync } from '../../../../main/remote/sync'
 import {
   AGENT_DROP_NAME,
+  NOT_ITS_PASS,
   REQUEST_NAME,
   replyJson,
   tabSpokenFor
 } from '../../../../main/agentRequests'
-import type { AgentReply } from '@core/command'
+import { holdsPass, isStartedBeforeTabPasses } from '../../../../main/tabPass'
+import { refused, type AgentReply } from '@core/command'
 import { errorText } from '@core/errorText'
 import { accountEnv, sessionIdOfTmux, tmuxSessionName } from '../../../../main/remote/launch'
 import {
@@ -671,20 +673,38 @@ export class ClaudeBackend implements SessionBackend {
     return undefined
   }
 
-  private callerOnMachine(machine: string, raw: unknown): string | undefined {
-    const r = (raw ?? {}) as { tabId?: unknown; tmux?: unknown }
-    const byTmux = typeof r.tmux === 'string' && r.tmux && this.tabRunningTmux(r.tmux, machine)
+  // ADR-0052
+  private callerOnMachine(machine: string, raw: unknown): { tabId?: string; refusal?: string } {
+    const r = (raw ?? {}) as { tabId?: unknown; tmux?: unknown; pass?: unknown }
+    if (typeof r.pass === 'string' && r.pass) {
+      const asked = typeof r.tabId === 'string' ? r.tabId : ''
+      const facts = this.d.pty.get(asked)
+      if (!facts) return {}
+      if (!holdsPass(asked, r.pass)) return { refusal: NOT_ITS_PASS }
+      const tabId = tabSpokenFor(asked, facts)
+      return this.liveTabOnMachine(machine, tabId) === tabId ? { tabId } : {}
+    }
+    const named = this.namedOnMachine(machine, r)
+    if (!named) return {}
+    return isStartedBeforeTabPasses(named) ? { tabId: named } : { refusal: NOT_ITS_PASS }
+  }
+
+  private liveTabOnMachine(machine: string, tabId: string, tmux = ''): string | undefined {
+    if (this.d.machineOfTab(tabId) === machine && this.d.pty.get(tabId)) return tabId
+    const other = this.d.otherTabOnMachine?.(machine, tmux, tabId)
+    return other && this.d.pty.get(other) ? other : undefined
+  }
+
+  private namedOnMachine(
+    machine: string,
+    r: { tabId?: unknown; tmux?: unknown }
+  ): string | undefined {
+    const tmux = typeof r.tmux === 'string' ? r.tmux : ''
+    const byTmux = tmux && this.tabRunningTmux(tmux, machine)
     if (byTmux) return byTmux
     const asked = typeof r.tabId === 'string' ? r.tabId : ''
     const facts = this.d.pty.get(asked)
-    const tabId = facts ? tabSpokenFor(asked, facts) : asked
-    if (this.d.machineOfTab(tabId) === machine && this.d.pty.get(tabId)) return tabId
-    const other = this.d.otherTabOnMachine?.(
-      machine,
-      typeof r.tmux === 'string' ? r.tmux : '',
-      tabId
-    )
-    return other && this.d.pty.get(other) ? other : undefined
+    return this.liveTabOnMachine(machine, facts ? tabSpokenFor(asked, facts) : asked, tmux)
   }
 
   private fromOwnWorkbenchShell(raw: unknown): boolean {
@@ -693,10 +713,10 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   private answerMachineRequest(machine: string, requestId: string, raw: unknown): void {
-    const tabId = this.callerOnMachine(machine, raw)
+    const { tabId, refusal } = this.callerOnMachine(machine, raw)
     const host = this.d.hosts.machine(machine)
     const noOneWaits = (raw as { reply?: unknown } | null)?.reply === false
-    if (!this.agentReply || (!tabId && !this.fromOwnWorkbenchShell(raw))) {
+    if (!this.agentReply || (!tabId && !refusal && !this.fromOwnWorkbenchShell(raw))) {
       if (noOneWaits) void host.answerAgent(requestId, null)
       return
     }
@@ -705,7 +725,10 @@ export class ClaudeBackend implements SessionBackend {
       noOneWaits || typeof pid !== 'number'
         ? undefined
         : new CallerOnTheMachine(host, requestId, pid)
-    void this.agentReply(tabId, raw, caller?.stillWaiting).then(async (reply) => {
+    const replied = refusal
+      ? Promise.resolve(refused(refusal))
+      : this.agentReply(tabId, raw, caller?.stillWaiting)
+    void replied.then(async (reply) => {
       const nobodyReads = noOneWaits || !!(await caller?.stoppedWaiting())
       await host.answerAgent(requestId, nobodyReads ? null : replyJson(reply))
     })
