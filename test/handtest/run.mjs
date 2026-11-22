@@ -6,7 +6,8 @@ const jiti = createJiti(import.meta.url, {
   alias: {
     '@shared': path.join(src, 'shared'),
     '@core': path.join(src, 'core'),
-    '@plugins': path.join(src, 'plugins')
+    '@plugins': path.join(src, 'plugins'),
+    '@agents': path.join(src, 'agents')
   }
 })
 await jiti.import('./sandbox.ts')

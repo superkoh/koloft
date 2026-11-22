@@ -8,6 +8,11 @@ import type {
 } from './types'
 import { hostOf } from './remoteKey'
 import { settingsPaneName } from './settingsPanes'
+import {
+  AGENT_IDS,
+  AGENT_OF_UNNAMED_OLD_DATA,
+  AGENT_PICKED_ON_FIRST_OPEN
+} from '@core/agent/registry'
 
 export const BACKEND_LABEL: Record<BackendId, string> = {
   claude: 'Claude',
@@ -21,7 +26,8 @@ export const BACKEND_PRODUCT: Record<BackendId, string> = {
   agy: 'Antigravity CLI'
 }
 
-export const SESSION_BACKENDS = Object.keys(BACKEND_LABEL) as BackendId[]
+// ADR-0054
+export const SESSION_BACKENDS: BackendId[] = [...AGENT_IDS]
 
 export const kindsOf = (backends: BackendId[], joiner: 'or' | 'and'): string => {
   const labels = backends.map((b) => BACKEND_LABEL[b])
@@ -37,7 +43,7 @@ export const SKILL_PREFIX: Record<BackendId, string> = {
   agy: '/'
 }
 
-export const BACKEND_WHEN_NONE_IS_KNOWN: BackendId = 'claude'
+export const BACKEND_WHEN_NONE_IS_KNOWN: BackendId = AGENT_PICKED_ON_FIRST_OPEN
 
 export function turnedOffLead(backend: BackendId): string {
   return `${BACKEND_LABEL[backend]} is turned off in `
@@ -242,7 +248,7 @@ export function identityOf(key: string): SessionIdentity {
       nativeSessionId: decodeURIComponent(parts[2])
     }
   }
-  return { backendId: 'claude', sourceId: 'local', nativeSessionId: key }
+  return { backendId: AGENT_OF_UNNAMED_OLD_DATA, sourceId: 'local', nativeSessionId: key }
 }
 
 // CC§10 CODEX§16

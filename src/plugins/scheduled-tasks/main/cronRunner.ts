@@ -228,7 +228,7 @@ function clean(input: CronSaveInput): Clean {
     ? input.permission
     : NEW_JOB_PERMISSION
   const model = typeof input.model === 'string' ? input.model.trim() : undefined
-  const backend = backendIdOf(input.backend) ?? 'claude'
+  const backend = cronBackend({ backend: backendIdOf(input.backend) })
   const effort = isCronEffort(input.effort) ? takenEffort(backend, model, input.effort) : undefined
   return {
     name,

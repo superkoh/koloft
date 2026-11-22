@@ -2,7 +2,13 @@ import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
 import { IconClose } from '../icons'
 import type { BackendId, CronEffort, OwnPick, SessionDefaultsDraft } from '@shared/types'
 import { basename } from '@shared/preview'
-import { BACKEND_LABEL, SESSION_BACKENDS, byBackend, kindsOf } from '@shared/sessionBackend'
+import {
+  BACKEND_LABEL,
+  BACKEND_WHEN_NONE_IS_KNOWN,
+  SESSION_BACKENDS,
+  byBackend,
+  kindsOf
+} from '@shared/sessionBackend'
 import { effortsFor } from '@shared/cronModels'
 import { isValidModelName } from '@shared/cronNames'
 import { ownPickOf, tiersOf } from '@shared/sessionPicks'
@@ -80,7 +86,7 @@ export function SessionDefaultsDialog({
   const changedView = useRef<HTMLDivElement>(null)
   useEffect(() => changedView.current?.scrollIntoView({ block: 'nearest' }), [changed])
   const butler = useStore((s) => s.settings.butler.name)
-  const [shown, setShown] = useState<BackendId>(backends[0] ?? 'claude')
+  const [shown, setShown] = useState<BackendId>(backends[0] ?? BACKEND_WHEN_NONE_IS_KNOWN)
   const { inputCls, focusProps } = useFieldFocus()
 
   useEffect(() => {
