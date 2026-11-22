@@ -889,9 +889,11 @@ export const start: PluginStart<
   when a turn ends, the `AttentionTracker` it builds as the app loads (from last run's marks,
   with the five functions its deps hand in set on it right after; the app sets a sixth,
   `turnTakenElsewhere`, once Electron is ready, from Discord's `turnTakenOnDiscord`), which
-  the app's own code tells of each turn, ask and tab and reads the marks from, and `buildAsks`, `buildInstructionAsks`, `buildHandOver` and
-  `buildWorkspaces`, which build its `SessionAsks`, `InstructionAsks`, `HandOver` and
-  `WorkspaceManager` once Electron is ready. Workbench's gives back the web-page parts it builds (`WebPages`,
+  the app's own code tells of each turn, ask and tab and reads the marks from, and `buildAsks`, `buildInstructionAsks`, `buildHandOver`,
+  `buildWorkspaces`, `buildCodexSessions` and `buildAgySessions`, which build its
+  `SessionAsks`, `InstructionAsks`, `HandOver`, `WorkspaceManager`, `CodexSessions` and
+  `AgySessions` once Electron is ready (the last two take the file their sessions are saved
+  in as `file`, beside their deps). Workbench's gives back the web-page parts it builds (`WebPages`,
   `SitePermissions`, `PageDialogs`, `PageDownloads`, `PageRouting`, `PageTools`),
   `pagesInUse`, the `ReaderDocs` it builds, the two ways it pushes to the window (an
   open file request, and `pagePushes`) and `compositionDone`, which the app waits on
@@ -938,9 +940,11 @@ export const start: PluginStart<
   built those read it through one getter that answers `null` (a `MadeLater`, from
   `src/core/moment.ts`) and answer as the app did before the part existed. Scheduled tasks' `buildRunner` builds its
   `CronRunner` this way, Sessions core's `buildAsks` and `buildInstructionAsks` its
-  `SessionAsks` and `InstructionAsks` (its `buildHandOver` and `buildWorkspaces` build a
-  `HandOver` and a `WorkspaceManager` and only hand them back, as nothing in the start
-  reads them; the app starts the `WorkspaceManager` itself, later in its ready code), Passwords and sign-in's `buildAsks` its `SecretAsks`, and the
+  `SessionAsks` and `InstructionAsks` (its `buildHandOver`, `buildWorkspaces`,
+  `buildCodexSessions` and `buildAgySessions` build a `HandOver`, a `WorkspaceManager`, a
+  `CodexSessions` and an `AgySessions` and only hand them back, as nothing in the start
+  reads them; the app starts the `WorkspaceManager` itself, later in its ready code, and
+  registers the Antigravity and Codex backends itself once both are built), Passwords and sign-in's `buildAsks` its `SecretAsks`, and the
   Butler's `buildButler` and `buildDigest` its `Butler` and `AwayDigest`, and Discord's ten
   its `DiscordBinding`, `DiscordLink`, `Rooms`, `OldThreads`, `ButlerTyping`, `AskButtons`,
   `SecretCards`, `InstructionCards`, `Interactions` and `DiscordRelay`, each called on a
@@ -977,7 +981,7 @@ Browser control's `CdpOps`, Sessions core's `AttentionTracker`, the Inbox's `Inb
 `KoloftInbox`, the Butler's
 `OwnerAsleep` and Discord's tab channels and phone copier do, or through the `BuildLater`
 it gives back, as Scheduled tasks' `CronRunner`, Sessions core's `SessionAsks`,
-`InstructionAsks`, `HandOver` and `WorkspaceManager`, Passwords and sign-in's `SecretAsks`, the
+`InstructionAsks`, `HandOver`, `WorkspaceManager`, `CodexSessions` and `AgySessions`, Passwords and sign-in's `SecretAsks`, the
 Butler's `Butler` and `AwayDigest` and Discord's ten parts built once Electron is ready
 do; most
 parts are still built by `src/main/index.ts` itself, which imports them by name and hands them

@@ -24,12 +24,11 @@ import { SleepingTabs } from '@plugins/sessions/main/sleepingTabs'
 import { SessionTracker, type ToolCall } from '@plugins/sessions/main/sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from '@plugins/sessions/main/sessionRuntime'
-import { CodexSessions } from '@plugins/sessions/main/codexSessions'
 import { codexShowsAPanel } from './inputBox'
 import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from './remote/statusRelay'
 import type { TreeIo } from './sessionWorktrees'
 import { sharedProcessTable, type ProcessTable } from './processTable'
-import { AgySessions, type AgyHomePick } from '@plugins/sessions/main/agySessions'
+import type { AgyHomePick } from '@plugins/sessions/main/agySessions'
 import {
   agyAccountEnv,
   agyApiKeyRoute,
@@ -594,12 +593,12 @@ const terminalOutput = new TerminalOutput({
 })
 const tracker = new SessionTracker()
 const claudeAsks = new Map<string, AskPayload>()
-let codexSessions: CodexSessions | null = null
-let agySessions: AgySessions | null = null
+let codexSessions: ReturnType<typeof buildCodexSessions> | null = null
+let agySessions: ReturnType<typeof buildAgySessions> | null = null
 const startupErrors: Partial<Record<BackendId, string>> = {}
 
 function storedSessions(): SessionsWithStore[] {
-  return [codexSessions, agySessions].filter((s): s is CodexSessions | AgySessions => !!s)
+  return [codexSessions, agySessions].filter((s): s is NonNullable<typeof s> => !!s)
 }
 function storedOwnerOf(tabId: string): SessionsWithStore | undefined {
   return storedSessions().find((s) => s.hasTab(tabId))
@@ -3584,7 +3583,8 @@ app.whenReady().then(() => {
     hookRegDir: hookPaths.regDir
   }
   try {
-    codexSessions = new CodexSessions(path.join(userData, 'sessions.json'), {
+    codexSessions = buildCodexSessions({
+      file: path.join(userData, 'sessions.json'),
       ...storedDeps,
       machine: {
         instance: codexMachineInstance(userData),
@@ -3639,7 +3639,8 @@ app.whenReady().then(() => {
     startupErrors.codex = `Codex session data could not be loaded; the original file is preserved. ${String(error)}`
   }
   try {
-    agySessions = new AgySessions(path.join(userData, 'agy-sessions.json'), {
+    agySessions = buildAgySessions({
+      file: path.join(userData, 'agy-sessions.json'),
       ...storedDeps,
       projectInfo: projectInfoOnHost,
       remoteTreeIo: machineTreeIo,
@@ -6397,7 +6398,9 @@ const {
   buildAsks: buildSessionAsks,
   buildInstructionAsks,
   buildHandOver,
-  buildWorkspaces
+  buildWorkspaces,
+  buildCodexSessions,
+  buildAgySessions
 } = startedPlugins.sessions
 const { TODO_NEWS } = startedPlugins.todo
 const { koloftInbox, flushInbox } = startedPlugins.inbox
