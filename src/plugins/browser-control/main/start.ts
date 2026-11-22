@@ -1,4 +1,4 @@
-import type { PluginStart } from '@core/pluginStart'
+import type { BuildLater, PluginStart } from '@core/pluginStart'
 import { CdpOps, type CdpOpsDeps } from './cdpOps'
 import {
   cdpEnvDir,
@@ -37,16 +37,15 @@ const relay = {
   renewRelayEndpointOnMachine,
   sessionDrivingGuest,
   setRelayEnabled,
-  startRelay,
   writeRelayEnv
 }
 
-export const start: PluginStart<BrowserControlStartDeps, typeof relay & { cdpOps: CdpOps }> = (
-  { moments, ipc },
-  d
-) => {
+export const start: PluginStart<
+  BrowserControlStartDeps,
+  typeof relay & { cdpOps: CdpOps; startRelay: BuildLater<void> }
+> = ({ moments, ipc }, d) => {
   const cdpOps = new CdpOps({ ...d.cdpOps, push: ipc.push })
   closeEachStoppingTabsEndpoint(moments)
   registerChannels(ipc, { cdpOps, stripChanged: relayStripChanged })
-  return { ...relay, cdpOps }
+  return { ...relay, cdpOps, startRelay: () => startRelay(cdpOps.relay) }
 }

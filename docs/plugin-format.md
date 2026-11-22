@@ -853,10 +853,26 @@ id, and `src/main/index.ts` calls them all with one `startPlugins` call. This is
 tasks' start:
 
 ```ts
-export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments, ipc }, d) => {
-  registerCronCommand(commands, d.command)
-  followEachRun(moments, d.runner, pushRunStarted(ipc))
-  registerChannels(ipc, d.channels)
+export const start: PluginStart<
+  ScheduledTasksStartDeps,
+  { buildRunner: BuildLater<CronRunnerDeps, CronRunner>; stop: StopOnQuit }
+> = ({ commands, moments, ipc }, d) => {
+  let runner: CronRunner | null = null
+  const built = (): CronRunner | null => runner
+  registerCronCommand(commands, { ...d.command, runner: built })
+  followEachRun(moments, built, pushRunStarted(ipc))
+  registerChannels(ipc, { ...d.channels, runner: built })
+  return {
+    buildRunner: ({ userData, pinnedPaths, ...deps }) => {
+      runner = new CronRunner({ ...deps, store: …, push: pushState(ipc) })
+      runner.start()
+      return runner
+    },
+    stop: () => {
+      runner?.quitSweep()
+      runner?.stop()
+    }
+  }
 }
 ```
 
@@ -873,13 +889,15 @@ export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments,
   when a turn ends. Workbench's gives back the web-page parts it builds (`WebPages`,
   `SitePermissions`, `PageDialogs`, `PageDownloads`, `PageRouting`, `PageTools`),
   `pagesInUse`, the `ReaderDocs` it builds, and the two ways it pushes to the window (an
-  open file request, and `pagePushes`), which the app's own code calls from then on.
-  Browser control's gives back the `CdpOps` it builds and the CDP relay's functions the app
-  calls (`startRelay`, `setRelayEnabled`, `writeRelayEnv`, `relayEndpoint`,
-  `sessionDrivingGuest`, …). Todo's gives back `TODO_NEWS`, which the app hands the butler.
-  The Inbox's gives back the `KoloftInbox` it builds, which the app tells when a turn's
-  verdict comes in, a session is deleted or a tab is rebound, and `flushInbox`, which the
-  app calls as it quits.
+  open file request, and `pagePushes`), which the app's own code calls from then on, and
+  two things done once Electron is ready: `setUpBrowserPartition` and `setUpExtensions`.
+  Browser control's gives back the `CdpOps` it builds, `startRelay`, done once Electron is
+  ready, and the CDP relay's functions the app calls (`setRelayEnabled`, `writeRelayEnv`,
+  `relayEndpoint`, `sessionDrivingGuest`, …). Todo's gives back `TODO_NEWS`, which the app
+  hands the butler. The Inbox's gives back the `KoloftInbox` it builds, which the app tells
+  when a turn's verdict comes in, a session is deleted or a tab is rebound, and
+  `flushInbox`, which the app calls as it quits. Scheduled tasks' gives back `buildRunner`,
+  which builds its `CronRunner` once Electron is ready, and `stop`.
 - What a start gives back exists only once `startPlugins` returns. A deps object built
   before that, or a start that runs before the one that gives it, reads it through a
   function (Workbench's `driverOf` calls Browser control's `sessionDrivingGuest`), never as a
@@ -887,12 +905,32 @@ export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments,
 - The app calls `startPlugins` as its main module finishes loading, after every part a deps
   object hands in exists, and before Electron is ready, so before any session runs, any
   `koloft` command arrives or the window opens.
+- **Building later.** A part that can only be built once Electron is ready, or after
+  other parts of the app have started, is not built by the start itself. The start gives
+  back a `BuildLater<Deps, Part>` from `src/core/pluginStart.ts`: `(deps) => part`. The app
+  calls it inside `app.whenReady`, at the point the part must be built, and hands it what
+  exists only by then. It builds the part, starts it if it runs on its own, keeps it for
+  the start's own commands, moment listeners and channels, and returns it. Until it is
+  built those read it as missing: they take it as a `MadeLater` (`() => part | null`) and
+  answer as the part would before it exists. Scheduled tasks' `buildRunner` builds its
+  `CronRunner` this way; Workbench's `setUpBrowserPartition` and `setUpExtensions` and
+  Browser control's `startRelay` are the same shape with nothing given back
+  (`BuildLater<Deps>`). There is no one moment at which the app builds every plugin's
+  later parts: each is called on its own line, so the order the app is ready in does not
+  change.
+- **Stopping.** A start whose parts hold timers, files or connections that must be let go
+  as the app quits gives back a `StopOnQuit` (`() => void`), named `stop`. The app calls it
+  in its `before-quit` handler, at the point that plugin's parts stop, once Koloft has
+  decided to quit. It must do nothing for a part not yet built (a quit before Electron is
+  ready). Scheduled tasks' `stop` sweeps the folders its runs left and stops its timers.
+  A switch never stops a start: a part that follows its plugin's switch does that itself
+  ([Main-process parts](#main-process-parts)).
 - Inside one start, the order of its `moments.listen` calls is the order that plugin hears a
   moment in ([Moments](#moments)). Across plugins the order of the starts does not matter,
   since `Moments` orders listeners by the list of plugins whoever listens first.
 - A start given for an id that is not on the list of plugins throws.
 - Every plugin is started, on or off. What a plugin that is off loses is still taken away by
-  the registries ([Switches](#switches)). Nothing stops a started plugin.
+  the registries ([Switches](#switches)). Only quitting stops what a start built.
 - The unit test `test/unit/pluginList.test.ts` checks that `src/plugins/starts.ts` holds the
   start of every plugin that has a `main/` folder, and of no other, in list order.
 
@@ -902,7 +940,8 @@ A plugin's main-process code is a set of parts. A part is a class or function in
 that holds its own state. It takes what it needs from the rest of the app as a small `deps`
 object, which `src/main/index.ts` builds and hands in. A part built by the plugin's start
 function gets its deps through the start's `deps`, as Workbench's web-page parts,
-Browser control's `CdpOps` and the Inbox's `Inbox` and `KoloftInbox` do; most
+Browser control's `CdpOps` and the Inbox's `Inbox` and `KoloftInbox` do, or through the
+`BuildLater` it gives back, as Scheduled tasks' `CronRunner` does; most
 parts are still built by `src/main/index.ts` itself, which imports them by name and hands them
 to the starts as deps. A part never imports another plugin
 past its `api.ts`. When it needs something from a plugin that needs it in turn (Browser
@@ -921,7 +960,8 @@ its "is this branch merged" query. It has
 stops the sweep of issue and pull request counts. The counts reach the sidebar's workspace
 rows through the `pluginData` dep of Sessions core's workspaces, only while the sweep runs.
 Discord's bot follows its switch the same way, from `followDiscordSwitch` in
-`src/main/index.ts`. There is no general way yet to stop a plugin's main-process parts.
+`src/main/index.ts`. As the app quits, a start's `stop` stops what it built
+([Starting](#starting)).
 
 Two hooks let one plugin hand another plugin's part what it needs, without core naming
 either:
@@ -1032,9 +1072,8 @@ These are not decided:
 
 - Who may add a text slot, a value or a fact, and whether these names, and the window's UI
   slots, are kept stable for plugins written outside Koloft.
-- How the app's main process stops a plugin's main-process code, and how the parts
-  `src/main/index.ts` still builds and imports by name move behind their plugin's start
-  ([Starting](#starting)).
+- How the parts `src/main/index.ts` still builds and imports by name move behind their
+  plugin's start ([Starting](#starting)).
 - If A needs B and B needs C, whether A may import C's `api.ts` without listing C. The check
   allows only the plugins A lists itself.
 - Whether a plugin may import `src/shared/` directly. `src/shared/` holds code Koloft's main

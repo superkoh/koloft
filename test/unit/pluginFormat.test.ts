@@ -12,7 +12,7 @@ import type { SettingKey, SettingKeys, setting } from '@core/settings'
 import type { PluginUi, fill, slot } from '@core/ui'
 import type { PromptContext, composePrompt, fillSlots, fillsGained } from '@core/prompt'
 import type { pluginStateOf } from '@core/switches'
-import type { PluginCore, PluginStart } from '@core/pluginStart'
+import type { BuildLater, PluginCore, PluginStart, StopOnQuit } from '@core/pluginStart'
 import * as moments from '@core/moment'
 import type { Hears, Moment, Moments } from '@core/moment'
 import { PLUGINS } from '@plugins/list'
@@ -183,6 +183,8 @@ interface V1PluginCore {
 interface PinnedFormats {
   1: {
     start: (core: V1PluginCore, deps: Probe) => Probe
+    buildLater: (deps: Probe) => Probe
+    stopOnQuit: () => void
     manifest: V1Manifest
     eachAgent: (slot: string, textOf: (agent: V1Agent) => string) => V1TextBlock
     register: (handlers: Readonly<Record<string, V1Verb>>) => void
@@ -344,6 +346,8 @@ describe('the plugin format', () => {
       same<typeof pluginStateOf, Pinned['pluginStateOf']>(true)
       same<WhatEachMomentCarries, Flat<Pinned['carries']>>(true)
       same<StartAsPinned, Pinned['start']>(true)
+      same<BuildLater<Probe, Probe>, Pinned['buildLater']>(true)
+      same<StopOnQuit, Pinned['stopOnQuit']>(true)
     }
     void typedOnly
   })

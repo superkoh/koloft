@@ -283,7 +283,6 @@ import {
   prepareCodexHome
 } from './codexAccounts'
 import { shq } from '@shared/shellQuote'
-import { CronRunner, type LaunchRequest, type LaunchResult, type RunLeftovers } from './cronRunner'
 import { ResourceGuard, ownerTyped } from './resourceGuard'
 import { readTheMachine, signalLog } from './machineRoom'
 import { STUCK_AFTER_MS, StallWatchWhileFocused, answerTheStuckWatch } from './mainThreadStalls'
@@ -291,7 +290,6 @@ import createMainThreadStuckWorker from './mainThreadStuckWorker?nodeWorker'
 import { envMs } from '@plugins/sessions/main/sessionRuntime'
 import { giveWay, readTaggedTable } from './machineTrees'
 import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
-import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { GitFreshnessEngine } from './gitFreshness'
 import { COMMON_GIT_DIR, GitRepoKeys } from './gitRepoKey'
 import { SessionSync, type SyncSession } from '@plugins/sessions/main/sessionSync'
@@ -326,7 +324,7 @@ import {
   type RouteDecision,
   type RouteSource
 } from '@shared/browserRoute'
-import { HTML_HEADERS, setupBrowserPartition } from '@plugins/workbench/main/browserPartition'
+import { HTML_HEADERS } from '@plugins/workbench/main/browserPartition'
 import { PASTED_PICTURE_EXTENSIONS, pastedPicturesIn, withPictures } from '@shared/pastedPictures'
 import { compositionDone } from '@plugins/workbench/main/hostComposition'
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
@@ -366,7 +364,6 @@ import {
   SHIM_FOUND_NO_ACCOUNT_EXIT,
   type LaunchUsageProbe
 } from '@shared/accountUsage'
-import { onExtensionsChanged, setupExtensions } from '@plugins/workbench/main/extensionManager'
 import type {
   AccountAddResult,
   AccountKind,
@@ -544,7 +541,6 @@ import { withoutTheRelayTag } from '@plugins/discord/main/sessionHooks'
 import { phoneCopier } from '@plugins/discord/main/phoneCopier'
 import { roomNote, tabChannels } from '@plugins/discord/main/tabChannels'
 import type { MainIpc } from '@core/ipc'
-import { pushState as pushCronState } from '@plugins/scheduled-tasks/main/channels'
 import { pushStatus as pushStatusToDiscordPane } from '@plugins/discord/main/channels'
 import { pushAsks as pushSecretAsks } from '@plugins/passwords/main/channels'
 import { ClaudeDialogWatch } from './claudeDialogWatch'
@@ -1445,7 +1441,11 @@ function machinePackage(): MachinePackage {
 let playwrightCliBin: string | undefined
 let fallbackBin: string | undefined
 let gitFirstBin: string | undefined
-let cronRunner: CronRunner | null = null
+type CronRunnerDeps = Parameters<PluginsStarted['scheduled-tasks']['buildRunner']>[0]
+type LaunchRequest = Parameters<CronRunnerDeps['launch']>[0]
+type LaunchResult = Awaited<ReturnType<CronRunnerDeps['launch']>>
+type RunLeftovers = Awaited<ReturnType<CronRunnerDeps['runLeftovers']>>
+let cronRunner: ReturnType<PluginsStarted['scheduled-tasks']['buildRunner']> | null = null
 let butler: Butler | null = null
 let discordBinding: DiscordBinding | null = null
 let discordLink: DiscordLink | null = null
@@ -2300,7 +2300,6 @@ const sessionsCommands: PluginStartDeps['sessions']['commands'] = {
 }
 
 const cronCommand: PluginStartDeps['scheduled-tasks']['command'] = {
-  runner: () => cronRunner,
   pinnedWorkspaceOf: pinnedWorkspaceOfTab,
   resolveWorkspace: (ref) => {
     const found = resolveWorkspace(ref, workspaceMgr?.pinnedPaths() ?? [])
@@ -3371,22 +3370,14 @@ app.whenReady().then(() => {
     return new Response(bodyOf(data), { headers: { 'content-type': mimeOf(file) } })
   })
 
-  setupBrowserPartition({
+  setUpBrowserPartition({
     machinePage: machinePageResponse,
-    permissions: sitePermissions,
     beforeRequest: routePageRequest,
-    downloads: pageDownloads,
     guestPreload: path.join(__dirname, '../preload/guest.js')
   })
   setupPageShotPartition()
   updateDockBadge(attention.list())
-  // PLATFORM§15
-  setupExtensions({
-    window: () => mainWindow,
-    openTab: (url) => pageRouting.openExtensionTab(url),
-    ask: (request) => pushToPages.extensionAsks(request)
-  })
-  onExtensionsChanged(() => pushToPages.extensionsChanged())
+  setUpExtensions({ window: () => mainWindow })
   pageDialogs.watchSignIns()
   pageDialogs.watchCertificates()
   pageTools.watchUnload()
@@ -3458,7 +3449,7 @@ app.whenReady().then(() => {
   setInterval(prunePastedPictures, PASTED_PICTURES_PRUNED_EVERY_MS).unref()
 
   ptyMgr.cdpDir = cdpEnvDir()
-  startRelay(cdpOps.relay)
+  startRelay()
   setRelayEnabled(loadSettings().browserControl, ptyTabIds())
 
   const hookPaths = setupHooks((tabId) => anotherLiveInstanceOwns(tabId, pidAlive))
@@ -4377,22 +4368,11 @@ app.whenReady().then(() => {
   ensureControlDir(remoteControlDir)
   remoteSync.start()
 
-  const cronFile = cronFilePath(userData)
-  const cronFs = {
-    readFile: (p: string) => fs.readFileSync(p, 'utf8'),
-    writeFile: (p: string, s: string) => fs.writeFileSync(p, s),
-    rename: (a: string, b: string) => fs.renameSync(a, b)
-  }
-  cronRunner = new CronRunner({
+  cronRunner = buildCronRunner({
     now: () => Date.now(),
     bootTime: BOOT_TIME,
-    store: {
-      load: () => {
-        const pinned = workspaceMgr?.pinnedPathList() ?? []
-        return loadCron(cronFs, cronFile, pinned)
-      },
-      save: (jobs) => saveCron(cronFs, cronFile, jobs)
-    },
+    userData,
+    pinnedPaths: () => workspaceMgr?.pinnedPathList() ?? [],
     isPinned: (p) => workspaceMgr?.isPinned(p) ?? false,
     dirExists: (p) => hosts.of(p).dirExists(p),
     gitDirExists: (root) => hosts.of(root).dirExists(`${root}/.git`),
@@ -4429,7 +4409,6 @@ app.whenReady().then(() => {
     },
     toast: (text) => sendToRenderer(CH.toast.show, text),
     notify: notifyPlain,
-    push: pushCronState(pluginIpc),
     killed: (tabId) => sendToRenderer(CH.tab.killedByMain, tabId),
     endpointAccountWithModelOf: (tabId) => {
       const name = tracker.infoOf(tabId)?.pickedAccount
@@ -4442,7 +4421,6 @@ app.whenReady().then(() => {
     setTimeout,
     clearTimeout
   })
-  cronRunner.start()
 
   registerIpc()
   setupAppMenu(
@@ -4575,8 +4553,7 @@ app.on('before-quit', (e) => {
       finishAfterKoloftQuits(leaving.claudePid, leaving.treeRoot)
   }
   claudeTabExits.clear()
-  cronRunner?.quitSweep()
-  cronRunner?.stop()
+  stopScheduledTasks()
   discordLink?.stop()
   discordBinding?.flush()
   workspaceMgr?.dispose()
@@ -6725,9 +6702,7 @@ const startedPlugins: PluginsStarted = startPlugins(
     },
     'scheduled-tasks': {
       command: cronCommand,
-      runner: () => cronRunner,
       channels: {
-        runner: () => cronRunner,
         skills: (workspacePath, backend) =>
           hosts.of(workspacePath).listSkills(workspacePath, backend),
         trusted: (workspacePath, backend) =>
@@ -6805,13 +6780,14 @@ const {
   webPages,
   sitePermissions,
   pageDialogs,
-  pageDownloads,
   pageRouting,
   pageTools,
   pagesInUse,
   pushOpenRequest,
   pushToPages,
-  readerDocs
+  readerDocs,
+  setUpBrowserPartition,
+  setUpExtensions
 } = startedPlugins.workbench
 const {
   cdpOps,
@@ -6832,3 +6808,4 @@ const {
 } = startedPlugins['browser-control']
 const { TODO_NEWS } = startedPlugins.todo
 const { koloftInbox, flushInbox } = startedPlugins.inbox
+const { buildRunner: buildCronRunner, stop: stopScheduledTasks } = startedPlugins['scheduled-tasks']
