@@ -19,13 +19,13 @@ export function SeedFields({
 }): JSX.Element {
   return (
     <>
-      <span className="flabel">Title · Claude only</span>
+      <span className="flabel">Title</span>
       <div className="cb-input">
         <input
           className="cb-field"
           spellCheck={false}
           autoComplete="off"
-          placeholder="name the session, or leave it to Claude"
+          placeholder="name the session, or leave it to the agent"
           aria-label="Title"
           disabled={disabled}
           value={title}

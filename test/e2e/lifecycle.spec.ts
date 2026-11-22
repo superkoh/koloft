@@ -312,7 +312,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       await row.click()
 
       const mask = page2.locator('.term-wrap:visible .empty', {
-        hasText: 'Resuming Claude session…'
+        hasText: 'Resuming session…'
       })
       await expect(mask).toBeVisible({ timeout: 10_000 })
       await expect(row).toHaveClass(/\bst-pending\b/)
@@ -357,7 +357,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       await expect(row).toHaveClass(/\bcold\b/, { timeout: 30_000 })
       await row.click()
 
-      const mask = page.locator('.terminals .empty', { hasText: 'Resuming Claude session…' })
+      const mask = page.locator('.terminals .empty', { hasText: 'Resuming session…' })
       await expect(mask).toBeVisible({ timeout: 1500 })
       await expect(mask).toContainText('Slow to plan session')
       expect(fs.existsSync(stallDone)).toBe(false)
@@ -393,7 +393,7 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
       const before = new Set(await termIds(page))
       await row.click()
 
-      const masks = page.locator('.terminals .empty', { hasText: 'Resuming Claude session…' })
+      const masks = page.locator('.terminals .empty', { hasText: 'Resuming session…' })
       await expect(masks.first()).toBeVisible({ timeout: 10_000 })
       const calls = await waitForCalls(env, 1)
       expect(resumedId(calls[0])).toBe(id)
@@ -556,9 +556,9 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
 
       await page.keyboard.press('Escape')
       await expect(dialog).toHaveCount(0)
-      await expect(
-        page.locator('.terminals .empty', { hasText: 'Resuming Claude session…' })
-      ).toHaveCount(0)
+      await expect(page.locator('.terminals .empty', { hasText: 'Resuming session…' })).toHaveCount(
+        0
+      )
       await expect(row).toHaveClass(/\bcold\b/)
       expect(readCalls(env)).toHaveLength(1)
     } finally {
@@ -597,9 +597,9 @@ test.describe('Session lifecycle · go-cold paths, cold-row resume, cold restart
 
       await page.keyboard.press('Escape')
       await expect(dialog).toHaveCount(0)
-      await expect(
-        page.locator('.terminals .empty', { hasText: 'Resuming Claude session…' })
-      ).toHaveCount(0)
+      await expect(page.locator('.terminals .empty', { hasText: 'Resuming session…' })).toHaveCount(
+        0
+      )
       await expect(row).toHaveClass(/\bcold\b/)
       expect(readCalls(env)).toHaveLength(0)
     } finally {
