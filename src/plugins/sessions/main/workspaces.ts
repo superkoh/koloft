@@ -267,7 +267,6 @@ export class WorkspaceManager {
   private transcriptFileById = new Map<string, string>()
   private state: RescanState = { bucketDirs: [], workspaceSlugs: [] }
   private launches = new Map<string, PendingLaunch>()
-  private launchedIn = new Map<string, { cwd: string; host?: string }>()
   private leavingTheirWorktree = new Map<string, { tabId: string; tabEnded: boolean }>()
   private closingForGood = new Map<string, number>()
   private rootWatchers = new Map<string, { close(): void }>()
@@ -370,19 +369,6 @@ export class WorkspaceManager {
 
   workspaceOf(sessionId: string): string | undefined {
     return this.wsBySession.get(sessionId)
-  }
-
-  workspaceLaunchedIn(tabId: string): string | undefined {
-    const at = this.launchedIn.get(tabId)
-    if (!at) return undefined
-    const holding = this.layout.workspaces
-      .map((ws) => ws.path)
-      .filter((wsPath) => {
-        const { key, scanPath } = this.scope(wsPath)
-        if (key?.host !== at.host) return false
-        return isUnderAnyRoot(at.cwd, key ? [key.path, scanPath] : [wsPath])
-      })
-    return holding.sort((a, b) => b.length - a.length)[0]
   }
 
   refresh(): void {
@@ -616,7 +602,6 @@ export class WorkspaceManager {
     pickedSessionId?: string
   ): void {
     this.launches.set(tabId, { tabId, cwd, worktree, host, pickedSessionId })
-    this.launchedIn.set(tabId, { cwd, host })
     this.scheduleRescan()
   }
 
@@ -657,7 +642,6 @@ export class WorkspaceManager {
   }
 
   launchEnded(tabId: string): void {
-    this.launchedIn.delete(tabId)
     if (this.launches.delete(tabId)) this.scheduleRescan()
   }
 

@@ -410,8 +410,7 @@ export class ClaudeBackend implements SessionBackend {
     const sessionId = this.sessionIdOf(tabId)
     const workspaces = this.d.workspaces()
     return (
-      (sessionId ? workspaces?.workspaceOf(sessionId) : undefined) ??
-      workspaces?.workspaceLaunchedIn(tabId)
+      (sessionId ? workspaces?.workspaceOf(sessionId) : undefined) ?? workspaces?.workspaceOf(tabId)
     )
   }
 
