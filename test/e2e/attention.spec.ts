@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Page } from '@playwright/test'
 import { BACKEND_LABEL, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
-import { ATTENTION_REASON } from '../../src/shared/types'
+import { ATTENTION_REASON, type BackendId } from '../../src/shared/types'
 import { test, expect, launchApp, osOutlets, pendingAttention, quitAndClose } from './helpers/app'
 import { installAgy, installCodex, seedSettings, trustInAgy, type E2EEnv } from './helpers/env'
 import { codexRows, startCodex } from './helpers/codex'
@@ -108,8 +108,9 @@ async function sendingIsOnlyNews(
   await expect(page.locator(`.ws .ws-tab[data-tab-id="${receiver}"]`)).toHaveClass(/\bst-working\b/)
 }
 
-interface ParentTabKind {
+interface TabKind {
   kind: string
+  backend: BackendId
   remote: boolean
   install: (env: E2EEnv) => void
   start: (page: Page, env: E2EEnv) => Promise<string>
@@ -122,9 +123,10 @@ const activeTabOnceBound = async (page: Page): Promise<string> => {
   return (await row.getAttribute('data-tab-id'))!
 }
 
-const EVERY_PARENT_TAB_KIND: ParentTabKind[] = [
+const EVERY_TAB_KIND: TabKind[] = [
   {
     kind: 'local Claude',
+    backend: 'claude',
     remote: false,
     install: () => {},
     start: async (page) => {
@@ -135,6 +137,7 @@ const EVERY_PARENT_TAB_KIND: ParentTabKind[] = [
   },
   {
     kind: 'local Codex',
+    backend: 'codex',
     remote: false,
     install: (env) => installCodex(env),
     start: async (page) => {
@@ -144,6 +147,7 @@ const EVERY_PARENT_TAB_KIND: ParentTabKind[] = [
   },
   {
     kind: 'local Antigravity',
+    backend: 'agy',
     remote: false,
     install: (env) => {
       installAgy(env)
@@ -158,6 +162,7 @@ const EVERY_PARENT_TAB_KIND: ParentTabKind[] = [
   },
   ...SESSION_BACKENDS.map((backend) => ({
     kind: `remote ${BACKEND_LABEL[backend]}`,
+    backend,
     remote: true,
     install: (env: E2EEnv) => installOnTheMachine(env, backend),
     start: (page: Page, env: E2EEnv) => startRemoteTab(page, env, backend)
@@ -165,7 +170,7 @@ const EVERY_PARENT_TAB_KIND: ParentTabKind[] = [
 ]
 
 async function launchFor(
-  parent: ParentTabKind,
+  parent: TabKind,
   env: E2EEnv
 ): Promise<{ app: ElectronApplication; page: Page }> {
   if (parent.remote) return launchWithRemote(env)
@@ -209,33 +214,47 @@ test.describe('attention markers come from real session-status transitions (shim
     await expect(page.locator('.ws .ws-tab-unread')).toHaveCount(0)
   })
 
-  test('a session’s OS notification leaves Notification Center once its tab is on screen in a focused window — the window coming to the front or a switch to the tab — while its red dot stays', async ({
-    app,
-    page
-  }) => {
-    await waitBooted(page)
-    await startSessionIn(page, 'ws-a')
-    await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(1)
-    await startSessionIn(page, 'ws-b')
-    await expect.poll(() => pendingAttention(page), { timeout: 25_000 }).toHaveLength(2)
-    const turnDoneIn = (ws: string) => `${ATTENTION_REASON['turn-done']} · ${ws}`
-    const listed = async () =>
-      (await osOutlets(app)).inNotificationCenter
-        .map((n) => n.body)
-        .filter((body) => body.startsWith(ATTENTION_REASON['turn-done']))
-        .sort()
-    await expect.poll(listed).toEqual([turnDoneIn('ws-a'), turnDoneIn('ws-b')])
-    await expect(wsRows(page, 'ws-b')).toHaveClass(/\bactive\b/)
+  for (const kind of EVERY_TAB_KIND) {
+    test(`a ${kind.kind} session’s OS notification leaves Notification Center once its tab is on screen in a focused window — the window coming to the front or a switch to the tab — while its red dot stays`, async ({
+      env
+    }) => {
+      test.setTimeout(240_000)
+      kind.install(env)
+      seedSettings(env, { hintsOff: true })
+      const { app, page } = await launchFor(kind, env)
+      try {
+        await waitBooted(page)
+        const tab = await kind.start(page, env)
+        const listed = async () =>
+          (await osOutlets(app)).inNotificationCenter
+            .map((n) => n.body)
+            .filter((body) => body.startsWith(ATTENTION_REASON['turn-done']))
+            .sort()
+        await expect.poll(listed, { timeout: 60_000 }).toHaveLength(1)
+        const [itsNotice] = await listed()
+        await startSessionIn(page, 'ws-b', {
+          method: kind.backend === 'claude' ? undefined : 'Claude'
+        })
+        const wsBNotice = `${ATTENTION_REASON['turn-done']} · ws-b`
+        await expect.poll(listed, { timeout: 60_000 }).toEqual([itsNotice, wsBNotice].sort())
+        await expect(wsRows(page, 'ws-b')).toHaveClass(/\bactive\b/)
+        const wsBTab = (await wsRows(page, 'ws-b').getAttribute('data-tab-id'))!
 
-    await lookAtTheWindow(app)
-    await expect.poll(listed).toEqual([turnDoneIn('ws-a')])
-    expect(await pendingAttention(page)).toHaveLength(2)
+        await lookAtTheWindow(app)
+        await expect.poll(listed).toEqual([itsNotice])
+        expect(await markOn(page, wsBTab)).toBeTruthy()
 
-    await wsRows(page, 'ws-a').click()
-    await expect.poll(listed).toEqual([])
-    expect(await pendingAttention(page)).toHaveLength(2)
-    await expect(page.locator('.ws .ws-tab-unread')).toHaveCount(2)
-  })
+        const row = page.locator(`.ws .ws-tab[data-tab-id="${tab}"]`)
+        await row.click()
+        await expect.poll(listed).toEqual([])
+        expect(await markOn(page, tab)).toBeTruthy()
+        expect(await markOn(page, wsBTab)).toBeTruthy()
+        await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
 
   test('the bell counts the waiting sessions and walks them longest wait first, round and round, unfolding the workspace it lands in; ⌘J does the same, and only an answer takes one off', async ({
     app,
@@ -309,7 +328,7 @@ test.describe('attention markers come from real session-status transitions (shim
     await expect(bRow).toHaveCount(0)
   })
 
-  for (const parent of EVERY_PARENT_TAB_KIND) {
+  for (const parent of EVERY_TAB_KIND) {
     test(`a ${parent.kind} turn that ends while a session it started still works is only news, told by code alone: looking at it clears the dot`, async ({
       env
     }) => {
