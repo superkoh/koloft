@@ -217,7 +217,7 @@ test.describe('attention markers come from real session-status transitions (shim
 
   for (const kind of EVERY_TAB_KIND) {
     for (const way of ['the window coming to the front', 'a switch to the tab'] as const) {
-      test(`a ${kind.kind} session’s OS notification leaves Notification Center once its tab is on screen in a focused window — here by ${way} — while its red dot stays`, async ({
+      test(`a ${kind.kind} session’s OS notification leaves Notification Center once its tab is on screen in a focused window — its tab by ${way}, a local Claude tab by the other way — while both red dots stay`, async ({
         env
       }) => {
         test.setTimeout(240_000)
@@ -271,6 +271,8 @@ test.describe('attention markers come from real session-status transitions (shim
             expect(await markOn(page, id)).toBeTruthy()
             await expect(rowOf(id).locator('.ws-tab-unread')).toHaveCount(1)
           }
+          expect(await pendingAttention(page)).toHaveLength(2)
+          await expect(page.locator('.ws .ws-tab-unread')).toHaveCount(2)
         } finally {
           await quitAndClose(app)
         }
