@@ -32,6 +32,7 @@ import { MIN_CODEX_VERSION } from '../../../../src/main/cliMinimums'
 import { portOffset } from '@shared/worktreeName'
 import { keyedOn } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
+import { passOf } from '../../../../src/main/tabPass'
 
 const TOO_OLD = { binary: '/fixture/codex', env: {}, version: '0.150.0', verified: false }
 
@@ -118,6 +119,7 @@ const REPLY_LANGUAGE_ENV = {
 
 const RESERVED_TAB_ENV = {
   KOLOFT_TAB_ID: 'pty-reserved',
+  KOLOFT_TAB_PASS: passOf('pty-reserved'),
   PLAYWRIGHT_CLI_SESSION: 'koloft-pty-reserved',
   PLAYWRIGHT_MCP_OUTPUT_DIR: path.join(os.tmpdir(), 'koloft-playwright', 'pty-reserved')
 }

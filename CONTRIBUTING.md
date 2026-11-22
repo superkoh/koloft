@@ -87,7 +87,7 @@ moved file), for something that only restates the implementation, or for a cosme
 picked by import graph (`npm run test:unit:changed`); the e2e layer by flow name — spec
 names in `test/e2e` are flow names, and each spec's test titles say what it covers.
 Layer-specific traps (`$HOME` sandboxing, why you must never `SIGKILL` a remembered pid,
-how to drive native menu shortcuts) are in **`test/CLAUDE.md`**.
+how to drive native menu shortcuts) are in **`test/AGENTS.md`**.
 
 **Prettier decides the layout.** The config in `.prettierrc.json` was set from what the
 tree already looked like — no semicolons, single quotes, 100 columns. Markdown is
@@ -103,10 +103,10 @@ TypeScript 7, whose compiler API moved.
 except a tool directive (`@ts-expect-error`, `prettier-ignore`, …) or a marker such as
 `// ADR-0007` or `// CC§9` that points at an ADR or a section of a contract ledger. What
 the code cannot say itself goes, first fit wins, into a name, a test title, a contract
-ledger, or an ADR — the full rule is under "Comments" in `CLAUDE.md`.
+ledger, or an ADR — the full rule is under "Comments" in `AGENTS.md`.
 
 **No per-feature document survives its feature shipping.** A claim about behavior becomes
-a test assertion; a reason the code needs, if it passes the bar in `CLAUDE.md`, becomes an
+a test assertion; a reason the code needs, if it passes the bar in `AGENTS.md`, becomes an
 ADR in `docs/adr/`, cited by a marker where it applies; a measured fact about an outside
 tool — something reading Koloft's own code cannot tell you, and that can drift when the
 tool updates — goes to its contract ledger (`docs/claude-code-contract.md`,

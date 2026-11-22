@@ -6,7 +6,7 @@ and how it was established; any entry can drift when CC upgrades — the canary 
 (below) watches for structural drift, and a disproven entry is corrected in place,
 never kept for history. This file records only observations of the
 external system; Koloft's own mechanism rationale lives in ADRs (`docs/adr/`) and behavioral
-claims live in tests (doctrine: the document-retirement rule in CLAUDE.md). An entry
+claims live in tests (doctrine: the document-retirement rule in AGENTS.md). An entry
 with no date, version or method is marked "inferred, not checked".
 
 **Canary run** — the opt-in e2e specs against a real `claude`, run after each CC
@@ -4896,3 +4896,27 @@ precedence of a project's `settings.json` `model`.
 Koloft dependents: the claude shim and the remote tab script turn the advisor off for a
 Fable launch, and read a resumed session's model from its transcript
 (`src/main/advisorOnFable.ts`).
+
+## §30 Which of a folder's `CLAUDE.md` and `AGENTS.md` CC reads
+
+2026-11-20, CC 2.1.330, measured: `claude -p hello` in a throwaway `HOME`, against a fake
+Messages API that wrote down each request body and answered 400, one folder (not a git
+repo) per case, a marker word in each file; a word counts as read when it is in the
+request.
+
+- **Only `AGENTS.md`** in the folder: read, as "Contents of …/AGENTS.md (project
+  instructions…)".
+- **Both files**: only `CLAUDE.md` is read; `AGENTS.md` is not.
+- **`CLAUDE.md` holding `@AGENTS.md`**: both texts are read. Started in a subfolder
+  `test/` whose own `CLAUDE.md` held `@AGENTS.md`, only `test/AGENTS.md` was read, not the
+  parent's.
+- **`CLAUDE.md` a symlink to `AGENTS.md`**: read once, as `CLAUDE.md`.
+- **The Edit tool on a symlinked `CLAUDE.md`** (2026-11-21, the same version, in a
+  session): refused — "it is a symbolic link. Write to the link's target path instead" —
+  so it never replaces the link with a plain file.
+
+Not probed: a subfolder's file loaded later in a session that started at the repo root;
+a git repo's parent folders.
+
+Koloft dependents: the repo's own `CLAUDE.md` and `test/CLAUDE.md` are symlinks to the
+`AGENTS.md` beside them (`test/unit/devRules.test.ts`, ADR-0053).

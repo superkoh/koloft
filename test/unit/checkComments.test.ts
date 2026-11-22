@@ -156,4 +156,15 @@ describe('check-comments', () => {
     write(nested, { 'b.ts': lines('// prose in another checkout', 'export {}') })
     expect(hook(dir, path.join(nested, 'b.ts')).code).toBe(0)
   })
+
+  it('the hook blocks a comment in a file it is handed through a symlinked path', () => {
+    const dir = fixtureRepo({ 'a.ts': lines('// added prose', 'export const a = 1') })
+    const outside = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-link-')))
+    createdDirs.push(outside)
+    const link = path.join(outside, 'repo')
+    fs.symlinkSync(dir, link)
+    const r = hook(dir, path.join(link, 'a.ts'))
+    expect(r.code).toBe(2)
+    expect(reportedSites(r.err)).toEqual(['a.ts:1'])
+  })
 })
