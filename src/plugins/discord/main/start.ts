@@ -1,9 +1,8 @@
-import { answered, refused, type AgentReply } from '@core/command'
+import { answered, refused, type AgentReply, type Parsed } from '@core/command'
 import type { MadeLater, SessionStarted } from '@core/moment'
 import type { BuildLater, PluginStart } from '@core/pluginStart'
 import { quoteOf } from '@plugins/butler/api'
-import type { PlacedRow } from '@plugins/sessions/api'
-import { BACKEND_LABEL } from '@shared/sessionBackend'
+import type { PlacedRow, Recipient, SlashCommands } from '@plugins/sessions/api'
 import { DISCORD_OFF } from '../shared/types'
 import { DiscordBinding, type DiscordBindingDeps } from './binding'
 import { ButlerTyping, type ButlerTypingDeps } from './butlerTyping'
@@ -39,20 +38,14 @@ import {
   DISCORD_TURNED_OFF,
   switchedOnOnceItHasABot,
   withDiscordAsBefore,
-  withDiscordOn
+  withDiscordOn,
+  type Switches
 } from './switchOn'
 import { roomNote, tabChannels, type TabChannels } from './tabChannels'
 import { inviteLink } from '../shared/channels'
 import { reloadDiscordPage, saveTokenFromPage, type GuestPage } from './tokenFromPage'
 
-type Switches = Record<string, boolean>
 type SessionRow = PlacedRow['row']
-type ButlerRecipient = Omit<Destination, 'channelId' | 'typeCommand' | 'seen' | 'ownerSpoke'>
-type SlashTyping = (
-  target: { name: string; tabId: string; overseer: boolean },
-  command: string,
-  to: ReturnType<typeof toChannel>
-) => Promise<void>
 
 const CARDS_IN_FLIGHT_LAND_WITHIN_MS = 10_000
 const SET_UP_DISCORD_WORDS = 'Set up Discord for me.'
@@ -80,17 +73,17 @@ export interface DiscordStartDeps {
   pages(tabId: string): GuestPage[]
   relayAttached(tabId: string): boolean
   butlerName(): string
-  butlerRecipient(): ButlerRecipient
-  typeWhenIdle: SlashTyping
+  butlerRecipient(): Recipient
+  typeWhenIdle: SlashCommands['typeWhenIdle']
   alive(tabId: string): boolean
   liveTabOfKeys(keys: string[]): string | undefined
   rowOfKey(key: string | undefined): SessionRow | undefined
   resume(row: SessionRow): Promise<string>
-  findRow(ref: string): Promise<{ ok: true; value: PlacedRow } | { ok: false; error: string }>
+  findRow(ref: string): Promise<Parsed<PlacedRow>>
   backendOf(tabId: string): RoomSubject['backend'] | undefined
-  titleOf(tabId: string): string | undefined
+  nameOf(tabId: string, backend: RoomSubject['backend']): string
   turns(key: string, n: number): Promise<{ reply: string }[]>
-  status(tabId: string): string | undefined
+  status: RelayDeps['status']
   asksTheOwner(tabId: string): boolean
 }
 
@@ -118,14 +111,7 @@ export const start: PluginStart<
     buildAskButtons: BuildLater<ButtonDeps, AskButtons>
     buildSecretCards: BuildLater<Omit<SecretCardDeps, 'cardWanted'>, SecretCards>
     buildInstructionCards: BuildLater<Omit<InstructionCardDeps, 'cardWanted'>, InstructionCards>
-    buildInteractions: BuildLater<
-      Omit<InteractionDeps, 'run' | 'press'> & {
-        cards: SecretCards
-        instructionCardsNow: InstructionCards
-        buttons: AskButtons
-      },
-      Interactions
-    >
+    buildInteractions: BuildLater<Omit<InteractionDeps, 'run' | 'press'>, Interactions>
     buildDiscordRelay: BuildLater<
       Omit<RelayDeps, 'destinationOf' | 'channels' | 'lobbyLink'>,
       DiscordRelay
@@ -341,7 +327,7 @@ export const start: PluginStart<
     if (!backend) return undefined
     const subject: RoomSubject = {
       tabId,
-      name: name || d.titleOf(tabId) || `${BACKEND_LABEL[backend]} session`,
+      name: name || d.nameOf(tabId, backend),
       backend,
       workspace
     }
@@ -480,7 +466,7 @@ export const start: PluginStart<
         ...deps,
         cardWanted: (tabId) => discordConnected && discordOn() && !!relay?.reaches(tabId)
       })),
-    buildInteractions: ({ cards, instructionCardsNow, buttons: buttonsNow, ...deps }) =>
+    buildInteractions: (deps) =>
       (interactions = new Interactions({
         ...deps,
         run: async (text, channelId) =>
@@ -488,12 +474,12 @@ export const start: PluginStart<
             binding?.isButlerChannel(channelId) ? butlerDestination() : roomDestination(channelId),
             text
           ),
-        press: (i) =>
+        press: async (i) =>
           i.customId?.startsWith(SECRET_ID_PREFIX)
-            ? cards.press(i)
+            ? secretCards?.press(i)
             : i.customId?.startsWith(INSTRUCTIONS_ID_PREFIX)
-              ? instructionCardsNow.press(i)
-              : buttonsNow.press(i)
+              ? instructionCards?.press(i)
+              : buttons?.press(i)
       })),
     buildDiscordRelay: (deps) =>
       (relay = new DiscordRelay({

@@ -4013,9 +4013,6 @@ app.whenReady().then(() => {
   buildInteractions({
     owner: () => bindingNow.owner(),
     ownerWrote: ownerCameBack,
-    cards,
-    instructionCardsNow,
-    buttons,
     submit: (i) => cards.submit(i),
     respond: (i, body) => link.respond(i, body)
   })
@@ -6358,7 +6355,7 @@ const startedPlugins: PluginsStarted = startPlugins(
       resume: (row) => sessionDeps.resume(row),
       findRow: (ref) => findSessionRow(sessionDeps, ref),
       backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
-      titleOf: (tabId) => sessionOfTab(tabId)?.title,
+      nameOf: (tabId, backend) => sessionOfTab(tabId)?.title || `${BACKEND_LABEL[backend]} session`,
       turns: (key, n) => sessionBackends.turns(key, n),
       status: (tabId) => tracker.statusOf(tabId),
       asksTheOwner

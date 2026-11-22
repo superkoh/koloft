@@ -914,9 +914,9 @@ export const start: PluginStart<
   name Discord's own code (the link's events, where a room's message goes, whether a card
   is wanted, which card a button press is for). It also gives back `startDiscord`, which
   the app calls once its parts are built, `followDiscordSwitch`, which it calls whenever
-  the switches change, `discordConnected`, `commandIntoButler` and `roomNoteOfKey` for the
-  app's own code, and the page-picture functions the app's other parts use
-  (`shotSession`, `shootHtml`, …).
+  the switches change, `discordOn`, `discordConnected`, `commandIntoButler`,
+  `roomNoteOfKey` and `withoutTheRelayTag` for the app's own code, and the page-picture
+  functions the app's other parts use (`shotSession`, `shootHtml`, …).
 - What a start gives back exists only once `startPlugins` returns. A deps object built
   before that, or a start that runs before the one that gives it, reads it through a
   function (Workbench's `driverOf` calls Browser control's `sessionDrivingGuest`), never as a
