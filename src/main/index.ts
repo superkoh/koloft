@@ -99,7 +99,6 @@ import {
 import { BUTLER_OFF_ITS_AGENT_LOG, butlerStart } from '@shared/butlerStart'
 import { assistBackendsFor, assistLaunchOn, assistRowBackend } from '@shared/assistPicks'
 import type { Turn } from '@shared/turns'
-import { AttentionTracker } from '@plugins/sessions/main/attention'
 import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
 import { route, dockBadgeText } from './notifyRouter'
 import { setupShim, utilTerminalGuard } from './shim'
@@ -816,30 +815,33 @@ function watchForWorktreeRemoval(tabId: string, data: string): void {
   sendToRenderer(CH.tab.killedByMain, tabId)
 }
 
-const attention = new AttentionTracker((pending, event) => {
-  if (!quitCommitted) saveAttention(pending)
-  updateDockBadge(pending)
-  pushToSessions.attention(pending)
-  retractStaleOsNotifications(pending)
-  if (event) routeAttentionEvent(event)
-  announceNow(ATTENTION_CHANGED, pending)
-}, loadLastRunAttention())
-attention.asleep = (tabId) => sleepers.has(tabId)
-attention.watching = () => (windowFocused() ? uiActiveTabId : null)
-attention.turnDone = (tabId) => newsJudge.marked(tabId)
-// ADR-0039
-attention.outlivesKoloft = (tabId) => !!remoteHostOfTab(tabId)
-attention.waitsOnAnother = (tabId) => {
-  const me = sessionOfTab(tabId)
-  return (
-    !!me?.sessionId &&
-    waitsOnOtherWork(
-      me,
-      allSessions(),
-      (id) => startedSessions.parentOfRow(id),
-      (id) => sessionCommand.waitsOnAnother(id)
+const attentionDeps: PluginStartDeps['sessions']['attention'] = {
+  onChange: (pending, event) => {
+    if (!quitCommitted) saveAttention(pending)
+    updateDockBadge(pending)
+    pushToSessions.attention(pending)
+    retractStaleOsNotifications(pending)
+    if (event) routeAttentionEvent(event)
+    announceNow(ATTENTION_CHANGED, pending)
+  },
+  lastRun: loadLastRunAttention(),
+  asleep: (tabId) => sleepers.has(tabId),
+  watching: () => (windowFocused() ? uiActiveTabId : null),
+  turnDone: (tabId) => newsJudge.marked(tabId),
+  // ADR-0039
+  outlivesKoloft: (tabId) => !!remoteHostOfTab(tabId),
+  waitsOnAnother: (tabId) => {
+    const me = sessionOfTab(tabId)
+    return (
+      !!me?.sessionId &&
+      waitsOnOtherWork(
+        me,
+        allSessions(),
+        (id) => startedSessions.parentOfRow(id),
+        (id) => sessionCommand.waitsOnAnother(id)
+      )
     )
-  )
+  }
 }
 let uiActiveTabId: string | null = null
 let lastTabTheOwnerLookedAt: string | null = null
@@ -6119,6 +6121,7 @@ const startedPlugins: PluginsStarted = startPlugins(
   { commands, moments, ipc: pluginIpc },
   {
     sessions: {
+      attention: attentionDeps,
       eachTurn: {
         judge: newsJudge,
         slash,
@@ -6385,6 +6388,7 @@ const {
   writeRelayEnv
 } = startedPlugins['browser-control']
 const {
+  attention,
   buildAsks: buildSessionAsks,
   buildInstructionAsks,
   buildHandOver,

@@ -886,7 +886,9 @@ export const start: PluginStart<
   list of plugins, and returns what each gave back, keyed by plugin id (`PluginsStarted`).
   GitHub's start gives back its `GithubMain`, whose `followSwitch` and `sweepNow` the app
   calls. Sessions core's gives back `tookTheTurn`, which the butler's and the Inbox's deps read
-  when a turn ends, and `buildAsks`, `buildInstructionAsks`, `buildHandOver` and
+  when a turn ends, the `AttentionTracker` it builds as the app loads (from last run's marks,
+  with the five functions its deps hand in set on it right after), which the app's own code
+  tells of each turn, ask and tab and reads the marks from, and `buildAsks`, `buildInstructionAsks`, `buildHandOver` and
   `buildWorkspaces`, which build its `SessionAsks`, `InstructionAsks`, `HandOver` and
   `WorkspaceManager` once Electron is ready. Workbench's gives back the web-page parts it builds (`WebPages`,
   `SitePermissions`, `PageDialogs`, `PageDownloads`, `PageRouting`, `PageTools`),
@@ -970,7 +972,8 @@ A plugin's main-process code is a set of parts. A part is a class or function in
 that holds its own state. It takes what it needs from the rest of the app as a small `deps`
 object, which `src/main/index.ts` builds and hands in. A part built by the plugin's start
 function gets its deps through the start's `deps`, as Workbench's web-page parts,
-Browser control's `CdpOps`, the Inbox's `Inbox` and `KoloftInbox`, the Butler's
+Browser control's `CdpOps`, Sessions core's `AttentionTracker`, the Inbox's `Inbox` and
+`KoloftInbox`, the Butler's
 `OwnerAsleep` and Discord's tab channels and phone copier do, or through the `BuildLater`
 it gives back, as Scheduled tasks' `CronRunner`, Sessions core's `SessionAsks`,
 `InstructionAsks`, `HandOver` and `WorkspaceManager`, Passwords and sign-in's `SecretAsks`, the
