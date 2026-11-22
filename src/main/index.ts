@@ -244,11 +244,7 @@ import {
 } from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
-import {
-  WorkspaceManager,
-  scratchRootsAround,
-  type LiveSession
-} from '@plugins/sessions/main/workspaces'
+import { scratchRootsAround, type LiveSession } from '@plugins/sessions/main/workspaces'
 import { rowsToAdopt } from '@shared/firstRun'
 import {
   isWorkspaceWorkbenchKey,
@@ -1277,7 +1273,7 @@ function requestWebglRepair(): void {
   )
 }
 
-let workspaceMgr: WorkspaceManager | null = null
+let workspaceMgr: ReturnType<typeof buildWorkspaces> | null = null
 
 let freshness: GitFreshnessEngine | null = null
 let gitAccounts: GitAccountService | null = null
@@ -3702,7 +3698,7 @@ app.whenReady().then(() => {
   }
   for (const stored of [codexSessions, agySessions])
     if (stored) void watchHistoryOf(stored).catch(() => undefined)
-  workspaceMgr = new WorkspaceManager({
+  workspaceMgr = buildWorkspaces({
     additionalRows: (wsPath) =>
       storedSessions().flatMap((stored) =>
         stored.rows(wsPath).map((r) => ({ ...r, backendId: stored.id }))
@@ -6388,7 +6384,12 @@ const {
   startRelay,
   writeRelayEnv
 } = startedPlugins['browser-control']
-const { buildAsks: buildSessionAsks, buildInstructionAsks, buildHandOver } = startedPlugins.sessions
+const {
+  buildAsks: buildSessionAsks,
+  buildInstructionAsks,
+  buildHandOver,
+  buildWorkspaces
+} = startedPlugins.sessions
 const { TODO_NEWS } = startedPlugins.todo
 const { koloftInbox, flushInbox } = startedPlugins.inbox
 const { buildRunner: buildCronRunner, stop: stopScheduledTasks } = startedPlugins['scheduled-tasks']

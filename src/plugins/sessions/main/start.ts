@@ -6,6 +6,7 @@ import { InstructionAsks, type InstructionAskDeps } from './instructionAsks'
 import { SessionAsks, type SessionAskDeps } from './sessionAsks'
 import { followEachState, followEachTurn, forgetAsksOfEndedTabs } from './sessionHooks'
 import { registerSessionCommands } from './sessionVerbs'
+import { WorkspaceManager, type WorkspaceManagerDeps } from './workspaces'
 
 type ChannelDeps = Parameters<typeof registerChannels>[1]
 
@@ -23,6 +24,7 @@ export const start: PluginStart<
     buildAsks: BuildLater<SessionAskDeps, SessionAsks>
     buildInstructionAsks: BuildLater<InstructionAskDeps, InstructionAsks>
     buildHandOver: BuildLater<HandOverDeps, HandOver>
+    buildWorkspaces: BuildLater<WorkspaceManagerDeps, WorkspaceManager>
   }
 > = ({ commands, moments, ipc }, d) => {
   let asks: SessionAsks | null = null
@@ -44,6 +46,7 @@ export const start: PluginStart<
     ...turnsTaken,
     buildAsks: (deps) => (asks = new SessionAsks(deps)),
     buildInstructionAsks: (deps) => (instructionAsks = new InstructionAsks(deps)),
-    buildHandOver: (deps) => new HandOver(deps)
+    buildHandOver: (deps) => new HandOver(deps),
+    buildWorkspaces: (deps) => new WorkspaceManager(deps)
   }
 }
