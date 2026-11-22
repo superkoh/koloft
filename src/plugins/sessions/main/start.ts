@@ -1,7 +1,9 @@
 import type { MadeLater } from '@core/moment'
 import type { BuildLater, PluginStart } from '@core/pluginStart'
+import { AgySessions, type AgySessionDeps } from './agySessions'
 import { AttentionTracker, type SavedMark } from './attention'
 import { registerChannels } from './channels'
+import { CodexSessions, type CodexSessionDeps } from './codexSessions'
 import { HandOver, type HandOverDeps } from './handOver'
 import { InstructionAsks, type InstructionAskDeps } from './instructionAsks'
 import { SessionAsks, type SessionAskDeps } from './sessionAsks'
@@ -36,6 +38,8 @@ export const start: PluginStart<
     buildInstructionAsks: BuildLater<InstructionAskDeps, InstructionAsks>
     buildHandOver: BuildLater<HandOverDeps, HandOver>
     buildWorkspaces: BuildLater<WorkspaceManagerDeps, WorkspaceManager>
+    buildCodexSessions: BuildLater<CodexSessionDeps & { file: string }, CodexSessions>
+    buildAgySessions: BuildLater<AgySessionDeps & { file: string }, AgySessions>
   }
 > = ({ commands, moments, ipc }, d) => {
   const { onChange, lastRun, ...attentionHooks } = d.attention
@@ -61,6 +65,8 @@ export const start: PluginStart<
     buildAsks: (deps) => (asks = new SessionAsks(deps)),
     buildInstructionAsks: (deps) => (instructionAsks = new InstructionAsks(deps)),
     buildHandOver: (deps) => new HandOver(deps),
-    buildWorkspaces: (deps) => new WorkspaceManager(deps)
+    buildWorkspaces: (deps) => new WorkspaceManager(deps),
+    buildCodexSessions: ({ file, ...deps }) => new CodexSessions(file, deps),
+    buildAgySessions: ({ file, ...deps }) => new AgySessions(file, deps)
   }
 }
