@@ -138,9 +138,11 @@ function checkAll() {
 
 function checkHookedFile() {
   const input = JSON.parse(fs.readFileSync(0, 'utf8'))
-  const file = path.resolve(input.tool_input?.file_path ?? '')
+  const given = path.resolve(input.tool_input?.file_path ?? '')
+  if (!CODE_FILE.test(given) || !fs.existsSync(given)) return []
+  const file = fs.realpathSync(given)
   const rel = path.relative(ROOT, file)
-  if (rel.startsWith('..') || !CODE_FILE.test(file) || !fs.existsSync(file)) return []
+  if (rel.startsWith('..')) return []
   const top = execFileSync('git', ['rev-parse', '--show-toplevel'], {
     cwd: path.dirname(file),
     encoding: 'utf8'
