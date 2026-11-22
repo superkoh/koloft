@@ -235,7 +235,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
 
       const cmds = sshCommands(env)
       expect(cmds.some((c) => c.includes('test -d "$HOME/.koloft/m-'))).toBe(true)
-      expect(cmds.some((c) => c.includes('tar xf -'))).toBe(true)
+      expect(cmds.some((c) => c.includes('tar xmf -'))).toBe(true)
       expect(cmds.some((c) => /tabs\/[^"]+\.sh"?\s+start/.test(c))).toBe(true)
 
       const [first] = await waitForCalls(env, 1)

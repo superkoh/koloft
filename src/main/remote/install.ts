@@ -1,6 +1,7 @@
 import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
 import { REMOTE_HOOK_DIR, REMOTE_TABS_DIR, remotePtsFile, remoteShellPidFile } from './paths'
+import { TAB_PASS_ENV } from '../tabPass'
 import { ECHO_THE_MARK } from './ssh'
 import { ENSURE_AGY_MINIMUM_FN, ENSURE_CLAUDE_MINIMUM_FN } from '../cliMinimums'
 import { AGY_INSTALLER_URL } from '../toolInstall'
@@ -59,6 +60,17 @@ if [ -n "${cols}" ] && [ ! -t 0 ]; then
   exec script -qfec "stty cols ${cols} rows ${rows}; tty > '${pts}'; exec ${then}" /dev/null
 fi`
 }
+
+export const TAB_PASS_FILE_SUFFIX = '.pass'
+
+export const sourceOnceThenRemove = (file: string): string =>
+  `[ -f "${file}" ] && { set -a; . "${file}"; set +a; rm -f "${file}"; }`
+
+export const sourceTabPass = (tabId: string): string =>
+  sourceOnceThenRemove(`${REMOTE_TABS_DIR}/${tabId}${TAB_PASS_FILE_SUFFIX}`)
+
+export const tmuxHoldsATabPass = (target: string): string =>
+  `tmux -L koloft show-environment -t "${target}" ${TAB_PASS_ENV} >/dev/null 2>&1`
 
 // PLATFORM§33 PLATFORM§37
 export function remoteShCommand(script: string, args: string[] = [], first = ''): string {
@@ -517,6 +529,7 @@ M=$(cd "$(dirname "$0")" && pwd)
 ${REMOTE_ENV_LINES}
 KOLOFT_UTIL=1
 KOLOFT_TAB_ID=$2
+${sourceTabPass('$2')}
 ${utilShellPath('$M')}
 export KOLOFT_UTIL KOLOFT_TAB_ID PATH
 cd "$1" 2>/dev/null || cd

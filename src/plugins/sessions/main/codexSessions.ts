@@ -46,7 +46,7 @@ import {
   type MachineLogin,
   type MachineUpstreamOptions
 } from '../../../main/remote/codexMachine'
-import type { MachinePackage } from '../../../main/remote/launch'
+import { writeTabPassFile, type MachinePackage } from '../../../main/remote/launch'
 import { problemOf, sshLinkBroke, type RunResult } from '../../../main/remote/ssh'
 import {
   CODEX_ASKS_AND_WAITS,
@@ -105,6 +105,7 @@ import { codexSessionKey } from './sessionStore'
 import { resolveCodexRuntime, updateCodex } from '../../../main/codexRuntime'
 import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from '../../../main/cliMinimums'
 import { startToolShim } from '../../../main/toolShim'
+import { passOf, TAB_PASS_ENV } from '../../../main/tabPass'
 import {
   bashEnvFileIn,
   loginShellIsBash,
@@ -955,6 +956,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       sessionEnv: {
         ...(resource && { KOLOFT_PORT_OFFSET: String(portOffset(resource.worktreeName)) }),
         KOLOFT_TAB_ID: tabId,
+        ...(!machine && { [TAB_PASS_ENV]: passOf(tabId) }),
         ...(!machine && browserControlEnv(tabId, endpoint)),
         ...(said && {
           [CODEX_REPLY_LANGUAGE_ENV]: this.deps.replyLanguageScript,
@@ -1182,6 +1184,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       codexTabScript({ ...spec, tabId, instance: m.instance, machineName: pkg.name }),
       { mode: 0o700 }
     )
+    writeTabPassFile(tabDir, tabId)
     return codexLaunchLine({
       host: machine,
       sshOptions: m.sshArgs(machine, false),

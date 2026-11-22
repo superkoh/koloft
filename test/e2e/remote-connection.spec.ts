@@ -18,6 +18,7 @@ import {
   REMOTE_WS_NAME,
   remoteDir,
   sshCommands,
+  tabScriptAttaches,
   tmuxClientsOf
 } from './helpers/remote'
 import {
@@ -80,9 +81,6 @@ function codexServersAliveThere(env: E2EEnv): string[] {
     )
   )
 }
-
-const attachesThere = (env: E2EEnv): number =>
-  sshCommands(env).filter((c) => /tabs\/[^"]+\.sh"?\s+attach/.test(c)).length
 
 const busyTurn = (_env: E2EEnv, page: Page): Promise<void> =>
   runIn(page, centerTerm(page), TURN_LONGER_THAN_ONE_MIRROR_PULL)
@@ -178,7 +176,8 @@ async function untilItCameBackOnTheMachine(
     await expect
       .poll(() => there.launches(env), { timeout: 60_000 })
       .toBe(launchesBeforeQuit + there.launchesARestartAdds)
-  else await expect.poll(() => attachesThere(env), { timeout: 60_000 }).toBeGreaterThanOrEqual(1)
+  else
+    await expect.poll(() => tabScriptAttaches(env), { timeout: 60_000 }).toBeGreaterThanOrEqual(1)
 }
 
 const remoteTabIds = (page: Page): Promise<string[]> =>
@@ -268,11 +267,7 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
         timeout: IDLE_20S_HEARTBEAT_ROUND_TIMEOUT_MS
       })
 
-      await expect
-        .poll(() => sshCommands(env).filter((c) => /tabs\/[^"]+\.sh"?\s+attach/.test(c)).length, {
-          timeout: 60_000
-        })
-        .toBeGreaterThanOrEqual(1)
+      await expect.poll(() => tabScriptAttaches(env), { timeout: 60_000 }).toBeGreaterThanOrEqual(1)
       await expect(row).toHaveClass(/\bactive\b/, { timeout: 30_000 })
       await expect(centerTerm(page2)).toBeVisible({ timeout: 30_000 })
       expect(processAlive(first.pid)).toBe(true)
@@ -649,11 +644,7 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
       await expect(row).toBeVisible({ timeout: 30_000 })
       await expect(row).not.toHaveClass(/\bcold\b/, { timeout: 60_000 })
       await row.click()
-      await expect
-        .poll(() => sshCommands(env).filter((c) => /tabs\/[^"]+\.sh"?\s+attach/.test(c)).length, {
-          timeout: 60_000
-        })
-        .toBeGreaterThanOrEqual(1)
+      await expect.poll(() => tabScriptAttaches(env), { timeout: 60_000 }).toBeGreaterThanOrEqual(1)
       await expect(centerTerm(page2)).toBeVisible({ timeout: 30_000 })
       await page2.waitForTimeout(TMUX_ATTACH_SETTLE_MS)
 

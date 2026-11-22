@@ -5,9 +5,11 @@ import { refused, splitAtDashes, type AgentReply } from '@core/command'
 import type { Commands } from '@core/commands'
 import { watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
 import { anotherLiveInstanceOwns } from './ptyManager'
+import { holdsPass, TAB_PASS_ENV } from './tabPass'
 
 export interface AgentRequest {
   tabId?: string
+  pass?: string
   argv: string[]
   cwd: string
   pid?: number
@@ -16,6 +18,7 @@ export interface AgentRequest {
 export const AGENT_TOOLS_OFF =
   "koloft: Koloft's agent tools are not on for this session: the owner turned them off in Koloft's Settings."
 const UNKNOWN_TAB = 'koloft: Koloft does not know this session.'
+export const NOT_ITS_PASS = `koloft: Koloft could not tell this request comes from the session it names: ${TAB_PASS_ENV} is missing here, or is not that session's.`
 const UNREADABLE = 'koloft: Koloft could not read this request.'
 
 export function parseAgentRequest(raw: unknown): AgentRequest | null {
@@ -25,6 +28,7 @@ export function parseAgentRequest(raw: unknown): AgentRequest | null {
   if (typeof r.cwd !== 'string') return null
   return {
     tabId: typeof r.tabId === 'string' && r.tabId ? r.tabId : undefined,
+    ...(typeof r.pass === 'string' && r.pass ? { pass: r.pass } : {}),
     argv: r.argv,
     cwd: r.cwd,
     ...(typeof r.pid === 'number' ? { pid: r.pid } : {})
@@ -88,11 +92,16 @@ export class AgentRequests {
     if (!req?.tabId) return this.settle(dir, name, req, undefined)
     const caller = callerTab(req.tabId, (id) => this.deps.tab(id), this.deps.alive)
     if (caller === 'another-instance') return Promise.resolve()
-    return this.settle(dir, name, req, caller === 'unknown' ? undefined : caller.tabId)
+    if (caller === 'unknown') return this.settle(dir, name, req, undefined)
+    if (!holdsPass(req.tabId, req.pass)) return this.settle(dir, name, req, undefined, NOT_ITS_PASS)
+    return this.settle(dir, name, req, caller.tabId)
   }
 
   answerFor(tabId: string | undefined, dir: string, name: string, raw: unknown): Promise<void> {
-    return this.settle(dir, name, parseAgentRequest(raw), tabId)
+    const req = parseAgentRequest(raw)
+    if (tabId && !holdsPass(tabId, req?.pass))
+      return this.settle(dir, name, req, undefined, NOT_ITS_PASS)
+    return this.settle(dir, name, req, tabId)
   }
 
   replyFor(
@@ -107,7 +116,8 @@ export class AgentRequests {
     dir: string,
     name: string,
     req: AgentRequest | null,
-    tabId: string | undefined
+    tabId: string | undefined,
+    refusal?: string
   ): Promise<void> {
     const id = REQUEST_NAME.exec(name)?.[1]
     const full = path.join(dir, name)
@@ -118,7 +128,7 @@ export class AgentRequests {
     )
     const pid = req?.pid
     const stillWaiting = pid === undefined ? undefined : () => this.deps.alive(pid)
-    const reply = await this.replyTo(req, tabId, stillWaiting)
+    const reply = req && refusal ? refused(refusal) : await this.replyTo(req, tabId, stillWaiting)
     if (stillWaiting && !stillWaiting()) return
     try {
       writeWholeBeforeVisible(path.join(dir, `res-${id}.json`), replyJson(reply))
