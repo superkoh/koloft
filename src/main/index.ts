@@ -416,7 +416,6 @@ import { switchesThatAct } from '@core/switches'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
 import type { OwnPick } from '@shared/types'
 import { projectDefaults } from './projectDefaults'
-import { SessionAsks } from '@plugins/sessions/main/sessionAsks'
 import type { WebPage } from '@core/webPage'
 import { within } from '@core/within'
 import { SlashCommands, toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
@@ -492,13 +491,11 @@ import {
   type Target
 } from '@plugins/sessions/main/sessionVerbs'
 import {
-  HandOver,
   resolveWorkspace,
   everyWorkspaceBlock,
   everyWorkspaceSavedByTheOwner,
   ownerPartsOf,
   savedFromTheDialog,
-  InstructionAsks,
   workspaceBlock,
   type Recipient
 } from '@plugins/sessions/api'
@@ -1387,8 +1384,8 @@ let butler: Butler | null = null
 let discordBinding: ReturnType<typeof buildDiscordBinding> | null = null
 let discordLink: ReturnType<typeof buildDiscordLink> | null = null
 let discordRelay: ReturnType<typeof buildDiscordRelay> | null = null
-let handOver: HandOver | null = null
-let sessionAsks: SessionAsks | null = null
+let handOver: ReturnType<typeof buildHandOver> | null = null
+let sessionAsks: ReturnType<typeof buildSessionAsks> | null = null
 let awayDigest: AwayDigest | null = null
 let rooms: ReturnType<typeof buildRooms> | null = null
 let instructionCards: ReturnType<typeof buildInstructionCards> | null = null
@@ -1396,7 +1393,7 @@ type SecretAsks = ReturnType<typeof buildSecretAsks>
 type OwnerAsk = Parameters<SecretAsks['ask']>[0]
 type SecretAnswer = Awaited<ReturnType<SecretAsks['ask']>>
 let secretAsks: SecretAsks | null = null
-let instructionAsks: InstructionAsks | null = null
+let instructionAsks: ReturnType<typeof buildInstructionAsks> | null = null
 const answerable = new Set<string>()
 let hookRegDir: string | undefined
 let guard: ResourceGuard | undefined
@@ -3876,7 +3873,7 @@ app.whenReady().then(() => {
     pendingApproval: (tabId: string) => storedOwnerOf(tabId)?.openApproval(tabId),
     pendingQuestion: (tabId: string) => storedOwnerOf(tabId)?.openQuestion(tabId)
   }
-  const asks = new SessionAsks({
+  const asks = buildSessionAsks({
     ...tabState,
     turnOver: (tabId) => tracker.turnOver(tabId),
     showsPromptBeforeBind,
@@ -3906,7 +3903,7 @@ app.whenReady().then(() => {
     }
   }
   const secrets = buildSecretAsks({ owner: ownerWaits })
-  const instructions = new InstructionAsks({
+  const instructions = buildInstructionAsks({
     show: (asks) => pushToSessions.instructionAsks(asks),
     owner: ownerWaits,
     told: (text) => sendToRenderer(CH.toast.show, text)
@@ -4017,7 +4014,7 @@ app.whenReady().then(() => {
     respond: (i, body) => link.respond(i, body)
   })
   const attachmentsDir = path.join(userData, 'discord-attachments')
-  const handOverNow = new HandOver({
+  const handOverNow = buildHandOver({
     ...tabState,
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
     typable: (tabId) => asks.typable(tabId),
@@ -6130,17 +6127,11 @@ const startedPlugins: PluginsStarted = startPlugins(
         judge: newsJudge,
         slash,
         replies: sessionCommand,
-        asks: () => sessionAsks,
         askBeforeAsksAreMade: showAskOnItsRow
       },
       commands: sessionsCommands,
-      endedTabs: {
-        slash,
-        asks: () => sessionAsks,
-        instructionAsks: () => instructionAsks
-      },
+      endedTabs: { slash },
       eachState: {
-        asks: () => sessionAsks,
         slash,
         attention: {
           stateChanged: ({ tabId, prev, next }) =>
@@ -6220,7 +6211,6 @@ const startedPlugins: PluginsStarted = startPlugins(
           saveEveryWorkspaceVersions(saved.versions)
           return { ok: true }
         },
-        instructionAsks: () => instructionAsks ?? { views: () => [], answer: () => undefined },
         worktrees: async (p) => (await workspaceMgr?.worktrees(p)) ?? [],
         storedSessions,
         dirExists: (dir) => hosts.of(dir).dirExists(dir)
@@ -6398,6 +6388,7 @@ const {
   startRelay,
   writeRelayEnv
 } = startedPlugins['browser-control']
+const { buildAsks: buildSessionAsks, buildInstructionAsks, buildHandOver } = startedPlugins.sessions
 const { TODO_NEWS } = startedPlugins.todo
 const { koloftInbox, flushInbox } = startedPlugins.inbox
 const { buildRunner: buildCronRunner, stop: stopScheduledTasks } = startedPlugins['scheduled-tasks']

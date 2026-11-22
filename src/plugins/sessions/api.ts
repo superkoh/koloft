@@ -48,7 +48,6 @@ export {
   savedByTheOwner as everyWorkspaceSavedByTheOwner
 } from './main/everyWorkspaceInstructions'
 export type { InstructionsBlock } from './main/instructionsVerb'
-export { InstructionAsks } from './main/instructionAsks'
 export type {
   InstructionAsk,
   InstructionAskEnd,
