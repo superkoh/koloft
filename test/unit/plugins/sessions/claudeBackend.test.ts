@@ -204,11 +204,7 @@ function machineBackend(): {
 }
 
 const A_FEW_MIRROR_PULLS_MS = 1500
-const request = (
-  tabId: string,
-  tmux: string,
-  pass: string | null = passOf(tabId)
-): unknown => ({
+const request = (tabId: string, tmux: string, pass: string | null = passOf(tabId)): unknown => ({
   tabId,
   tmux,
   pass,
