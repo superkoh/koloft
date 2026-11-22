@@ -1,7 +1,8 @@
 import type { MainIpc } from '@core/ipc'
 import type { BuildLater, PluginStart } from '@core/pluginStart'
-import { setupBrowserPartition, type BrowserPartitionDeps } from './browserPartition'
+import { HTML_HEADERS, setupBrowserPartition, type BrowserPartitionDeps } from './browserPartition'
 import { pushOpenFile, registerChannels } from './channels'
+import { fileNotFoundHtml } from './dirListing'
 import { onExtensionsChanged, setupExtensions, type ExtensionHost } from './extensionManager'
 import { compositionDone } from './hostComposition'
 import { PageDialogs } from './pageDialogs'
@@ -80,6 +81,8 @@ export const start: PluginStart<
     setUpBrowserPartition: BuildLater<Omit<BrowserPartitionDeps, 'permissions' | 'downloads'>>
     setUpExtensions: BuildLater<Pick<ExtensionHost, 'window'>>
     compositionDone: typeof compositionDone
+    fileNotFoundHtml: typeof fileNotFoundHtml
+    HTML_HEADERS: typeof HTML_HEADERS
   }
 > = ({ commands, moments, ipc }, d) => {
   const pages = buildPages(ipc, d.pages)
@@ -106,6 +109,8 @@ export const start: PluginStart<
       })
       onExtensionsChanged(() => pages.pushToPages.extensionsChanged())
     },
-    compositionDone
+    compositionDone,
+    fileNotFoundHtml,
+    HTML_HEADERS
   }
 }

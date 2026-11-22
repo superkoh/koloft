@@ -906,11 +906,19 @@ export const start: PluginStart<
   `buildWorkspaces`, `buildCodexSessions` and `buildAgySessions`, which build its
   `SessionAsks`, `InstructionAsks`, `HandOver`, `WorkspaceManager`, `CodexSessions` and
   `AgySessions` once Electron is ready (the last two take the file their sessions are saved
-  in as `file`, beside their deps). Workbench's gives back the web-page parts it builds (`WebPages`,
+  in as `file`, beside their deps). It builds the `koloft session` command's part from the
+  `session` deps, which its own command and turn listener use, and gives it back as
+  `sessionCommand`, with `pushToSessions`, its pushes to the window. It also gives back the
+  helpers the app's own code calls, listed in its `main/appHelpers.ts`: the hook scripts
+  and files (`setupHooks`, `writeTabHookSettings`, `HOOK_SCRIPT`, …), the dialog readers
+  (`claudeDialog`, `codexDialog`, …), the steps of closing a session (`closingTree`,
+  `whatIsLeft`, …), the Antigravity and Codex backends (`agyBackend`, `codexBackend`) and
+  the rest. Workbench's gives back the web-page parts it builds (`WebPages`,
   `SitePermissions`, `PageDialogs`, `PageDownloads`, `PageRouting`, `PageTools`),
   `pagesInUse`, the `ReaderDocs` it builds, the two ways it pushes to the window (an
-  open file request, and `pagePushes`) and `compositionDone`, which the app waits on
-  before it runs code in a page, all of which the app's own code calls from then on, and
+  open file request, and `pagePushes`), `compositionDone`, which the app waits on
+  before it runs code in a page, and `fileNotFoundHtml` and `HTML_HEADERS`, which the
+  app's machine pages answer with, all of which the app's own code calls from then on, and
   two things done once Electron is ready: `setUpBrowserPartition` and `setUpExtensions`.
   Browser control's gives back the `CdpOps` it builds, `startRelay`, done once Electron is
   ready, and the CDP relay's functions the app calls (`setRelayEnabled`, `writeRelayEnv`,
@@ -999,9 +1007,9 @@ no deps), the Inbox's `Inbox` and
 it gives back, as Scheduled tasks' `CronRunner`, Sessions core's `SessionAsks`,
 `InstructionAsks`, `HandOver`, `WorkspaceManager`, `CodexSessions` and `AgySessions`, Passwords and sign-in's `SecretAsks`, the
 Butler's `Butler` and `AwayDigest` and Discord's ten parts built once Electron is ready
-do; most
-parts are still built by `src/main/index.ts` itself, which imports them by name and hands them
-to the starts as deps. A part never imports another plugin
+do. `src/main/index.ts` imports no plugin's `main/` file: the parts and helpers its own
+code still calls, it reads from what each start gives back ([Starting](#starting)), and
+their types it works out from `PluginStartDeps` and `PluginsStarted`. A part never imports another plugin
 past its `api.ts`. When it needs something from a plugin that needs it in turn (Browser
 control needs Workbench), `src/main/index.ts` passes a function in. For example, Workbench's
 `PageRouting` gets `driverOf` and `openAsDrivingAgentsTab` as deps, which Browser control's
@@ -1096,21 +1104,23 @@ each `renderer/ui.tsx`, `settings.ts` each `shared/settings.ts`, and `starts.ts`
 `main/start.ts`. Core imports only `list.ts`, never a plugin by name. The app's preload,
 window, settings code and main process read the other four lists and hand them to core.
 
-One kind of import has no approved path yet. `src/main/index.ts` imports the main-process
-parts it builds and hands to the starts as deps, and the types and helpers they use
-([Main-process parts](#main-process-parts)). The check lists these as breaking the rule
+Two kinds of import have no approved path yet. `src/main/index.ts` still imports four
+plugins' `api.ts`: Passwords and sign-in's `passwordsOn`, Docs writing's `docsWritingOn`,
+the Butler's prompts, folder and words, and Sessions core's `SessionsWithStore` type. And
+other app code, mostly the rest of `src/main/`, imports plugins' `main/` and `shared/`
+files directly. The check lists both as breaking the rule
 ([Not built or not decided](#not-built-or-not-decided)).
 
 `npm run check:plugin-imports` lists each import under `src/` that breaks the rule; it does
 not read the tests. It only reports and never fails the build. On `main` at the commit this
-page was last checked against, it listed 649 imports, in five kinds:
+page was last checked against, it listed 559 imports, in five kinds:
 
 | Kind | Count | What it is |
 |---|---|---|
-| names a plugin outside the lists | 144 | app code, mostly `src/main/`, that imports a plugin's `api.ts`, `main/` or `shared/` files directly |
-| imports `src/shared/` | 271 | plugin code that imports `src/shared/`, which is not core |
-| imports app code outside `src/core` | 224 | plugin code that imports the app's own code, such as `src/main/` modules or the window's store, icons and slots |
-| imports the `api.ts` of a plugin not in its needs | 6 | Discord's code using Sessions core's `api.ts`, and Sessions core's hook scripts using Discord's and the Butler's |
+| names a plugin outside the lists | 50 | app code, mostly `src/main/`, that imports a plugin's `api.ts`, `main/` or `shared/` files directly |
+| imports `src/shared/` | 294 | plugin code that imports `src/shared/`, which is not core |
+| imports app code outside `src/core` | 204 | plugin code that imports the app's own code, such as `src/main/` modules or the window's store, icons and slots |
+| imports the `api.ts` of a plugin not in its needs | 7 | Discord's code using Sessions core's `api.ts`, and Sessions core's hook scripts using Discord's and the Butler's |
 | imports a plugin past its `api.ts` and `windowApi.ts` | 4 | Discord's code that imports Sessions core's `main/` files for its question cards |
 
 ## Not built or not decided
@@ -1130,8 +1140,9 @@ These are not decided:
 
 - Who may add a text slot, a value or a fact, and whether these names, and the window's UI
   slots, are kept stable for plugins written outside Koloft.
-- How the parts `src/main/index.ts` still builds and imports by name move behind their
-  plugin's start ([Starting](#starting)).
+- How the app code outside `src/main/index.ts` that imports a plugin's `main/` or `shared/`
+  files reaches them instead, and whether `src/main/index.ts` keeps reading the four
+  `api.ts` files ([The import rule](#the-import-rule)).
 - If A needs B and B needs C, whether A may import C's `api.ts` without listing C. The check
   allows only the plugins A lists itself.
 - Whether a plugin may import `src/shared/` directly. `src/shared/` holds code Koloft's main
