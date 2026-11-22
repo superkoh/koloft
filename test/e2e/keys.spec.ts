@@ -5,25 +5,14 @@ import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { runGit, setupGitFixture } from './helpers/gitFixture'
 import { installStallingGit } from './helpers/gitSpawnLog'
 import { codexRows, startCodex } from './helpers/codex'
-import {
-  agySessionCalls,
-  installAgy,
-  installCodex,
-  seedSettings,
-  trustInAgy,
-  type E2EEnv
-} from './helpers/env'
+import { installAgy, installCodex, seedSettings, trustInAgy, type E2EEnv } from './helpers/env'
 import {
   addRemoteWorkspace,
-  agyReady,
-  boundRemoteSession,
-  installCodexOnFakeRemote,
-  installFakeRemote,
-  installRemoteAgy,
   killFakeRemote,
   launchWithRemote,
+  OTHER_AGENTS_ON_THE_MACHINE,
   REMOTE_WS_NAME,
-  seedRemoteWorkspace
+  type OtherAgentName
 } from './helpers/remote'
 import {
   agyConversationOnceFirstTurnEnded,
@@ -295,6 +284,7 @@ test.describe('Keyboard shortcuts · native accelerators are driven as shortcut:
     page: Page,
     rows: Locator
   ): Promise<void> {
+    await rows.first().click()
     await sendShortcut(app, 'shortcut:close-session')
     const dialog = fullCloseDialog(page)
     const tabOnly = dialog.getByRole('button', { name: 'Close tab only' })
@@ -314,96 +304,110 @@ test.describe('Keyboard shortcuts · native accelerators are driven as shortcut:
     try {
       await addRemoteWorkspace(page, env)
       await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
-      const rows = wsRows(page, REMOTE_WS_NAME)
-      await rows.first().click()
-      await onlyTabCloseOnAnotherMachine(app, page, rows)
+      await onlyTabCloseOnAnotherMachine(app, page, wsRows(page, REMOTE_WS_NAME))
     } finally {
       await quitAndClose(app)
       killFakeRemote(env)
     }
   })
 
-  test('T-KEY-11: ⌘W closes an Antigravity worktree session for good the same way: its row goes, and its worktree and branch are deleted', async ({
-    env
-  }) => {
-    test.setTimeout(180_000)
-    installAgy(env)
-    trustInAgy(env, env.workspaces.a)
-    seedSettings(env, { hintsOff: true })
-    gitInit(env.workspaces.a)
-    gitCommitAll(env.workspaces.a)
-    const app = await launchApp(env)
-    try {
-      const page = await app.firstWindow()
-      await waitBooted(page)
-      const dialog = await openWorktreeSession(page, 'ws-a')
-      await dialog.locator('input').fill('agy-done')
-      await chooseBackend(page, 'Antigravity')
-      await expect.poll(() => agySessionCalls(env).length).toBe(1)
-      const tree = agySessionCalls(env)[0].cwd
-      await runIn(page, centerTerm(page), 'work in the tree')
-      await agyConversationOnceFirstTurnEnded(page)
-      const rows = wsRows(page, 'ws-a')
-      await expect(rows).toHaveCount(1)
-
-      await sendShortcut(app, 'shortcut:close-session')
-      const go = fullCloseDialog(page).getByRole('button', { name: 'Close for good' })
-      await expect(go).toBeEnabled({ timeout: 30_000 })
-      await go.click()
-      await expect(rows).toHaveCount(0, { timeout: 15_000 })
-      await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
-      expect(runGit(env.workspaces.a, 'branch', '--list', 'worktree-agy-done').trim()).toBe('')
-    } finally {
-      await quitAndClose(app)
+  const WORKTREE_SESSIONS_OF_OTHER_AGENTS: {
+    label: OtherAgentName
+    caseId: string
+    install: (env: E2EEnv) => void
+    firstTurnEnded: (page: Page) => Promise<unknown>
+  }[] = [
+    {
+      label: 'Antigravity',
+      caseId: 'T-KEY-11',
+      install: (env) => {
+        installAgy(env)
+        trustInAgy(env, env.workspaces.a)
+      },
+      firstTurnEnded: async (page) => {
+        await runIn(page, centerTerm(page), 'work in the tree')
+        await agyConversationOnceFirstTurnEnded(page)
+      }
+    },
+    {
+      label: 'Codex',
+      caseId: 'T-KEY-12',
+      install: (env) => installCodex(env),
+      firstTurnEnded: (page) =>
+        expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
     }
-  })
+  ]
 
-  test('T-KEY-12: ⌘W on a Codex session on another machine offers only Close tab only, as for Claude there', async ({
-    env
-  }) => {
-    test.setTimeout(180_000)
-    installCodexOnFakeRemote(env)
-    const { app, page } = await launchWithRemote(env)
-    try {
-      await addRemoteWorkspace(page, env)
-      await newSessionInWith(page, REMOTE_WS_NAME, 'Codex')
-      const rows = wsRows(page, REMOTE_WS_NAME)
-      await expect(rows.filter({ hasText: 'Codex fixture session' })).toHaveClass(/st-waiting/, {
-        timeout: 60_000
-      })
-      await boundRemoteSession(page, 'codex')
-      await onlyTabCloseOnAnotherMachine(app, page, rows)
-    } finally {
-      await quitAndClose(app)
-      killFakeRemote(env)
-    }
-  })
+  for (const agent of WORKTREE_SESSIONS_OF_OTHER_AGENTS) {
+    test(`${agent.caseId}: ⌘W closes ${agent.label} worktree sessions for good the same way: the tab ends, the row goes, and the worktree and its branch are deleted`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      agent.install(env)
+      seedSettings(env, { hintsOff: true })
+      gitInit(env.workspaces.a)
+      gitCommitAll(env.workspaces.a)
+      const name = `${agent.label.toLowerCase()}-done`
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        const dialog = await openWorktreeSession(page, 'ws-a')
+        await dialog.locator('input').fill(name)
+        await chooseBackend(page, agent.label)
+        await agent.firstTurnEnded(page)
+        const rows = wsRows(page, 'ws-a')
+        await expect(rows).toHaveCount(1)
+        const tabId = (await rows.getAttribute('data-tab-id'))!
+        const live = await page.evaluate(() => window.api.sessions.list())
+        const tree = live.find((s) => s.tabId === tabId)!.cwd
+        expect(path.basename(tree)).toBe(name)
 
-  test('T-KEY-13: ⌘W on an Antigravity session on another machine offers only Close tab only, as for Claude there', async ({
-    env
-  }) => {
-    test.setTimeout(180_000)
-    installAgy(env)
-    installFakeRemote(env)
-    installRemoteAgy(env)
-    seedRemoteWorkspace(env)
-    seedSettings(env, { hintsOff: true })
-    const app = await launchApp(env)
-    try {
-      const page = await app.firstWindow()
-      await waitBooted(page)
-      await newSessionInWith(page, REMOTE_WS_NAME, 'Antigravity')
-      await agyReady(page)
-      await runIn(page, centerTerm(page), 'work there')
-      const rows = wsRows(page, REMOTE_WS_NAME)
-      await expect(rows.filter({ hasText: 'work there' })).toHaveClass(/st-waiting/, {
-        timeout: 60_000
-      })
-      await boundRemoteSession(page, 'agy')
-      await onlyTabCloseOnAnotherMachine(app, page, rows)
-    } finally {
-      await quitAndClose(app)
-      killFakeRemote(env)
-    }
-  })
+        await sendShortcut(app, 'shortcut:close-session')
+        const go = fullCloseDialog(page).getByRole('button', { name: 'Close for good' })
+        await expect(go).toBeEnabled({ timeout: 30_000 })
+        await go.click()
+        await expect(page.locator('.modal-backdrop')).toHaveCount(0)
+        await expect(rows).toHaveCount(0, { timeout: 15_000 })
+        await expect
+          .poll(async () =>
+            (await page.evaluate(() => window.api.sessions.list())).some(
+              (s) => s.tabId === tabId && s.alive
+            )
+          )
+          .toBe(false)
+        await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+        expect(runGit(env.workspaces.a, 'branch', '--list', `worktree-${name}`).trim()).toBe('')
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
+
+  const REMOTE_CASE_IDS: Record<OtherAgentName, string> = {
+    Codex: 'T-KEY-13',
+    Antigravity: 'T-KEY-14'
+  }
+
+  for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
+    test(`${REMOTE_CASE_IDS[agent.label]}: ⌘W on ${agent.label} sessions on another machine offers only Close tab only, as for Claude there`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      agent.install(env)
+      seedSettings(env, { hintsOff: true })
+      const { app, page } = await launchWithRemote(env)
+      try {
+        await addRemoteWorkspace(page, env)
+        await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
+        await agent.bound?.(page)
+        const rows = wsRows(page, REMOTE_WS_NAME)
+        await expect(rows.first()).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+        await onlyTabCloseOnAnotherMachine(app, page, rows)
+      } finally {
+        await quitAndClose(app)
+        killFakeRemote(env)
+      }
+    })
+  }
 })
