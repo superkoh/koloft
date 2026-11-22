@@ -888,10 +888,10 @@ export const start: PluginStart<
   calls. Sessions core's gives back `tookTheTurn`, which the butler's and the Inbox's deps read
   when a turn ends. Workbench's gives back the web-page parts it builds (`WebPages`,
   `SitePermissions`, `PageDialogs`, `PageDownloads`, `PageRouting`, `PageTools`),
-  `pagesInUse`, the `ReaderDocs` it builds, and the two ways it pushes to the window (an
-  open file request, and `pagePushes`), which the app's own code calls from then on, and
-  two things done once Electron is ready: `setUpBrowserPartition` and `setUpExtensions`,
-  and `compositionDone`, which the app waits on before it runs code in a page.
+  `pagesInUse`, the `ReaderDocs` it builds, the two ways it pushes to the window (an
+  open file request, and `pagePushes`) and `compositionDone`, which the app waits on
+  before it runs code in a page, all of which the app's own code calls from then on, and
+  two things done once Electron is ready: `setUpBrowserPartition` and `setUpExtensions`.
   Browser control's gives back the `CdpOps` it builds, `startRelay`, done once Electron is
   ready, and the CDP relay's functions the app calls (`setRelayEnabled`, `writeRelayEnv`,
   `relayEndpoint`, `sessionDrivingGuest`, …). Todo's gives back `TODO_NEWS`, which the app
@@ -900,8 +900,8 @@ export const start: PluginStart<
   `flushInbox`, which the app calls as it quits. Scheduled tasks' gives back `buildRunner`,
   which builds its `CronRunner` once Electron is ready, and `stop`. Passwords and sign-in's
   gives back `buildAsks`, which builds its `SecretAsks` once Electron is ready, and the
-  `sudo` shim files with `writeSudoShims`, which the app writes into the shim folder and
-  the machine package.
+  `sudo` shim files with `writeSudoShims`, which `src/main/index.ts` writes into the shim
+  folder when a switch changes and into the machine package.
 - What a start gives back exists only once `startPlugins` returns. A deps object built
   before that, or a start that runs before the one that gives it, reads it through a
   function (Workbench's `driverOf` calls Browser control's `sessionDrivingGuest`), never as a
