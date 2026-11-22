@@ -904,7 +904,13 @@ export const start: PluginStart<
   folder when a switch changes and into the machine package. The Butler's gives back the
   `OwnerAsleep` it builds, which the app asks whether Koloft answers a tab for the owner,
   hands each new ask a tab shows, and tells to mark the machines again, and `buildButler` and `buildDigest`, which build its
-  `Butler` and `AwayDigest` once Electron is ready.
+  `Butler` and `AwayDigest` once Electron is ready. Discord's gives back the `channels` it
+  works out for each tab (`roomOf`, `askChannelOf`, `phoneChannelOf`, `turnTakenOnDiscord`),
+  which the app reads to hold a tab open, place a card and tell the attention marks a turn
+  was taken on Discord, and one `BuildLater` for each of its parts built once Electron is
+  ready: `buildBinding`, `buildLink`, `buildRooms`, `buildOldThreads`, `buildTyping`,
+  `buildButtons`, `buildSecretCards`, `buildInstructionCards`, `buildInteractions` and
+  `buildRelay`.
 - What a start gives back exists only once `startPlugins` returns. A deps object built
   before that, or a start that runs before the one that gives it, reads it through a
   function (Workbench's `driverOf` calls Browser control's `sessionDrivingGuest`), never as a
@@ -921,7 +927,10 @@ export const start: PluginStart<
   built those read it through one getter that answers `null` (a `MadeLater`, from
   `src/core/moment.ts`) and answer as the app did before the part existed. Scheduled tasks' `buildRunner` builds its
   `CronRunner` this way, Passwords and sign-in's `buildAsks` its `SecretAsks`, and the
-  Butler's `buildButler` and `buildDigest` its `Butler` and `AwayDigest`; Workbench's `setUpBrowserPartition` and `setUpExtensions` and
+  Butler's `buildButler` and `buildDigest` its `Butler` and `AwayDigest`, and Discord's ten
+  its `DiscordBinding`, `DiscordLink`, `Rooms`, `OldThreads`, `ButlerTyping`, `AskButtons`,
+  `SecretCards`, `InstructionCards`, `Interactions` and `DiscordRelay`, each on the line
+  the app built it on before, between parts of other plugins; Workbench's `setUpBrowserPartition` and `setUpExtensions` and
   Browser control's `startRelay` are the same shape with nothing given back
   (`BuildLater<Deps>`). There is no one moment at which the app builds every plugin's
   later parts: each is called on its own line, so the order the app is ready in does not
@@ -950,10 +959,11 @@ A plugin's main-process code is a set of parts. A part is a class or function in
 that holds its own state. It takes what it needs from the rest of the app as a small `deps`
 object, which `src/main/index.ts` builds and hands in. A part built by the plugin's start
 function gets its deps through the start's `deps`, as Workbench's web-page parts,
-Browser control's `CdpOps`, the Inbox's `Inbox` and `KoloftInbox` and the Butler's
-`OwnerAsleep` do, or through the `BuildLater` it gives back, as Scheduled tasks'
-`CronRunner`, Passwords and sign-in's `SecretAsks` and the Butler's `Butler` and
-`AwayDigest` do; most
+Browser control's `CdpOps`, the Inbox's `Inbox` and `KoloftInbox`, the Butler's
+`OwnerAsleep` and Discord's tab channels and phone copier do, or through the `BuildLater`
+it gives back, as Scheduled tasks' `CronRunner`, Passwords and sign-in's `SecretAsks`, the
+Butler's `Butler` and `AwayDigest` and Discord's ten parts built once Electron is ready
+do; most
 parts are still built by `src/main/index.ts` itself, which imports them by name and hands them
 to the starts as deps. A part never imports another plugin
 past its `api.ts`. When it needs something from a plugin that needs it in turn (Browser
