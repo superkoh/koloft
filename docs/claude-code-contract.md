@@ -4912,4 +4912,4 @@ Not probed: a subfolder's file loaded later in a session that started at the rep
 a git repo's parent folders.
 
 Koloft dependents: the repo's own `CLAUDE.md` and `test/CLAUDE.md` are symlinks to the
-`AGENTS.md` beside them (`test/unit/devRules.test.ts`, ADR-0052).
+`AGENTS.md` beside them (`test/unit/devRules.test.ts`, ADR-0053).

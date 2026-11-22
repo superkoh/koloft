@@ -1,4 +1,4 @@
-# 0052 The repo's developer checks run as each agent's own hooks, never as git hooks
+# 0053 The repo's developer checks run as each agent's own hooks, never as git hooks
 
 **Constraint**: the repo is worked on by Claude Code, Codex and Antigravity sessions, and
 each must meet the same three checks: a fresh worktree installs its node_modules, an

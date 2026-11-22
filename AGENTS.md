@@ -284,7 +284,7 @@ Working principles:
     when the app is packed — run `node scripts/fetch-vendor.cjs` once, or a dev build
     quietly ships none of them and `bundled-git-gh.spec.ts` fails.
 - The repo's hooks are Claude Code's `.claude/settings.json`, Codex's
-  `.codex/config.toml` and Antigravity's `.agents/hooks.json` (ADR-0052). Codex runs a
+  `.codex/config.toml` and Antigravity's `.agents/hooks.json` (ADR-0053). Codex runs a
   hook only once its line is trusted in that machine's Codex config, and skips an
   untrusted one without a word: after a change to those lines merges, and on a machine
   Codex has not run this repo on, run `node scripts/trust-codex-hooks.mjs` there.

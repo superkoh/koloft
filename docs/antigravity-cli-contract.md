@@ -798,7 +798,7 @@ and the TUI in a pty, a throwaway git repo with a linked worktree.
 - **A process the `SessionStart` hook starts detached** lives on after the hook (3 ms)
   and after agy exits.
 
-Koloft dependents: the repo's own `.agents/hooks.json` (ADR-0052).
+Koloft dependents: the repo's own `.agents/hooks.json` (ADR-0053).
 
 ## §13 Tools
 

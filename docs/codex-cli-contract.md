@@ -3826,7 +3826,7 @@ stdin/stdout shapes were also read from the binary, which embeds a JSON schema p
   from the main checkout and from a linked worktree's subfolder.
 
 Koloft dependents: the repo's own `.codex/config.toml` and
-`scripts/trust-codex-hooks.mjs` (ADR-0052).
+`scripts/trust-codex-hooks.mjs` (ADR-0053).
 
 ## 28. Two app-servers starting at once in a home no app-server has used
 

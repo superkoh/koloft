@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 
-// CODEX§11 CODEX§27 ADR-0052
+// CODEX§11 CODEX§27 ADR-0053
 
 const KOLOFT_SHIM_MARK = 'KOLOFT_UTIL'
 const APP_SERVER_TIMEOUT_MS = 60_000

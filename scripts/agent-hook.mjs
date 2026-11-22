@@ -3,7 +3,7 @@ import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
 import { needsInstall, worktreeOf } from './worktree-deps-state.mjs'
 
-// ADR-0052 CODEX§27 AGY§12
+// ADR-0053 CODEX§27 AGY§12
 
 const ROOT = path.resolve(import.meta.dirname, '..')
 const AGY_FILE_EDITS = new Set(['write_file', 'edit_file', 'write_to_file', 'replace_file_content'])
