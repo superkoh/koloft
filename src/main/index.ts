@@ -420,8 +420,7 @@ import { switchesThatAct } from '@core/switches'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
 import type { OwnPick } from '@shared/types'
 import { projectDefaults } from './projectDefaults'
-import { DiscordBinding } from '@plugins/discord/main/binding'
-import { discordApiUrl, DiscordLink, privately } from '@plugins/discord/main/link'
+import { discordApiUrl, privately } from '@plugins/discord/main/link'
 import {
   reloadDiscordPage,
   saveTokenFromPage,
@@ -429,13 +428,12 @@ import {
 } from '@plugins/discord/main/tokenFromPage'
 import { setupStatusText } from '@plugins/discord/main/setupSteps'
 import { releaseLock, takeLock } from '@plugins/discord/main/instanceLock'
-import { DiscordRelay, type Destination } from '@plugins/discord/main/relay'
+import type { Destination } from '@plugins/discord/main/relay'
 import { SessionAsks } from '@plugins/sessions/main/sessionAsks'
-import { SECRET_ID_PREFIX, SecretCards } from '@plugins/discord/main/secretCards'
-import { INSTRUCTIONS_ID_PREFIX, InstructionCards } from '@plugins/discord/main/instructionCards'
+import { SECRET_ID_PREFIX } from '@plugins/discord/main/secretCards'
+import { INSTRUCTIONS_ID_PREFIX } from '@plugins/discord/main/instructionCards'
 import type { WebPage } from '@core/webPage'
 import { within } from '@core/within'
-import { ButlerTyping } from '@plugins/discord/main/butlerTyping'
 import {
   machineOfShotPage,
   onShotPageGone,
@@ -443,14 +441,12 @@ import {
   shootPage,
   shotSession
 } from '@plugins/discord/main/pageShot'
-import { OldThreads } from '@plugins/discord/main/oldThreads'
-import { roomLink, Rooms, whereOf, type RoomSubject } from '@plugins/discord/main/rooms'
+import { roomLink, whereOf, type RoomSubject } from '@plugins/discord/main/rooms'
 import { accentOf } from '@plugins/discord/main/cards'
-import { AskButtons } from '@plugins/discord/main/buttons'
 import { SlashCommands, toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
 import { toChannel } from '@plugins/discord/main/slash'
 import { TabLifecycle, subscribeTabSubsystems } from '@plugins/sessions/main/tabLifecycle'
-import { Interactions, SLASH_COMMANDS } from '@plugins/discord/main/interactions'
+import { SLASH_COMMANDS } from '@plugins/discord/main/interactions'
 import { clicksTheMouse, pressesAKey, typeKeys } from '@core/typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import {
@@ -519,8 +515,7 @@ import {
 } from '@core/moment'
 import { butlersWords } from '@plugins/butler/main/sessionHooks'
 import { withoutTheRelayTag } from '@plugins/discord/main/sessionHooks'
-import { phoneCopier } from '@plugins/discord/main/phoneCopier'
-import { roomNote, tabChannels } from '@plugins/discord/main/tabChannels'
+import { roomNote } from '@plugins/discord/main/tabChannels'
 import type { MainIpc } from '@core/ipc'
 import { pushStatus as pushStatusToDiscordPane } from '@plugins/discord/main/channels'
 import { ClaudeDialogWatch } from './claudeDialogWatch'
@@ -1429,25 +1424,17 @@ type Butler = ReturnType<typeof buildButler>
 type AssistBackendChoice = Awaited<ReturnType<Parameters<typeof buildButler>[0]['backend']>>
 type AwayDigest = ReturnType<typeof buildDigest>
 let butler: Butler | null = null
-let discordBinding: DiscordBinding | null = null
-let discordLink: DiscordLink | null = null
-let discordRelay: DiscordRelay | null = null
+let discordBinding: ReturnType<typeof buildDiscordBinding> | null = null
+let discordLink: ReturnType<typeof buildDiscordLink> | null = null
+let discordRelay: ReturnType<typeof buildDiscordRelay> | null = null
 let handOver: HandOver | null = null
 let sessionAsks: SessionAsks | null = null
-let discordTyping: ButlerTyping | null = null
+let discordTyping: ReturnType<typeof buildButlerTyping> | null = null
 let awayDigest: AwayDigest | null = null
-let rooms: Rooms | null = null
-const discordChannels = tabChannels({
-  butlerSide,
-  lobby: () => discordBinding?.channel()?.channelId,
-  boundChannelOf: (tabId) => discordBinding?.channelOfTab(tabId),
-  roomCarrying: (tabId) => (discordOn() ? rooms?.carried(tabId) : undefined),
-  reaches: (tabId) => !!discordRelay?.reaches(tabId)
-})
-const { roomOf: roomOfTab, askChannelOf: askChannelOfTab, phoneChannelOf } = discordChannels
-let askButtons: AskButtons | null = null
-let secretCards: SecretCards | null = null
-let instructionCards: InstructionCards | null = null
+let rooms: ReturnType<typeof buildRooms> | null = null
+let askButtons: ReturnType<typeof buildAskButtons> | null = null
+let secretCards: ReturnType<typeof buildSecretCards> | null = null
+let instructionCards: ReturnType<typeof buildInstructionCards> | null = null
 type SecretAsks = ReturnType<typeof buildSecretAsks>
 type OwnerAsk = Parameters<SecretAsks['ask']>[0]
 type SecretAnswer = Awaited<ReturnType<SecretAsks['ask']>>
@@ -3862,7 +3849,7 @@ app.whenReady().then(() => {
       ),
     memberDropped: (sessionId, why) => droppedSessionsLog(`${sessionId} ${why}`)
   })
-  const bindingNow = new DiscordBinding({
+  const bindingNow = buildDiscordBinding({
     load: () => loadSettings().discord,
     save: (discord) => {
       void commitSettings({ discord })
@@ -3874,7 +3861,7 @@ app.whenReady().then(() => {
     isButlerTab: (tabId) => !!butler?.isButlerTab(tabId)
   })
   discordBinding = bindingNow
-  attention.turnTakenElsewhere = discordChannels.turnTakenOnDiscord
+  attention.turnTakenElsewhere = turnTakenOnDiscord
   butler = buildButler({
     userData,
     realpath: realpathSafe,
@@ -3995,7 +3982,7 @@ app.whenReady().then(() => {
   })
   instructionAsks = instructions
   const discordLockFile = path.join(userData, 'discord.lock')
-  const link = new DiscordLink({
+  const link = buildDiscordLink({
     apiUrl: discordApiUrl(),
     readToken: discordTokenRead,
     takeLock: () => takeLock(discordLockFile, pidAlive),
@@ -4036,7 +4023,7 @@ app.whenReady().then(() => {
   })
   discordLink = link
   const butlerNow = butler
-  const roomsNow = new Rooms({
+  const roomsNow = buildRooms({
     link,
     on: discordOn,
     owner: () => bindingNow.owner(),
@@ -4045,7 +4032,7 @@ app.whenReady().then(() => {
     save: (list) => bindingNow.saveRooms(list)
   })
   rooms = roomsNow
-  const oldThreads = new OldThreads({
+  const oldThreads = buildOldThreads({
     link,
     owner: () => bindingNow.owner(),
     butlerName: butlerNameNow,
@@ -4055,7 +4042,7 @@ app.whenReady().then(() => {
     isRoom: (threadId) => !!roomsNow.ofThread(threadId),
     now: Date.now
   })
-  discordTyping = new ButlerTyping({
+  discordTyping = buildButlerTyping({
     link,
     channelOf: (tabId) =>
       discordRelay?.reaches(tabId) && !discordRelay.quietTurn(tabId)
@@ -4068,7 +4055,7 @@ app.whenReady().then(() => {
     const ask = await pendingAskOf(tabId)
     return ask ? codexDialog(ask) : asks.dialog(tabId)
   }
-  const buttons = new AskButtons({
+  const buttons = buildAskButtons({
     owner: () => bindingNow.owner(),
     dialogText: async (tabId) => (await dialogOf(tabId))?.text,
     answer: answerSession,
@@ -4086,7 +4073,7 @@ app.whenReady().then(() => {
     },
     answered: (tabId, reply) => buttons.answered(tabId, reply)
   })
-  const cards = new SecretCards({
+  const cards = buildSecretCards({
     asks: secrets,
     owner: () => bindingNow.owner(),
     cardWanted: (tabId) => discordOn() && !!discordRelay?.reaches(tabId),
@@ -4106,7 +4093,7 @@ app.whenReady().then(() => {
   secrets.listen(cards)
   secretCards = cards
   secretAsks = secrets
-  const instructionCardsNow = new InstructionCards({
+  const instructionCardsNow = buildInstructionCards({
     asks: instructions,
     owner: () => bindingNow.owner(),
     cardWanted: (tabId) => discordConnected && discordOn() && !!discordRelay?.reaches(tabId),
@@ -4125,7 +4112,7 @@ app.whenReady().then(() => {
   })
   instructions.listen(instructionCardsNow)
   instructionCards = instructionCardsNow
-  const interactions = new Interactions({
+  const interactions = buildInteractions({
     owner: () => bindingNow.owner(),
     ownerWrote: ownerCameBack,
     run: async (text, channelId) =>
@@ -4154,7 +4141,7 @@ app.whenReady().then(() => {
     noteSent: noteSentByKoloft
   })
   handOver = handOverNow
-  discordRelay = new DiscordRelay({
+  discordRelay = buildDiscordRelay({
     ...tabState,
     asks,
     handOver: handOverNow,
@@ -5524,16 +5511,6 @@ function ownerIsWhere(): string {
   return OWNER_IS[presence.where()]
 }
 
-const copyToPhone = phoneCopier({
-  relay: () => discordRelay,
-  channels: discordChannels,
-  butlerSide,
-  butlerName: butlerNameNow,
-  machineOf: machineOfTab,
-  readBytes: (file) => hosts.of(file).readBytes(file),
-  fileDiff: (file) => hosts.of(file).gitFileDiff(file)
-})
-
 const AN_ASK_KOLOFT_READS_SHOWS_WITHIN_MS = 2000
 
 function askUnreadablySoon(tabId: string): void {
@@ -6686,27 +6663,22 @@ const startedPlugins: PluginsStarted = startPlugins(
       }
     },
     discord: {
-      copyToPhone: (o) => copyToPhone(o.tabId, o.target, o.view),
+      butlerSide,
+      copyToPhone: {
+        butlerName: butlerNameNow,
+        machineOf: machineOfTab,
+        readBytes: (file) => hosts.of(file).readBytes(file),
+        fileDiff: (file) => hosts.of(file).gitFileDiff(file)
+      },
       rooms: {
         isButler: isButlerNow,
         butlerFolder: butlerFolderNow,
         roomFor: roomForNew
       },
       eachTurn: {
-        relay: () => discordRelay,
-        typing: () => discordTyping,
-        rooms: () => rooms,
-        buttons: () => askButtons,
         noTurnsYet: async (key) => !(await sessionBackends.turns(key, 1).catch(() => [])).length,
-        askChannelOf: askChannelOfTab,
         pendingAskOf,
         askUnreadablySoon
-      },
-      endedTabs: {
-        typing: () => discordTyping,
-        relay: () => discordRelay,
-        buttons: () => askButtons,
-        rooms: () => rooms
       },
       command: discordCommand,
       channels: {
@@ -6777,3 +6749,21 @@ const {
   SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS
 } = startedPlugins.passwords
 const { buildButler, buildDigest, ownerAsleep } = startedPlugins.butler
+const {
+  channels: {
+    roomOf: roomOfTab,
+    askChannelOf: askChannelOfTab,
+    phoneChannelOf,
+    turnTakenOnDiscord
+  },
+  buildDiscordBinding,
+  buildDiscordLink,
+  buildRooms,
+  buildOldThreads,
+  buildButlerTyping,
+  buildAskButtons,
+  buildSecretCards,
+  buildInstructionCards,
+  buildInteractions,
+  buildDiscordRelay
+} = startedPlugins.discord
