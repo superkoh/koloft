@@ -890,14 +890,18 @@ export const start: PluginStart<
   `SitePermissions`, `PageDialogs`, `PageDownloads`, `PageRouting`, `PageTools`),
   `pagesInUse`, the `ReaderDocs` it builds, and the two ways it pushes to the window (an
   open file request, and `pagePushes`), which the app's own code calls from then on, and
-  two things done once Electron is ready: `setUpBrowserPartition` and `setUpExtensions`.
+  two things done once Electron is ready: `setUpBrowserPartition` and `setUpExtensions`,
+  and `compositionDone`, which the app waits on before it runs code in a page.
   Browser control's gives back the `CdpOps` it builds, `startRelay`, done once Electron is
   ready, and the CDP relay's functions the app calls (`setRelayEnabled`, `writeRelayEnv`,
   `relayEndpoint`, `sessionDrivingGuest`, …). Todo's gives back `TODO_NEWS`, which the app
   hands the butler. The Inbox's gives back the `KoloftInbox` it builds, which the app tells
   when a turn's verdict comes in, a session is deleted or a tab is rebound, and
   `flushInbox`, which the app calls as it quits. Scheduled tasks' gives back `buildRunner`,
-  which builds its `CronRunner` once Electron is ready, and `stop`.
+  which builds its `CronRunner` once Electron is ready, and `stop`. Passwords and sign-in's
+  gives back `buildAsks`, which builds its `SecretAsks` once Electron is ready, and the
+  `sudo` shim files with `writeSudoShims`, which the app writes into the shim folder and
+  the machine package.
 - What a start gives back exists only once `startPlugins` returns. A deps object built
   before that, or a start that runs before the one that gives it, reads it through a
   function (Workbench's `driverOf` calls Browser control's `sessionDrivingGuest`), never as a
@@ -913,7 +917,7 @@ export const start: PluginStart<
   the start's own commands, moment listeners and channels, and returns it. Until it is
   built those read it through one getter that answers `null` (a `MadeLater`, from
   `src/core/moment.ts`) and answer as the app did before the part existed. Scheduled tasks' `buildRunner` builds its
-  `CronRunner` this way; Workbench's `setUpBrowserPartition` and `setUpExtensions` and
+  `CronRunner` this way, and Passwords and sign-in's `buildAsks` its `SecretAsks`; Workbench's `setUpBrowserPartition` and `setUpExtensions` and
   Browser control's `startRelay` are the same shape with nothing given back
   (`BuildLater<Deps>`). There is no one moment at which the app builds every plugin's
   later parts: each is called on its own line, so the order the app is ready in does not
@@ -943,7 +947,8 @@ that holds its own state. It takes what it needs from the rest of the app as a s
 object, which `src/main/index.ts` builds and hands in. A part built by the plugin's start
 function gets its deps through the start's `deps`, as Workbench's web-page parts,
 Browser control's `CdpOps` and the Inbox's `Inbox` and `KoloftInbox` do, or through the
-`BuildLater` it gives back, as Scheduled tasks' `CronRunner` does; most
+`BuildLater` it gives back, as Scheduled tasks' `CronRunner` and Passwords and sign-in's
+`SecretAsks` do; most
 parts are still built by `src/main/index.ts` itself, which imports them by name and hands them
 to the starts as deps. A part never imports another plugin
 past its `api.ts`. When it needs something from a plugin that needs it in turn (Browser

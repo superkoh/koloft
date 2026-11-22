@@ -3,6 +3,7 @@ import type { BuildLater, PluginStart } from '@core/pluginStart'
 import { setupBrowserPartition, type BrowserPartitionDeps } from './browserPartition'
 import { pushOpenFile, registerChannels } from './channels'
 import { onExtensionsChanged, setupExtensions, type ExtensionHost } from './extensionManager'
+import { compositionDone } from './hostComposition'
 import { PageDialogs } from './pageDialogs'
 import { PageDownloads } from './pageDownloads'
 import { PageRouting, type PageRoutingDeps } from './pageRouting'
@@ -78,6 +79,7 @@ export const start: PluginStart<
     readerDocs: ReaderDocs
     setUpBrowserPartition: BuildLater<Omit<BrowserPartitionDeps, 'permissions' | 'downloads'>>
     setUpExtensions: BuildLater<Pick<ExtensionHost, 'window'>>
+    compositionDone: typeof compositionDone
   }
 > = ({ commands, moments, ipc }, d) => {
   const pages = buildPages(ipc, d.pages)
@@ -103,6 +105,7 @@ export const start: PluginStart<
         ask: (request) => pages.pushToPages.extensionAsks(request)
       })
       onExtensionsChanged(() => pages.pushToPages.extensionsChanged())
-    }
+    },
+    compositionDone
   }
 }

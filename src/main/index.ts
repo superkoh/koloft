@@ -183,11 +183,6 @@ import { RemoteSync } from './remote/sync'
 import { machineUsageDirs, usagePulls } from './remote/usageMirror'
 import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
 import { REMOTE_OPEN_SHIM } from './openShimScript'
-import {
-  SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS,
-  SUDO_SHIM_FILES,
-  writeSudoShims
-} from '@plugins/passwords/main/sudoShim'
 import { passwordsOn } from '@plugins/passwords/api'
 import { agentsInLoginShell, sshEnvFromLogin } from './loginShell'
 import { oncePerName, watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
@@ -326,7 +321,6 @@ import {
 } from '@shared/browserRoute'
 import { HTML_HEADERS } from '@plugins/workbench/main/browserPartition'
 import { PASTED_PICTURE_EXTENSIONS, pastedPicturesIn, withPictures } from '@shared/pastedPictures'
-import { compositionDone } from '@plugins/workbench/main/hostComposition'
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
 import { parseSessionPorts, scanPortsHere, scanPortsOnMachine } from './sessionPorts'
@@ -440,20 +434,10 @@ import { setupStatusText } from '@plugins/discord/main/setupSteps'
 import { releaseLock, takeLock } from '@plugins/discord/main/instanceLock'
 import { DiscordRelay, type Destination } from '@plugins/discord/main/relay'
 import { SessionAsks } from '@plugins/sessions/main/sessionAsks'
-import { SecretAsks, type SecretAnswer, type SecretAsk } from '@plugins/passwords/main/secretAsks'
-import { SECRET_ID_PREFIX, SecretCards, type TapRounds } from '@plugins/discord/main/secretCards'
+import { SECRET_ID_PREFIX, SecretCards } from '@plugins/discord/main/secretCards'
 import { INSTRUCTIONS_ID_PREFIX, InstructionCards } from '@plugins/discord/main/instructionCards'
 import type { WebPage } from '@core/webPage'
-import type { TapPage } from '@plugins/passwords/main/pageVerb'
-import {
-  A_PAGE_ANSWERS_WITHIN_MS,
-  findPart,
-  pictureOfPart,
-  tapAt,
-  type PartOnPage
-} from '@plugins/workbench/main/guestTap'
 import { within } from '@core/within'
-import { gridPictureHtml } from '@plugins/passwords/main/tapGrid'
 import { ButlerTyping } from '@plugins/discord/main/butlerTyping'
 import {
   machineOfShotPage,
@@ -542,7 +526,6 @@ import { phoneCopier } from '@plugins/discord/main/phoneCopier'
 import { roomNote, tabChannels } from '@plugins/discord/main/tabChannels'
 import type { MainIpc } from '@core/ipc'
 import { pushStatus as pushStatusToDiscordPane } from '@plugins/discord/main/channels'
-import { pushAsks as pushSecretAsks } from '@plugins/passwords/main/channels'
 import { ClaudeDialogWatch } from './claudeDialogWatch'
 import {
   A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS,
@@ -1466,8 +1449,10 @@ const { roomOf: roomOfTab, askChannelOf: askChannelOfTab, phoneChannelOf } = dis
 let askButtons: AskButtons | null = null
 let secretCards: SecretCards | null = null
 let instructionCards: InstructionCards | null = null
-type OwnerAsk = SecretAsk & { taps?: TapRounds }
-let secretAsks: SecretAsks<OwnerAsk> | null = null
+type SecretAsks = ReturnType<typeof buildSecretAsks>
+type OwnerAsk = Parameters<SecretAsks['ask']>[0]
+type SecretAnswer = Awaited<ReturnType<SecretAsks['ask']>>
+let secretAsks: SecretAsks | null = null
 let instructionAsks: InstructionAsks | null = null
 const answerable = new Set<string>()
 let hookRegDir: string | undefined
@@ -2341,9 +2326,8 @@ const secretCommand: PluginStartDeps['passwords']['secretCommand'] = {
 
 const pageCommand: PluginStartDeps['passwords']['pageCommand'] = {
   ...ownerAsks,
-  pages: tapPagesOf,
-  draw: async (png, grid) => {
-    const { html, width, height } = gridPictureHtml(png, grid)
+  webPagesOf: (tabId) => webPages.pagesOf(tabId),
+  shoot: async ({ html, width, height }) => {
     const shot = await shootHtml(
       html,
       { width, height, pictureHeight: Infinity, mostPictures: 1 },
@@ -4004,7 +3988,7 @@ app.whenReady().then(() => {
         attention.ownerAnswered(tabId)
     }
   }
-  const secrets = new SecretAsks<OwnerAsk>({ show: pushSecretAsks(pluginIpc), owner: ownerWaits })
+  const secrets = buildSecretAsks({ owner: ownerWaits })
   const instructions = new InstructionAsks({
     show: (asks) => pushToSessions.instructionAsks(asks),
     owner: ownerWaits,
@@ -5444,25 +5428,6 @@ function guestPagesOf(tabId: string): (GuestPage & WebPage)[] {
   }))
 }
 
-function tapPagesOf(tabId: string): TapPage[] {
-  return webPages.pagesOf(tabId).map((wc) => ({
-    guestId: wc.id,
-    url: () => wc.getURL(),
-    find: (selector, scroll) =>
-      within(
-        wc.executeJavaScript(findPart(selector, scroll)) as Promise<PartOnPage>,
-        A_PAGE_ANSWERS_WITHIN_MS,
-        'the page did not answer'
-      ),
-    picture: (box, ratio) => pictureOfPart(wc, box, ratio),
-    // PLATFORM§10
-    tap: async (point) => {
-      await compositionDone()
-      await tapAt(wc, point)
-    }
-  }))
-}
-
 async function startDiscord(): Promise<void> {
   const hasABot = async (): Promise<boolean> => !!(await discordTokenRead())
   if (await switchedOnOnceItHasABot(loadSettings().pluginsOn, hasABot))
@@ -6770,9 +6735,7 @@ const startedPlugins: PluginsStarted = startPlugins(
     todo: todoCommand,
     passwords: {
       secretCommand,
-      pageCommand,
-      endedTabs: () => secretAsks,
-      channels: () => secretAsks
+      pageCommand
     }
   }
 )
@@ -6787,7 +6750,8 @@ const {
   pushToPages,
   readerDocs,
   setUpBrowserPartition,
-  setUpExtensions
+  setUpExtensions,
+  compositionDone
 } = startedPlugins.workbench
 const {
   cdpOps,
@@ -6809,3 +6773,9 @@ const {
 const { TODO_NEWS } = startedPlugins.todo
 const { koloftInbox, flushInbox } = startedPlugins.inbox
 const { buildRunner: buildCronRunner, stop: stopScheduledTasks } = startedPlugins['scheduled-tasks']
+const {
+  buildAsks: buildSecretAsks,
+  writeSudoShims,
+  SUDO_SHIM_FILES,
+  SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS
+} = startedPlugins.passwords
