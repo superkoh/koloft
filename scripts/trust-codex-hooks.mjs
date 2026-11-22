@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
+import { tableBody, tableHeader, withTableLine } from '../src/main/codexConfigTables.mjs'
 
 // CODEX§11 CODEX§27 ADR-0053
 
@@ -66,35 +67,9 @@ function configFile() {
   return path.join(homes[0] ?? localHome, 'config.toml')
 }
 
-const tableHeader = (kind, key) => `[${kind}.${JSON.stringify(key)}]`
-
-function tableBody(lines, header) {
-  const start = lines.findIndex((line) => line.trim() === header)
-  if (start < 0) return undefined
-  let end = start + 1
-  while (end < lines.length && !lines[end].trim().startsWith('[')) end++
-  return { start, end }
-}
-
-function withTable(text, header, line, keyOfLine) {
-  const lines = text.split('\n')
-  const at = tableBody(lines, header)
-  if (!at) {
-    const gap = text === '' ? '' : text.endsWith('\n') ? '\n' : '\n\n'
-    return `${text}${gap}${header}\n${line}\n`
-  }
-  const body = lines.slice(at.start + 1, at.end).filter((l) => !keyOfLine.test(l))
-  lines.splice(at.start, at.end - at.start, header, line, ...body)
-  return lines.join('\n')
-}
-
 function folderTrustLevel(text, repo) {
-  const lines = text.split('\n')
-  const at = tableBody(lines, tableHeader('projects', repo))
-  if (!at) return undefined
-  return lines
-    .slice(at.start + 1, at.end)
-    .map((l) => /^\s*trust_level\s*=\s*["']([^"']*)["']/.exec(l)?.[1])
+  return tableBody(text, tableHeader('projects', repo))
+    ?.map((l) => /^trust_level\s*=\s*["']([^"']*)["']/.exec(l)?.[1])
     .find(Boolean)
 }
 
@@ -183,7 +158,7 @@ function save(text) {
 
 if (level !== 'trusted')
   save(
-    withTable(
+    withTableLine(
       before,
       tableHeader('projects', repo),
       'trust_level = "trusted"',
@@ -196,7 +171,7 @@ if (hooks.length === 0) fail(`codex lists no hooks from ${repo}/.codex`)
 save(
   hooks.reduce(
     (text, hook) =>
-      withTable(
+      withTableLine(
         text,
         tableHeader('hooks.state', hook.key),
         `trusted_hash = ${JSON.stringify(hook.currentHash)}`,
