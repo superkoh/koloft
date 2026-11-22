@@ -43,8 +43,6 @@ export const SKILL_PREFIX: Record<BackendId, string> = {
   agy: '/'
 }
 
-export const BACKEND_WHEN_NONE_IS_KNOWN: BackendId = AGENT_PICKED_ON_FIRST_OPEN
-
 export function turnedOffLead(backend: BackendId): string {
   return `${BACKEND_LABEL[backend]} is turned off in `
 }
@@ -79,7 +77,7 @@ export function backendIdOf(value: unknown): BackendId | undefined {
 export function normalizeSessionMethods(raw: unknown): SessionMethods {
   const value = raw && typeof raw === 'object' ? (raw as Partial<SessionMethods>) : {}
   const enabled = byBackend((b) => value.enabled?.[b] !== false)
-  if (!SESSION_BACKENDS.some((b) => enabled[b])) enabled[BACKEND_WHEN_NONE_IS_KNOWN] = true
+  if (!SESSION_BACKENDS.some((b) => enabled[b])) enabled[AGENT_PICKED_ON_FIRST_OPEN] = true
   const picked = backendIdOf(value.defaultBackend)
   return {
     enabled,
@@ -96,7 +94,7 @@ export function backendAvailable(list: BackendAvailability[], id: BackendId): bo
 }
 
 export function shownAsInstalled(list: BackendAvailability[] | null, id: BackendId): boolean {
-  return list ? backendAvailable(list, id) : id === BACKEND_WHEN_NONE_IS_KNOWN
+  return list ? backendAvailable(list, id) : id === AGENT_PICKED_ON_FIRST_OPEN
 }
 
 export type Messaging = 'queue' | 'peerLine' | 'typed'

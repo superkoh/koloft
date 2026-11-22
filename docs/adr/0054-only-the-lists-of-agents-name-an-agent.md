@@ -11,7 +11,9 @@ typed by `src/core/agent/manifest.ts`. Parts that several agents share go in
 `src/agents/kit/`, which names no agent. Outside an agent's own folder only three files
 may name an agent: `src/agents/list.ts` (the manifests), `src/agents/starts.ts` (each
 agent's main-process code) and `src/agents/uis.ts` (each agent's UI parts). `kit/`,
-`starts.ts` and `uis.ts` each appear with the first thing put in them. The rest of the app
+`starts.ts` and `uis.ts` each appear with the first thing put in them. Code written before
+this decision still names agents in many other files; issue #2410 removes those names step
+by step, and new code adds none. The rest of the app
 reads agents through `src/core/agent/registry.ts`, which imports the list, so the window
 has the manifests at build time and never asks the main process for them.
 
