@@ -1,6 +1,7 @@
 import { shq } from '@shared/shellQuote'
 import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
 import { REMOTE_HOOK_DIR, REMOTE_TABS_DIR, remotePtsFile, remoteShellPidFile } from './paths'
+import { TAB_PASS_ENV } from '../tabPass'
 import { ECHO_THE_MARK } from './ssh'
 import { ENSURE_AGY_MINIMUM_FN, ENSURE_CLAUDE_MINIMUM_FN } from '../cliMinimums'
 import { AGY_INSTALLER_URL } from '../toolInstall'
@@ -63,8 +64,14 @@ fi`
 // PLATFORM§33 PLATFORM§37
 export const TAB_PASS_FILE_SUFFIX = '.pass'
 
+export const sourceOnceThenRemove = (file: string): string =>
+  `[ -f "${file}" ] && { set -a; . "${file}"; set +a; rm -f "${file}"; }`
+
 export const sourceTabPass = (tabId: string): string =>
-  `P="${REMOTE_TABS_DIR}/${tabId}${TAB_PASS_FILE_SUFFIX}"; [ -f "$P" ] && { set -a; . "$P"; set +a; rm -f "$P"; }`
+  sourceOnceThenRemove(`${REMOTE_TABS_DIR}/${tabId}${TAB_PASS_FILE_SUFFIX}`)
+
+export const tmuxHoldsATabPass = (target: string): string =>
+  `tmux -L koloft show-environment -t "${target}" ${TAB_PASS_ENV} >/dev/null 2>&1`
 
 export function remoteShCommand(script: string, args: string[] = [], first = ''): string {
   const body = `set -- ${args.map(shq).join(' ')}\n${REMOTE_ENV_LINES}\n${script}`

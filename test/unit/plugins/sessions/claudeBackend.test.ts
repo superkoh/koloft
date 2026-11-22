@@ -175,13 +175,13 @@ function machineBackend(): {
   const waits: (() => boolean)[] = []
   let release = (): void => {}
   const held = new Promise<void>((r) => (release = r))
-  backend.agentReply = async (tabId, _raw, stillWaiting, refusal) => {
+  backend.agentReply = async (tabId, _raw, stillWaiting) => {
     answeredFor.push(tabId)
     if (stillWaiting) {
       waits.push(stillWaiting)
       await held
     }
-    return refusal ? refused(refusal) : answered(`for ${tabId}`)
+    return answered(`for ${tabId}`)
   }
   backend.watchRemoteHookMirrors()
   const mirrorDir = mirrorHookDir(userData, 'devbox')
@@ -204,19 +204,18 @@ function machineBackend(): {
 }
 
 const A_FEW_MIRROR_PULLS_MS = 1500
-const request = (tabId: string, tmux: string): unknown => ({
+const request = (
+  tabId: string,
+  tmux: string,
+  pass: string | null = passOf(tabId)
+): unknown => ({
   tabId,
   tmux,
-  pass: passOf(tabId),
+  pass,
   argv: ['help'],
   cwd: '/'
 })
-const keyless = (tabId: string, tmux: string): unknown => ({
-  tabId,
-  tmux,
-  argv: ['help'],
-  cwd: '/'
-})
+const keyless = (tabId: string, tmux: string): unknown => request(tabId, tmux, null)
 
 describe('ClaudeBackend: koloft requests from a session on a remote machine', () => {
   // PLATFORM§34
@@ -302,7 +301,7 @@ describe('ClaudeBackend: koloft requests from a session on a remote machine', ()
     m.drop('req-r2.json', request('pty-c', 'k-sc'))
     m.drop('req-r3.json', request('pty-gone', 'k-gone'))
     m.drop('req-r4.json', request('pty-b', 'k-sa'))
-    m.drop('req-r5.json', { ...(request('pty-b', '') as object), pass: passOf('pty-a') })
+    m.drop('req-r5.json', request('pty-b', '', passOf('pty-a')))
     await vi.waitFor(() => expect(m.sent).toHaveLength(2), { timeout: 5000 })
     await new Promise((r) => setTimeout(r, A_FEW_MIRROR_PULLS_MS))
 
@@ -312,9 +311,9 @@ describe('ClaudeBackend: koloft requests from a session on a remote machine', ()
     })
   })
 
-  it('a request with no pass, as an older Koloft’s koloft sends, is answered only for a session that was already running before Koloft gave tabs a pass, found by its tmux session before its tab id; for any other tab of its own it is refused', async () => {
+  it('a request with no pass, as an older Koloft’s koloft sends, is answered only for a session that was already running before Koloft gave tabs a pass, found by its tmux session before its tab id, and only until that tab starts a session of its own; for any other tab of its own it is refused', async () => {
     const m = machineBackend()
-    markStartedBeforeTabPasses('pty-a')
+    markStartedBeforeTabPasses('pty-a', true)
     m.drop('req-r13.json', keyless('pty-b', 'k-sa'))
     m.drop('req-r14.json', keyless('pty-b', 'k-sb'))
     m.drop('req-r15.json', keyless('pty-gone', 'k-gone'))
@@ -325,6 +324,11 @@ describe('ClaudeBackend: koloft requests from a session on a remote machine', ()
       r13: replyJson(answered('for pty-a')),
       r14: replyJson(refused(NOT_ITS_PASS))
     })
+
+    markStartedBeforeTabPasses('pty-a', false)
+    m.drop('req-r16.json', keyless('pty-a', 'k-sa'))
+    await vi.waitFor(() => expect(m.sent).toHaveLength(3), { timeout: 5000 })
+    expect(m.sent[2]).toEqual(['devbox', 'r16', replyJson(refused(NOT_ITS_PASS))])
   })
 
   // ADR-0039

@@ -220,19 +220,7 @@ describe('koloft command in a Claude session on a remote machine', () => {
     fs.writeFileSync(path.join(shimDir, 'tmux'), '#!/bin/sh\necho k-sess1\n', { mode: 0o755 })
     fs.mkdirSync(hookDir, { recursive: true })
     const raws: unknown[] = []
-    watcher = watchAndSweepJsonDrops(
-      hookDir,
-      oncePerName((name) => {
-        const id = REQUEST_NAME.exec(name)?.[1]
-        return id
-          ? (raw): void => {
-              raws.push(raw)
-              fs.writeFileSync(path.join(hookDir, `res-${id}.json`), replyJson(answered('hi')))
-              fs.rmSync(path.join(hookDir, name))
-            }
-          : null
-      })
-    )
+    answerEveryRequest(hookDir, raws)
     const r = await run(remoteShim, ['echo', 'hi'], {
       HOME: base,
       PATH: `${shimDir}:/usr/bin:/bin`,

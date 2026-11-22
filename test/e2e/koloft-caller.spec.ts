@@ -11,6 +11,7 @@ import {
   type E2EEnv
 } from './helpers/env'
 import {
+  agentShell,
   agyConversationOnceFirstTurnEnded,
   butlerSessionOnDisk,
   centerTerm,
@@ -29,10 +30,10 @@ import {
   addRemoteWorkspace,
   killFakeRemote,
   launchWithRemote,
-  sshCommands,
-  stateDir
+  stateDir,
+  tabScriptAttaches
 } from './helpers/remote'
-import { installOnTheMachine } from './helpers/remoteTab'
+import { installOnTheMachine, koloftInSession } from './helpers/remoteTab'
 import { NOT_ITS_PASS } from '../../src/main/agentRequests'
 import type { BackendId, SessionInfo } from '../../src/shared/types'
 
@@ -76,23 +77,13 @@ async function newestTabBeside(page: Page, known: string[]): Promise<string> {
   return tab!
 }
 
-async function runInTab(page: Page, tabId: string, line: string, done: RegExp): Promise<string> {
-  const before = ((await terminalText(page, tabId)).match(new RegExp(done, 'g')) ?? []).length
-  await page.evaluate(([t, l]) => window.api.terminal.write(t, l + '\r'), [tabId, line])
-  await expect
-    .poll(
-      async () => ((await terminalText(page, tabId)).match(new RegExp(done, 'g')) ?? []).length,
-      {
-        timeout: KOLOFT_ON_THE_MACHINE_ANSWERS_MS
-      }
-    )
-    .toBe(before + 1)
-  const text = await terminalText(page, tabId)
-  return text.slice(text.lastIndexOf(line.slice(0, 20)))
+async function koloftSays(page: Page, tabId: string, args: string): Promise<string> {
+  await koloftInSession(page, tabId, args)
+  return terminalText(page, tabId)
 }
 
-const SH_DONE = /\[fake-claude\] sh exit=\d+/g
-const KOLOFT_DONE = /\[fake-(?:claude|codex|agy)\] koloft exit=\d+/g
+const shellOf = (page: Page, tabId: string): ((command: string) => Promise<string>) =>
+  agentShell(page, tabId, KOLOFT_ON_THE_MACHINE_ANSWERS_MS)
 
 function refusedAsNotItsPass(said: string): void {
   expect(squeezed(said)).toContain(squeezed(NOT_ITS_PASS))
@@ -124,6 +115,15 @@ async function connectedButler(
   return { app, page }
 }
 
+async function attachedAgain(page: Page, env: E2EEnv): Promise<void> {
+  await expect
+    .poll(() => tabScriptAttaches(env), { timeout: ATTACHED_AGAIN_AFTER_A_RESTART_MS })
+    .toBeGreaterThanOrEqual(1)
+  await expect(wsRows(page, REMOTE_WS_NAME).first()).toHaveClass(/\bst-waiting\b/, {
+    timeout: ATTACHED_AGAIN_AFTER_A_RESTART_MS
+  })
+}
+
 const posted = (fake: FakeDiscord): string[] =>
   fake.posted.filter((p) => p.channelId === CHANNEL).map((p) => p.content)
 
@@ -138,15 +138,11 @@ test.describe('a koloft command counts as the session it really comes from', () 
       const butler = await butlerTab(page, env)
       await startSessionIn(page, 'ws-a')
       const plain = await newestTabBeside(page, [butler])
-      const own = await runInTab(page, plain, '/koloft discord send -- own words', KOLOFT_DONE)
+      const own = await koloftSays(page, plain, 'discord send -- own words')
       expect(squeezed(own)).toContain(squeezed('only the butler bound to a Discord channel'))
-      const forged = await runInTab(
-        page,
-        plain,
-        `/sh KOLOFT_TAB_ID=${butler} koloft discord send -- forged words`,
-        SH_DONE
+      refusedAsNotItsPass(
+        await shellOf(page, plain)(`KOLOFT_TAB_ID=${butler} koloft discord send -- forged words`)
       )
-      refusedAsNotItsPass(forged)
       expect(posted(fake)).not.toContain('forged words')
     } finally {
       await quitAndClose(app)
@@ -166,13 +162,9 @@ test.describe('a koloft command counts as the session it really comes from', () 
       const shim = await folderShimOf(app, 'codex-open')
       await startSessionIn(page, 'ws-a', { method: 'Claude' })
       const plain = await newestTabBeside(page, [butler])
-      const forged = await runInTab(
-        page,
-        plain,
-        `/sh ${shim} discord send -- forged into its folder`,
-        SH_DONE
+      refusedAsNotItsPass(
+        await shellOf(page, plain)(`${shim} discord send -- forged into its folder`)
       )
-      refusedAsNotItsPass(forged)
       expect(posted(fake)).not.toContain('forged into its folder')
     } finally {
       await quitAndClose(app)
@@ -196,11 +188,10 @@ test.describe('a koloft command counts as the session it really comes from', () 
       await agyConversationOnceFirstTurnEnded(page)
       const agy = await newestTabBeside(page, [])
       const shim = await folderShimOf(app, 'agy-open')
-      const own = await runInTab(page, agy, '/koloft session list', KOLOFT_DONE)
-      expect(own).toMatch(/\(you\) · Antigravity/)
+      expect(await koloftSays(page, agy, 'session list')).toMatch(/\(you\) · Antigravity/)
       await startSessionIn(page, 'ws-a', { method: 'Claude' })
       const plain = await newestTabBeside(page, [agy])
-      refusedAsNotItsPass(await runInTab(page, plain, `/sh ${shim} session list`, SH_DONE))
+      refusedAsNotItsPass(await shellOf(page, plain)(`${shim} session list`))
     } finally {
       await quitAndClose(app)
     }
@@ -228,15 +219,15 @@ test.describe('a koloft command counts as the session it really comes from', () 
           await agent.bound?.(page)
         }
         const caller = await newestTabBeside(page, [other])
-        const own = await runInTab(page, caller, '/koloft session list', KOLOFT_DONE)
+        const own = await koloftSays(page, caller, 'session list')
         expect((own.match(/\(you\)/g) ?? []).length).toBe(1)
-        const forged = await runInTab(
-          page,
-          caller,
-          `/koloft help >/dev/null; env -u TMUX KOLOFT_TAB_ID=${other} koloft session list`,
-          KOLOFT_DONE
+        refusedAsNotItsPass(
+          await koloftSays(
+            page,
+            caller,
+            `help >/dev/null; env -u TMUX KOLOFT_TAB_ID=${other} koloft session list`
+          )
         )
-        refusedAsNotItsPass(forged)
       } finally {
         await quitAndClose(app)
       }
@@ -261,24 +252,11 @@ test.describe('a koloft command counts as the session it really comes from', () 
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      await expect
-        .poll(() => sshCommands(env).filter((c) => /tabs\/[^"]+\.sh"?\s+attach/.test(c)).length, {
-          timeout: ATTACHED_AGAIN_AFTER_A_RESTART_MS
-        })
-        .toBeGreaterThanOrEqual(1)
+      await attachedAgain(page, env)
       const tab = await newestTabBeside(page, [launchTab])
-      await expect(wsRows(page, REMOTE_WS_NAME).first()).toHaveClass(/\bst-waiting\b/, {
-        timeout: 60_000
-      })
-      const own = await runInTab(page, tab, '/koloft session list', KOLOFT_DONE)
-      expect(own).toMatch(/\(you\) · Claude/)
+      expect(await koloftSays(page, tab, 'session list')).toMatch(/\(you\) · Claude/)
       refusedAsNotItsPass(
-        await runInTab(
-          page,
-          tab,
-          `/sh env -u TMUX KOLOFT_TAB_ID=${tab} koloft session list`,
-          SH_DONE
-        )
+        await shellOf(page, tab)(`env -u TMUX KOLOFT_TAB_ID=${tab} koloft session list`)
       )
     } finally {
       await quitAndClose(app)
@@ -305,32 +283,16 @@ test.describe('a koloft command counts as the session it really comes from', () 
     try {
       const page = await app.firstWindow()
       await waitBooted(page)
-      await expect
-        .poll(() => sshCommands(env).filter((c) => /tabs\/[^"]+\.sh"?\s+attach/.test(c)).length, {
-          timeout: ATTACHED_AGAIN_AFTER_A_RESTART_MS
-        })
-        .toBeGreaterThanOrEqual(1)
+      await attachedAgain(page, env)
       const old = await newestTabBeside(page, [launchTab])
-      await expect(wsRows(page, REMOTE_WS_NAME).first()).toHaveClass(/\bst-waiting\b/, {
-        timeout: 60_000
-      })
-      const oldOwn = await runInTab(
-        page,
-        old,
-        '/sh env -u KOLOFT_TAB_PASS koloft session list',
-        SH_DONE
+      expect(await shellOf(page, old)('env -u KOLOFT_TAB_PASS koloft session list')).toMatch(
+        /\(you\) · Claude/
       )
-      expect(oldOwn).toMatch(/\(you\) · Claude/)
 
       await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
       const fresh = await newestTabBeside(page, [launchTab, old])
       refusedAsNotItsPass(
-        await runInTab(
-          page,
-          fresh,
-          '/sh env -u TMUX -u KOLOFT_TAB_PASS koloft session list',
-          SH_DONE
-        )
+        await shellOf(page, fresh)('env -u TMUX -u KOLOFT_TAB_PASS koloft session list')
       )
     } finally {
       await quitAndClose(app)

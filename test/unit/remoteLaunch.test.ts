@@ -352,8 +352,10 @@ describe('U-LINE-*: the launch line', () => {
 })
 
 describe('the Workbench shell of a remote session', () => {
-  const shellLine = (r: Remote): string =>
-    utilShellLine({
+  const shellLine = (r: Remote): string => {
+    const tabDir = path.join(r.dir, 'tab-W')
+    writeTabPassFile(tabDir, 'W')
+    return utilShellLine({
       host: 'dev.box',
       sshOptions: ['-o', 'ControlPath=/tmp/koloft-1/%C'],
       machine: buildMachinePackage(path.join(r.dir, 'pkg'), {
@@ -362,8 +364,9 @@ describe('the Workbench shell of a remote session', () => {
       }),
       tabId: 'W',
       dir: "/srv/it's here",
-      tabDir: (writeTabPassFile(path.join(r.dir, 'tab-W'), 'W'), path.join(r.dir, 'tab-W'))
+      tabDir
     })
+  }
 
   it('opens with two ssh calls, one taking its pass over and one for the shell, once the machine package is there, even where the login shell prints a greeting; on a machine without it, the package goes over once and the shell opens after', () => {
     const r = remote()
@@ -377,6 +380,21 @@ describe('the Workbench shell of a remote session', () => {
     expect(again.status).toBe(0)
     expect(again.stdout).toContain("shell up in /srv/it's here for W")
     expect(r.calls()).toBe(6)
+  })
+
+  it('sending a tab removes a pass file a failed launch left on the machine a while ago, and keeps one just sent', () => {
+    const r = remote()
+    typeLine(r, shellLine(r))
+    const tabs = path.join(r.machineHome, '.koloft', 'tabs')
+    const left = path.join(tabs, 'failed.pass')
+    const fresh = path.join(tabs, 'starting.pass')
+    fs.writeFileSync(left, 'KOLOFT_TAB_PASS=x\n')
+    fs.writeFileSync(fresh, 'KOLOFT_TAB_PASS=y\n')
+    const aWhileAgo = new Date(Date.now() - 5 * 60_000)
+    fs.utimesSync(left, aWhileAgo, aWhileAgo)
+    typeLine(r, shellLine(r))
+    expect(fs.existsSync(left)).toBe(false)
+    expect(fs.existsSync(fresh)).toBe(true)
   })
 
   it("hands the machine the session tab's id this Mac gave the shell, so a server started there still counts as the session's after a Koloft restart", () => {
@@ -457,6 +475,7 @@ conf=""; prev=""; last=""
 for a in "$@"; do [ "$prev" = -f ] && conf="$a"; last="$a"; prev="$a"; done
 case " $* " in *" capture-pane "*) printf 'the last screen\\n\\n\\n'; exit 0;; esac
 case " $* " in *" source-file "*) cat "$last" >> ${JSON.stringify(path.join(logs, 'sourced'))}; exit 0;; esac
+case " $* " in *" show-environment "*) [ -f ${JSON.stringify(path.join(logs, 'keyed'))} ]; exit $?;; esac
 case " $* " in *" new-session "*) ;; *) exit 0;; esac
 if grep -q 'default-shell /bin/sh' "$conf"; then sh -c "$last"; else "$SHELL" -c "$last"; fi
 exit 0
@@ -890,7 +909,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
     const res = b.run('attach')
     expect(res.status).toBe(0)
     expect(b.tmux()).toEqual([
-      ...['-L', 'koloft', 'source-file', expect.stringMatching(/\/T\.keys$/)],
+      ...['-L', 'koloft', 'show-environment', '-t', 'k-sess1', 'KOLOFT_TAB_PASS'],
       ...['-L', 'koloft', 'set', '-gq', 'set-titles', 'on', ';'],
       ...['set', '-gq', 'set-titles-string', '#{pane_title}', ';'],
       ...['set', '-gq', 'allow-passthrough', 'on'],
@@ -899,25 +918,39 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(b.ensured()).toBe(false)
   })
 
-  it("a start and a reconnect each put the tab's id and KOLOFT_TAB_PASS into the tmux session's own environment through a file that is gone afterwards, the start into the agent's too; no file with the pass stays in the tab's folder", () => {
-    const sourced = (b: Box): string => fs.readFileSync(path.join(b.logs, 'sourced'), 'utf8')
-    const keyed = `set-environment -t k-sess1 KOLOFT_TAB_ID T\nset-environment -t k-sess1 KOLOFT_TAB_PASS ${passOf('T')}\n`
+  const sourced = (b: Box): string => fs.readFileSync(path.join(b.logs, 'sourced'), 'utf8')
+  const passFilesLeft = (b: Box): string[] =>
+    fs.readdirSync(b.tabs).filter((n) => /\.(pass|keys)$/.test(n))
+  const keyedAs = (id: string): string =>
+    `set-environment -t k-sess1 KOLOFT_TAB_ID ${id}\nset-environment -t k-sess1 KOLOFT_TAB_PASS ${passOf(id)}\n`
+  const holdingAPass = (b: Box): void => fs.writeFileSync(path.join(b.logs, 'keyed'), '')
+
+  it("a start puts the tab's id and KOLOFT_TAB_PASS into the agent's environment and its new tmux session's, through a file that is gone afterwards; a start or reconnect that lands on a running tmux session holding a pass hands it the new ones the same way", () => {
     const started = box(spec())
     expect(started.run().status).toBe(0)
-    expect(sourced(started)).toBe(keyed)
+    expect(sourced(started)).toBe(keyedAs('T'))
     expect(started.env().KOLOFT_TAB_PASS).toBe(passOf('T'))
-    expect(fs.readdirSync(started.tabs).filter((n) => /\.(pass|keys)$/.test(n))).toEqual([])
-    const attached = box(spec())
-    expect(attached.run('attach').status).toBe(0)
-    expect(sourced(attached)).toBe(keyed)
-    expect(fs.readdirSync(attached.tabs).filter((n) => /\.(pass|keys)$/.test(n))).toEqual([])
+    expect(passFilesLeft(started)).toEqual([])
+    for (const mode of ['attach', 'start']) {
+      const running = box(spec())
+      holdingAPass(running)
+      expect(running.run(mode).status).toBe(0)
+      expect(sourced(running)).toBe(keyedAs('T'))
+      expect(passFilesLeft(running)).toEqual([])
+    }
   })
 
-  it('a reconnect to a session started before Koloft gave tabs a pass hands it none, so it is still that old session the next time Koloft asks', () => {
-    const b = box({ ...spec(), startedBeforeTabPasses: true })
+  it('a reconnect to a running tmux session that holds no pass, as one an older Koloft started, gives it none, so it is still that old session the next time Koloft asks', () => {
+    const b = box(spec())
     expect(b.run('attach').status).toBe(0)
-    expect(b.tmux()).not.toContain('source-file')
     expect(fs.existsSync(path.join(b.logs, 'sourced'))).toBe(false)
+    expect(passFilesLeft(b)).toEqual([])
+  })
+
+  it('a start that stops before tmux, as when its tool cannot be set up, leaves no pass file on the machine', () => {
+    const b = box(spec(), { ensureExit: 7 })
+    expect(b.run().status).toBe(7)
+    expect(passFilesLeft(b)).toEqual([])
   })
 
   it("on a machine whose ssh gives the command no terminal, a start and a reconnect each run inside a stand-in terminal of the tab's size, where tmux can open", () => {

@@ -1065,13 +1065,13 @@ exit ${CALLER_GONE_EXIT}`,
     return this.deps.claude.loginPath().catch(() => '')
   }
 
-  // PLATFORM§35 ADR-0044
   // ADR-0052
   private async startedBeforeTabPasses(tmuxName: string): Promise<boolean> {
     const r = await this.deps.run(startedBeforeTabPassesCmd(tmuxName)).catch(() => undefined)
     return r?.code === STARTED_BEFORE_TAB_PASSES_EXIT
   }
 
+  // PLATFORM§35 ADR-0044
   private async attachOrStart(sid: string): Promise<'start' | 'attach'> {
     await this.deps.claude.firstHeartbeatDone()
     while (this.kills.size && this.deps.claude.alive().has(sid))
@@ -1168,7 +1168,7 @@ exit ${CALLER_GONE_EXIT}`,
     const loginPath = attach ? '' : await asked
     const tmuxName = sid ? tmuxSessionName(sid) : `m-${spec.tabId}${NO_TAB_NAME_IS_ANOTHERS_PREFIX}`
     const keyless = attach && (await this.startedBeforeTabPasses(tmuxName))
-    if (keyless) markStartedBeforeTabPasses(spec.tabId)
+    markStartedBeforeTabPasses(spec.tabId, keyless)
     const pkg = d.machinePackage()
     const tabDir = tabPackageDir(d.userData, spec.tabId)
     return {
@@ -1187,7 +1187,6 @@ exit ${CALLER_GONE_EXIT}`,
           env: spec.env,
           portOffset: spec.portOffset,
           loginPath,
-          startedBeforeTabPasses: keyless,
           program: attach ? { ...spec.program, files: {} } : spec.program
         })
         return this.tabLaunchLine(pkg, tabDir, spec.tabId, attach ? 'attach' : 'start')
@@ -1232,7 +1231,7 @@ exit ${CALLER_GONE_EXIT}`,
       shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
       launchCommand: (tabId) => {
         const tabDir = tabPackageDir(d.userData, tabId)
-        if (keyless) markStartedBeforeTabPasses(tabId)
+        markStartedBeforeTabPasses(tabId, keyless)
         writeTabPackage(
           tabDir,
           claudeTabSpec(
@@ -1246,8 +1245,7 @@ exit ${CALLER_GONE_EXIT}`,
               env: account?.env,
               portOffset: worktree ? portOffset(worktree) : undefined,
               ownerWords: spec.ownerWords,
-              loginPath,
-              startedBeforeTabPasses: keyless
+              loginPath
             },
             {
               settings: d.hookSettings(tabId, machineDir, agentTools),

@@ -11,14 +11,15 @@ export function passOf(tabId: string): string {
 }
 
 export function holdsPass(tabId: string, pass: unknown): boolean {
-  if (typeof pass !== 'string' || !tabId) return false
+  if (typeof pass !== 'string') return false
   const want = Buffer.from(passOf(tabId))
   const got = Buffer.from(pass)
   return got.length === want.length && crypto.timingSafeEqual(got, want)
 }
 
-export function markStartedBeforeTabPasses(tabId: string): void {
-  keylessTabs.add(tabId)
+export function markStartedBeforeTabPasses(tabId: string, started: boolean): void {
+  if (started) keylessTabs.add(tabId)
+  else keylessTabs.delete(tabId)
 }
 
 export function isStartedBeforeTabPasses(tabId: string): boolean {

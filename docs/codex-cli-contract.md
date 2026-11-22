@@ -4242,6 +4242,11 @@ Koloft dependents: `asksTheTerminal` in `src/main/flowControl.ts`.
   `KOLOFT_TAB_PASS` without printing it left the value in no file under `CODEX_HOME` or the
   folder (`grep -rl`); one that printed it put it in the rollout `.jsonl` and in
   `thread_history_1.sqlite-wal`.
+- **An owner's `shell_environment_policy.inherit = "core"` drops them all, `ZDOTDIR` and
+  `BASH_ENV` too.** With `-c shell_environment_policy.inherit=core` the same command saw no
+  `KOLOFT_TAB_PASS`, no `KOLOFT_TAB_ID`, no `ZDOTDIR` and no `BASH_ENV`, so the shell never
+  reads the files that put Koloft's shim folder on `PATH` (§12) and `koloft` is not found
+  there at all.
 - Measured 2026-11-21: codex-cli 0.169.0 (Homebrew cask, macOS 27.2), `codex exec -s
   read-only` in a temp `CODEX_HOME` against a fake Responses API (`env_key` provider) that
   answered with one `exec_command`. Inferred, not checked: that the app-server Koloft runs

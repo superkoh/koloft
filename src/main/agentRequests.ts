@@ -107,10 +107,9 @@ export class AgentRequests {
   replyFor(
     tabId: string | undefined,
     raw: unknown,
-    stillWaiting?: () => boolean,
-    refusal?: string
+    stillWaiting?: () => boolean
   ): Promise<AgentReply> {
-    return this.replyTo(parseAgentRequest(raw), tabId, stillWaiting, refusal)
+    return this.replyTo(parseAgentRequest(raw), tabId, stillWaiting)
   }
 
   private async settle(
@@ -129,7 +128,7 @@ export class AgentRequests {
     )
     const pid = req?.pid
     const stillWaiting = pid === undefined ? undefined : () => this.deps.alive(pid)
-    const reply = await this.replyTo(req, tabId, stillWaiting, refusal)
+    const reply = req && refusal ? refused(refusal) : await this.replyTo(req, tabId, stillWaiting)
     if (stillWaiting && !stillWaiting()) return
     try {
       writeWholeBeforeVisible(path.join(dir, `res-${id}.json`), replyJson(reply))
@@ -139,11 +138,9 @@ export class AgentRequests {
   private async replyTo(
     req: AgentRequest | null,
     tabId: string | undefined,
-    stillWaiting?: () => boolean,
-    refusal?: string
+    stillWaiting?: () => boolean
   ): Promise<AgentReply> {
     if (!req) return refused(UNREADABLE)
-    if (refusal) return refused(refusal)
     if (!tabId) return refused(UNKNOWN_TAB)
     if (!this.deps.enabled(tabId)) return refused(AGENT_TOOLS_OFF)
     const session = this.deps.session(tabId)
