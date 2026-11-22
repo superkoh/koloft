@@ -22,7 +22,7 @@ const DIRECTIVES = [
   /^@vitest-environment \S+$/,
   /^\/ <reference [^>]+\/>$/
 ]
-const RULE = 'Code comments are not allowed — see "Comments" in CLAUDE.md.'
+const RULE = 'Code comments are not allowed — see "Comments" in AGENTS.md.'
 
 const show = (rel, c) => `  ${rel}:${c.line}  ${c.text.split('\n')[0].slice(0, 100)}`
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), 'utf8')
