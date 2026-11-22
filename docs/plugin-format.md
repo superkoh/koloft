@@ -933,8 +933,9 @@ export const start: PluginStart<
   the start's own commands, moment listeners and channels, and returns it. Until it is
   built those read it through one getter that answers `null` (a `MadeLater`, from
   `src/core/moment.ts`) and answer as the app did before the part existed. Scheduled tasks' `buildRunner` builds its
-  `CronRunner` this way, Sessions core's `buildAsks`, `buildInstructionAsks` and
-  `buildHandOver` its `SessionAsks`, `InstructionAsks` and `HandOver`, Passwords and sign-in's `buildAsks` its `SecretAsks`, and the
+  `CronRunner` this way, Sessions core's `buildAsks` and `buildInstructionAsks` its
+  `SessionAsks` and `InstructionAsks` (its `buildHandOver` builds a `HandOver` and only
+  hands it back, as nothing in the start reads it), Passwords and sign-in's `buildAsks` its `SecretAsks`, and the
   Butler's `buildButler` and `buildDigest` its `Butler` and `AwayDigest`, and Discord's ten
   its `DiscordBinding`, `DiscordLink`, `Rooms`, `OldThreads`, `ButlerTyping`, `AskButtons`,
   `SecretCards`, `InstructionCards`, `Interactions` and `DiscordRelay`, each called on a
