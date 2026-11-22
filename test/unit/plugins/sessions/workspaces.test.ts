@@ -1677,6 +1677,19 @@ describe('remote workspace: pending launches', () => {
     })
   })
 
+  it('knows the workspace a tab was launched in from the moment it starts, before any list is read, on the machine it started on, worktree folder included, and forgets it once the tab ends', () => {
+    const sameDirOnDevbox = `ssh://devbox${repo}`
+    layout.workspaces = [{ path: repo }, { path: sameDirOnDevbox }]
+    mgr = remoteMgr()
+    mgr.launchStarted('tab-local', path.join(repo, '.claude', 'worktrees', 'nightly'))
+    mgr.launchStarted('tab-remote', repo, undefined, 'devbox')
+
+    expect(mgr.workspaceLaunchedIn('tab-local')).toBe(repo)
+    expect(mgr.workspaceLaunchedIn('tab-remote')).toBe(sameDirOnDevbox)
+    mgr.launchEnded('tab-local')
+    expect(mgr.workspaceLaunchedIn('tab-local')).toBeUndefined()
+  })
+
   it('a launch whose session id was picked before it ran shows only its Starting… row while the machine already reports that id running with a mirrored transcript, and only the session’s row once its tab binds', async () => {
     layout.workspaces = [{ path: RKEY }]
     const alive = new Set<string>()
