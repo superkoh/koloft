@@ -16,10 +16,12 @@ import { fakeCodexLog, startCodex } from './helpers/codex'
 import {
   agyStatusLineDrawnAgainAfterItsFolderIsRemoved,
   claudeSettingsNameAnotherEffort,
-  claudeStatusLineDrawnAgainAfterItsFolderIsRemoved,
-  COLD_BUNDLE_FIRST_RENDER_TIMEOUT_MS
+  claudeStatusLineDrawnAgainAfterItsFolderIsRemoved
 } from './helpers/statusline'
 import { CODEX_ASKS_AND_WAITS } from '../../src/main/codexLaunchConfig'
+
+const COLD_BUNDLE_FIRST_RENDER_TIMEOUT_MS = 30_000
+const LAUNCH_WORKTREE_AND_TWO_COLD_RENDERS_MS = 180_000
 
 async function worktreeSessionIn(
   page: Page,
@@ -193,6 +195,7 @@ test.describe('built-in statusline', () => {
   test('a Claude worktree session whose folder is removed while it runs still gets its status line drawn on the next prompt', async ({
     env
   }) => {
+    test.setTimeout(LAUNCH_WORKTREE_AND_TWO_COLD_RENDERS_MS)
     seedSettings(env, { hintsOff: true })
     gitInit(env.workspaces.a)
     gitCommitAll(env.workspaces.a)
@@ -207,6 +210,7 @@ test.describe('built-in statusline', () => {
         path.join(env.home, 'fake-claude-statusline.out'),
         path.join(env.workspaces.a, '.claude', 'worktrees', 'gone-tree')
       )
+      expect(await waitForCalls(env, 1)).toHaveLength(1)
     } finally {
       await quitAndClose(app)
     }
@@ -216,6 +220,7 @@ test.describe('built-in statusline', () => {
   test('an Antigravity worktree session shows agy’s own effort on its status line, not Claude’s, and keeps drawing it with no error once its folder is removed while it runs', async ({
     env
   }) => {
+    test.setTimeout(LAUNCH_WORKTREE_AND_TWO_COLD_RENDERS_MS)
     installAgy(env)
     trustInAgy(env, env.workspaces.a)
     seedSettings(env, { hintsOff: true })

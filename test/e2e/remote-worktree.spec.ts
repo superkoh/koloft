@@ -271,8 +271,7 @@ test.describe('worktree sessions in a remote workspace, driven by the machine’
         })
         .toContain('New worktree session')
       const dlg = await openWorktreeSession(page, REMOTE_WS_NAME)
-      await dlg.getByRole('textbox').click()
-      await page.keyboard.type('gone-tree')
+      await dlg.getByRole('textbox').fill('gone-tree')
       await page.keyboard.press('Enter')
       await expect(dlg).toHaveCount(0)
       await waitForCalls(env, 1, 60_000)
@@ -281,6 +280,7 @@ test.describe('worktree sessions in a remote workspace, driven by the machine’
         path.join(machineHome(env), 'fake-claude-statusline.out'),
         path.join(remoteDir(env), '.claude', 'worktrees', 'gone-tree')
       )
+      expect(await waitForCalls(env, 1)).toHaveLength(1)
     } finally {
       await quitAndClose(app)
     }

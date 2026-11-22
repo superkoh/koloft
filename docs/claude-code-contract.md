@@ -1287,11 +1287,12 @@ never wrote a transcript.
   is read from its release notes ("Fixed a custom status line keeping its old width …
   after a terminal resize").
 - **The statusLine command runs in the session's folder, and in `$HOME` once that folder
-  is gone.** 2026-11-22, CC 2.1.330 on macOS arm64, a python pty, a fake Messages API,
-  a scratch `HOME`, a status script logging `pwd -P` and its stdin: the startup run sat
-  in the session folder; after the folder was removed and a prompt sent, CC still ran
-  the script, now in `$HOME`, and the JSON's `cwd` and `workspace.current_dir` /
-  `project_dir` still named the removed folder. One run; Linux not run.
+  is gone.** 2026-11-22, CC 2.1.330 on macOS arm64 and on Linux arm64 (the npm
+  `claude-code-linux-arm64` build in the e2e sshd image, Docker `--network none`), a
+  python pty, a fake Messages API, a scratch `HOME`, a status script logging `pwd -P` and
+  its stdin: the startup run sat in the session folder; after the folder was removed and
+  a prompt sent, CC still ran the script, now in `$HOME`, and the JSON's `cwd` and
+  `workspace.current_dir` / `project_dir` still named the removed folder. One run each.
 - statusLine (like hooks) only runs after the workspace trust dialog is accepted, and
   `disableAllHooks: true` turns off both statusLine and hooks.
 - CC also supports `subagentStatusLine` (the key is in the 2.1.281 binary, `strings`,

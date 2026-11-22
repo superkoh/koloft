@@ -2091,7 +2091,7 @@ function handleLine(line) {
     }
   ])
   fireHook('stop', { hook_event_name: 'Stop' })
-  renderStatuslineWithoutBlockingSessionStart()
+  if (!fs.existsSync(cwd)) renderStatuslineWithoutBlockingSessionStart()
   process.stdout.write(`[fake-claude] handled: ${text}\r\n> `)
 }
 // CC§12
