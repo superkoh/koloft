@@ -34,7 +34,7 @@ what the code actually does, not what it promises.
 | In-app browser | `src/main/browserSecurity.ts`, `src/plugins/workbench/main/pageRules.ts`, `src/plugins/workbench/main/sitePermissions.ts`, `src/plugins/workbench/main/extensionManager.ts` | Page permissions, navigation rules, guest `<webview>` attach checks, Chrome extension loading. |
 | Agent browser control | `src/plugins/browser-control/main/cdpRelay.ts` | A Chrome DevTools endpoint on `127.0.0.1`, on an OS-assigned port, behind a 16-byte random path, one per local Claude session. Settings ▸ Plugins ▸ Browser control turns it off. |
 | Remote workspaces (alpha) | `src/main/remote/` | `ssh` and `rsync` to a machine you name. Credentials go over as a `<tab>.env` file written mode `0600`, which the remote start line sources once and deletes immediately. It does touch the remote disk for that moment. |
-| Scheduled jobs | `src/main/cronRunner.ts` | Starts sessions on a timer. It never types into a session. For Claude the first message travels as an environment variable, never on the shell command line; for Codex it is the last argument of `codex`, so it shows in the process list. |
+| Scheduled jobs | `src/plugins/scheduled-tasks/main/cronRunner.ts` | Starts sessions on a timer. It never types into a session. For Claude the first message travels as an environment variable, never on the shell command line; for Codex it is the last argument of `codex`, so it shows in the process list. |
 
 ## Known, and accepted
 

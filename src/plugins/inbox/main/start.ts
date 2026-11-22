@@ -1,4 +1,4 @@
-import type { PluginStart } from '@core/pluginStart'
+import type { PluginStart, StopOnQuit } from '@core/pluginStart'
 import { pushChanged, registerChannels } from './channels'
 import { INBOX_SENDER, Inbox, type InboxHost } from './inbox'
 import { flushInbox, loadInbox, saveInbox } from './inboxFile'
@@ -30,7 +30,7 @@ export interface InboxStartDeps {
 
 export const start: PluginStart<
   InboxStartDeps,
-  { koloftInbox: KoloftInbox; flushInbox: typeof flushInbox }
+  { koloftInbox: KoloftInbox; flushInbox: StopOnQuit }
 > = ({ commands, moments, ipc }, d) => {
   const pushInbox = pushChanged(ipc)
   let pushQueued = false
