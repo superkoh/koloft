@@ -4249,9 +4249,10 @@ Koloft dependents: `asksTheTerminal` in `src/main/flowControl.ts`.
   there at all.
 - Measured 2026-11-21: codex-cli 0.169.0 (Homebrew cask, macOS 27.2), `codex exec -s
   read-only` in a temp `CODEX_HOME` against a fake Responses API (`env_key` provider) that
-  answered with one `exec_command`. Inferred, not checked: that the app-server Koloft runs
-  hands its commands the same environment, as §10's measurement of `KOLOFT_PORT_OFFSET`
-  through the app-server found for one variable.
+  answered with one `exec_command`. The app-server Koloft runs gets `KOLOFT_TAB_PASS` in the
+  same spawn environment (`sessionEnv`) as `KOLOFT_PORT_OFFSET`, which §10 measured reaching
+  the model's commands through a real app-server; that this one does too is inferred from
+  that, not run.
 
 Koloft dependents: `TAB_PASS_ENV` in `src/main/tabPass.ts`, given to the app-server in
 `src/plugins/sessions/main/codexSessions.ts`.

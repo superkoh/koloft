@@ -177,6 +177,12 @@ if (verb === 'new-session') {
       } catch {}
   }
   process.exit(0)
+} else if (verb === 'list-panes' && rest.includes('-a')) {
+  for (const name of fs.readdirSync(aliveDir)) {
+    const pid = pidOf(name)
+    if (alive(pid)) process.stdout.write(`${pid} ${name}\n`)
+  }
+  process.exit(0)
 } else if (verb === 'list-panes') {
   const pid = pidOf(flagVal('-t').replace(/^=(.*):$/, '$1'))
   if (!alive(pid)) process.exit(1)

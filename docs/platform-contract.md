@@ -4167,9 +4167,11 @@ a `chown`, a `chmod`) write no file, and do not.
   macOS.** `sysctl` `KERN_PROCARGS2` on a child process of the same user returned its
   arguments every time, and its environment for `node` (a marker variable and `HOME` were
   there) but not for `/bin/sleep` or `/bin/zsh`, whose environment part came back empty.
-  `ps -E` showed no environment for any of them, the caller's own shell included. Measured
-  2026-11-21 on macOS 27.2 (Darwin 27.2.0) with a Python `ctypes` probe; that the split
-  follows Apple's own signed binaries is inferred, not checked.
+  `ps -E -ww`, `ps eww` and `ps -axEww` agreed: the marker showed for `node` and not for
+  `sleep`. So one `ps -axEww` lists the environment of every same-user agent process
+  (claude, codex and agy are not part of macOS). Measured 2026-11-21 on macOS 27.2 (Darwin
+  27.2.0) with Python probes; that the split follows Apple's own signed binaries is
+  inferred, not checked.
 - **Linux: always.** As uid 1000 in a Debian container, `/proc/<pid>/environ` of a
   same-user child (`sleep`) held the marker. Measured 2026-11-21 in the
   `koloft-probe-muse-agy` Docker image.

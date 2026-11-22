@@ -61,7 +61,6 @@ if [ -n "${cols}" ] && [ ! -t 0 ]; then
 fi`
 }
 
-// PLATFORM§33 PLATFORM§37
 export const TAB_PASS_FILE_SUFFIX = '.pass'
 
 export const sourceOnceThenRemove = (file: string): string =>
@@ -73,6 +72,7 @@ export const sourceTabPass = (tabId: string): string =>
 export const tmuxHoldsATabPass = (target: string): string =>
   `tmux -L koloft show-environment -t "${target}" ${TAB_PASS_ENV} >/dev/null 2>&1`
 
+// PLATFORM§33 PLATFORM§37
 export function remoteShCommand(script: string, args: string[] = [], first = ''): string {
   const body = `set -- ${args.map(shq).join(' ')}\n${REMOTE_ENV_LINES}\n${script}`
   return `sh -c '${first}eval "$(printf %s "$0" | base64 -d)"' ${Buffer.from(body).toString('base64')}`

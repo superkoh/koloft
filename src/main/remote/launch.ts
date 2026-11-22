@@ -295,6 +295,7 @@ ${program.run}  )
   exit
 fi
 trap 'rm -f "${T}${TAB_PASS_FILE_SUFFIX}"' EXIT
+${sourceTabPass(spec.tabId)}
 ${onATerminalEvenWhenSshGaveNone('$2', '$3', spec.tabId, `sh '${T}.sh' $1`)}
 exited() {
   c=$?; [ -s "${T}.exit" ] && c=$(cat "${T}.exit")
@@ -302,12 +303,13 @@ exited() {
   [ -f "${T}.screen" ] && awk 'NF { if (seen) for (; n; n--) print ""; seen = 1; n = 0; print; next } { n++ }' "${T}.screen"
   rm -f "${T}.env"; exit $c
 }
-[ "$1" = attach ] && { n=${attachTo}; ${passIntoATmuxThatHoldsOne(T, '$n', spec.tabId)}; ${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u attach -d -t "$n"; exited; }
+[ "$1" = attach ] && { n=${attachTo}; ${passIntoATmuxThatHoldsOne(T, '$n', spec.tabId)}; unset ${TAB_PASS_ENV}; ${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u attach -d -t "$n"; exited; }
 ${program.beforeEnsure}sh "$M/ensure.sh"${program.ensureTool ? ` ${program.ensureTool}` : ''} || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
 echo ${shq(spec.banner)}
 rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}" "${T}.exit" "${T}.screen" "${T}.tmux"
 ${program.beforeTmux}${passIntoATmuxThatHoldsOne(T, spec.tmuxName, spec.tabId)}
+[ -n "$${TAB_PASS_ENV}" ] && ( umask 077; printf '${TAB_PASS_ENV}=%s\\n' "$${TAB_PASS_ENV}" > "${T}${TAB_PASS_FILE_SUFFIX}" ); unset ${TAB_PASS_ENV}
 ${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
 exited
 `
@@ -341,17 +343,11 @@ const tabPassIntoTmux = (T: string, target: string, tabId: string): string =>
 
 // ADR-0052
 const passIntoATmuxThatHoldsOne = (T: string, target: string, tabId: string): string =>
-  `if ${tmuxHoldsATabPass(target)}; then ${sourceTabPass(tabId)}; ${tabPassIntoTmux(T, target, tabId)}; fi`
+  `if ${tmuxHoldsATabPass(target)}; then ${tabPassIntoTmux(T, target, tabId)}; fi`
 
-export const STARTED_BEFORE_TAB_PASSES_EXIT = 3
-
-export function startedBeforeTabPassesCmd(tmuxName: string): string {
+export function holdsATabPassCmd(tmuxName: string): string {
   assertSafeNames(tmuxName)
-  return remoteShCommand(
-    `${tmuxHoldsATabPass('$1')} && exit 0\n` +
-      `tmux -L koloft has-session -t "$1" 2>/dev/null && exit ${STARTED_BEFORE_TAB_PASSES_EXIT}\nexit 0`,
-    [tmuxName]
-  )
+  return remoteShCommand(tmuxHoldsATabPass('$1'), [tmuxName])
 }
 
 export interface LaunchLineSpec {
@@ -398,7 +394,7 @@ function pushTabDirBesideMachine(s: MachineTarget & { tabDir: string }): string 
     `COPYFILE_DISABLE=1 tar cf - --no-xattrs -C ${shq(s.tabDir)} . | ssh ${s.sshOptions.join(' ')} ${shq(s.host)} ` +
     `'umask 077; find "$HOME/.koloft/tabs" -name \\*${TAB_PASS_FILE_SUFFIX} -mmin +${PASS_FILES_OF_FAILED_LAUNCHES_GO_AFTER_MIN} -delete 2>/dev/null; ` +
     `test -d "$HOME/.koloft/${s.machine.name}" && mkdir -p "$HOME/.koloft/tabs" ` +
-    `&& tar xf - -C "$HOME/.koloft/tabs" && echo ${TAB_IN}'`
+    `&& tar xmf - -C "$HOME/.koloft/tabs" && echo ${TAB_IN}'`
   )
 }
 

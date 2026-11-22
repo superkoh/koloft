@@ -89,6 +89,7 @@ tabfield="\\"tabId\\":\\"$(jstr "$KOLOFT_TAB_ID")\\",${PASS_FIELD}"
 unwritable="${COULD_NOT_REACH_KOLOFT}"
 ${body(AGENT_SHIM_WAITS_MS)}`
 
+// ADR-0052
 export const REMOTE_AGENT_SHIM = `${HEAD}
 if [ -z "$KOLOFT_TAB_ID" ]; then
   echo "koloft: this works only in a Koloft session." >&2
@@ -98,8 +99,13 @@ dir="${REMOTE_HOOK_DIR}"
 mkdir -p "$dir" 2>/dev/null
 tm=""
 if [ -n "$TMUX" ]; then
-  tm="$(tmux display-message -p -t "$TMUX_PANE" '#S' 2>/dev/null)"
-  for v in KOLOFT_TAB_ID ${TAB_PASS_ENV}; do
+  panes="$(tmux list-panes -a -F '#{pane_pid} #{session_name}' 2>/dev/null)"
+  p=$$
+  while [ -z "$tm" ] && [ "\${p:-0}" -gt 1 ]; do
+    tm="$(printf '%s\\n' "$panes" | awk -v p="$p" '$1 == p { print $2; exit }')"
+    p="$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')"
+  done
+  [ -n "$tm" ] && for v in KOLOFT_TAB_ID ${TAB_PASS_ENV}; do
     kv="$(tmux show-environment -t "$tm" "$v" 2>/dev/null)"
     case "$kv" in "$v="*) export "$kv" ;; esac
   done

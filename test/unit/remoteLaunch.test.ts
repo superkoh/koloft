@@ -195,7 +195,7 @@ describe('U-LINE-*: the launch line', () => {
     expect(r.calls()).toBe(4)
     expect(r.argv(2).at(-1)).toContain(st.pkg.name)
     expect(fs.readFileSync(koloft(r, st.pkg.name, 'run.sh'), 'utf8')).toBe('echo hi\n')
-    expect(r.argv(3).at(-1)).toContain('tar xf - -C "$HOME/.koloft/tabs"')
+    expect(r.argv(3).at(-1)).toContain('tar xmf - -C "$HOME/.koloft/tabs"')
     expect(fs.readFileSync(koloft(r, 'tabs', 'T.sh'), 'utf8')).toContain('new-session')
     expect(r.argv(4)).toContain('-tt')
     expect(r.argv(4).at(-1)).toContain(`T.sh" start`)
@@ -211,7 +211,7 @@ describe('U-LINE-*: the launch line', () => {
     const again = typeLine(r, st2.line())
     expect(again.status).toBe(0)
     expect(r.calls()).toBe(6)
-    expect(r.argv(5).at(-1)).toContain('tar xf - -C "$HOME/.koloft/tabs"')
+    expect(r.argv(5).at(-1)).toContain('tar xmf - -C "$HOME/.koloft/tabs"')
     expect(fs.existsSync(koloft(r, 'tabs', 'T2.sh'))).toBe(true)
     expect(r.argv(6)).toContain('-tt')
   })
@@ -935,9 +935,22 @@ describe('U-TAB-*: the tab script on the machine', () => {
       const running = box(spec())
       holdingAPass(running)
       expect(running.run(mode).status).toBe(0)
-      expect(sourced(running)).toBe(keyedAs('T'))
+      expect(sourced(running)).toContain(keyedAs('T'))
       expect(passFilesLeft(running)).toEqual([])
     }
+  })
+
+  it('a start still hands the agent its pass when, while its tool was being set up, another tab sent to the machine swept every pass file away', () => {
+    const s = spec()
+    const b = box({
+      ...s,
+      program: {
+        ...s.program,
+        beforeTmux: `rm -f "$HOME/.koloft/tabs/"*.pass\n${s.program.beforeTmux}`
+      }
+    })
+    expect(b.run().status).toBe(0)
+    expect(b.env().KOLOFT_TAB_PASS).toBe(passOf('T'))
   })
 
   it('a reconnect to a running tmux session that holds no pass, as one an older Koloft started, gives it none, so it is still that old session the next time Koloft asks', () => {

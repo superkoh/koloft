@@ -45,8 +45,7 @@ import {
   MACHINE_PICTURES_DIR_TAIL,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
   sessionIdOfTmux,
-  STARTED_BEFORE_TAB_PASSES_EXIT,
-  startedBeforeTabPassesCmd,
+  holdsATabPassCmd,
   tmuxSessionName,
   writeTabPackage,
   type MachinePackage
@@ -1067,8 +1066,8 @@ exit ${CALLER_GONE_EXIT}`,
 
   // ADR-0052
   private async startedBeforeTabPasses(tmuxName: string): Promise<boolean> {
-    const r = await this.deps.run(startedBeforeTabPassesCmd(tmuxName)).catch(() => undefined)
-    return r?.code === STARTED_BEFORE_TAB_PASSES_EXIT
+    const r = await this.deps.run(holdsATabPassCmd(tmuxName)).catch(() => undefined)
+    return r?.code !== 0
   }
 
   // PLATFORM§35 ADR-0044

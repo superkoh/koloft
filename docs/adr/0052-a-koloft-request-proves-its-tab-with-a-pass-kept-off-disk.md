@@ -13,8 +13,8 @@ answers only when it is that tab's pass. A session on another machine gets it th
 0600 file the tab package already uses, read into the session and deleted as it starts, and
 keeps it in its tmux session's own environment; when a tab lands on a tmux session that is
 already running, as after a restart, the machine writes the new tab id and pass there, but
-only into a session that already holds a pass. A tmux session that holds none was started by
-a Koloft without passes: that tab alone is still found by its tmux name or tab id, without a
+only into a session that already holds a pass. A tmux session that holds none, or one Koloft
+could not ask about, was started by a Koloft without passes: that tab alone is still found by its tmux name or tab id, without a
 pass, until it starts a session of its own, and it is never handed a pass, so it is found the
 same way after the next restart too. Those sessions only get fewer: no session a Koloft with
 passes starts ever joins them, so the way in without a pass ends when the last of them ends. A pass file a failed launch leaves on the machine is
@@ -26,7 +26,8 @@ refused); a pass or key stored on disk or in the Keychain, so a tab keeps it acr
 (the attach step hands out a new one instead, so nothing is stored); trusting the tmux name
 again once a pass fails (the request writes that name too).
 **Cost taken**: a Workbench shell on another machine opens with one more ssh call, to take
-its pass over. The pass stops naming, not reading: a program run as the owner can read
-another process's environment on a Linux machine, and on the Mac for every program that is
-not part of macOS (PLATFORM§74), and a session that prints its own environment writes its
-pass into its transcript.
+its pass over, and a session found on its machine by its tmux session is found through the
+processes it runs under, never `TMUX_PANE`, which the caller sets. The pass stops naming,
+not reading: on the Mac one `ps -axEww` shows the environment of every agent process, and
+on a Linux machine `/proc/<pid>/environ` does (PLATFORM§74); a session that prints its own
+environment writes its pass into its transcript.
