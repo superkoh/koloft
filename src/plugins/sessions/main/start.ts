@@ -8,7 +8,13 @@ import { HandOver, type HandOverDeps } from './handOver'
 import { InstructionAsks, type InstructionAskDeps } from './instructionAsks'
 import { SessionAsks, type SessionAskDeps } from './sessionAsks'
 import { followEachState, followEachTurn, forgetAsksOfEndedTabs } from './sessionHooks'
+import { SessionSync, type SessionSyncDeps } from './sessionSync'
 import { registerSessionCommands } from './sessionVerbs'
+import { SlashCommands, type SlashDeps } from './slashCommands'
+import { SleepingTabs, type SleepingTabsDeps } from './sleepingTabs'
+import { StartedSessions } from './startedSessions'
+import { TabLifecycle } from './tabLifecycle'
+import { NewsJudge, type NewsJudgeDeps } from './turnNews'
 import { WorkspaceManager, type WorkspaceManagerDeps } from './workspaces'
 
 type ChannelDeps = Parameters<typeof registerChannels>[1]
@@ -22,17 +28,27 @@ type AttentionDeps = Pick<
 }
 
 export interface SessionsStartDeps {
+  startedSessionsFile: ConstructorParameters<typeof StartedSessions>[0]
+  newsJudge: NewsJudgeDeps & { onVerdict: Parameters<NewsJudge['onVerdict']>[0] }
+  slash: SlashDeps
+  sleepers: SleepingTabsDeps
+  sessionSync: SessionSyncDeps
   attention: AttentionDeps
-  eachTurn: Omit<Parameters<typeof followEachTurn>[1], 'asks'>
+  eachTurn: Omit<Parameters<typeof followEachTurn>[1], 'asks' | 'judge' | 'slash'>
   commands: Parameters<typeof registerSessionCommands>[1]
-  endedTabs: Omit<Parameters<typeof forgetAsksOfEndedTabs>[1], 'asks' | 'instructionAsks'>
-  eachState: Omit<Parameters<typeof followEachState>[1], 'asks'>
+  eachState: Omit<Parameters<typeof followEachState>[1], 'asks' | 'slash'>
   channels: Omit<ChannelDeps, 'instructionAsks'>
 }
 
 export const start: PluginStart<
   SessionsStartDeps,
   ReturnType<typeof followEachTurn> & {
+    startedSessions: StartedSessions
+    newsJudge: NewsJudge
+    slash: SlashCommands
+    tabLifecycle: TabLifecycle
+    sleepers: SleepingTabs
+    sessionSync: SessionSync
     attention: AttentionTracker
     buildAsks: BuildLater<SessionAskDeps, SessionAsks>
     buildInstructionAsks: BuildLater<InstructionAskDeps, InstructionAsks>
@@ -42,6 +58,14 @@ export const start: PluginStart<
     buildAgySessions: BuildLater<AgySessionDeps & { file: string }, AgySessions>
   }
 > = ({ commands, moments, ipc }, d) => {
+  const startedSessions = new StartedSessions(d.startedSessionsFile)
+  const { onVerdict, ...judgeDeps } = d.newsJudge
+  const newsJudge = new NewsJudge(judgeDeps)
+  newsJudge.onVerdict(onVerdict)
+  const slash = new SlashCommands(d.slash)
+  const tabLifecycle = new TabLifecycle()
+  const sleepers = new SleepingTabs(d.sleepers)
+  const sessionSync = new SessionSync(d.sessionSync)
   const { onChange, lastRun, ...attentionHooks } = d.attention
   const attention = Object.assign(new AttentionTracker(onChange, lastRun), attentionHooks)
   let asks: SessionAsks | null = null
@@ -50,17 +74,28 @@ export const start: PluginStart<
   const instructionAsksBuilt: MadeLater<InstructionAsks> = () => instructionAsks
   const instructionAsksOrNone: ChannelDeps['instructionAsks'] = () =>
     instructionAsks ?? { views: () => [], answer: () => undefined }
-  const turnsTaken = followEachTurn(moments, { ...d.eachTurn, asks: asksBuilt })
+  const turnsTaken = followEachTurn(moments, {
+    ...d.eachTurn,
+    judge: newsJudge,
+    slash,
+    asks: asksBuilt
+  })
   registerSessionCommands(commands, d.commands)
   forgetAsksOfEndedTabs(moments, {
-    ...d.endedTabs,
+    slash,
     asks: asksBuilt,
     instructionAsks: instructionAsksBuilt
   })
-  followEachState(moments, { ...d.eachState, asks: asksBuilt })
+  followEachState(moments, { ...d.eachState, slash, asks: asksBuilt })
   registerChannels(ipc, { ...d.channels, instructionAsks: instructionAsksOrNone })
   return {
     ...turnsTaken,
+    startedSessions,
+    newsJudge,
+    slash,
+    tabLifecycle,
+    sleepers,
+    sessionSync,
     attention,
     buildAsks: (deps) => (asks = new SessionAsks(deps)),
     buildInstructionAsks: (deps) => (instructionAsks = new InstructionAsks(deps)),

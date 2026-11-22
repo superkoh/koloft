@@ -20,7 +20,6 @@ import { anotherLiveInstanceOwns, PtyManager, type PtyHandle } from './ptyManage
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { TerminalOutput } from './flowControl'
-import { SleepingTabs } from '@plugins/sessions/main/sleepingTabs'
 import { SessionTracker, type ToolCall } from '@plugins/sessions/main/sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from '@plugins/sessions/main/sessionRuntime'
@@ -282,7 +281,7 @@ import { giveWay, readTaggedTable } from './machineTrees'
 import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { GitFreshnessEngine } from './gitFreshness'
 import { COMMON_GIT_DIR, GitRepoKeys } from './gitRepoKey'
-import { SessionSync, type SyncSession } from '@plugins/sessions/main/sessionSync'
+import type { SyncSession } from '@plugins/sessions/main/sessionSync'
 import { GithubRepos, parseGithubFixture, type GithubReposOptions } from './githubRepos'
 import { ghRead, runGh } from './ghRun'
 import { GitAccountService, newGitRequestDir, sweepStaleGitRequestDirs } from './gitAccountService'
@@ -413,8 +412,8 @@ import type { OwnPick } from '@shared/types'
 import { projectDefaults } from './projectDefaults'
 import type { WebPage } from '@core/webPage'
 import { within } from '@core/within'
-import { SlashCommands, toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
-import { TabLifecycle, subscribeTabSubsystems } from '@plugins/sessions/main/tabLifecycle'
+import { toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
+import { subscribeTabSubsystems } from '@plugins/sessions/main/tabLifecycle'
 import { clicksTheMouse, pressesAKey, typeKeys } from '@core/typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import {
@@ -496,10 +495,9 @@ import {
 } from '@plugins/sessions/api'
 import { A_HELPER_HAS_IT, writeLineInTurn } from '@plugins/sessions/main/crossSessionMessage'
 import { docsWritingOn } from '@plugins/docs-writing/api'
-import { StartedSessions } from '@plugins/sessions/main/startedSessions'
 import { worktreeNameForTask } from '@plugins/sessions/main/sessionTitle'
 import { localFile } from './realFiles'
-import { NewsJudge, judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
+import { judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
 import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
 import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
@@ -603,9 +601,8 @@ function storedSessions(): SessionsWithStore[] {
 function storedOwnerOf(tabId: string): SessionsWithStore | undefined {
   return storedSessions().find((s) => s.hasTab(tabId))
 }
-const startedSessions = new StartedSessions(() =>
+const startedSessionsFile = (): string =>
   path.join(app.getPath('userData'), 'started-sessions.json')
-)
 const workbenchReaderDocs: PluginStartDeps['workbench']['readerDocs'] = {
   file: () => path.join(app.getPath('userData'), 'doc-verdicts.json'),
   assist: (job) => assist(job),
@@ -661,12 +658,12 @@ function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
 
-const newsJudge = new NewsJudge({
+const newsJudgeDeps: PluginStartDeps['sessions']['newsJudge'] = {
   judge: (turn) => judgeTurn(assist, turn),
   awaitingVerdict: (tabId) => attention.awaitingVerdict(tabId),
-  markFyi: (tabId) => attention.markFyi(tabId)
-})
-newsJudge.onVerdict((tabId, verdict) => koloftInbox.judged(tabId, verdict))
+  markFyi: (tabId) => attention.markFyi(tabId),
+  onVerdict: (tabId, verdict) => koloftInbox.judged(tabId, verdict)
+}
 
 // CC§14
 function asksTheOwner(tabId: string): boolean {
@@ -699,7 +696,7 @@ const panelOpenOn: Record<BackendId, PanelOpen> = {
   agy: async () => undefined
 }
 
-const slash = new SlashCommands({
+const slashDeps: PluginStartDeps['sessions']['slash'] = {
   backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
   keyOf: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
   turnOver: (tabId) => tracker.turnOver(tabId),
@@ -725,7 +722,7 @@ const slash = new SlashCommands({
     backendIdOf(ptyMgr.get(tabId)?.kind) === 'agy'
       ? screenOf(tabId).then((s) => ('lines' in s ? s.lines.join('\n').trim() : '') || undefined)
       : undefined
-})
+}
 tracker.on('turn-ended', ({ tabId, turn }: { tabId: string; turn: Turn }) =>
   sessionBackends.observe(tabId, { type: 'turn-ended', turn })
 )
@@ -854,12 +851,11 @@ function sidebarTitle(s: SessionInfo): string | undefined {
   return s.title && !placeholder ? s.title : undefined
 }
 
-const tabLifecycle = new TabLifecycle()
-const sleepers = new SleepingTabs({
+const sleepersDeps: PluginStartDeps['sessions']['sleepers'] = {
   write: (tabId, data) => ptyMgr.write(tabId, data),
   ready: (tabId) => tabReady(tabId, RESUMED_TAB_READY_MS, false),
   type: (tabId, keys) => void ptyMgr.type(tabId, keys)
-})
+}
 let openTabsRestoreStarted = false
 let openTabsFile: OpenTabsFile | undefined
 let sessionAccounts: SessionAccounts | undefined
@@ -1903,11 +1899,11 @@ function noticeOf(tabId: string): NoticeFile | undefined {
   return hookRegDir ? localNotice(noticeFile(hookRegDir, tabId)) : undefined
 }
 
-const sessionSync = new SessionSync({
+const sessionSyncDeps: PluginStartDeps['sessions']['sessionSync'] = {
   repoOf: (dir) => syncRepoKeys.resolve(dir),
   gitOut: (dir, args) => hosts.of(dir).gitOut(dir, args),
   notice: noticeOf
-})
+}
 
 const A_MODEL_LIST_IS_READ_AGAIN_AFTER_MS = 3_600_000
 const modelLists = new Map<BackendId, { at: number; listed: Promise<ListedModel[] | undefined> }>()
@@ -2029,7 +2025,9 @@ const sessionDeps: SessionVerbDeps = {
   },
   assist,
   queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
-  startedSessions,
+  get startedSessions() {
+    return startedSessions
+  },
   closable: closableSessions,
   whatIsLeft: (target, waitUntil) => whatClosingWouldLose(target, undefined, waitUntil),
   closeSoon: (inOrder, tellStarter) =>
@@ -6127,17 +6125,18 @@ const startedPlugins: PluginsStarted = startPlugins(
   { commands, moments, ipc: pluginIpc },
   {
     sessions: {
+      startedSessionsFile,
+      newsJudge: newsJudgeDeps,
+      slash: slashDeps,
+      sleepers: sleepersDeps,
+      sessionSync: sessionSyncDeps,
       attention: attentionDeps,
       eachTurn: {
-        judge: newsJudge,
-        slash,
         replies: sessionCommand,
         askBeforeAsksAreMade: showAskOnItsRow
       },
       commands: sessionsCommands,
-      endedTabs: { slash },
       eachState: {
-        slash,
         attention: {
           stateChanged: ({ tabId, prev, next }) =>
             attention.onStatusChange(tabId, prev, next, attentionSubjectOf(tabId))
@@ -6394,6 +6393,12 @@ const {
   writeRelayEnv
 } = startedPlugins['browser-control']
 const {
+  startedSessions,
+  newsJudge,
+  slash,
+  tabLifecycle,
+  sleepers,
+  sessionSync,
   attention,
   buildAsks: buildSessionAsks,
   buildInstructionAsks,
