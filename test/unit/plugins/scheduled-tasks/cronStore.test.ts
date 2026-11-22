@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import type { CronJob, HistoryLine, Schedule } from '../../src/shared/types'
+import type { CronJob, HistoryLine, Schedule } from '../../../../src/shared/types'
 import {
   cronFilePath,
   loadCron,
   sanitizeCron,
   saveCron,
   type CronStoreFs
-} from '../../src/main/cronStore'
+} from '../../../../src/plugins/scheduled-tasks/main/cronStore'
 
 const WS = '/pinned/ws-a'
 const PINNED = [WS]

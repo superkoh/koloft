@@ -6,14 +6,14 @@ import {
   type LaunchRequest,
   type LaunchResult,
   type RunnerDeps
-} from '../../src/main/cronRunner'
-import { sanitizeCron } from '../../src/main/cronStore'
-import type { TidyResult } from '../../src/core/worktree'
-import { lastRunOf } from '../../src/shared/cronHistory'
-import { slugOf } from '../../src/shared/cronNames'
-import { isValidWorktreeName } from '../../src/shared/worktreeName'
-import { turnedOffLine } from '../../src/shared/sessionBackend'
-import type { BackendId, CronJob, CronSaveInput, CronState } from '../../src/shared/types'
+} from '../../../../src/plugins/scheduled-tasks/main/cronRunner'
+import { sanitizeCron } from '../../../../src/plugins/scheduled-tasks/main/cronStore'
+import type { TidyResult } from '../../../../src/core/worktree'
+import { lastRunOf } from '../../../../src/shared/cronHistory'
+import { slugOf } from '../../../../src/shared/cronNames'
+import { isValidWorktreeName } from '../../../../src/shared/worktreeName'
+import { turnedOffLine } from '../../../../src/shared/sessionBackend'
+import type { BackendId, CronJob, CronSaveInput, CronState } from '../../../../src/shared/types'
 
 const ACCOUNT_CHECK_REASON = 'the reason the account check gave'
 const T0 = new Date(2026, 8, 2, 10, 0, 0, 0).getTime()

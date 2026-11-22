@@ -1178,6 +1178,7 @@ export interface CoreApi {
   }
   assist: {
     route(id: number, message: string): Promise<SessionRoute | null>
+    nameWorktree(id: number, task: string): Promise<string | null>
     cancel(id: number): void
   }
   settings: {
@@ -1260,6 +1261,7 @@ export interface CoreApi {
     onNewSession(cb: () => void): () => void
     onNewWorktreeSession(cb: () => void): () => void
     onCloseTab(cb: () => void): () => void
+    onCloseSession(cb: () => void): () => void
     onFind(cb: () => void): () => void
     onCheckUpdate(cb: () => void): () => void
     onOpenSettings(cb: () => void): () => void

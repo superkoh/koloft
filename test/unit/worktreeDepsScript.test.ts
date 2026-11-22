@@ -49,13 +49,17 @@ function fakeBins(failingNpmArg?: string): { bin: string; calls: string } {
   return { bin, calls }
 }
 
-function runHook(cwd: string, bin: string): SpawnSyncReturns<string> {
-  return spawnSync(process.execPath, [script], {
-    input: JSON.stringify({ cwd }),
+function runHook(cwd: string, bin: string, { here = false } = {}): SpawnSyncReturns<string> {
+  return spawnSync(process.execPath, [script, ...(here ? ['--here'] : [])], {
+    cwd,
+    input: here ? '' : JSON.stringify({ cwd }),
     encoding: 'utf8',
     env: { ...GIT_ENV, PATH: `${bin}:${process.env.PATH}` }
   })
 }
+
+const gitDirOf = (main: string): string => path.join(main, '.git', 'worktrees', 'wt')
+const deadPid = (): number => spawnSync(process.execPath, ['-e', ''], { encoding: 'utf8' }).pid
 
 const callsIn = (file: string): string[] =>
   fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n') : []
@@ -105,5 +109,45 @@ describe('worktree-deps SessionStart hook', () => {
     expect(fs.existsSync(path.join(worktree, 'node_modules'))).toBe(false)
     runHook(worktree, bin)
     expect(callsIn(calls).filter((c) => c === 'npm ci')).toHaveLength(2)
+  })
+
+  it('installs the folder it is run in with --here, and leaves no lock behind', () => {
+    const { main, worktree } = repoWithWorktree()
+    const { bin, calls } = fakeBins()
+    expect(runHook(worktree, bin, { here: true }).status).toBe(0)
+    expect(callsIn(calls)[0]).toBe('npm ci')
+    expect(fs.existsSync(path.join(gitDirOf(main), 'worktree-deps.lock'))).toBe(false)
+  })
+
+  it('writes a failed step down, so every agent learns of it at its next push', () => {
+    const { main, worktree } = repoWithWorktree()
+    runHook(worktree, fakeBins('run').bin)
+    expect(fs.readFileSync(path.join(gitDirOf(main), 'worktree-deps.failed'), 'utf8')).toContain(
+      '`npm run rebuild`'
+    )
+    expect(fs.existsSync(path.join(gitDirOf(main), 'worktree-deps.lock'))).toBe(false)
+    runHook(worktree, fakeBins().bin)
+    expect(fs.existsSync(path.join(gitDirOf(main), 'worktree-deps.failed'))).toBe(false)
+  })
+
+  it.each([
+    ['whose last install failed', 'worktree-deps.failed', () => 'It failed.'],
+    ['whose install process died', 'worktree-deps.lock', () => String(deadPid())]
+  ])('reinstalls from scratch a worktree %s, though node_modules is there', (_, file, text) => {
+    const { main, worktree } = repoWithWorktree()
+    fs.mkdirSync(path.join(worktree, 'node_modules', 'old'), { recursive: true })
+    fs.writeFileSync(path.join(gitDirOf(main), file), text())
+    const { bin, calls } = fakeBins()
+    expect(runHook(worktree, bin).status).toBe(0)
+    expect(callsIn(calls)[0]).toBe('npm ci')
+    expect(fs.existsSync(path.join(worktree, 'node_modules', 'old'))).toBe(false)
+  })
+
+  it('leaves the worktree alone while a live install holds the lock', () => {
+    const { main, worktree } = repoWithWorktree()
+    fs.writeFileSync(path.join(gitDirOf(main), 'worktree-deps.lock'), String(process.pid))
+    const { bin, calls } = fakeBins()
+    expect(runHook(worktree, bin).status).toBe(0)
+    expect(callsIn(calls)).toEqual([])
   })
 })

@@ -31,6 +31,7 @@ import { routeFor } from '@shared/browserRoute'
 import type { LoginFlowState } from './components/settings/loginFlow'
 import type { FilesTab } from './components/filesModel'
 import type { ResumeDialogState } from './resumeFlow'
+import type { FullCloseTarget } from './closeSession'
 import { endEditsOf, rekeyOwner } from './editRegistry'
 import {
   endedTabsLiveElsewhere,
@@ -175,6 +176,7 @@ interface AppState {
       save(): Promise<boolean>
     }
   } | null
+  fullClose: (FullCloseTarget & { left: string[] | null }) | null
   unsavedPrompt: {
     files: string[]
     lost?: number
@@ -234,6 +236,7 @@ interface AppState {
   setResumeDialog: (d: ResumeDialogState | null) => void
   setResumeLaunch: (l: AppState['resumeLaunch']) => void
   setCloseConfirm: (c: AppState['closeConfirm']) => void
+  setFullClose: (c: AppState['fullClose']) => void
   setUnsavedPrompt: (p: AppState['unsavedPrompt']) => void
   setOrphanConfirm: (rowId: string | null) => void
 
@@ -743,6 +746,7 @@ export const useStore = create<AppState>((set, get) => ({
   resumeDialog: null,
   resumeLaunch: null,
   closeConfirm: null,
+  fullClose: null,
   machine: null,
   unsavedPrompt: null,
   orphanConfirm: null,
@@ -1175,6 +1179,7 @@ export const useStore = create<AppState>((set, get) => ({
   setResumeDialog: (resumeDialog) => set({ resumeDialog }),
   setResumeLaunch: (resumeLaunch) => set({ resumeLaunch }),
   setCloseConfirm: (closeConfirm) => set({ closeConfirm }),
+  setFullClose: (fullClose) => set({ fullClose }),
   setUnsavedPrompt: (unsavedPrompt) => set({ unsavedPrompt }),
   setOrphanConfirm: (orphanConfirm) => set({ orphanConfirm }),
 

@@ -97,4 +97,18 @@ describe('codexTrustsFolder', () => {
     acceptCodexTrust(config, repo)
     expect(codexTrustsFolder(config, repo)).toBe(true)
   })
+
+  it('reads a single-quoted trusted as trusted, as the trust script does, so the app never adds a second table for a folder the script left alone', () => {
+    fs.mkdirSync(path.dirname(config))
+    fs.writeFileSync(config, `[projects."${repo}"]\ntrust_level = 'trusted' # mine\n`)
+    expect(codexTrustsFolder(config, repo)).toBe(true)
+  })
+
+  it('reads a trust line Codex could not parse, with unmatched quotes or text after the value, as not trusted', () => {
+    fs.mkdirSync(path.dirname(config))
+    for (const line of [`trust_level = "trusted'`, `trust_level = "trusted" junk`]) {
+      fs.writeFileSync(config, `[projects."${repo}"]\n${line}\n`)
+      expect(codexTrustsFolder(config, repo)).toBe(false)
+    }
+  })
 })

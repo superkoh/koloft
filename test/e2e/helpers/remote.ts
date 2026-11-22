@@ -93,6 +93,10 @@ export function sshCommands(env: E2EEnv, phase: 'start' | 'end' = 'start'): stri
     .map((c) => remoteCommandText(c.argv))
 }
 
+export function tabScriptAttaches(env: E2EEnv): number {
+  return sshCommands(env).filter((c) => /tabs\/[^"]+\.sh"?\s+attach/.test(c)).length
+}
+
 export function tmuxName(id: string): string {
   return `k-${id}`
 }

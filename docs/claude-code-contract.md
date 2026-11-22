@@ -6,7 +6,7 @@ and how it was established; any entry can drift when CC upgrades — the canary 
 (below) watches for structural drift, and a disproven entry is corrected in place,
 never kept for history. This file records only observations of the
 external system; Koloft's own mechanism rationale lives in ADRs (`docs/adr/`) and behavioral
-claims live in tests (doctrine: the document-retirement rule in CLAUDE.md). An entry
+claims live in tests (doctrine: the document-retirement rule in AGENTS.md). An entry
 with no date, version or method is marked "inferred, not checked".
 
 **Canary run** — the opt-in e2e specs against a real `claude`, run after each CC
@@ -900,7 +900,7 @@ Evidence: experiments E3/E4/E8, 2026-08-10, plus `strings` analysis of the claud
 (behind `sessions:resumePlan`); `claudeArgv` in `src/main/claudeArgs.ts`, which composes
 `--resume`/`-w`; `copyWorktreeIncludes` in `src/main/sessionWorktrees.ts`, which copies
 the same files into a worktree Koloft makes or rebuilds itself; `worktreeNameFor` and
-`CronRunner.taken` in `src/main/cronRunner.ts`, which count a left `worktree-<n>` branch
+`CronRunner.taken` in `src/plugins/scheduled-tasks/main/cronRunner.ts`, which count a left `worktree-<n>` branch
 as a taken name so a scheduled run never hands `-w` such a name.
 
 **A resumed conversation keeps the model it last ran on.** 2026-11-11, CC 2.1.322,
@@ -1647,7 +1647,16 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   prints the token ("Long-lived authentication token created successfully", "Store this
   token securely") and the browser step (`BROWSER`, else `open`, with the URL) are the
   same on 2.1.306 and 2.1.308 once minified names are evened out (`strings`, 2026-10-22,
-  not run: no login was made).
+  not run: no login was made). **The printed sign-in link is wrapped in an OSC 8
+  hyperlink**: `ESC ] 8 ; ; <url> BEL <url> ESC ] 8 ; ; BEL`, even with
+  `TERM_PROGRAM=Apple_Terminal`, so a URL match that does not stop at the first control
+  character takes the target, the visible text and the closing code as one link. From
+  2.1.330 the printed link is short by default, `https://claude.ai/oauth/authorize?<44
+  characters>` (one scope letter and the 43-character code challenge), which the browser
+  follows with a 307 to the full link; `CLAUDE_CODE_FULL_SIGN_IN_LINK=1` prints the full
+  link again. The URL claude hands the browser itself (`BROWSER`, else `open`) is the full
+  link on both versions. (2026-11-21, 2.1.329 and 2.1.330 linux-arm64 in Docker, output
+  captured with `script`, not signed in.)
 - **Saved limit resets need a full-scope login; the token Koloft holds cannot read or use
   them.** Read 2026-10-13 from the 2.1.296 binary (`strings`): a hidden `/limit-reset`
   command reads resets from `GET /api/oauth/usage?cedar_ember=1&skip_spend=1` (blocks
@@ -4889,3 +4898,27 @@ Koloft dependents: the claude shim on the Mac and the `bin/claude` wrapper on a
 remote machine turn the advisor off for each Fable launch and back on for each other one,
 tab or nested, and read a resumed session's model from its transcript
 (`src/main/advisorOnFable.ts`).
+
+## §30 Which of a folder's `CLAUDE.md` and `AGENTS.md` CC reads
+
+2026-11-20, CC 2.1.330, measured: `claude -p hello` in a throwaway `HOME`, against a fake
+Messages API that wrote down each request body and answered 400, one folder (not a git
+repo) per case, a marker word in each file; a word counts as read when it is in the
+request.
+
+- **Only `AGENTS.md`** in the folder: read, as "Contents of …/AGENTS.md (project
+  instructions…)".
+- **Both files**: only `CLAUDE.md` is read; `AGENTS.md` is not.
+- **`CLAUDE.md` holding `@AGENTS.md`**: both texts are read. Started in a subfolder
+  `test/` whose own `CLAUDE.md` held `@AGENTS.md`, only `test/AGENTS.md` was read, not the
+  parent's.
+- **`CLAUDE.md` a symlink to `AGENTS.md`**: read once, as `CLAUDE.md`.
+- **The Edit tool on a symlinked `CLAUDE.md`** (2026-11-21, the same version, in a
+  session): refused — "it is a symbolic link. Write to the link's target path instead" —
+  so it never replaces the link with a plain file.
+
+Not probed: a subfolder's file loaded later in a session that started at the repo root;
+a git repo's parent folders.
+
+Koloft dependents: the repo's own `CLAUDE.md` and `test/CLAUDE.md` are symlinks to the
+`AGENTS.md` beside them (`test/unit/devRules.test.ts`, ADR-0053).

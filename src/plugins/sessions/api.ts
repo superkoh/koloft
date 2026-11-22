@@ -17,7 +17,16 @@ export {
   type SlashResult
 } from './main/slashCommands'
 export { RepliesOwed, type ReplyListener } from './main/repliesOwed'
-export { ANSWER_NOT_TAKEN } from './main/dialog'
+export {
+  ANSWER_NOT_TAKEN,
+  planOf,
+  questionsOf,
+  type CodexApproval,
+  type CodexQuestion,
+  type Question
+} from './main/dialog'
+export type { ReplyChoices, Verdict } from './main/turnNews'
+export { SHOWS_NO_DIALOG } from './main/sessionAsks'
 export { HandOver, type HandOverDeps, type HandingMarks, type Recipient } from './main/handOver'
 export type { SendResult, StartResult, StartSpec } from './main/sendAndStart'
 export {
@@ -39,7 +48,6 @@ export {
   savedByTheOwner as everyWorkspaceSavedByTheOwner
 } from './main/everyWorkspaceInstructions'
 export type { InstructionsBlock } from './main/instructionsVerb'
-export { InstructionAsks } from './main/instructionAsks'
 export type {
   InstructionAsk,
   InstructionAskEnd,

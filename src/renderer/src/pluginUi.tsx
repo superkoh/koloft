@@ -8,6 +8,7 @@ import { keepWorkspacesOutOfTheList, landAfterClosingAWatchedSession, useStore }
 import {
   GLOBAL_NOTE,
   LANDING_AFTER_CLOSE,
+  OWNER_REACH,
   WORKSPACE_CLAIM,
   WORKSPACE_GIT_PART,
   type WorkspaceGitPart
@@ -60,6 +61,21 @@ export const fillsOf = <T,>(into: Slot<T>, settings?: Settings): readonly T[] =>
   placed().fillsOf(into, settings ? onIn(settings) : onNow)
 
 export const fillsOfOnOrOff = <T,>(into: Slot<T>): readonly T[] => placed().fillsOf(into)
+
+const notTurnedOffIn =
+  (settings: Settings) =>
+  (plugin: string): boolean => {
+    const state = pluginStatesOf(settings).states[plugin]
+    return !state || state.on || (!state.offBecause && settings.pluginsOn[plugin] === undefined)
+  }
+
+export const fillsOfNotTurnedOff = <T,>(into: Slot<T>, settings: Settings): readonly T[] =>
+  placed().fillsOf(into, notTurnedOffIn(settings))
+
+export function useOwnerReach(): readonly string[] {
+  usePluginsOnKey()
+  return fillsOf(OWNER_REACH)
+}
 
 const KEPT_WHILE_OFF: ReadonlySet<UiPlace> = new Set(['settings-page'])
 

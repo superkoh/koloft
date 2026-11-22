@@ -2,7 +2,14 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { seedNoClaudeAccountButStillSetUp, seedSettings, type E2EEnv } from './helpers/env'
 import { openPluginPage, openSettings, settingsNavItems } from './helpers/extensions'
-import { butlerHelperRows, sendShortcut, settingsOnDisk, waitBooted } from './helpers/p1'
+import {
+  butlerHelperRows,
+  butlerRow,
+  openMenu,
+  sendShortcut,
+  settingsOnDisk,
+  waitBooted
+} from './helpers/p1'
 
 const DISCORD_SET_UP = {
   userId: '555555555555555555',
@@ -37,7 +44,7 @@ const row = (main: Locator, name: string): Locator =>
 const pluginsOn = (env: E2EEnv): unknown => settingsOnDisk(env).pluginsOn
 
 test.describe('Settings ▸ Plugins: one row per plugin, a switch for each optional one, and a page for each', () => {
-  test('after an upgrade by someone who never set up Discord: Plugins replaces Discord in the list of pages, the master gate is on top, the six mandatory plugins say Always on, every optional plugin is on but Discord, which offers Set up with Alfred, and Extensions keeps no switch of Koloft’s', async ({
+  test('after an upgrade by someone who never set up Discord: Plugins replaces Discord in the list of pages, the master gate is on top, the six mandatory plugins say Always on, every optional plugin is on but Discord, which offers Set up with Alfred and is not named in Settings ▸ Assist, and Extensions keeps no switch of Koloft’s', async ({
     env
   }) => {
     const { app, page } = await launched(env)
@@ -73,6 +80,11 @@ test.describe('Settings ▸ Plugins: one row per plugin, a switch for each optio
         row(main, 'Discord').getByRole('button', { name: 'Set up with Alfred' })
       ).toBeVisible()
       expect(pluginsOn(env) ?? {}).toEqual({})
+
+      await page.locator('.set-ni', { hasText: 'Assist' }).click()
+      await expect(main.locator('.set-ph h3')).toHaveText('Assist')
+      await expect(main.locator('.set-row').last()).toContainText('Alfred')
+      await expect(main).not.toContainText('Discord')
 
       await page.locator('.set-ni', { hasText: 'Extensions' }).click()
       await expect(main.locator('.set-ph h3')).toHaveText('Extensions')
@@ -240,6 +252,48 @@ test.describe('Settings ▸ Plugins: one row per plugin, a switch for each optio
       await expect.poll(() => pluginsOn(env)).toEqual({ discord: false })
       await main.getByRole('switch', { name: 'Turn on Discord' }).check()
       await expect(main.getByRole('button', { name: 'Change channel…' })).toBeVisible()
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('while Discord is on, Settings ▸ Assist, the butler’s row there and its rename dialog say the owner reaches the butler from Discord too; once Discord is turned off none of them names it', async ({
+    env
+  }) => {
+    const { app, page } = await launched(env, { discord: DISCORD_SET_UP })
+    try {
+      const assistLines = async (): Promise<Locator> => {
+        await page.locator('.set-ni', { hasText: 'Assist' }).click()
+        const main = page.locator('.set-main')
+        await expect(main.locator('.set-ph h3')).toHaveText('Assist')
+        return main
+      }
+      const renameHint = async (): Promise<Locator> => {
+        await openMenu(page, butlerRow(page))
+        await page.locator('.menu .mi', { hasText: 'Rename…' }).click()
+        return page.locator('.modal', { hasText: 'Rename your butler' }).locator('.field-hint')
+      }
+
+      const butlersRow = (main: Locator): Locator => main.locator('.set-row').last()
+
+      await openSettings(page)
+      let main = await assistLines()
+      await expect(main.locator('.set-ph p')).toContainText('Discord')
+      await expect(butlersRow(main)).toContainText('Discord')
+      await page.keyboard.press('Escape')
+      await expect(await renameHint()).toContainText('Discord')
+      await page.keyboard.press('Escape')
+
+      main = await openPluginsPane(page)
+      await main.getByRole('switch', { name: 'Discord', exact: true }).uncheck()
+      await expect.poll(() => pluginsOn(env)).toEqual({ discord: false })
+      main = await assistLines()
+      await expect(butlersRow(main)).toContainText('Alfred')
+      await expect(main).not.toContainText('Discord')
+      await page.keyboard.press('Escape')
+      const hint = await renameHint()
+      await expect(hint).toContainText('Alfred · Butler')
+      await expect(hint).not.toContainText('Discord')
     } finally {
       await quitAndClose(app)
     }

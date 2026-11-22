@@ -19,7 +19,7 @@ import {
   crossSessionLine
 } from '../../../../src/plugins/sessions/main/crossSessionMessage'
 import type { TranscriptPlaces } from '../../../../src/core/transcriptPlaces'
-import { INBOX_SENDER } from '../../../../src/main/inbox'
+import { INBOX_SENDER } from '../../../../src/plugins/inbox/main/inbox'
 import { butlersFolderClaim } from '../../../../src/plugins/butler/api'
 import type { SendResult } from '../../../../src/plugins/sessions/api'
 import { Moments, SESSION_STARTED, SESSION_STARTING } from '../../../../src/core/moment'
@@ -101,6 +101,7 @@ interface Conducting {
   bypass?: string[]
   answer?: (tabId: string, reply: string) => string | undefined
   titleReply?: string | null
+  worktreeNameReply?: string | null
   translation?: string | null
   asking?: string[]
   worktrees?: string[]
@@ -192,7 +193,11 @@ function harness(
       return 'new-tab'
     },
     assist: async (job) =>
-      (job.system === 'You translate.' ? conducting.translation : conducting.titleReply) ?? null,
+      (job.system === 'You translate.'
+        ? conducting.translation
+        : job.system === 'You name git worktrees.'
+          ? conducting.worktreeNameReply
+          : conducting.titleReply) ?? null,
     queue: async (tabId, text, clientId) => {
       queued.push({ tabId, text, clientId })
     },
@@ -2271,6 +2276,29 @@ describe('the butler, and any session, acting on sessions: send, resume, stop, c
       ['claude', WS, 'docs-2']
     ])
   })
+
+  it.each([
+    ['`fix-sidebar-title`\n', 'fix-sidebar-title'],
+    ['Docs', 'docs-2'],
+    ['', 'session-261013-2321']
+  ])(
+    'a session the butler starts in a git workspace without -w gets the worktree Assist names for its task (reply %j → %s): the next free -N when that name is taken, the time stamp when it names none',
+    async (reply, worktree) => {
+      const { verb, launched } = harness(
+        live,
+        {},
+        [],
+        conducting({ worktrees: ['docs'], worktreeNameReply: reply })
+      )
+      vi.useFakeTimers({ now: new Date(2026, 9, 13, 23, 21), toFake: ['Date'] })
+      try {
+        await verb(['new', ...PICKED, '--workspace', WS, '--', '修侧栏标题'], from('butler'))
+      } finally {
+        vi.useRealTimers()
+      }
+      expect(launched.map((l) => l.worktree)).toEqual([worktree])
+    }
+  )
 
   it('a session another session starts gets its starter’s own permission, so its report back is not held: bypass under a bypass butler or session, the default otherwise', async () => {
     const { verb, launched } = harness(live, {}, [], conducting({ bypass: ['butler', 'fix'] }))

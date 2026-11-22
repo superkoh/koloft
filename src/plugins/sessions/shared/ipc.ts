@@ -10,6 +10,8 @@ export const CHANNELS = {
   archive: 'sessions:archive',
   setResident: 'sessions:setResident',
   forceClose: 'sessions:forceClose',
+  closingLoses: 'sessions:closingLoses',
+  closeFully: 'sessions:closeFully',
   transcriptExists: 'sessions:transcriptExists',
   noAccountToResume: 'sessions:noAccountToResume',
   leftovers: 'sessions:leftovers',

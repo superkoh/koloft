@@ -2,7 +2,7 @@ import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import type { InboxSnapshot } from '@shared/inbox'
-import { BackgroundFile } from './backgroundFile'
+import { BackgroundFile } from '../../../main/backgroundFile'
 
 function inboxFile(): string {
   return path.join(app.getPath('userData'), 'inbox.json')
