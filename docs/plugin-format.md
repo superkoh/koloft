@@ -886,7 +886,10 @@ export const start: PluginStart<
   list of plugins, and returns what each gave back, keyed by plugin id (`PluginsStarted`).
   GitHub's start gives back its `GithubMain`, whose `followSwitch` and `sweepNow` the app
   calls. Sessions core's gives back `tookTheTurn`, which the butler's and the Inbox's deps read
-  when a turn ends, the `AttentionTracker` it builds as the app loads (from last run's marks,
+  when a turn ends, the parts it builds as the app loads and its own moment listeners use too
+  (`StartedSessions`, `NewsJudge`, whose one verdict listener its deps hand in as
+  `onVerdict` and it signs up right after, `SlashCommands`, `TabLifecycle`, `SleepingTabs`
+  and `SessionSync`), which the app's own code calls from then on, the `AttentionTracker` it builds as the app loads (from last run's marks,
   with the five functions its deps hand in set on it right after; the app sets a sixth,
   `turnTakenElsewhere`, once Electron is ready, from Discord's `turnTakenOnDiscord`), which
   the app's own code tells of each turn, ask and tab and reads the marks from, and `buildAsks`, `buildInstructionAsks`, `buildHandOver`,
@@ -977,7 +980,8 @@ A plugin's main-process code is a set of parts. A part is a class or function in
 that holds its own state. It takes what it needs from the rest of the app as a small `deps`
 object, which `src/main/index.ts` builds and hands in. A part built by the plugin's start
 function gets its deps through the start's `deps`, as Workbench's web-page parts,
-Browser control's `CdpOps`, Sessions core's `AttentionTracker`, the Inbox's `Inbox` and
+Browser control's `CdpOps`, Sessions core's `AttentionTracker`, `StartedSessions`,
+`NewsJudge`, `SlashCommands`, `TabLifecycle`, `SleepingTabs` and `SessionSync`, the Inbox's `Inbox` and
 `KoloftInbox`, the Butler's
 `OwnerAsleep` and Discord's tab channels and phone copier do, or through the `BuildLater`
 it gives back, as Scheduled tasks' `CronRunner`, Sessions core's `SessionAsks`,
