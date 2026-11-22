@@ -31,6 +31,12 @@ export type SignInFolderKind = (typeof SIGN_IN_FOLDER_OF)[SignInBackend]
 
 export const SIGN_IN_FOLDER_KINDS: readonly AccountKind[] = Object.values(SIGN_IN_FOLDER_OF)
 
+// CODEX§15 ADR-0001
+const KINDS_WITH_NO_KEYCHAIN_SECRET: readonly AccountKind[] = [SIGN_IN_FOLDER_OF.codex]
+
+export const keepsSecretInKeychain = (kind: AccountKind): boolean =>
+  !KINDS_WITH_NO_KEYCHAIN_SECRET.includes(kind)
+
 export const BACKEND_OF_SIGN_IN_FOLDER = Object.fromEntries(
   Object.entries(SIGN_IN_FOLDER_OF).map(([backend, kind]) => [kind, backend])
 ) as Record<SignInFolderKind, SignInBackend>

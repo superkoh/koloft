@@ -142,7 +142,7 @@ export function AccountsPane(): JSX.Element {
           setRemoveFailed(null)
           if (await window.api.accounts.remove(a.name, a.kind).catch(() => false)) return
           setRemoveFailed(key)
-          setConfirmDel((open) => open ?? key)
+          setConfirmDel(key)
         }}
         onRelogin={
           a.kind === 'oauth'
