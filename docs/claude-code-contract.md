@@ -900,7 +900,7 @@ Evidence: experiments E3/E4/E8, 2026-08-10, plus `strings` analysis of the claud
 (behind `sessions:resumePlan`); `claudeArgv` in `src/main/claudeArgs.ts`, which composes
 `--resume`/`-w`; `copyWorktreeIncludes` in `src/main/sessionWorktrees.ts`, which copies
 the same files into a worktree Koloft makes or rebuilds itself; `worktreeNameFor` and
-`CronRunner.taken` in `src/main/cronRunner.ts`, which count a left `worktree-<n>` branch
+`CronRunner.taken` in `src/plugins/scheduled-tasks/main/cronRunner.ts`, which count a left `worktree-<n>` branch
 as a taken name so a scheduled run never hands `-w` such a name.
 
 **A resumed conversation keeps the model it last ran on.** 2026-11-11, CC 2.1.322,

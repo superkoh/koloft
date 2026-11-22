@@ -1,6 +1,8 @@
 import type { MainIpc } from '@core/ipc'
-import type { PluginStart } from '@core/pluginStart'
+import type { BuildLater, PluginStart } from '@core/pluginStart'
+import { setupBrowserPartition, type BrowserPartitionDeps } from './browserPartition'
 import { pushOpenFile, registerChannels } from './channels'
+import { onExtensionsChanged, setupExtensions, type ExtensionHost } from './extensionManager'
 import { PageDialogs } from './pageDialogs'
 import { PageDownloads } from './pageDownloads'
 import { PageRouting, type PageRoutingDeps } from './pageRouting'
@@ -72,7 +74,11 @@ function buildPages(ipc: MainIpc, d: WorkbenchPagesDeps) {
 
 export const start: PluginStart<
   WorkbenchStartDeps,
-  ReturnType<typeof buildPages> & { readerDocs: ReaderDocs }
+  ReturnType<typeof buildPages> & {
+    readerDocs: ReaderDocs
+    setUpBrowserPartition: BuildLater<Omit<BrowserPartitionDeps, 'permissions' | 'downloads'>>
+    setUpExtensions: BuildLater<Pick<ExtensionHost, 'window'>>
+  }
 > = ({ commands, moments, ipc }, d) => {
   const pages = buildPages(ipc, d.pages)
   const readerDocs = new ReaderDocs(d.readerDocs)
@@ -80,5 +86,23 @@ export const start: PluginStart<
   pickDocsOfEachTurn(moments, readerDocs)
   registerPageChannels(ipc, { ...pages, openExternal: d.pages.openExternally })
   registerChannels(ipc, d.channels)
-  return { ...pages, readerDocs }
+  return {
+    ...pages,
+    readerDocs,
+    setUpBrowserPartition: (later) =>
+      setupBrowserPartition({
+        ...later,
+        permissions: pages.sitePermissions,
+        downloads: pages.pageDownloads
+      }),
+    setUpExtensions: ({ window }) => {
+      // PLATFORM§15
+      setupExtensions({
+        window,
+        openTab: (url) => pages.pageRouting.openExtensionTab(url),
+        ask: (request) => pages.pushToPages.extensionAsks(request)
+      })
+      onExtensionsChanged(() => pages.pushToPages.extensionsChanged())
+    }
+  }
 }

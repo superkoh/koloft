@@ -12,6 +12,10 @@ export interface PluginCore {
 
 export type PluginStart<D, R = void> = (core: PluginCore, deps: D) => R
 
+export type BuildLater<D, P = void> = (deps: D) => P
+
+export type StopOnQuit = () => void
+
 type Starts = Readonly<Record<string, PluginStart<never, unknown>>>
 
 export type StartDeps<S extends Starts> = { [K in keyof S]: Parameters<S[K]>[1] }
