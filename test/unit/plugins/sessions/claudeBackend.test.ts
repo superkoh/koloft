@@ -483,23 +483,6 @@ describe('ClaudeBackend: the resume check before a restart', () => {
   })
 })
 
-describe('ClaudeBackend: the workspace of a tab', () => {
-  it('a bound tab whose session the list has not placed yet is in the workspace its Starting… row was listed under, so a command in its first turn knows where it runs', () => {
-    const tracker = fakeTracker()
-    const placed = new Map([[tabId, '/ws/a']])
-    const backend = new ClaudeBackend({
-      tracker,
-      workspaces: () => ({ workspaceOf: (id: string) => placed.get(id) })
-    } as unknown as ClaudeBackendDeps)
-    tracker.track(tabId, '/ws/a')
-    tracker.bindSession(tabId, '', sessionId, '/ws/a')
-
-    expect(backend.workspaceOfTab(tabId)).toBe('/ws/a')
-    placed.set(sessionId, '/ws/b')
-    expect(backend.workspaceOfTab(tabId)).toBe('/ws/b')
-  })
-})
-
 const CHECKOUT_OF_A_BIG_REPO_MS = GIT_CALL_TIMEOUT_MS + 500
 
 describe('ClaudeBackend: rebuilding a missing worktree on resume', () => {

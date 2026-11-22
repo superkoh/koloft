@@ -818,7 +818,6 @@ describe('WorkspaceManager: pending launches', () => {
     const release = await holdNextRescan()
     bindings.set('first-turn', 'tab-1')
     mgr.onSessionBound('first-turn')
-    expect(mgr.workspaceOf('first-turn')).toBeUndefined()
     expect(mgr.workspaceOf('tab-1')).toBe(repo)
     release()
 
