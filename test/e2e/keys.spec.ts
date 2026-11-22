@@ -4,8 +4,14 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { runGit, setupGitFixture } from './helpers/gitFixture'
 import { installStallingGit } from './helpers/gitSpawnLog'
-import { codexRows, startCodex } from './helpers/codex'
-import { installAgy, installCodex, seedSettings, trustInAgy, type E2EEnv } from './helpers/env'
+import { codexCalls, codexRows, startCodex } from './helpers/codex'
+import {
+  agySessionCalls,
+  installAgentFor,
+  installCodex,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
 import {
   addRemoteWorkspace,
   killFakeRemote,
@@ -18,6 +24,7 @@ import {
   agyConversationOnceFirstTurnEnded,
   centerTerm,
   chooseBackend,
+  FAKE_CODEX_SESSION_TITLE,
   gitCommitAll,
   gitInit,
   newSessionInWith,
@@ -251,7 +258,7 @@ test.describe('Keyboard shortcuts · native accelerators are driven as shortcut:
       expect(fs.existsSync(tree), 'git is still deleting the worktree').toBe(true)
 
       await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
-      expect(runGit(clone, 'branch', '--list', 'worktree-done').trim()).toBe('')
+      await expect.poll(() => runGit(clone, 'branch', '--list', 'worktree-done').trim()).toBe('')
       await expect(rows).toHaveCount(0)
     })
   })
@@ -314,36 +321,48 @@ test.describe('Keyboard shortcuts · native accelerators are driven as shortcut:
   const WORKTREE_SESSIONS_OF_OTHER_AGENTS: {
     label: OtherAgentName
     caseId: string
-    install: (env: E2EEnv) => void
     firstTurnEnded: (page: Page) => Promise<unknown>
+    pidsIn: (env: E2EEnv, tree: string) => number[]
   }[] = [
     {
       label: 'Antigravity',
       caseId: 'T-KEY-11',
-      install: (env) => {
-        installAgy(env)
-        trustInAgy(env, env.workspaces.a)
-      },
       firstTurnEnded: async (page) => {
         await runIn(page, centerTerm(page), 'work in the tree')
         await agyConversationOnceFirstTurnEnded(page)
-      }
+      },
+      pidsIn: (env, tree) =>
+        agySessionCalls(env)
+          .filter((c) => sameDir(c.cwd, tree))
+          .map((c) => c.pid)
     },
     {
       label: 'Codex',
       caseId: 'T-KEY-12',
-      install: (env) => installCodex(env),
       firstTurnEnded: (page) =>
-        expect(wsRows(page, 'ws-a')).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+        expect(wsRows(page, 'ws-a').filter({ hasText: FAKE_CODEX_SESSION_TITLE })).toHaveClass(
+          /\bst-waiting\b/,
+          { timeout: 60_000 }
+        ),
+      pidsIn: (env, tree) =>
+        codexCalls(env)
+          .filter((c) => sameDir(c.cwd, tree))
+          .map((c) => c.pid)
     }
   ]
+
+  const sameDir = (a: string, b: string): boolean =>
+    fs.existsSync(a) && fs.existsSync(b) && fs.realpathSync(a) === fs.realpathSync(b)
+
+  const branchesNamed = (repo: string, branch: string): string =>
+    runGit(repo, 'branch', '--list', branch).trim()
 
   for (const agent of WORKTREE_SESSIONS_OF_OTHER_AGENTS) {
     test(`${agent.caseId}: ⌘W closes ${agent.label} worktree sessions for good the same way: the tab ends, the row goes, and the worktree and its branch are deleted`, async ({
       env
     }) => {
       test.setTimeout(180_000)
-      agent.install(env)
+      installAgentFor(env, agent.label, env.workspaces.a)
       seedSettings(env, { hintsOff: true })
       gitInit(env.workspaces.a)
       gitCommitAll(env.workspaces.a)
@@ -362,6 +381,11 @@ test.describe('Keyboard shortcuts · native accelerators are driven as shortcut:
         const live = await page.evaluate(() => window.api.sessions.list())
         const tree = live.find((s) => s.tabId === tabId)!.cwd
         expect(path.basename(tree)).toBe(name)
+        const branch = `worktree-${name}`
+        expect(branchesNamed(env.workspaces.a, branch)).not.toBe('')
+        const pids = agent.pidsIn(env, tree)
+        expect(pids.length).toBeGreaterThan(0)
+        expect(pids.every(processAlive)).toBe(true)
 
         await sendShortcut(app, 'shortcut:close-session')
         const go = fullCloseDialog(page).getByRole('button', { name: 'Close for good' })
@@ -369,15 +393,9 @@ test.describe('Keyboard shortcuts · native accelerators are driven as shortcut:
         await go.click()
         await expect(page.locator('.modal-backdrop')).toHaveCount(0)
         await expect(rows).toHaveCount(0, { timeout: 15_000 })
-        await expect
-          .poll(async () =>
-            (await page.evaluate(() => window.api.sessions.list())).some(
-              (s) => s.tabId === tabId && s.alive
-            )
-          )
-          .toBe(false)
+        await expect.poll(() => pids.some(processAlive), { timeout: 30_000 }).toBe(false)
         await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
-        expect(runGit(env.workspaces.a, 'branch', '--list', `worktree-${name}`).trim()).toBe('')
+        await expect.poll(() => branchesNamed(env.workspaces.a, branch)).toBe('')
       } finally {
         await quitAndClose(app)
       }
