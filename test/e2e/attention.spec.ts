@@ -142,6 +142,7 @@ const EVERY_TAB_KIND: TabKind[] = [
     install: (env) => installCodex(env),
     start: async (page) => {
       await newSessionInWith(page, 'ws-a', 'Codex')
+      await expect(wsRows(page, 'ws-a').first()).toHaveClass(/\bactive\b/, { timeout: 30_000 })
       return activeTabOnceBound(page)
     }
   },
@@ -170,10 +171,10 @@ const EVERY_TAB_KIND: TabKind[] = [
 ]
 
 async function launchFor(
-  parent: TabKind,
+  kind: TabKind,
   env: E2EEnv
 ): Promise<{ app: ElectronApplication; page: Page }> {
-  if (parent.remote) return launchWithRemote(env)
+  if (kind.remote) return launchWithRemote(env)
   const app = await launchApp(env)
   return { app, page: await app.firstWindow() }
 }
@@ -215,45 +216,66 @@ test.describe('attention markers come from real session-status transitions (shim
   })
 
   for (const kind of EVERY_TAB_KIND) {
-    test(`a ${kind.kind} session’s OS notification leaves Notification Center once its tab is on screen in a focused window — the window coming to the front or a switch to the tab — while its red dot stays`, async ({
-      env
-    }) => {
-      test.setTimeout(240_000)
-      kind.install(env)
-      seedSettings(env, { hintsOff: true })
-      const { app, page } = await launchFor(kind, env)
-      try {
-        await waitBooted(page)
-        const tab = await kind.start(page, env)
-        const listed = async () =>
-          (await osOutlets(app)).inNotificationCenter
-            .map((n) => n.body)
-            .filter((body) => body.startsWith(ATTENTION_REASON['turn-done']))
-            .sort()
-        await expect.poll(listed, { timeout: 60_000 }).toHaveLength(1)
-        const [itsNotice] = await listed()
-        await startSessionIn(page, 'ws-b', {
-          method: kind.backend === 'claude' ? undefined : 'Claude'
-        })
-        const wsBNotice = `${ATTENTION_REASON['turn-done']} · ws-b`
-        await expect.poll(listed, { timeout: 60_000 }).toEqual([itsNotice, wsBNotice].sort())
-        await expect(wsRows(page, 'ws-b')).toHaveClass(/\bactive\b/)
-        const wsBTab = (await wsRows(page, 'ws-b').getAttribute('data-tab-id'))!
+    for (const way of ['the window coming to the front', 'a switch to the tab'] as const) {
+      test(`a ${kind.kind} session’s OS notification leaves Notification Center once its tab is on screen in a focused window — here by ${way} — while its red dot stays`, async ({
+        env
+      }) => {
+        test.setTimeout(240_000)
+        kind.install(env)
+        seedSettings(env, { hintsOff: true })
+        const { app, page } = await launchFor(kind, env)
+        try {
+          await waitBooted(page)
+          const listed = async () =>
+            (await osOutlets(app)).inNotificationCenter
+              .map((n) => n.body)
+              .filter((body) => body.startsWith(ATTENTION_REASON['turn-done']))
+              .sort()
+          const turnDoneIn = (folder: string) => `${ATTENTION_REASON['turn-done']} · ${folder}`
+          const itsNotice = turnDoneIn(kind.remote ? REMOTE_WS_NAME : 'ws-a')
+          const wsBNotice = turnDoneIn('ws-b')
+          const startItsTab = async (): Promise<string> => {
+            const tab = await kind.start(page, env)
+            await expect.poll(listed, { timeout: 60_000 }).toContain(itsNotice)
+            return tab
+          }
+          const startClaudeInWsB = async (): Promise<string> => {
+            await startSessionIn(
+              page,
+              'ws-b',
+              kind.backend === 'claude' ? {} : { method: 'Claude' }
+            )
+            await expect.poll(listed, { timeout: 60_000 }).toContain(wsBNotice)
+            return (await wsRows(page, 'ws-b').getAttribute('data-tab-id'))!
+          }
+          const byFocus = way === 'the window coming to the front'
+          let tab: string, wsBTab: string
+          if (byFocus) {
+            wsBTab = await startClaudeInWsB()
+            tab = await startItsTab()
+          } else {
+            tab = await startItsTab()
+            wsBTab = await startClaudeInWsB()
+          }
+          expect(await listed()).toEqual([itsNotice, wsBNotice].sort())
+          const rowOf = (id: string) => page.locator(`.ws .ws-tab[data-tab-id="${id}"]`)
+          const [onScreen, behind] = byFocus ? [tab, wsBTab] : [wsBTab, tab]
+          await expect(rowOf(onScreen)).toHaveClass(/\bactive\b/)
 
-        await lookAtTheWindow(app)
-        await expect.poll(listed).toEqual([itsNotice])
-        expect(await markOn(page, wsBTab)).toBeTruthy()
+          await lookAtTheWindow(app)
+          await expect.poll(listed).toEqual([byFocus ? wsBNotice : itsNotice])
 
-        const row = page.locator(`.ws .ws-tab[data-tab-id="${tab}"]`)
-        await row.click()
-        await expect.poll(listed).toEqual([])
-        expect(await markOn(page, tab)).toBeTruthy()
-        expect(await markOn(page, wsBTab)).toBeTruthy()
-        await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
-      } finally {
-        await quitAndClose(app)
-      }
-    })
+          await rowOf(behind).click()
+          await expect.poll(listed).toEqual([])
+          for (const id of [tab, wsBTab]) {
+            expect(await markOn(page, id)).toBeTruthy()
+            await expect(rowOf(id).locator('.ws-tab-unread')).toHaveCount(1)
+          }
+        } finally {
+          await quitAndClose(app)
+        }
+      })
+    }
   }
 
   test('the bell counts the waiting sessions and walks them longest wait first, round and round, unfolding the workspace it lands in; ⌘J does the same, and only an answer takes one off', async ({
