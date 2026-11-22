@@ -55,7 +55,7 @@
   border: 1px solid;
   white-space: nowrap;
 }
-.acct-badge.fable {
+.acct-badge.good {
   color: var(--good);
   border-color: rgba(143, 198, 154, 0.4);
   background: rgba(143, 198, 154, 0.12);

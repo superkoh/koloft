@@ -180,9 +180,9 @@
   background: var(--accent);
 }
 .acct-badge.codex {
-  color: var(--fable);
-  border-color: var(--fable-line);
-  background: var(--fable-soft);
+  color: var(--violet);
+  border-color: var(--violet-line);
+  background: var(--violet-soft);
 }
 .acct-badge.ssh,
 .acct-badge.agy {
