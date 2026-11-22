@@ -1,0 +1,18 @@
+project_doc_max_bytes = 65536
+
+[[hooks.SessionStart]]
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = 'r="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -f "$r/scripts/agent-hook.sh" ] && exec sh "$r/scripts/agent-hook.sh" codex session-start; exit 0'
+
+[[hooks.PreToolUse]]
+matcher = "Bash"
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = 'r="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -f "$r/scripts/agent-hook.sh" ] && exec sh "$r/scripts/agent-hook.sh" codex before-shell-command; exit 0'
+
+[[hooks.PostToolUse]]
+matcher = "apply_patch"
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = 'r="$(git rev-parse --show-toplevel 2>/dev/null)" && [ -f "$r/scripts/agent-hook.sh" ] && exec sh "$r/scripts/agent-hook.sh" codex after-file-edit; exit 0'
