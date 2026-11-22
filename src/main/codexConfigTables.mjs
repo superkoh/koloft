@@ -1,4 +1,10 @@
-export const tableHeader = (kind, key) => `[${kind}.${JSON.stringify(key)}]`
+const tableHeader = (kind, key) => `[${kind}.${JSON.stringify(key)}]`
+
+export const projectHeader = (realDir) => tableHeader('projects', realDir)
+
+export const hookStateHeader = (key) => tableHeader('hooks.state', key)
+
+export const trustedHashLine = (hash) => `trusted_hash = ${JSON.stringify(hash)}`
 
 export function tableEnd(lines, start) {
   let end = start + 1
@@ -11,7 +17,7 @@ function tableAt(lines, header) {
   return start < 0 ? undefined : { start, end: tableEnd(lines, start) }
 }
 
-export function tableBody(text, header) {
+function tableBody(text, header) {
   const lines = text.split('\n')
   const at = tableAt(lines, header)
   return at && lines.slice(at.start + 1, at.end).map((line) => line.trim())
@@ -22,7 +28,7 @@ export function appendTable(text, table) {
   return `${text}${gap}${table}`
 }
 
-export function withTableLine(text, header, line, keyOfLine) {
+function withTableLine(text, header, line, keyOfLine) {
   const lines = text.split('\n')
   const at = tableAt(lines, header)
   if (!at) return appendTable(text, `${header}\n${line}\n`)
@@ -30,3 +36,18 @@ export function withTableLine(text, header, line, keyOfLine) {
   lines.splice(at.start, at.end - at.start, header, line, ...body)
   return lines.join('\n')
 }
+
+export function folderTrustLevel(text, realDir) {
+  return tableBody(text, projectHeader(realDir))
+    ?.map((line) => /^trust_level\s*=\s*["']([^"']*)["']/.exec(line)?.[1])
+    .find(Boolean)
+}
+
+export const withTrustedFolder = (text, realDir) =>
+  withTableLine(text, projectHeader(realDir), 'trust_level = "trusted"', /^\s*trust_level\s*=/)
+
+export const hookTrusted = (text, key, hash) =>
+  tableBody(text, hookStateHeader(key))?.includes(trustedHashLine(hash)) ?? false
+
+export const withTrustedHash = (text, key, hash) =>
+  withTableLine(text, hookStateHeader(key), trustedHashLine(hash), /^\s*trusted_hash\s*=/)

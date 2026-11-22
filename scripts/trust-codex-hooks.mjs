@@ -2,7 +2,11 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawn, spawnSync } from 'node:child_process'
-import { tableBody, tableHeader, withTableLine } from '../src/main/codexConfigTables.mjs'
+import {
+  folderTrustLevel,
+  withTrustedFolder,
+  withTrustedHash
+} from '../src/main/codexConfigTables.mjs'
 
 // CODEX§11 CODEX§27 ADR-0053
 
@@ -65,12 +69,6 @@ function configFile() {
   if (homes.length > 1)
     fail(`both ${localHome} and ${remoteHome} exist; pass --config <home>/config.toml`)
   return path.join(homes[0] ?? localHome, 'config.toml')
-}
-
-function folderTrustLevel(text, repo) {
-  return tableBody(text, tableHeader('projects', repo))
-    ?.map((l) => /^trust_level\s*=\s*["']([^"']*)["']/.exec(l)?.[1])
-    .find(Boolean)
 }
 
 function writeAtomically(file, text) {
@@ -156,30 +154,11 @@ function save(text) {
   saved = text
 }
 
-if (level !== 'trusted')
-  save(
-    withTableLine(
-      before,
-      tableHeader('projects', repo),
-      'trust_level = "trusted"',
-      /^\s*trust_level\s*=/
-    )
-  )
+if (level !== 'trusted') save(withTrustedFolder(before, repo))
 
 const hooks = await listProjectHooks(codex, codexHome, repo)
 if (hooks.length === 0) fail(`codex lists no hooks from ${repo}/.codex`)
-save(
-  hooks.reduce(
-    (text, hook) =>
-      withTableLine(
-        text,
-        tableHeader('hooks.state', hook.key),
-        `trusted_hash = ${JSON.stringify(hook.currentHash)}`,
-        /^\s*trusted_hash\s*=/
-      ),
-    saved
-  )
-)
+save(hooks.reduce((text, hook) => withTrustedHash(text, hook.key, hook.currentHash), saved))
 
 const after = await listProjectHooks(codex, codexHome, repo)
 const untrusted = after.filter((hook) => hook.trustStatus !== 'trusted')

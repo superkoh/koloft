@@ -7,19 +7,16 @@ import { record } from '@plugins/sessions/main/codexObservation'
 import type { KoloftHook } from './codexLaunchConfig'
 import {
   appendTable,
-  tableBody,
+  folderTrustLevel,
+  hookTrusted,
+  projectHeader,
   tableEnd,
-  tableHeader,
-  withTableLine
+  withTrustedHash
 } from './codexConfigTables.mjs'
 
 export function codexConfigFile(env: NodeJS.ProcessEnv | undefined): string {
   return path.join(env?.CODEX_HOME || path.join(os.homedir(), '.codex'), 'config.toml')
 }
-
-const projectHeader = (dir: string): string => tableHeader('projects', fs.realpathSync(dir))
-
-export const hookStateHeader = (key: string): string => tableHeader('hooks.state', key)
 
 function readConfig(configFile: string): string {
   try {
@@ -39,7 +36,7 @@ function writeConfig(configFile: string, text: string): void {
 
 // CODEX§11 ADR-0026
 export function acceptCodexTrust(configFile: string, dir: string): void {
-  joinProjectTables(configFile, `${projectHeader(dir)}\ntrust_level = "trusted"\n`)
+  joinProjectTables(configFile, `${projectHeader(fs.realpathSync(dir))}\ntrust_level = "trusted"\n`)
 }
 
 // CODEX§15 CODEX§27
@@ -58,24 +55,13 @@ export function joinProjectTables(configFile: string, from: string): void {
   if (text !== before) writeConfig(configFile, text)
 }
 
-const trustedHashLine = (hash: string): string => `trusted_hash = ${JSON.stringify(hash)}`
-
 // CODEX§27
 export function codexHookTrusted(configFile: string, key: string, hash: string): boolean {
-  const body = tableBody(readConfig(configFile), hookStateHeader(key))
-  return body?.includes(trustedHashLine(hash)) ?? false
+  return hookTrusted(readConfig(configFile), key, hash)
 }
 
 export function acceptCodexHookTrust(configFile: string, key: string, hash: string): void {
-  writeConfig(
-    configFile,
-    withTableLine(
-      readConfig(configFile),
-      hookStateHeader(key),
-      trustedHashLine(hash),
-      /^\s*trusted_hash\s*=/
-    )
-  )
+  writeConfig(configFile, withTrustedHash(readConfig(configFile), key, hash))
 }
 
 // CODEX§11
@@ -89,8 +75,7 @@ export function codexTrustsFolder(configFile: string, dir: string): boolean {
 
 // CODEX§11
 export function configTrusts(text: string, realDir: string): boolean {
-  const body = tableBody(text, tableHeader('projects', realDir))
-  return body?.some((line) => /^trust_level\s*=\s*"trusted"$/.test(line)) ?? false
+  return folderTrustLevel(text, realDir) === 'trusted'
 }
 
 export interface ListedHook {

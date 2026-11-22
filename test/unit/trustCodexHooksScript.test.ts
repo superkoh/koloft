@@ -10,7 +10,7 @@ const script = path.resolve(__dirname, '../../scripts/trust-codex-hooks.mjs')
 let dir: string
 afterEach(() => fs.rmSync(dir, { recursive: true, force: true }))
 
-// CODEX§27
+// CODEX§11
 it("runs under plain node and writes the folder's trust table the way the app does, so the app adds no second table for it", () => {
   dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'trust-codex-hooks-')))
   const config = path.join(dir, 'config.toml')
