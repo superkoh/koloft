@@ -334,7 +334,6 @@ import {
   GIT_PLATFORMS,
   isHttpUrl,
   keychainNamespace,
-  SIGN_IN_FOLDER_KINDS,
   BACKEND_OF_SIGN_IN_FOLDER,
   isSignInFolderKind,
   type SignInFolderKind,
@@ -5758,9 +5757,9 @@ function registerIpc(): void {
     ) => addAccount(name, kind, secret, endpoint)
   )
   ipcMain.handle(CH.accounts.remove, async (_e, name: string, kind: AccountKind) => {
-    // CODEX§15
-    if (!SIGN_IN_FOLDER_KINDS.includes(kind)) await keychainDelete(kind, name)
+    if (!(await keychainDelete(kind, name))) return false
     forgetAccount(name, kind)
+    return true
   })
   ipcMain.handle(CH.accounts.toggle, (_e, name: string, kind: AccountKind, enabled: boolean) => {
     setAccountEnabled(name, kind, enabled === true)

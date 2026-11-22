@@ -1248,6 +1248,73 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     }
   })
 
+  test('deleting an Antigravity API key account takes its key out of the Keychain: a delete the Keychain refuses keeps the row with a line saying so, Delete again removes both, and a Google sign-in under the same name then opens agy with no Gemini key and no API key route', async ({
+    env
+  }) => {
+    installAgy(env)
+    seedSettings(env, { hintsOff: true })
+    const keyOf = (): string | undefined =>
+      (
+        JSON.parse(fs.readFileSync(env.keychainFile, 'utf8')) as Record<
+          string,
+          Record<string, string>
+        >
+      )[UNPACKAGED_BUILD_AGY_SVC]?.[E2E_AGY_ACCOUNT]
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      const row = page.locator('.acct-row', {
+        has: page.locator('.acct-name', { hasText: /^e2e-agy$/ })
+      })
+      await expect(row.locator('.acct-badge')).toHaveText('API KEY')
+      expect(keyOf()).toBe('fake-gemini-key')
+
+      fs.chmodSync(env.keychainFile, 0o400)
+      try {
+        await row.locator('.acct-x').click()
+        await row.locator('.acct-confirm button', { hasText: 'Delete' }).click()
+        await expect(row.locator('.acct-confirm .acct-login-state.bad')).toContainText(
+          'Koloft could not remove its Keychain credential, so the account is kept.'
+        )
+      } finally {
+        fs.chmodSync(env.keychainFile, 0o600)
+      }
+      expect(keyOf()).toBe('fake-gemini-key')
+
+      await row.locator('.acct-confirm button', { hasText: 'Delete' }).click()
+      await expect(row).toHaveCount(0)
+      expect(keyOf()).toBeUndefined()
+
+      const signInsBefore = agyCalls(env).length
+      await page.getByRole('button', { name: 'Sign in with Google' }).click()
+      await page.locator('.acct-add input[type="text"]').fill(E2E_AGY_ACCOUNT)
+      await page.locator('.acct-add').getByRole('button', { name: 'Sign in', exact: true }).click()
+      await expect
+        .poll(
+          () =>
+            agyCalls(env)
+              .slice(signInsBefore)
+              .find((c) => c.geminiDir === accountHome(env)),
+          { timeout: 30_000 }
+        )
+        .toBeTruthy()
+      const signIn = agyCalls(env)
+        .slice(signInsBefore)
+        .find((c) => c.geminiDir === accountHome(env))!
+      expect(signIn.env.GEMINI_API_KEY).toBe(false)
+      const ownSettings = path.join(accountHome(env), 'antigravity-cli', 'settings.json')
+      const own = (
+        fs.existsSync(ownSettings) ? JSON.parse(fs.readFileSync(ownSettings, 'utf8')) : {}
+      ) as { modelProvider?: string }
+      expect(own.modelProvider).toBeUndefined()
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
   // AGY§23
   test('with only an Antigravity account signed in with Google, opening Koloft reads its quota with agy -p /usage and the capsule shows it and names it for a screen reader, with no tab started and nothing clicked', async ({
     env

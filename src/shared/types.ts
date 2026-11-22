@@ -1198,7 +1198,7 @@ export interface CoreApi {
       secret: string,
       endpoint?: { baseUrl: string; model?: string }
     ): Promise<AccountAddResult>
-    remove(name: string, kind: AccountKind): Promise<void>
+    remove(name: string, kind: AccountKind): Promise<boolean>
     toggle(name: string, kind: AccountKind, enabled: boolean): Promise<void>
     probe(): Promise<AccountView[]>
     // CC§7

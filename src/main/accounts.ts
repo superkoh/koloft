@@ -110,22 +110,26 @@ async function writeSecret(service: string, name: string, secret: string): Promi
   return code === 0
 }
 
-async function deleteSecret(service: string, name: string): Promise<void> {
+async function deleteSecret(service: string, name: string): Promise<boolean> {
   const fixture = testKeychainFile()
   if (fixture) {
     const data = readFixture(fixture)
-    if (data[service]) {
-      delete data[service][name]
-      try {
-        fs.writeFileSync(fixture, JSON.stringify(data, null, 2), { mode: 0o600 })
-      } catch {}
+    if (data[service]?.[name] === undefined) return true
+    delete data[service][name]
+    try {
+      fs.writeFileSync(fixture, JSON.stringify(data, null, 2), { mode: 0o600 })
+      return true
+    } catch {
+      return false
     }
-    return
   }
-  await execSecurity(['delete-generic-password', '-s', service, '-a', name])
+  const found = await execSecurity(['find-generic-password', '-s', service, '-a', name])
+  if (found.code !== 0) return true
+  const { code } = await execSecurity(['delete-generic-password', '-s', service, '-a', name])
+  return code === 0
 }
 
-export function keychainDelete(kind: AccountKind, name: string): Promise<void> {
+export function keychainDelete(kind: AccountKind, name: string): Promise<boolean> {
   return deleteSecret(serviceForAppNameAtCall(kind), name)
 }
 
@@ -137,8 +141,8 @@ export function gitTokenWrite(host: string, login: string, token: string): Promi
   return writeSecret(gitKeychainService(app.getName(), host), login, token)
 }
 
-export function gitTokenDelete(host: string, login: string): Promise<void> {
-  return deleteSecret(gitKeychainService(app.getName(), host), login)
+export async function gitTokenDelete(host: string, login: string): Promise<void> {
+  await deleteSecret(gitKeychainService(app.getName(), host), login)
 }
 
 export function listAccounts(): AccountMeta[] {
