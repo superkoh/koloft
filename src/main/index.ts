@@ -406,20 +406,17 @@ import { answered, refused, type AgentReply } from '@core/command'
 import { errorText } from '@core/errorText'
 import { projectRulesForTheButler } from '@shared/agentGuide'
 import {
-  AwayDigest,
   butlersBlock,
   butlersFolderClaim,
   conductorFolder,
   DIGEST_GATHERS_MS,
   GUIDE_MOVED_NEWS,
   helperRoleOf,
-  OwnerAsleep,
   pluginsChangedNews,
   quoteOf,
   THIS_MAC
 } from '@plugins/butler/api'
 import { switchesThatAct } from '@core/switches'
-import { Butler, type AssistBackendChoice } from '@plugins/butler/main/butler'
 import { cronPickFor, takesOwnDefaults } from '@shared/sessionDefaults'
 import type { OwnPick } from '@shared/types'
 import { projectDefaults } from './projectDefaults'
@@ -1055,7 +1052,7 @@ const AWAY_CHECKED_EVERY_MS = 30_000
 function handsOnKoloft(_e: unknown, input: { type: string }): void {
   if (isHandsOn(input.type)) presence.handsOn()
 }
-const ownerAsleep = new OwnerAsleep({
+const ownerAsleepDeps: PluginStartDeps['butler']['asleep'] = {
   presence,
   machines: () => [
     THIS_MAC,
@@ -1093,8 +1090,7 @@ const ownerAsleep = new OwnerAsleep({
   report: (text) => void handOver?.tell(butlerRecipient(), text),
   now: Date.now,
   answeredFile: path.join(app.getPath('userData'), 'owner-asleep-answers.json')
-})
-presence.listenToSleep(syncAnswerable)
+}
 
 function ownerCameBack(): void {
   presence.ownerWrote()
@@ -1429,6 +1425,9 @@ type LaunchRequest = Parameters<CronRunnerDeps['launch']>[0]
 type LaunchResult = Awaited<ReturnType<CronRunnerDeps['launch']>>
 type RunLeftovers = Awaited<ReturnType<CronRunnerDeps['runLeftovers']>>
 let cronRunner: ReturnType<typeof buildCronRunner> | null = null
+type Butler = ReturnType<typeof buildButler>
+type AssistBackendChoice = Awaited<ReturnType<Parameters<typeof buildButler>[0]['backend']>>
+type AwayDigest = ReturnType<typeof buildDigest>
 let butler: Butler | null = null
 let discordBinding: DiscordBinding | null = null
 let discordLink: DiscordLink | null = null
@@ -3876,7 +3875,7 @@ app.whenReady().then(() => {
   })
   discordBinding = bindingNow
   attention.turnTakenElsewhere = discordChannels.turnTakenOnDiscord
-  butler = new Butler({
+  butler = buildButler({
     userData,
     realpath: realpathSafe,
     butler: () => loadSettings().butler,
@@ -4209,7 +4208,7 @@ app.whenReady().then(() => {
     attachmentsDir
   })
   asks.watchAsks()
-  awayDigest = new AwayDigest({
+  awayDigest = buildDigest({
     away: ownerAway,
     lastHandsAt: () => presence.lastHandsAt(),
     reachable: () => discordConnected && !!bindingNow.channel(),
@@ -6641,13 +6640,9 @@ const startedPlugins: PluginsStarted = startPlugins(
     butler: {
       helperRole: () => helperRoleOf(loadSettings().butler),
       eachTurn: {
-        butler: () => butler,
-        digest: () => awayDigest,
         tookTheTurn: (tabId) => startedPlugins.sessions.tookTheTurn(tabId),
-        asleep: ownerAsleep,
         butlerTabChanged: syncAnswerable
       },
-      endedTabs: { butler: () => butler, digest: () => awayDigest },
       channels: {
         open: () => butler?.open() ?? Promise.resolve({ ok: false, error: STILL_STARTING }),
         startFresh: () =>
@@ -6657,7 +6652,8 @@ const startedPlugins: PluginsStarted = startPlugins(
         save: (butler) => {
           commitSettings({ butler })
         }
-      }
+      },
+      asleep: ownerAsleepDeps
     },
     inbox: {
       cards: inboxCards,
@@ -6779,3 +6775,5 @@ const {
   SUDO_SHIM_FILES,
   SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS
 } = startedPlugins.passwords
+const { buildButler, buildDigest, ownerAsleep } = startedPlugins.butler
+presence.listenToSleep(syncAnswerable)
