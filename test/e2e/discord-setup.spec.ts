@@ -346,7 +346,12 @@ test.describe('Discord in Settings: the butler does the setup, and the screen sh
           .poll(async () => (await terminalText(page, helperTab)).replace(/\s+/g, ''), {
             timeout: 60_000
           })
-          .toContain('runkoloftdiscordsetup')
+          .toContain(
+            'The owner asked: Set up Discord for me. (Koloft: run koloft discord setup and follow those steps, then close yourself with koloft session close.)'.replace(
+              /\s+/g,
+              ''
+            )
+          )
         const butlerFolder = path.join(env.userData, 'conductors', 'global')
         const folders = agent.calls(env).map((c) => c.cwd)
         expect(folders.length).toBeGreaterThanOrEqual(2)

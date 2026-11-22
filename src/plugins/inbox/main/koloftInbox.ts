@@ -1,6 +1,5 @@
 import type { AttentionEvent, BackendId } from '@shared/types'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
-import type { ReplyChoices, Verdict } from '@plugins/sessions/main/turnNews'
 import {
   CARD_SESSION,
   type InboxAction,
@@ -18,9 +17,11 @@ import {
   type CodexApproval,
   type CodexQuestion,
   ANSWER_NOT_TAKEN,
-  type Question
-} from '@plugins/sessions/main/dialog'
-import { SHOWS_NO_DIALOG } from '@plugins/sessions/main/sessionAsks'
+  type Question,
+  type ReplyChoices,
+  type Verdict,
+  SHOWS_NO_DIALOG
+} from '@plugins/sessions/api'
 
 export const KOLOFT_SOURCE = { id: 'koloft', name: 'Koloft' }
 const KOLOFT: InboxCaller = { source: KOLOFT_SOURCE.id }

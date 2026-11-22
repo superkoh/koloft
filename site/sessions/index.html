@@ -154,11 +154,13 @@
             picked from the list. Then the session starts on the next model down (or on the agent's
             own model), at the highest thinking level that model takes up to the one you picked (or
             with none), and a short note says so, such as
-            <code>This account has no carbon model, so it runs on gemini-4-neon.</code> A model name
-            that is not in the list is not checked. The same box has a place for rules: how this
-            folder's agents pick the model and thinking of a session they start (see
-            <a href="../agents/">agents</a>). Left empty, they use Koloft's own pick. Every agent
-            gets this, on your Mac and in a <a href="../remote/">remote folder</a>.
+            <code>This account has no carbon model, so it runs on gemini-4-neon.</code> An
+            Antigravity session set to Carbon or Neon also starts on another model when Koloft
+            cannot read which models the account has. A model name that is not in the list is not
+            checked. The same box has a place for rules: how this folder's agents pick the model and
+            thinking of a session they start (see <a href="../agents/">agents</a>). Left empty, they
+            use Koloft's own pick. Every agent gets this, on your Mac and in a
+            <a href="../remote/">remote folder</a>.
           </li>
           <li id="instructions">
             Last in the <code>Session defaults…</code> box is <code>Instructions</code>: write what
@@ -204,6 +206,39 @@
             Quit Koloft and open it again, and every session comes back the way it was: the ones
             that were running run again, with the one you were on selected; the ones that were
             asleep stay asleep until you click them; the closed ones stay closed.
+          </li>
+          <li id="close-for-good">
+            <kbd>⌘W</kbd> (File ▸ Close Session…) closes the session you are on for good, once you
+            say so. A box asks <code>Close session for good?</code>
+            <ul class="dash">
+              <li>
+                Koloft first checks what closing would lose, the same way
+                <a href="../agents/#session-close"
+                  ><code class="nowrap">koloft session close</code></a
+                >
+                does. When closing would lose work, the box lists that work and offers only
+                <code>Close tab only</code>. A session on a <a href="../remote/">remote folder</a>
+                gets only that button too.
+              </li>
+              <li>
+                <code>Close for good</code> ends the session, takes its row out of the list at once,
+                and deletes its git worktree and branch if it has one. If Koloft cannot finish, a
+                note says why.
+              </li>
+              <li>
+                File ▸ Close Tab closes just the tab, and the session stays in the list to resume.
+              </li>
+              <li>
+                On a tab with no session yet, a tab whose agent quit, a shell tab, a
+                <a href="../scheduled/">scheduled job</a>'s tab and your butler's tab,
+                <kbd>⌘W</kbd> only closes the tab.
+              </li>
+              <li>
+                With the keyboard in the Workbench, <kbd>⌘W</kbd> and File ▸ Close Tab close the
+                Workbench tab you are on instead (the Files tab cannot be closed). While you type in
+                the folder's <a href="../workbench/#note">note</a>, <kbd>⌘W</kbd> does nothing.
+              </li>
+            </ul>
           </li>
           <li>
             Click the window's red button (or File ▸ Close Window, <kbd>⇧⌘W</kbd>) and the window
@@ -553,10 +588,14 @@
             in; <kbd>Esc</kbd> puts the list away and keeps your words. A folder on another machine
             is named like <code>host:name</code>. With a folder named, <kbd>⏎</kbd> starts the
             session there, with the rest of your words as its first message (if the folder's branch
-            is behind, Koloft first asks whether to pull). Assist is skipped, so the button reads
-            <code>Start a session</code>; with more than one agent it names your default one, like
-            <code>Start · Claude</code>. Name two different folders and the button is off; the tip
-            reads <code>Name one workspace · Esc</code>.
+            is behind, Koloft first asks whether to pull). Assist does not pick the folder, so the
+            button reads <code>Start a session</code>; with more than one agent it names your
+            default one, like <code>Start · Claude</code>. Name two different folders and the button
+            is off; the tip reads <code>Name one workspace · Esc</code>. In a folder git tracks,
+            Assist first names the session's worktree after its task (see
+            <a href="#worktrees">worktree sessions</a>): the box reads
+            <code>Naming its worktree…</code> for a few seconds, and <kbd>Esc</kbd> stops the start
+            and keeps your words.
           </li>
           <li>
             Not everything you type starts a session. "open settings" or "check for updates" just
@@ -640,7 +679,8 @@
             A session you ask for in <kbd>⌘P</kbd>, and one your
             <a href="../accounts/#butler">butler</a> starts in a project, gets its own worktree too
             in a folder git tracks, never the folder itself and never a worktree that is already
-            there. Assist or the butler names it; when neither does, the worktree is called
+            there. Assist names it after the task (or the butler, when it gives a
+            <code class="nowrap">-w</code> name); when neither does, the worktree is called
             <code class="nowrap">session-&lt;date&gt;-&lt;time&gt;</code>. A name already in use
             gets <code class="nowrap">-2</code> after it, then <code class="nowrap">-3</code>.
             Claude Code and Codex both do this, and <kbd>⌘P</kbd> does it on a
@@ -653,9 +693,10 @@
           <li>
             A Codex worktree goes, folder and branch, when the last session in it ends and nothing
             in it changed. A restart (<kbd>⇧⌘R</kbd>) or a sleep is not an end. If something did
-            change, it stays until you remove it yourself, or until an agent closes the session with
-            <code>koloft session close</code> (see <a href="../agents/">agents</a>, which says when
-            that is allowed).
+            change, it stays until you remove it yourself, or until the session is
+            <a href="#close-for-good">closed for good</a> with <kbd>⌘W</kbd>, or by an agent with
+            <code>koloft session close</code> (see <a href="../agents/#session-close">agents</a>,
+            which says when that is allowed).
           </li>
           <li>
             A session whose worktree is gone stays in the list. Hover its row and the tip reads
@@ -745,6 +786,7 @@
           <li>
             A row hangs under its starter only while the starter is in the same folder's list. When
             the starter leaves the list (closed for good with
+            <a href="#close-for-good"><kbd>⌘W</kbd></a> or
             <code class="nowrap">koloft session close</code>, or by Remove from list), the row moves
             up under the starter's own starter, or to the top if there was none. A row also sits at
             the top when it was started into another folder with

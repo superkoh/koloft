@@ -79,6 +79,7 @@ export const CH = {
   },
   assist: {
     route: 'assist:route',
+    nameWorktree: 'assist:name-worktree',
     cancel: 'assist:cancel'
   },
   settings: {
@@ -139,6 +140,7 @@ export const CH = {
     newSession: 'shortcut:new-session',
     newWorktreeSession: 'shortcut:new-worktree-session',
     closeTab: 'shortcut:close-tab',
+    closeSession: 'shortcut:close-session',
     find: 'shortcut:find',
     checkUpdate: 'shortcut:check-update',
     openSettings: 'shortcut:open-settings',

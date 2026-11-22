@@ -382,14 +382,28 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
     await withTheButler(env, async (page, fake) => {
       await startSessionIn(page, 'ws-a')
       const session = await sessionOf(page, 'claude')
+      await expect
+        .poll(async () => (await sessionOf(page, 'claude')).status, {
+          timeout: STARTS_AND_ANSWERS_MS
+        })
+        .toBe('waiting')
       fake.say(OWNER, `/koloft discord thread open ${session.sessionId}`)
       const room = await theRoom(fake)
       const butler = (await page.evaluate(() => window.api.sessions.list())).find(
         (s) => s.overseer
       )!
+      const butlerSaid = async (): Promise<string> =>
+        (await terminalText(page, butler.tabId)).replace(/\n/g, '')
       await expect
-        .poll(() => terminalText(page, butler.tabId), { timeout: STARTS_AND_ANSWERS_MS })
-        .toContain(`<#${room.id}>`)
+        .poll(butlerSaid, { timeout: STARTS_AND_ANSWERS_MS })
+        .toContain(
+          `Opened the room of Fake session: project notes: <#${room.id}>. Give the owner that link exactly as written; Discord shows it as a link to the room.`
+        )
+      await expect
+        .poll(() => inRoom(fake, room.id), { timeout: STARTS_AND_ANSWERS_MS })
+        .toContain(
+          '📍 **Fake session: project notes**: where it is\n-# ws-a · Claude\n\nIt finished its turn.\n\nIt last said: “Creating NOTES.md.”'
+        )
       await expect
         .poll(() => fake.threadMembers)
         .toContainEqual({ threadId: room.id, userId: OWNER.id })
@@ -406,8 +420,10 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
         .toBe(true)
       fake.say(OWNER, '/koloft discord thread open Tidy')
       await expect
-        .poll(() => terminalText(page, butler.tabId), { timeout: STARTS_AND_ANSWERS_MS })
-        .toContain('gets no room')
+        .poll(butlerSaid, { timeout: STARTS_AND_ANSWERS_MS })
+        .toContain(
+          'koloft discord thread open: a helper in your own folder gets no room; its questions already come to your channel.'
+        )
       expect(fake.threads).toHaveLength(1)
     })
   })

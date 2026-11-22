@@ -1,8 +1,21 @@
+import fs from 'fs'
 import path from 'path'
-import { test, expect } from './helpers/app'
+import type { ElectronApplication, Locator, Page } from '@playwright/test'
+import { test, expect, launchApp, quitAndClose } from './helpers/app'
+import { runGit, setupGitFixture } from './helpers/gitFixture'
+import { installStallingGit } from './helpers/gitSpawnLog'
+import { codexRows, startCodex } from './helpers/codex'
+import { installCodex, type E2EEnv } from './helpers/env'
+import {
+  addRemoteWorkspace,
+  killFakeRemote,
+  launchWithRemote,
+  REMOTE_WS_NAME
+} from './helpers/remote'
 import {
   centerTerm,
   gitInit,
+  openWorktreeSession,
   processAlive,
   runIn,
   sendShortcut,
@@ -13,6 +26,8 @@ import {
   wsRows
 } from './helpers/p1'
 import { WORKBENCH, openInBrowse, showBrowse, workbenchPanel } from './helpers/workbench'
+
+const A_WORKTREE_REMOVAL_SLOWER_THAN_THE_ROW_TAKES_TO_GO_MS = 10_000
 
 test.describe('Keyboard shortcuts · native accelerators are driven as shortcut:* IPC', () => {
   test('T-KEY-03: ⌘⇧F toggles the file search row; collapsing clears the filter', async ({
@@ -77,7 +92,7 @@ test.describe('Keyboard shortcuts · native accelerators are driven as shortcut:
     await expect(page.locator(WORKBENCH.readingTitle)).toHaveText('README.md')
   })
 
-  test('T-KEY-05: ⌘W on a working session confirms first — Esc/⏎ both cancel, only Close kills it, and the row stays cold', async ({
+  test('T-KEY-05: File ▸ Close Tab on a working session confirms first — Esc/⏎ both cancel, only Close kills it, and the row stays cold', async ({
     app,
     page,
     env
@@ -122,7 +137,7 @@ test.describe('Keyboard shortcuts · native accelerators are driven as shortcut:
     await expect(wsRows(page, 'ws-a')).toHaveCount(1)
   })
 
-  test('T-KEY-06: ⌘W on a waiting session closes it silently and leaves a cold row', async ({
+  test('T-KEY-06: File ▸ Close Tab on a waiting session closes it silently and leaves a cold row', async ({
     app,
     page,
     env
@@ -141,5 +156,145 @@ test.describe('Keyboard shortcuts · native accelerators are driven as shortcut:
     await expect(row).toHaveClass(/\bcold\b/, { timeout: 40_000 })
     await expect(wsRows(page, 'ws-a')).toHaveCount(1)
     await snap(page, 'T-KEY-06')
+  })
+
+  interface InWorktreeSession {
+    app: ElectronApplication
+    page: Page
+    rows: Locator
+    tree: string
+    clone: string
+  }
+
+  async function inWorktreeSession(
+    env: E2EEnv,
+    body: (s: InWorktreeSession) => Promise<void>
+  ): Promise<void> {
+    const { clone } = setupGitFixture(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      const dlg = await openWorktreeSession(page, 'repo')
+      await dlg.getByRole('textbox').click()
+      await page.keyboard.type('done')
+      await page.keyboard.press('Enter')
+      const rows = wsRows(page, 'repo')
+      await expect(rows).toHaveCount(1, { timeout: 60_000 })
+      await expect(rows).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      const tree = path.join(clone, '.claude', 'worktrees', 'done')
+      await expect.poll(() => fs.existsSync(path.join(tree, 'NOTES.md'))).toBe(true)
+      await rows.click()
+      await body({ app, page, rows, tree, clone })
+    } finally {
+      await quitAndClose(app)
+    }
+  }
+
+  const fullCloseDialog = (page: Page): Locator =>
+    page.locator('.modal', { hasText: 'Close session for good?' })
+
+  test('T-KEY-07: ⌘W on a session whose worktree holds uncommitted work lists it and offers only Close tab only; Esc keeps the session, Close tab only leaves a cold row and the worktree', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    await inWorktreeSession(env, async ({ app, page, rows, tree }) => {
+      const dialog = fullCloseDialog(page)
+
+      await sendShortcut(app, 'shortcut:close-session')
+      await expect(dialog.getByRole('button', { name: 'Close tab only' })).toBeEnabled({
+        timeout: 30_000
+      })
+      await expect(dialog).toContainText('Changes not committed')
+      await expect(dialog.getByRole('button', { name: 'Close for good' })).toHaveCount(0)
+      await page.keyboard.press('Escape')
+      await expect(dialog).toHaveCount(0)
+      await expect(rows).not.toHaveClass(/\bcold\b/)
+
+      await sendShortcut(app, 'shortcut:close-session')
+      await dialog.getByRole('button', { name: 'Close tab only' }).click()
+      await expect(rows).toHaveClass(/\bcold\b/, { timeout: 40_000 })
+      await expect(rows).toHaveCount(1)
+      expect(fs.existsSync(tree)).toBe(true)
+    })
+  })
+
+  test('T-KEY-08: ⌘W asks first with Cancel focused, then Close for good takes the row out at once, while git is still deleting the worktree, and deletes the worktree and its branch', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    await inWorktreeSession(env, async ({ app, page, rows, tree, clone }) => {
+      fs.rmSync(path.join(tree, 'NOTES.md'))
+      installStallingGit(env, {
+        root: clone,
+        subcommand: 'worktree',
+        verb: 'remove',
+        lastArg: tree,
+        ms: A_WORKTREE_REMOVAL_SLOWER_THAN_THE_ROW_TAKES_TO_GO_MS
+      })
+      const dialog = fullCloseDialog(page)
+
+      await sendShortcut(app, 'shortcut:close-session')
+      const go = dialog.getByRole('button', { name: 'Close for good' })
+      await expect(go).toBeEnabled({ timeout: 30_000 })
+      await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused()
+      await snap(page, 'T-KEY-08')
+      await go.click()
+      await expect(dialog).toHaveCount(0)
+      await expect(rows).toHaveCount(0, { timeout: 5_000 })
+      expect(fs.existsSync(tree), 'git is still deleting the worktree').toBe(true)
+
+      await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+      expect(runGit(clone, 'branch', '--list', 'worktree-done').trim()).toBe('')
+      await expect(rows).toHaveCount(0)
+    })
+  })
+
+  test('T-KEY-09: ⌘W closes a Codex session for good the same way: its tab and its row go', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    installCodex(env)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await startCodex(page, env)
+      await expect(codexRows(page)).toHaveCount(1)
+
+      await sendShortcut(app, 'shortcut:close-session')
+      const go = fullCloseDialog(page).getByRole('button', { name: 'Close for good' })
+      await expect(go).toBeEnabled({ timeout: 30_000 })
+      await go.click()
+      await expect(codexRows(page)).toHaveCount(0, { timeout: 15_000 })
+      await expect(page.locator('.modal-backdrop')).toHaveCount(0)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('T-KEY-10: ⌘W on a session on another machine says Koloft cannot check what closing would lose there and offers only Close tab only', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      const rows = wsRows(page, REMOTE_WS_NAME)
+      await rows.first().click()
+
+      await sendShortcut(app, 'shortcut:close-session')
+      const dialog = fullCloseDialog(page)
+      const tabOnly = dialog.getByRole('button', { name: 'Close tab only' })
+      await expect(tabOnly).toBeEnabled({ timeout: 30_000 })
+      await expect(dialog).toContainText('runs on another machine')
+      await tabOnly.click()
+      await expect(rows.first()).toHaveClass(/\bcold\b/, { timeout: 60_000 })
+      await expect(rows).toHaveCount(1)
+    } finally {
+      await quitAndClose(app)
+      killFakeRemote(env)
+    }
   })
 })

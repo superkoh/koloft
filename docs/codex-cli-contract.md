@@ -3781,6 +3781,53 @@ stdin/stdout shapes were also read from the binary, which embeds a JSON schema p
   the model wrote a Chinese note, ran `ls`, and the `PostToolUse` hook saw that note
   (it gave the plain reminder, not the quote of the English reply).
 
+### Hooks a repository declares
+
+2026-11-21, codex-cli 0.169.0 on macOS, measured: Node scripts drove `codex app-server`
+(`hooks/list`, `thread/start`, `turn/start`) in throwaway git repos and throwaway
+`CODEX_HOME`s, against a fake Responses API that wrote down each request; one run each.
+
+- **Both `<repo>/.codex/config.toml` (`[[hooks.<Event>]]`) and `<repo>/.codex/hooks.json`
+  are read**, listed as `source: "project"`; with both, both load and a warning asks for
+  one. They load only once the folder is trusted (`[projects."<realpath>"] trust_level =
+  "trusted"`); otherwise `hooks/list` is empty and a turn gets a `configWarning`.
+- **A linked worktree runs the main checkout's `.codex` hooks, and only when its own
+  checkout has `.codex/config.toml` too**, from a sibling folder or one inside the repo
+  (`.claude/worktrees/<n>`): the key and the command are
+  `<main checkout>/.codex/config.toml:<event>:<group>:<hook>`'s, even when the worktree's
+  copy says otherwise. A worktree whose branch has no `.codex/config.toml` loads no hook
+  at all; with `.codex` only in the worktree, nothing loads either. Trust of either
+  folder lists the main checkout's hooks.
+- **The hook runs in the session's folder** (stdin `cwd`, the worktree's own path in a
+  worktree): a relative `node scripts/x.mjs` ran the worktree's copy, failed from a
+  subfolder (`hook exited with code 1`, and the command ran anyway), and
+  `"$(git rev-parse --show-toplevel)"` worked from both.
+- **Trust is a `[hooks.state."<key>"] trusted_hash` table in the `CODEX_HOME`'s own
+  `config.toml` only** (one in the repo's `.codex/config.toml` is ignored). The hash
+  covers the hook line (command, matcher, timeout), not the script it runs: a changed
+  script stayed `trusted`, a changed command became `modified`. An untrusted project hook
+  does not run and nothing says so to the model; Koloft's `--remote` TUI shows nothing
+  either, while a TUI started bare stops on a "Hooks need review" screen.
+- **`PreToolUse` on `Bash`**: exit 2 with stderr stops the command and the model reads
+  "Command blocked by PreToolUse hook: <stderr>. Command: …"; a hook that waited 60 s
+  before that still stopped it (default timeout 600 s). `matcher = "Bash"` does not fire
+  for `apply_patch`; `matcher = "Edit|Write"` and `matcher = "apply_patch"` do.
+- **`PostToolUse` on `apply_patch`**: `tool_input.command` is the patch, its paths as the
+  model wrote them (relative to `cwd` or absolute, `*** Move to:` for a rename), and no
+  `file_path`; `hookSpecificOutput.additionalContext` reaches the model as a developer
+  message before the tool's output, while exit 2 replaces that output with the stderr.
+- **`SessionStart`** fires with the first turn (stdin `source: "startup"`, `cwd`, no
+  `turn_id`); its `additionalContext` is a developer message before the prompt, and a
+  process it starts detached outlives the hook.
+- **`project_doc_max_bytes` defaults to 32768 for the instruction files together**: from
+  a subfolder, the root `AGENTS.md` (23 KB) was read whole and the subfolder's only up to
+  about 9 KB, cut with no notice. `project_doc_max_bytes = 65536` in the repo's
+  `.codex/config.toml` (the folder trusted) let both, 53.5 KB together, through whole,
+  from the main checkout and from a linked worktree's subfolder.
+
+Koloft dependents: the repo's own `.codex/config.toml` and
+`scripts/trust-codex-hooks.mjs` (ADR-0053).
+
 ## 28. Two app-servers starting at once in a home no app-server has used
 
 **Checked on 2026-10-12 with standalone Codex CLI 0.162.0**, no model turn. A Node script
@@ -4230,3 +4277,29 @@ to 100×30, `/clear`, a second prompt, Ctrl+C twice. An earlier round with `?u` 
 A remote tab's TUI runs on the Mac (§16), so it asks the same.
 
 Koloft dependents: `asksTheTerminal` in `src/main/flowControl.ts`.
+
+## 38. The model's commands get every `KOLOFT_` variable, and Codex keeps none on disk
+
+- **No `KOLOFT_` name is dropped, `KEY`, `TOKEN` or `SECRET` in it or not.** With
+  `KOLOFT_TAB_ID`, `KOLOFT_TAB_PASS`, `KOLOFT_TAB_KEY`, `KOLOFT_TAB_TOKEN`,
+  `KOLOFT_TAB_SECRET`, `KOLOFT_TAB_SEAL` and `KOLOFT_CALLER` in Codex's environment, the
+  model's `exec_command` (`/bin/zsh -lc …`) printed all seven values, under a `CODEX_HOME`
+  whose `config.toml` set no `shell_environment_policy`.
+- **The value lands on disk only when a command prints it.** A command that tested
+  `KOLOFT_TAB_PASS` without printing it left the value in no file under `CODEX_HOME` or the
+  folder (`grep -rl`); one that printed it put it in the rollout `.jsonl` and in
+  `thread_history_1.sqlite-wal`.
+- **An owner's `shell_environment_policy.inherit = "core"` drops them all, `ZDOTDIR` and
+  `BASH_ENV` too.** With `-c shell_environment_policy.inherit=core` the same command saw no
+  `KOLOFT_TAB_PASS`, no `KOLOFT_TAB_ID`, no `ZDOTDIR` and no `BASH_ENV`, so the shell never
+  reads the files that put Koloft's shim folder on `PATH` (§12) and `koloft` is not found
+  there at all.
+- Measured 2026-11-21: codex-cli 0.169.0 (Homebrew cask, macOS 27.2), `codex exec -s
+  read-only` in a temp `CODEX_HOME` against a fake Responses API (`env_key` provider) that
+  answered with one `exec_command`. The app-server Koloft runs gets `KOLOFT_TAB_PASS` in the
+  same spawn environment (`sessionEnv`) as `KOLOFT_PORT_OFFSET`, which §10 measured reaching
+  the model's commands through a real app-server; that this one does too is inferred from
+  that, not run.
+
+Koloft dependents: `TAB_PASS_ENV` in `src/main/tabPass.ts`, given to the app-server in
+`src/plugins/sessions/main/codexSessions.ts`.

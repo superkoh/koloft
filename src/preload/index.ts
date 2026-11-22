@@ -164,6 +164,7 @@ const api: KoloftApi = {
   },
   assist: {
     route: (id, message) => ipcRenderer.invoke(CH.assist.route, id, message),
+    nameWorktree: (id, task) => ipcRenderer.invoke(CH.assist.nameWorktree, id, task),
     cancel: (id) => ipcRenderer.send(CH.assist.cancel, id)
   },
   settings: {
@@ -306,6 +307,11 @@ const api: KoloftApi = {
       const handler = (): void => cb()
       ipcRenderer.on(CH.shortcut.closeTab, handler)
       return () => ipcRenderer.removeListener(CH.shortcut.closeTab, handler)
+    },
+    onCloseSession: (cb) => {
+      const handler = (): void => cb()
+      ipcRenderer.on(CH.shortcut.closeSession, handler)
+      return () => ipcRenderer.removeListener(CH.shortcut.closeSession, handler)
     },
     onFind: (cb) => {
       const handler = (): void => cb()

@@ -383,7 +383,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     }
   })
 
-  test('a git workspace never starts in its main checkout: when Assist answers main, or the owner names the workspace with @, the session starts in a fresh worktree of its own', async ({
+  test('a git workspace never starts in its main checkout: when Assist answers main the session starts in a fresh worktree of its own, and when the owner names the workspace with @ it starts in a worktree Assist names for the task', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -402,12 +402,12 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       const first = atOnce.argv.join(' ').match(fresh)?.[1]
       expect(first).toBeDefined()
 
+      assistAnswers(env, 'read-the-readme')
       await ask(app, page, '@ws-a read the readme')
       await page.keyboard.press('Enter')
       const calls = await waitForAllCalls(env, 2, 30_000)
-      const second = calls[1].argv.join(' ').match(fresh)?.[1]
-      expect(second).toBeDefined()
-      expect(second).not.toBe(first)
+      expect(calls[1].argv.join(' ')).toContain('-w read-the-readme ')
+      expect(textAfterDashes(calls[1])).toBe('read the readme')
     } finally {
       await quitAndClose(app)
     }

@@ -37,12 +37,16 @@ export class SignInOutput {
   }
 
   tail(): string {
-    return stripTerminalCodes(this.buf.replace(OSC_SEQUENCE, ''))
-      .replace(/\r\n/g, '\n')
-      .split('\n')
-      .map((line) => line.slice(line.lastIndexOf('\r') + 1).replace(CONTROL_BUT_TAB, ''))
-      .filter((line) => line.trim())
-      .slice(-TAIL_LINES)
-      .join('\n')
+    return plainTerminalTail(this.buf)
   }
+}
+
+export function plainTerminalTail(printed: string): string {
+  return stripTerminalCodes(printed.replace(OSC_SEQUENCE, ''))
+    .replace(/\r+\n/g, '\n')
+    .split('\n')
+    .map((line) => line.slice(line.lastIndexOf('\r') + 1).replace(CONTROL_BUT_TAB, ''))
+    .filter((line) => line.trim())
+    .slice(-TAIL_LINES)
+    .join('\n')
 }

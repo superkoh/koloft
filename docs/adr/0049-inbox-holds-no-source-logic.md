@@ -3,7 +3,7 @@
 **Constraint**: the owner wants one Inbox for every place that waits on them — Koloft's
 own sessions now, GitHub, Slack or mail later — and wants a new place added without
 touching the Inbox.
-**Decision**: the Inbox (`src/main/inbox.ts`, `src/shared/inbox.ts`, the Inbox page) knows
+**Decision**: the Inbox (`src/plugins/inbox/main/inbox.ts`, `src/shared/inbox.ts`, the Inbox page) knows
 only cards: three states (needs you, in progress, done), a level, blocks to show, and
 buttons. A source is a platform (Koloft, later GitHub, Slack), never a feature or a
 session. It posts, changes, moves and deletes its own cards; everything a card means —
@@ -16,7 +16,7 @@ card's `where`, never from a list the Inbox knows. Koloft's own signals — ever
 waits on the owner: a question, an approval or an unexpected stop (the butler's and its
 helpers' too), and a finished turn the news judge says needs the owner (not one whose reply
 went to another session or to the butler's channel, nor one the owner is watching) — reach
-the Inbox as cards its Koloft source (`src/main/koloftInbox.ts`) posts and closes, like any
+the Inbox as cards its Koloft source (`src/plugins/inbox/main/koloftInbox.ts`) posts and closes, like any
 other source. Those cards come from Koloft's own signals, never from an agent remembering to
 post one: the guide's rule that agents post their finished work drew no card in real use. A
 finished-turn card waits for the judge's verdict and quotes that turn's own reply; posted
