@@ -212,7 +212,7 @@
             say so. A box asks <code>Close session for good?</code>; <code>Close for good</code>
             ends the session, takes its row out of the list and deletes its git worktree and branch
             if it has one, and the row leaves at once. If Koloft cannot finish, the row comes back
-            and a note says why. Before that, Koloft runs the same check as
+            as a closed session and a note says why. Before that, Koloft runs the same check as
             <a href="../agents/#session-close"><code class="nowrap">koloft session close</code></a
             >: when closing would lose work, the box lists it and offers only
             <code>Close tab only</code>. A session on a <a href="../remote/">remote folder</a> gets
@@ -220,7 +220,8 @@
             closes just the tab, and the session stays in the list to resume. A tab with no session
             yet, a tab whose agent quit, a shell tab, a <a href="../scheduled/">scheduled job</a>'s
             tab and your butler's tab only close their tab with <kbd>⌘W</kbd>. With the keyboard in
-            the Workbench, <kbd>⌘W</kbd> closes the Workbench tab instead.
+            the Workbench, <kbd>⌘W</kbd> closes the Workbench tab you are on instead (the Files tab
+            cannot be closed).
           </li>
           <li>
             Click the window's red button (or File ▸ Close Window, <kbd>⇧⌘W</kbd>) and the window
