@@ -337,13 +337,12 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       await worktreeDialog(page).locator('input').fill('agy-gone-tree')
       await chooseBackend(page, 'Antigravity')
       await expect.poll(() => machineAgyCalls(env).length, { timeout: 90_000 }).toBe(1)
+      const tree = machineAgyCalls(env)[0].cwd
+      expect(path.basename(tree)).toBe('agy-gone-tree')
       await agyReady(page)
       const tabId = await page.locator('.ws .ws-tab.active').first().getAttribute('data-tab-id')
-      await agyStatusLineDrawnAgainAfterItsFolderIsRemoved(
-        page,
-        tabId!,
-        machineAgyCalls(env)[0].cwd
-      )
+      await agyStatusLineDrawnAgainAfterItsFolderIsRemoved(page, tabId!, tree)
+      expect(machineAgyCalls(env)).toHaveLength(1)
     } finally {
       await quitAndClose(app)
     }

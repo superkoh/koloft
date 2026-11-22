@@ -13,6 +13,7 @@ import {
   waitForCalls
 } from './helpers/p1'
 import { fakeCodexLog, startCodex } from './helpers/codex'
+import { agyReady } from './helpers/remote'
 import {
   agyStatusLineDrawnAgainAfterItsFolderIsRemoved,
   claudeSettingsNameAnotherEffort,
@@ -233,12 +234,12 @@ test.describe('built-in statusline', () => {
       await waitBooted(page)
       await worktreeSessionIn(page, 'agy-gone-tree', 'Antigravity')
       await expect.poll(() => agySessionCalls(env).length).toBe(1)
+      const tree = agySessionCalls(env)[0].cwd
+      expect(path.basename(tree)).toBe('agy-gone-tree')
+      await agyReady(page)
       const tabId = await page.locator('.ws .ws-tab.active').first().getAttribute('data-tab-id')
-      await agyStatusLineDrawnAgainAfterItsFolderIsRemoved(
-        page,
-        tabId!,
-        agySessionCalls(env)[0].cwd
-      )
+      await agyStatusLineDrawnAgainAfterItsFolderIsRemoved(page, tabId!, tree)
+      expect(agySessionCalls(env)).toHaveLength(1)
     } finally {
       await quitAndClose(app)
     }

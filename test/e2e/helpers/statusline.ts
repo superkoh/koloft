@@ -4,7 +4,7 @@ import type { Page } from '@playwright/test'
 import { expect } from './app'
 import { centerTerm, runIn, terminalText } from './p1'
 
-const FIRST_RENDER_ON_A_COLD_REMOTE_TIMEOUT_MS = 60_000
+const COLD_STATUS_LINE_DRAW_TIMEOUT_MS = 60_000
 
 const PROMPT_AFTER_THE_FOLDER_WENT = 'next words after the folder went'
 
@@ -35,7 +35,7 @@ export async function claudeStatusLineDrawnAgainAfterItsFolderIsRemoved(
             return ''
           }
         },
-        { timeout: FIRST_RENDER_ON_A_COLD_REMOTE_TIMEOUT_MS }
+        { timeout: COLD_STATUS_LINE_DRAW_TIMEOUT_MS }
       )
       .toContain(FAKE_CLAUDES_EFFORT)
   await drawn()
@@ -52,7 +52,7 @@ export async function agyStatusLineDrawnAgainAfterItsFolderIsRemoved(
 ): Promise<void> {
   const claudes = new RegExp(`\\b${CLAUDES_OWN_EFFORT_LEVEL}\\b`)
   await expect
-    .poll(() => terminalText(page, tabId), { timeout: FIRST_RENDER_ON_A_COLD_REMOTE_TIMEOUT_MS })
+    .poll(() => terminalText(page, tabId), { timeout: COLD_STATUS_LINE_DRAW_TIMEOUT_MS })
     .toMatch(AGYS_OWN_EFFORT)
   expect(await terminalText(page, tabId)).not.toMatch(claudes)
   fs.rmSync(folder, { recursive: true, force: true })
@@ -70,7 +70,7 @@ export async function agyStatusLineDrawnAgainAfterItsFolderIsRemoved(
         const at = since.indexOf(answer)
         return at < 0 ? '' : since.slice(at + answer.length)
       },
-      { timeout: FIRST_RENDER_ON_A_COLD_REMOTE_TIMEOUT_MS }
+      { timeout: COLD_STATUS_LINE_DRAW_TIMEOUT_MS }
     )
     .toMatch(AGYS_OWN_EFFORT)
   const since = await sinceThePrompt()

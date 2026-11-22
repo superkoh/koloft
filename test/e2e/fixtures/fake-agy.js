@@ -830,7 +830,7 @@ function statusInput() {
     },
     conversation_id: c?.id ?? '',
     conversation_title: c?.conversationTitle ?? null,
-    cwd: workspace,
+    cwd: process.cwd(),
     exceeds_200k_tokens: false,
     model: term.agentState === 'authenticating' ? null : { ...model },
     product: 'antigravity',
