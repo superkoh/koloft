@@ -56,8 +56,8 @@ it is done.
 ## What a plugin owns
 
 A plugin owns six things. The example column says what the Discord plugin owns. All of
-Discord's code is in its folder; `src/main/index.ts` still builds its main-process parts and
-wires them to the rest of the app.
+Discord's code is in its folder; its start builds its main-process parts, and
+`src/main/index.ts` hands them what they need from the rest of the app.
 
 | # | A plugin owns | Manifest field | Example (Discord) |
 |---|---|---|---|
@@ -910,7 +910,13 @@ export const start: PluginStart<
   was taken on Discord, and one `BuildLater` for each of its parts built once Electron is
   ready: `buildDiscordBinding`, `buildDiscordLink`, `buildRooms`, `buildOldThreads`,
   `buildButlerTyping`, `buildAskButtons`, `buildSecretCards`, `buildInstructionCards`,
-  `buildInteractions` and `buildDiscordRelay`.
+  `buildInteractions` and `buildDiscordRelay`. A builder fills in itself the deps that
+  name Discord's own code (the link's events, where a room's message goes, whether a card
+  is wanted, which card a button press is for). It also gives back `startDiscord`, which
+  the app calls once its parts are built, `followDiscordSwitch`, which it calls whenever
+  the switches change, `discordOn`, `discordConnected`, `commandIntoButler`,
+  `roomNoteOfKey` and `withoutTheRelayTag` for the app's own code, and the page-picture
+  functions the app's other parts use (`shotSession`, `shootHtml`, …).
 - What a start gives back exists only once `startPlugins` returns. A deps object built
   before that, or a start that runs before the one that gives it, reads it through a
   function (Workbench's `driverOf` calls Browser control's `sessionDrivingGuest`), never as a
@@ -981,8 +987,8 @@ its "is this branch merged" query. It has
 `followSwitch()`, which `src/main/index.ts` calls whenever the switches change: it starts or
 stops the sweep of issue and pull request counts. The counts reach the sidebar's workspace
 rows through the `pluginData` dep of Sessions core's workspaces, only while the sweep runs.
-Discord's bot follows its switch the same way, from `followDiscordSwitch` in
-`src/main/index.ts`. As the app quits, a start's `stop` stops what it built
+Discord's bot follows its switch the same way, from the `followDiscordSwitch` its start
+gives back. As the app quits, a start's `stop` stops what it built
 ([Starting](#starting)).
 
 Two hooks let one plugin hand another plugin's part what it needs, without core naming

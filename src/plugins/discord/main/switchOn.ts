@@ -5,7 +5,7 @@ export const discordOn = (): boolean => pluginStateOf(plugin.id).on
 
 export const DISCORD_TURNED_OFF = '⏹ Discord was turned off in Koloft.'
 
-type Switches = Readonly<Record<string, boolean>>
+export type Switches = Readonly<Record<string, boolean>>
 
 export const withDiscordOn = (pluginsOn: Switches): Record<string, boolean> => ({
   ...pluginsOn,
