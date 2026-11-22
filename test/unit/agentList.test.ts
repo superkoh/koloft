@@ -6,12 +6,13 @@ import type { AgentId } from '@core/agent/registry'
 import { AGENTS } from '@agents/list'
 
 const AGENT_FOLDERS = path.join(__dirname, '..', '..', 'src', 'agents')
+const PARTS_SEVERAL_AGENTS_SHARE = 'kit'
 
 describe('the list of agents', () => {
   it('holds the manifest of every agent folder once, and each manifest carries its folder name as its id', async () => {
     const folders = fs
       .readdirSync(AGENT_FOLDERS, { withFileTypes: true })
-      .filter((e) => e.isDirectory())
+      .filter((e) => e.isDirectory() && e.name !== PARTS_SEVERAL_AGENTS_SHARE)
       .map((e) => e.name)
     expect(AGENTS).toHaveLength(folders.length)
     for (const folder of folders) {
