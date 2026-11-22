@@ -38,6 +38,9 @@ below names a tool only one agent has, use your own agent's from this table:
 | The cleanup pass over a finished diff | `/simplify` | go over the diff for reuse, simpler code, speed, and whether each piece sits at the right level | the same as Codex |
 | Scratch files | the scratchpad | the system temp folder | `brain/<conversation id>/scratch/` |
 
+The `koloft` command exists only in a session Koloft started; in one started any other
+way, do that step with your own agent's tools, or ask the owner.
+
 A helper started with `-w` hands back its result and stays open; once its PR merged,
 the session that started it closes it with `koloft session close <name or id>`, or says
 in its hand-back that the worktree is still there when that is refused.
@@ -261,8 +264,8 @@ Working principles:
   `test/AGENTS.md` (Hand tests) lets it do, asks the owner only for the step that
   needs a person, and checks that step itself afterwards in a log or file. One dev build at a time: stop every older one first, its Electron
   main process too (killing `electron-vite` alone leaves the window up). A dev build
-  has its own profile (`koloft-dev`), so the installed Koloft, where these sessions
-  run, stays open.
+  has its own profile (`koloft-dev`), so an installed Koloft on the same machine stays
+  open.
 - Four setup steps, each with a silent failure mode:
   - `npm run rebuild` before the first run, and again after any change to the Electron
     or node-pty version — otherwise the app crashes on launch with an ABI mismatch.
@@ -322,7 +325,7 @@ Working principles:
   `docs/claude-code-contract.md` §7. A Codex account is its own `CODEX_HOME`, picked per
   launch (`docs/codex-cli-contract.md` §15).
 - Any browser automation here stays headless — never pass `--headed` unless asked to
-  watch. Koloft is developed on the same Mac the automation runs on, so a browser window
+  watch. The automation may run on the machine a person is working at, so a browser window
   that takes focus, or merely covers a fullscreen Space, interrupts whatever is being
   typed at that moment. The app's own e2e suite obeys the same rule by launching
   hidden and never showing itself.
