@@ -6756,14 +6756,14 @@ const {
     phoneChannelOf,
     turnTakenOnDiscord
   },
-  buildBinding: buildDiscordBinding,
-  buildLink: buildDiscordLink,
+  buildDiscordBinding,
+  buildDiscordLink,
   buildRooms,
   buildOldThreads,
-  buildTyping: buildButlerTyping,
-  buildButtons: buildAskButtons,
+  buildButlerTyping,
+  buildAskButtons,
   buildSecretCards,
   buildInstructionCards,
   buildInteractions,
-  buildRelay: buildDiscordRelay
+  buildDiscordRelay
 } = startedPlugins.discord

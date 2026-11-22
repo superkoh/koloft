@@ -908,9 +908,9 @@ export const start: PluginStart<
   works out for each tab (`roomOf`, `askChannelOf`, `phoneChannelOf`, `turnTakenOnDiscord`),
   which the app reads to hold a tab open, place a card and tell the attention marks a turn
   was taken on Discord, and one `BuildLater` for each of its parts built once Electron is
-  ready: `buildBinding`, `buildLink`, `buildRooms`, `buildOldThreads`, `buildTyping`,
-  `buildButtons`, `buildSecretCards`, `buildInstructionCards`, `buildInteractions` and
-  `buildRelay`.
+  ready: `buildDiscordBinding`, `buildDiscordLink`, `buildRooms`, `buildOldThreads`,
+  `buildButlerTyping`, `buildAskButtons`, `buildSecretCards`, `buildInstructionCards`,
+  `buildInteractions` and `buildDiscordRelay`.
 - What a start gives back exists only once `startPlugins` returns. A deps object built
   before that, or a start that runs before the one that gives it, reads it through a
   function (Workbench's `driverOf` calls Browser control's `sessionDrivingGuest`), never as a
@@ -929,8 +929,8 @@ export const start: PluginStart<
   `CronRunner` this way, Passwords and sign-in's `buildAsks` its `SecretAsks`, and the
   Butler's `buildButler` and `buildDigest` its `Butler` and `AwayDigest`, and Discord's ten
   its `DiscordBinding`, `DiscordLink`, `Rooms`, `OldThreads`, `ButlerTyping`, `AskButtons`,
-  `SecretCards`, `InstructionCards`, `Interactions` and `DiscordRelay`, each on the line
-  the app built it on before, between parts of other plugins; Workbench's `setUpBrowserPartition` and `setUpExtensions` and
+  `SecretCards`, `InstructionCards`, `Interactions` and `DiscordRelay`, each called on a
+  line of its own among the parts of other plugins it needs or that need it; Workbench's `setUpBrowserPartition` and `setUpExtensions` and
   Browser control's `startRelay` are the same shape with nothing given back
   (`BuildLater<Deps>`). There is no one moment at which the app builds every plugin's
   later parts: each is called on its own line, so the order the app is ready in does not

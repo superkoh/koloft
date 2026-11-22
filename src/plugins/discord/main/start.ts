@@ -10,7 +10,7 @@ import { InstructionCards, type InstructionCardDeps } from './instructionCards'
 import { Interactions, type InteractionDeps } from './interactions'
 import { DiscordLink, type DiscordLinkDeps } from './link'
 import { OldThreads, type OldThreadDeps } from './oldThreads'
-import { phoneCopier } from './phoneCopier'
+import { phoneCopier, type PhoneCopierDeps } from './phoneCopier'
 import { DiscordRelay, type RelayDeps } from './relay'
 import { Rooms, type RoomDeps } from './rooms'
 import { SecretCards, type SecretCardDeps } from './secretCards'
@@ -20,9 +20,7 @@ import {
   giveEachStartedSessionARoom
 } from './sessionHooks'
 import { discordOn } from './switchOn'
-import { tabChannels } from './tabChannels'
-
-type PhoneCopierDeps = Parameters<typeof phoneCopier>[0]
+import { tabChannels, type TabChannels } from './tabChannels'
 
 export interface DiscordStartDeps {
   butlerSide(tabId: string): boolean
@@ -39,17 +37,17 @@ export interface DiscordStartDeps {
 export const start: PluginStart<
   DiscordStartDeps,
   {
-    channels: ReturnType<typeof tabChannels>
-    buildBinding: BuildLater<DiscordBindingDeps, DiscordBinding>
-    buildLink: BuildLater<DiscordLinkDeps, DiscordLink>
+    channels: TabChannels
+    buildDiscordBinding: BuildLater<DiscordBindingDeps, DiscordBinding>
+    buildDiscordLink: BuildLater<DiscordLinkDeps, DiscordLink>
     buildRooms: BuildLater<RoomDeps, Rooms>
     buildOldThreads: BuildLater<OldThreadDeps, OldThreads>
-    buildTyping: BuildLater<ButlerTypingDeps, ButlerTyping>
-    buildButtons: BuildLater<ButtonDeps, AskButtons>
+    buildButlerTyping: BuildLater<ButlerTypingDeps, ButlerTyping>
+    buildAskButtons: BuildLater<ButtonDeps, AskButtons>
     buildSecretCards: BuildLater<SecretCardDeps, SecretCards>
     buildInstructionCards: BuildLater<InstructionCardDeps, InstructionCards>
     buildInteractions: BuildLater<InteractionDeps, Interactions>
-    buildRelay: BuildLater<RelayDeps, DiscordRelay>
+    buildDiscordRelay: BuildLater<RelayDeps, DiscordRelay>
   }
 > = ({ commands, moments, ipc }, d) => {
   let binding: DiscordBinding | null = null
@@ -94,15 +92,15 @@ export const start: PluginStart<
   registerChannels(ipc, d.channels)
   return {
     channels,
-    buildBinding: (deps) => (binding = new DiscordBinding(deps)),
-    buildLink: (deps) => new DiscordLink(deps),
+    buildDiscordBinding: (deps) => (binding = new DiscordBinding(deps)),
+    buildDiscordLink: (deps) => new DiscordLink(deps),
     buildRooms: (deps) => (rooms = new Rooms(deps)),
     buildOldThreads: (deps) => new OldThreads(deps),
-    buildTyping: (deps) => (typing = new ButlerTyping(deps)),
-    buildButtons: (deps) => (buttons = new AskButtons(deps)),
+    buildButlerTyping: (deps) => (typing = new ButlerTyping(deps)),
+    buildAskButtons: (deps) => (buttons = new AskButtons(deps)),
     buildSecretCards: (deps) => new SecretCards(deps),
     buildInstructionCards: (deps) => new InstructionCards(deps),
     buildInteractions: (deps) => new Interactions(deps),
-    buildRelay: (deps) => (relay = new DiscordRelay(deps))
+    buildDiscordRelay: (deps) => (relay = new DiscordRelay(deps))
   }
 }
