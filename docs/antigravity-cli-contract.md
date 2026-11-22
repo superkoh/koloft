@@ -623,6 +623,12 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
   - The first two inputs at launch (`authenticating`) carry `"model":null` (1.4.0).
 - The scripts run at start and on each state change only: none in 25 s idle, 5 in a
   12 s turn.
+- **Once the folder agy runs in is removed, the scripts still run, inside the removed
+  folder.** 2026-11-22, agy 1.5.10 Linux arm64 (`koloft-probe-muse-agy`), Docker
+  `--network none`, tmux, a fake Gemini server, a status script logging `pwd -P` and its
+  stdin: after the folder was removed and a prompt sent, three more runs came, each with
+  `pwd -P` printing nothing, and `cwd` and `workspace.current_dir` / `project_dir` still
+  naming the removed folder. macOS: not probed.
 - Status line: its stdout lines (several lines and ANSI colour work) replace agy's
   own line; with `"stack_with_default":true` agy's line (`? for shortcuts … Gemini 3.1
   Pro · low`) comes first and the script's lines below. A script exiting non-zero

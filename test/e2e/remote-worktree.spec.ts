@@ -10,6 +10,7 @@ import {
   killFakeRemote,
   launchWithRemote,
   liveTmuxSessions,
+  machineHome,
   REMOTE_WS_NAME,
   remoteDir,
   sshCommands
@@ -27,6 +28,7 @@ import {
   wsMenuTexts,
   wsRows
 } from './helpers/p1'
+import { claudeStatusLineDrawnAgainAfterItsFolderIsRemoved } from './helpers/statusline'
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -248,6 +250,37 @@ test.describe('worktree sessions in a remote workspace, driven by the machine’
         execFileSync('git', ['-C', wtDir, 'branch', '--show-current'], { encoding: 'utf8' })
       ).toBe('worktree-gone\n')
       await expect(wsRows(page, REMOTE_WS_NAME)).toHaveCount(1)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // CC§6
+  test('a remote Claude worktree session whose folder is removed from the machine while it runs still gets its status line drawn there on the next prompt', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    installFakeRemote(env)
+    gitInit(remoteDir(env))
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await expect
+        .poll(async () => (await wsMenuTexts(page, REMOTE_WS_NAME)).join(' | '), {
+          timeout: 60_000
+        })
+        .toContain('New worktree session')
+      const dlg = await openWorktreeSession(page, REMOTE_WS_NAME)
+      await dlg.getByRole('textbox').click()
+      await page.keyboard.type('gone-tree')
+      await page.keyboard.press('Enter')
+      await expect(dlg).toHaveCount(0)
+      await waitForCalls(env, 1, 60_000)
+      await claudeStatusLineDrawnAgainAfterItsFolderIsRemoved(
+        page,
+        path.join(machineHome(env), 'fake-claude-statusline.out'),
+        path.join(remoteDir(env), '.claude', 'worktrees', 'gone-tree')
+      )
     } finally {
       await quitAndClose(app)
     }

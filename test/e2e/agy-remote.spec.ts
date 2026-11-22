@@ -63,6 +63,10 @@ import {
   tmuxName
 } from './helpers/remote'
 import { turnOffItsOnlyAccountRestartAndSeeWhy } from './helpers/restartNoAccount'
+import {
+  agyStatusLineDrawnAgainAfterItsFolderIsRemoved,
+  claudeSettingsNameAnotherEffort
+} from './helpers/statusline'
 
 test.afterEach(({ env }) => killFakeRemote(env))
 
@@ -308,6 +312,38 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       const tree = path.join(remoteDir(env), '.claude', 'worktrees', 'agy-tree')
       expect(fs.realpathSync(machineAgyCalls(env)[0].cwd)).toBe(fs.realpathSync(tree))
       expect(fs.readFileSync(path.join(tree, '.env'), 'utf8')).toBe(INCLUDED_ENV)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§11 PLATFORM§36
+  test('a remote Antigravity worktree session shows agy’s own effort on its status line, not Claude’s, and keeps drawing it with no error once its folder is removed from the machine while it runs', async ({
+    env
+  }) => {
+    setUp(env)
+    claudeSettingsNameAnotherEffort(machineHome(env))
+    gitInit(remoteDir(env))
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await expect
+        .poll(async () => (await wsMenuTexts(page, REMOTE_WS_NAME)).join(' | '), {
+          timeout: 60_000
+        })
+        .toContain('New worktree session')
+      await openWorktreeSession(page, REMOTE_WS_NAME)
+      await worktreeDialog(page).locator('input').fill('agy-gone-tree')
+      await chooseBackend(page, 'Antigravity')
+      await expect.poll(() => machineAgyCalls(env).length, { timeout: 90_000 }).toBe(1)
+      await agyReady(page)
+      const tabId = await page.locator('.ws .ws-tab.active').first().getAttribute('data-tab-id')
+      await agyStatusLineDrawnAgainAfterItsFolderIsRemoved(
+        page,
+        tabId!,
+        machineAgyCalls(env)[0].cwd
+      )
     } finally {
       await quitAndClose(app)
     }

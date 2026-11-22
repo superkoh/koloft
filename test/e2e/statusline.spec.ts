@@ -1,12 +1,35 @@
 import fs from 'fs'
 import path from 'path'
+import type { Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
-import { installCodex, seedSettings } from './helpers/env'
-import { startSessionIn, waitBooted } from './helpers/p1'
+import { agySessionCalls, installAgy, installCodex, seedSettings, trustInAgy } from './helpers/env'
+import {
+  chooseBackend,
+  gitCommitAll,
+  gitInit,
+  openWorktreeSession,
+  startSessionIn,
+  waitBooted,
+  waitForCalls
+} from './helpers/p1'
 import { fakeCodexLog, startCodex } from './helpers/codex'
+import {
+  agyStatusLineDrawnAgainAfterItsFolderIsRemoved,
+  claudeSettingsNameAnotherEffort,
+  claudeStatusLineDrawnAgainAfterItsFolderIsRemoved,
+  COLD_BUNDLE_FIRST_RENDER_TIMEOUT_MS
+} from './helpers/statusline'
 import { CODEX_ASKS_AND_WAITS } from '../../src/main/codexLaunchConfig'
 
-const COLD_BUNDLE_FIRST_RENDER_TIMEOUT_MS = 30_000
+async function worktreeSessionIn(
+  page: Page,
+  name: string,
+  agent: 'default' | 'Antigravity'
+): Promise<void> {
+  const dialog = await openWorktreeSession(page, 'ws-a')
+  await dialog.locator('input').fill(name)
+  await chooseBackend(page, agent)
+}
 
 // CC§6
 test.describe('built-in statusline', () => {
@@ -163,6 +186,56 @@ test.describe('built-in statusline', () => {
       }
     } finally {
       await app.close().catch(() => {})
+    }
+  })
+
+  // CC§6
+  test('a Claude worktree session whose folder is removed while it runs still gets its status line drawn on the next prompt', async ({
+    env
+  }) => {
+    seedSettings(env, { hintsOff: true })
+    gitInit(env.workspaces.a)
+    gitCommitAll(env.workspaces.a)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await worktreeSessionIn(page, 'gone-tree', 'default')
+      await waitForCalls(env, 1)
+      await claudeStatusLineDrawnAgainAfterItsFolderIsRemoved(
+        page,
+        path.join(env.home, 'fake-claude-statusline.out'),
+        path.join(env.workspaces.a, '.claude', 'worktrees', 'gone-tree')
+      )
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  // AGY§11 PLATFORM§36
+  test('an Antigravity worktree session shows agy’s own effort on its status line, not Claude’s, and keeps drawing it with no error once its folder is removed while it runs', async ({
+    env
+  }) => {
+    installAgy(env)
+    trustInAgy(env, env.workspaces.a)
+    seedSettings(env, { hintsOff: true })
+    claudeSettingsNameAnotherEffort(env.home)
+    gitInit(env.workspaces.a)
+    gitCommitAll(env.workspaces.a)
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await worktreeSessionIn(page, 'agy-gone-tree', 'Antigravity')
+      await expect.poll(() => agySessionCalls(env).length).toBe(1)
+      const tabId = await page.locator('.ws .ws-tab.active').first().getAttribute('data-tab-id')
+      await agyStatusLineDrawnAgainAfterItsFolderIsRemoved(
+        page,
+        tabId!,
+        agySessionCalls(env)[0].cwd
+      )
+    } finally {
+      await quitAndClose(app)
     }
   })
 

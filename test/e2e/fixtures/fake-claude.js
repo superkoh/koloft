@@ -431,7 +431,12 @@ function renderStatuslineWithoutBlockingSessionStart() {
   try {
     const child = cp.exec(
       statusLine.command,
-      { env: { ...process.env, COLUMNS: '120' }, timeout: 20000, encoding: 'utf8' },
+      {
+        cwd: fs.existsSync(cwd) ? cwd : home,
+        env: { ...process.env, COLUMNS: '120' },
+        timeout: 20000,
+        encoding: 'utf8'
+      },
       (err, stdout) => {
         if (err || !stdout) return
         try {
@@ -2086,6 +2091,7 @@ function handleLine(line) {
     }
   ])
   fireHook('stop', { hook_event_name: 'Stop' })
+  renderStatuslineWithoutBlockingSessionStart()
   process.stdout.write(`[fake-claude] handled: ${text}\r\n> `)
 }
 // CC§12
