@@ -1009,7 +1009,9 @@ it gives back, as Scheduled tasks' `CronRunner`, Sessions core's `SessionAsks`,
 Butler's `Butler` and `AwayDigest` and Discord's ten parts built once Electron is ready
 do. `src/main/index.ts` imports no plugin's `main/` file: the parts and helpers its own
 code still calls, it reads from what each start gives back ([Starting](#starting)), and
-their types it works out from `PluginStartDeps` and `PluginsStarted`. A part never imports another plugin
+their types it works out from `PluginStartDeps` and `PluginsStarted`, all but Sessions core's
+`SessionsWithStore`, which it takes from that plugin's `api.ts`
+([The import rule](#the-import-rule)). A part never imports another plugin
 past its `api.ts`. When it needs something from a plugin that needs it in turn (Browser
 control needs Workbench), `src/main/index.ts` passes a function in. For example, Workbench's
 `PageRouting` gets `driverOf` and `openAsDrivingAgentsTab` as deps, which Browser control's
@@ -1106,7 +1108,8 @@ window, settings code and main process read the other four lists and hand them t
 
 Two kinds of import have no approved path yet. `src/main/index.ts` still imports four
 plugins' `api.ts`: Passwords and sign-in's `passwordsOn`, Docs writing's `docsWritingOn`,
-the Butler's prompts, folder and words, and Sessions core's `SessionsWithStore` type. And
+the Butler's prompts, folder, words and other helpers (`THIS_MAC`, `asPeerName`, …), and
+Sessions core's `SessionsWithStore` type. And
 other app code, mostly the rest of `src/main/`, imports plugins' `main/` and `shared/`
 files directly. The check lists both as breaking the rule
 ([Not built or not decided](#not-built-or-not-decided)).
