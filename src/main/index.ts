@@ -1441,11 +1441,11 @@ function machinePackage(): MachinePackage {
 let playwrightCliBin: string | undefined
 let fallbackBin: string | undefined
 let gitFirstBin: string | undefined
-type CronRunnerDeps = Parameters<PluginsStarted['scheduled-tasks']['buildRunner']>[0]
+type CronRunnerDeps = Parameters<typeof buildCronRunner>[0]
 type LaunchRequest = Parameters<CronRunnerDeps['launch']>[0]
 type LaunchResult = Awaited<ReturnType<CronRunnerDeps['launch']>>
 type RunLeftovers = Awaited<ReturnType<CronRunnerDeps['runLeftovers']>>
-let cronRunner: ReturnType<PluginsStarted['scheduled-tasks']['buildRunner']> | null = null
+let cronRunner: ReturnType<typeof buildCronRunner> | null = null
 let butler: Butler | null = null
 let discordBinding: DiscordBinding | null = null
 let discordLink: DiscordLink | null = null

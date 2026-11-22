@@ -1,4 +1,5 @@
 import fs from 'fs'
+import type { MadeLater } from '@core/moment'
 import type { BuildLater, PluginStart, StopOnQuit } from '@core/pluginStart'
 import { pushRunStarted, pushState, registerChannels } from './channels'
 import { CronRunner, type RunnerDeps } from './cronRunner'
@@ -6,7 +7,7 @@ import { cronFilePath, loadCron, saveCron } from './cronStore'
 import { registerCronCommand } from './cronVerb'
 import { followEachRun } from './sessionHooks'
 
-export type CronRunnerDeps = Omit<RunnerDeps, 'store' | 'push'> & {
+type CronRunnerDeps = Omit<RunnerDeps, 'store' | 'push'> & {
   userData: string
   pinnedPaths(): string[]
 }
@@ -21,7 +22,7 @@ export const start: PluginStart<
   { buildRunner: BuildLater<CronRunnerDeps, CronRunner>; stop: StopOnQuit }
 > = ({ commands, moments, ipc }, d) => {
   let runner: CronRunner | null = null
-  const built = (): CronRunner | null => runner
+  const built: MadeLater<CronRunner> = () => runner
   registerCronCommand(commands, { ...d.command, runner: built })
   followEachRun(moments, built, pushRunStarted(ipc))
   registerChannels(ipc, { ...d.channels, runner: built })

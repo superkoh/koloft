@@ -911,18 +911,20 @@ export const start: PluginStart<
   calls it inside `app.whenReady`, at the point the part must be built, and hands it what
   exists only by then. It builds the part, starts it if it runs on its own, keeps it for
   the start's own commands, moment listeners and channels, and returns it. Until it is
-  built those read it as missing: they take it as a `MadeLater` (`() => part | null`) and
-  answer as the part would before it exists. Scheduled tasks' `buildRunner` builds its
+  built those read it through one getter that answers `null` (a `MadeLater`, from
+  `src/core/moment.ts`) and answer as the app did before the part existed. Scheduled tasks' `buildRunner` builds its
   `CronRunner` this way; Workbench's `setUpBrowserPartition` and `setUpExtensions` and
   Browser control's `startRelay` are the same shape with nothing given back
   (`BuildLater<Deps>`). There is no one moment at which the app builds every plugin's
   later parts: each is called on its own line, so the order the app is ready in does not
   change.
 - **Stopping.** A start whose parts hold timers, files or connections that must be let go
-  as the app quits gives back a `StopOnQuit` (`() => void`), named `stop`. The app calls it
-  in its `before-quit` handler, at the point that plugin's parts stop, once Koloft has
-  decided to quit. It must do nothing for a part not yet built (a quit before Electron is
-  ready). Scheduled tasks' `stop` sweeps the folders its runs left and stops its timers.
+  as the app quits gives back a `StopOnQuit` (`() => void`) for each point in the app's
+  `before-quit` handler where it lets something go, named after what it does. The app
+  calls each at that point, once Koloft has decided to quit. It must do nothing for a part
+  not yet built (a quit before Electron is ready). Scheduled tasks' `stop` stops its
+  timers and saves the runs still going as ended; the Inbox's `flushInbox` writes its
+  cards to disk.
   A switch never stops a start: a part that follows its plugin's switch does that itself
   ([Main-process parts](#main-process-parts)).
 - Inside one start, the order of its `moments.listen` calls is the order that plugin hears a
