@@ -254,10 +254,14 @@ export function hookContextsIn(transcript: string): string[] {
   return fs
     .readFileSync(transcript, 'utf8')
     .split('\n')
-    .filter(Boolean)
-    .map((l) => JSON.parse(l) as { attachment?: { type: string; content: string[] } })
-    .filter((r) => r.attachment?.type === 'hook_additional_context')
-    .map((r) => r.attachment!.content[0])
+    .flatMap((l) => {
+      try {
+        const r = JSON.parse(l) as { attachment?: { type: string; content: string[] } }
+        return r.attachment?.type === 'hook_additional_context' ? [r.attachment.content[0]] : []
+      } catch {
+        return []
+      }
+    })
 }
 
 // CC§11

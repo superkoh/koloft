@@ -359,8 +359,13 @@ export function machineCodexLog<T>(env: E2EEnv, name: string): T[] {
   return fs
     .readFileSync(file, 'utf8')
     .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as T)
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line) as T]
+      } catch {
+        return []
+      }
+    })
 }
 
 export function machineClaudeTranscript(env: E2EEnv, sessionId: string): string {
