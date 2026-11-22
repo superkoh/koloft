@@ -1052,7 +1052,7 @@ const AWAY_CHECKED_EVERY_MS = 30_000
 function handsOnKoloft(_e: unknown, input: { type: string }): void {
   if (isHandsOn(input.type)) presence.handsOn()
 }
-const ownerAsleepDeps: PluginStartDeps['butler']['asleep'] = {
+const ownerAsleepDeps: PluginStartDeps['butler']['ownerAsleep'] = {
   presence,
   machines: () => [
     THIS_MAC,
@@ -6653,7 +6653,8 @@ const startedPlugins: PluginsStarted = startPlugins(
           commitSettings({ butler })
         }
       },
-      asleep: ownerAsleepDeps
+      ownerAsleep: ownerAsleepDeps,
+      afterSleepChanged: syncAnswerable
     },
     inbox: {
       cards: inboxCards,
@@ -6776,4 +6777,3 @@ const {
   SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS
 } = startedPlugins.passwords
 const { buildButler, buildDigest, ownerAsleep } = startedPlugins.butler
-presence.listenToSleep(syncAnswerable)

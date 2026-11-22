@@ -902,8 +902,8 @@ export const start: PluginStart<
   gives back `buildAsks`, which builds its `SecretAsks` once Electron is ready, and the
   `sudo` shim files with `writeSudoShims`, which `src/main/index.ts` writes into the shim
   folder when a switch changes and into the machine package. The Butler's gives back the
-  `OwnerAsleep` it builds, which the app asks whether Koloft answers a tab for the owner
-  and tells to mark the machines again, and `buildButler` and `buildDigest`, which build its
+  `OwnerAsleep` it builds, which the app asks whether Koloft answers a tab for the owner,
+  hands each new ask a tab shows, and tells to mark the machines again, and `buildButler` and `buildDigest`, which build its
   `Butler` and `AwayDigest` once Electron is ready.
 - What a start gives back exists only once `startPlugins` returns. A deps object built
   before that, or a start that runs before the one that gives it, reads it through a

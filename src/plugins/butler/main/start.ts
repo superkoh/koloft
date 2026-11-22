@@ -14,7 +14,8 @@ export interface ButlerStartDeps {
   helperRole: Parameters<typeof tellEachHelperItsRole>[1]
   eachTurn: Omit<Parameters<typeof butlerFollowsEachTurn>[1], 'butler' | 'digest' | 'asleep'>
   channels: Parameters<typeof registerChannels>[1]
-  asleep: OwnerAsleepDeps
+  ownerAsleep: OwnerAsleepDeps
+  afterSleepChanged(): void
 }
 
 export const start: PluginStart<
@@ -29,7 +30,8 @@ export const start: PluginStart<
   let digest: AwayDigest | null = null
   const butlerBuilt: MadeLater<Butler> = () => butler
   const digestBuilt: MadeLater<AwayDigest> = () => digest
-  const ownerAsleep = new OwnerAsleep(d.asleep)
+  const ownerAsleep = new OwnerAsleep(d.ownerAsleep)
+  d.ownerAsleep.presence.listenToSleep(d.afterSleepChanged)
   tellEachHelperItsRole(moments, d.helperRole)
   butlerFollowsEachTurn(moments, {
     ...d.eachTurn,
