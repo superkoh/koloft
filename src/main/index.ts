@@ -20,7 +20,7 @@ import { anotherLiveInstanceOwns, PtyManager, type PtyHandle } from './ptyManage
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { TerminalOutput } from './flowControl'
-import { SessionTracker, type ToolCall } from '@plugins/sessions/main/sessionTracker'
+import type { ToolCall } from '@plugins/sessions/main/sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from '@plugins/sessions/main/sessionRuntime'
 import { codexShowsAPanel } from './inputBox'
@@ -75,7 +75,6 @@ import {
 import { SessionAccounts } from './sessionAccounts'
 import { SavedUsage } from './savedUsage'
 import { saveHomeUsage, type HomeUsage } from './savedHomeUsage'
-import { SessionBackends } from '@plugins/sessions/main/sessionBackends'
 import {
   BACKEND_LABEL,
   backendIdOf,
@@ -96,7 +95,6 @@ import {
 } from '@shared/sessionPicks'
 import { BUTLER_OFF_ITS_AGENT_LOG, butlerStart } from '@shared/butlerStart'
 import { assistBackendsFor, assistLaunchOn, assistRowBackend } from '@shared/assistPicks'
-import type { Turn } from '@shared/turns'
 import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
 import { route, dockBadgeText } from './notifyRouter'
 import { setupShim, utilTerminalGuard } from './shim'
@@ -257,11 +255,7 @@ import {
   type ResumeProbes
 } from './resumePlan'
 import { branchExists, type GitOut, type TidyResult } from '@core/worktree'
-import {
-  ClaudeBackend,
-  machineHookSettings,
-  pickMachineAccount
-} from '@plugins/sessions/main/backends/claude'
+import { machineHookSettings, pickMachineAccount } from '@plugins/sessions/main/backends/claude'
 import { codexBackend, trustCodexFolder } from '@plugins/sessions/main/backends/codex'
 import { codexConfigFile } from './codexTrust'
 import {
@@ -413,7 +407,6 @@ import { projectDefaults } from './projectDefaults'
 import type { WebPage } from '@core/webPage'
 import { within } from '@core/within'
 import { toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
-import { subscribeTabSubsystems } from '@plugins/sessions/main/tabLifecycle'
 import { clicksTheMouse, pressesAKey, typeKeys } from '@core/typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import {
@@ -589,7 +582,7 @@ const terminalOutput = new TerminalOutput({
   rendererUp: () => rendererReady,
   now: () => performance.now()
 })
-const tracker = new SessionTracker()
+const trackerDeps: PluginStartDeps['sessions']['tracker'] = {}
 const claudeAsks = new Map<string, AskPayload>()
 let codexSessions: ReturnType<typeof buildCodexSessions> | null = null
 let agySessions: ReturnType<typeof buildAgySessions> | null = null
@@ -612,7 +605,7 @@ const workbenchReaderDocs: PluginStartDeps['workbench']['readerDocs'] = {
   changed: () => pushToSessions.sessions(onSessionsChanged())
 }
 const sessionsEndedThisRun = new Set<string>()
-const sessionBackends = new SessionBackends({
+const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
   turnEnded: (tabId, turn) => announceNow(TURN_ENDED, { tabId, turn }),
   prompted: (tabId) => {
     claudeAsks.delete(tabId)
@@ -640,10 +633,11 @@ const sessionBackends = new SessionBackends({
     if (path.isAbsolute(target) && !fs.existsSync(target)) return
     openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target)
   }
-})
-sessionBackends.isOverseerSession = (id) => !!butler?.isButlerSession(id)
-sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
-sessionBackends.askingOf = (tabId) => {
+}
+const backendHooks: PluginStartDeps['sessions']['backendHooks'] = {}
+backendHooks.isOverseerSession = (id) => !!butler?.isButlerSession(id)
+backendHooks.turnOver = (tabId) => tracker.turnOver(tabId)
+backendHooks.askingOf = (tabId) => {
   if (tracker.statusOf(tabId) !== 'approval') return undefined
   const owner = storedOwnerOf(tabId)
   const stored = owner?.openApproval(tabId) ?? owner?.openQuestion(tabId)
@@ -654,10 +648,10 @@ sessionBackends.askingOf = (tabId) => {
 function showAskOnItsRow(tabId: string): void {
   if (tracker.statusOf(tabId) === 'approval') pushToSessions.sessions(onSessionsChanged())
 }
-sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
+backendHooks.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
 const noAccountNow = (backend: BackendId): string => noAccountMessage(listAccounts(), backend)
-sessionBackends.noAccountMessage = noAccountNow
-sessionBackends.turnedOff = turnedOffNow
+backendHooks.noAccountMessage = noAccountNow
+backendHooks.turnedOff = turnedOffNow
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
@@ -727,13 +721,10 @@ const slashDeps: PluginStartDeps['sessions']['slash'] = {
       ? screenOf(tabId).then((s) => ('lines' in s ? s.lines.join('\n').trim() : '') || undefined)
       : undefined
 }
-tracker.on('turn-ended', ({ tabId, turn }: { tabId: string; turn: Turn }) =>
-  sessionBackends.observe(tabId, { type: 'turn-ended', turn })
-)
-tracker.pidOf = (tabId) => ptyMgr.pidOf(tabId)
+trackerDeps.pidOf = (tabId) => ptyMgr.pidOf(tabId)
 const dirtyTabIds = new Set<string>()
-tracker.activeTabId = () => uiActiveTabId
-tracker.heldTabs = () => {
+trackerDeps.activeTabId = () => uiActiveTabId
+trackerDeps.heldTabs = () => {
   const held = new Set(dirtyTabIds)
   for (const h of ptyMgr.list()) if (h.util && h.alive && h.ownerTabId) held.add(h.ownerTabId)
   for (const s of allSessions())
@@ -746,9 +737,9 @@ tracker.heldTabs = () => {
       held.add(s.tabId)
   return held
 }
-tracker.needsUser = (id) => attention.waitsOnApproval(id)
+trackerDeps.needsUser = (id) => attention.waitsOnApproval(id)
 let leftovers: Record<string, LeftoverProcess[]> = {}
-tracker.leftBehind = (sessionId) => !!leftovers[sessionId]?.length
+trackerDeps.leftBehind = (sessionId) => !!leftovers[sessionId]?.length
 const LEFTOVER_SCAN_MS = 30_000
 const LEFTOVERS_OF_A_CLOSED_SESSION_STOPPED_FOR_MS = 2 * LEFTOVER_SCAN_MS
 const closedSessionsStoppedUntil = new Map<string, number>()
@@ -1282,10 +1273,10 @@ let workspaceMgr: ReturnType<typeof buildWorkspaces> | null = null
 let freshness: GitFreshnessEngine | null = null
 let gitAccounts: GitAccountService | null = null
 let remoteSync: RemoteSync | null = null
-tracker.machineTmp = (host) => remoteSync?.machineTmp(host)
+trackerDeps.machineTmp = (host) => remoteSync?.machineTmp(host)
 const realFilesOn = (host: string, files: string[]): Promise<Map<string, string>> =>
   hosts.machine(host).realFiles(files)
-tracker.realFilesOn = realFilesOn
+trackerDeps.realFilesOn = realFilesOn
 let machinePkg: MachinePackage | null = null
 const remoteControlDir = defaultControlDir()
 const browserTunnels = new BrowserTunnels({
@@ -2180,7 +2171,7 @@ const claudeDialogs = new ClaudeDialogWatch({
     if (stateAfter === 'working') tracker.dialogAnswered(tabId)
   }
 })
-tracker.dialogJustClosed = (tabId) => claudeDialogs.justClosedADialog(tabId)
+trackerDeps.dialogJustClosed = (tabId) => claudeDialogs.justClosedADialog(tabId)
 
 function claudeAskEnded(tabId: string): void {
   claudeAsks.delete(tabId)
@@ -3461,10 +3452,7 @@ app.whenReady().then(() => {
   ptyMgr.on('cwd', (c: { id: string; cwd: string }) => {
     sendToRenderer(CH.terminal.cwd, c)
   })
-  subscribeTabSubsystems(tabLifecycle, {
-    attention,
-    claude: claudeBackend,
-    tracker,
+  subscribeTabSubsystems({
     storedOwnerOf,
     toast: (message) => sendToRenderer(CH.toast.show, message),
     workspaces: () => workspaceMgr,
@@ -5603,9 +5591,8 @@ const hosts = new Hosts(
     })
 )
 
-const claudeBackend = new ClaudeBackend({
+const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
   pty: ptyMgr,
-  tracker,
   hosts,
   workspaces: () => workspaceMgr,
   remoteSync: () => remoteSync,
@@ -5627,8 +5614,7 @@ const claudeBackend = new ClaudeBackend({
     storedSessions()
       .map((s) => s.tabOnMachine?.(machine, tmuxName, launchTab))
       .find(Boolean)
-})
-sessionBackends.register(claudeBackend)
+}
 
 // ADR-0007
 function shrinkAdoptedClaudePtysOneRowSoFitRepaints(tabs: TabInventoryReply['tabs']): void {
@@ -6150,6 +6136,10 @@ const startedPlugins: PluginsStarted = startPlugins(
   { commands, moments, ipc: pluginIpc },
   {
     sessions: {
+      tracker: trackerDeps,
+      backendLifecycle,
+      backendHooks,
+      claude: claudeBackendDeps,
       startedSessionsFile,
       newsJudge: newsJudgeDeps,
       slash: slashDeps,
@@ -6168,7 +6158,6 @@ const startedPlugins: PluginsStarted = startPlugins(
         }
       },
       channels: {
-        backends: sessionBackends,
         noteActivity: (tabId) => tracker.noteActivity(tabId),
         installed: installedBackends,
         installTool,
@@ -6418,6 +6407,10 @@ const {
   writeRelayEnv
 } = startedPlugins['browser-control']
 const {
+  tracker,
+  sessionBackends,
+  claudeBackend,
+  subscribeTabSubsystems,
   startedSessions,
   newsJudge,
   slash,

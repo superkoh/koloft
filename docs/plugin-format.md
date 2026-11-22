@@ -886,7 +886,15 @@ export const start: PluginStart<
   list of plugins, and returns what each gave back, keyed by plugin id (`PluginsStarted`).
   GitHub's start gives back its `GithubMain`, whose `followSwitch` and `sweepNow` the app
   calls. Sessions core's gives back `tookTheTurn`, which the butler's and the Inbox's deps read
-  when a turn ends. It also gives back six parts it builds as the app loads, which the app's
+  when a turn ends. It gives back three parts it builds first, as the app loads, because
+  they hold each other: the `SessionTracker`, the `SessionBackends` and the `ClaudeBackend`.
+  The deps hand in the backends' `backendLifecycle` and the Claude backend's deps
+  (`claude`, all but the tracker), and the functions set on the tracker (`tracker`) and on
+  the backends (`backendHooks`), which the start sets right after it builds each part, in
+  the order the app wrote them. It registers the Claude backend before the app registers
+  Antigravity's and Codex's, and gives back `subscribeTabSubsystems`, which the app calls
+  once Electron is ready to sign up the `TabLifecycle`'s listeners. It also gives back six
+  parts it builds as the app loads, which the app's
   own code calls from then on: `StartedSessions`, `NewsJudge`, `SlashCommands`,
   `TabLifecycle`, `SleepingTabs` and `SessionSync`. Its own moment listeners use two of them,
   `NewsJudge` and `SlashCommands`. The judge has one verdict listener: the deps hand it in
@@ -982,7 +990,8 @@ A plugin's main-process code is a set of parts. A part is a class or function in
 that holds its own state. It takes what it needs from the rest of the app as a small `deps`
 object, which `src/main/index.ts` builds and hands in. A part built by the plugin's start
 function gets its deps through the start's `deps`, as Workbench's web-page parts,
-Browser control's `CdpOps`, Sessions core's `AttentionTracker`, `StartedSessions`,
+Browser control's `CdpOps`, Sessions core's `SessionTracker`, `SessionBackends`,
+`ClaudeBackend`, `AttentionTracker`, `StartedSessions`,
 `NewsJudge`, `SlashCommands`, `SleepingTabs` and `SessionSync` (its `TabLifecycle` takes
 no deps), the Inbox's `Inbox` and
 `KoloftInbox`, the Butler's
