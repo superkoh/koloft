@@ -2853,6 +2853,7 @@ async function signInToHome(
       : 'invalid-name'
     : validateNewAccount(name, kind)
   if (v !== 'ok') return { ok: false, error: v }
+  if (!again && !(await keychainDelete(kind, name))) return { ok: false, error: 'keychain' }
   if (signInFailure) setSignInFailure(null)
   const login = await homeLogin[kind](name)
   noteHomeAccount(name, kind)

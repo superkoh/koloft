@@ -140,9 +140,9 @@ export function AccountsPane(): JSX.Element {
         onRemove={async () => {
           setConfirmDel(null)
           setRemoveFailed(null)
-          if (await window.api.accounts.remove(a.name, a.kind)) return
+          if (await window.api.accounts.remove(a.name, a.kind).catch(() => false)) return
           setRemoveFailed(key)
-          setConfirmDel(key)
+          setConfirmDel((open) => open ?? key)
         }}
         onRelogin={
           a.kind === 'oauth'
@@ -507,7 +507,9 @@ export function SignInDialog({
       setError(
         r.error === 'invalid-name'
           ? INVALID_ACCOUNT_NAME
-          : `A ${label} account already has that name`
+          : r.error === 'keychain'
+            ? 'Koloft could not clear an old Keychain credential under that name. Try again.'
+            : `A ${label} account already has that name`
       )
       return
     }

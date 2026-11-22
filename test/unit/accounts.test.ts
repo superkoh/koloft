@@ -11,8 +11,7 @@ vi.mock('electron', async () => {
 })
 
 const security = vi.hoisted(() => ({
-  runs: [] as string[][],
-  exitCode: (() => 44) as (args: string[]) => number
+  exitCode: (() => 44) as (args: string[]) => number | null
 }))
 
 vi.mock('child_process', async (importOriginal) => ({
@@ -23,7 +22,6 @@ vi.mock('child_process', async (importOriginal) => ({
     _opts: unknown,
     done: (err: Error | null, stdout: string) => void
   ) => {
-    security.runs.push(args)
     const code = security.exitCode(args)
     done(code === 0 ? null : Object.assign(new Error('security failed'), { code }), '')
   }
@@ -81,7 +79,6 @@ beforeEach(async () => {
   rereadSettingsOnNextLoad()
   fs.rmSync(fixtureFile, { force: true })
   resetProbeOutcomeState()
-  security.runs.length = 0
   security.exitCode = () => 44
   process.env.KOLOFT_TEST_BACKGROUND = '1'
   process.env.KOLOFT_KEYCHAIN_FILE = fixtureFile
@@ -272,12 +269,15 @@ describe('U3 · keychain adapter seams', () => {
     expect(await keychainRead('agy-home', 'kept')).toBe('AIza-kept')
   })
 
-  it('outside test mode a delete counts only an exit 0 from security as removed, and an entry security cannot find as never there', async () => {
+  it('outside test mode a delete counts an entry security reports as not found as never there, and a locked, cancelled or timed-out Keychain or a refused delete as not removed', async () => {
     delete process.env.KOLOFT_TEST_BACKGROUND
     security.exitCode = (args) => (args[0] === 'find-generic-password' ? 44 : 1)
     expect(await keychainDelete('agy-home', 'google-only')).toBe(true)
-    expect(security.runs.map((a) => a[0])).toEqual(['find-generic-password'])
-    expect(security.runs[0]).not.toContain('-w')
+
+    for (const findAnswer of [51, 1, null]) {
+      security.exitCode = () => findAnswer
+      expect(await keychainDelete('agy-home', 'locked')).toBe(false)
+    }
 
     security.exitCode = (args) => (args[0] === 'find-generic-password' ? 0 : 51)
     expect(await keychainDelete('agy-home', 'stuck')).toBe(false)

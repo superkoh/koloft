@@ -33,6 +33,8 @@ function readFixture(file: string): FixtureShape {
   }
 }
 
+const SECURITY_ITEM_NOT_FOUND = 44
+
 // ADR-0001
 function execSecurity(args: string[]): Promise<{ code: number; stdout: string }> {
   return new Promise((resolve) => {
@@ -124,7 +126,9 @@ async function deleteSecret(service: string, name: string): Promise<boolean> {
     }
   }
   const found = await execSecurity(['find-generic-password', '-s', service, '-a', name])
-  if (found.code !== 0) return true
+  // PLATFORM§3
+  if (found.code === SECURITY_ITEM_NOT_FOUND) return true
+  if (found.code !== 0) return false
   const { code } = await execSecurity(['delete-generic-password', '-s', service, '-a', name])
   return code === 0
 }

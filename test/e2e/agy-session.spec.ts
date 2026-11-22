@@ -13,6 +13,7 @@ import {
 import {
   E2E_AGY_ACCOUNT,
   UNPACKAGED_BUILD_AGY_SVC,
+  addKeychainEntry,
   agyCalls,
   agySessionCalls as sessionCalls,
   agyTranscriptOf as transcriptOf,
@@ -104,6 +105,27 @@ const apiCalls = (env: E2EEnv): Record<string, unknown>[] =>
   fileLines(path.join(env.home, 'fake-agy-api.jsonl'))
 const injected = (env: E2EEnv): Record<string, unknown>[] =>
   fileLines(path.join(env.home, 'fake-agy-injected.jsonl'))
+
+async function signInWithGoogleAs(page: Page, env: E2EEnv, name: string): Promise<AgyCall> {
+  const home = path.join(env.userData, 'agy-homes', name)
+  const before = agyCalls(env).length
+  const signIn = (): AgyCall | undefined =>
+    agyCalls(env)
+      .slice(before)
+      .find((c) => c.geminiDir === home)
+  await page.getByRole('button', { name: 'Sign in with Google' }).click()
+  await page.locator('.acct-add input[type="text"]').fill(name)
+  await page.locator('.acct-add').getByRole('button', { name: 'Sign in', exact: true }).click()
+  await expect.poll(signIn, { timeout: 30_000 }).toBeTruthy()
+  return signIn()!
+}
+
+function apiKeyRouteOf(home: string): string | undefined {
+  const file = path.join(home, 'antigravity-cli', 'settings.json')
+  return fs.existsSync(file)
+    ? (JSON.parse(fs.readFileSync(file, 'utf8')) as { modelProvider?: string }).modelProvider
+    : undefined
+}
 
 async function startAgy(page: Page, env: E2EEnv, ws = 'ws-a'): Promise<AgyCall> {
   const before = sessionCalls(env).length
@@ -1288,28 +1310,30 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await expect(row).toHaveCount(0)
       expect(keyOf()).toBeUndefined()
 
-      const signInsBefore = agyCalls(env).length
-      await page.getByRole('button', { name: 'Sign in with Google' }).click()
-      await page.locator('.acct-add input[type="text"]').fill(E2E_AGY_ACCOUNT)
-      await page.locator('.acct-add').getByRole('button', { name: 'Sign in', exact: true }).click()
-      await expect
-        .poll(
-          () =>
-            agyCalls(env)
-              .slice(signInsBefore)
-              .find((c) => c.geminiDir === accountHome(env)),
-          { timeout: 30_000 }
-        )
-        .toBeTruthy()
-      const signIn = agyCalls(env)
-        .slice(signInsBefore)
-        .find((c) => c.geminiDir === accountHome(env))!
+      const signIn = await signInWithGoogleAs(page, env, E2E_AGY_ACCOUNT)
       expect(signIn.env.GEMINI_API_KEY).toBe(false)
-      const ownSettings = path.join(accountHome(env), 'antigravity-cli', 'settings.json')
-      const own = (
-        fs.existsSync(ownSettings) ? JSON.parse(fs.readFileSync(ownSettings, 'utf8')) : {}
-      ) as { modelProvider?: string }
-      expect(own.modelProvider).toBeUndefined()
+      expect(apiKeyRouteOf(signIn.geminiDir)).toBeUndefined()
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Gemini key an older Koloft left in the Keychain when it deleted an account is cleared by a new Google sign-in under that name, which opens agy with no Gemini key and no API key route', async ({
+    env
+  }) => {
+    installAgyWithNoAccount(env)
+    addKeychainEntry(env, UNPACKAGED_BUILD_AGY_SVC, 'left', 'AIza-left-behind')
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      const signIn = await signInWithGoogleAs(page, env, 'left')
+      expect(signIn.env.GEMINI_API_KEY).toBe(false)
+      expect(apiKeyRouteOf(signIn.geminiDir)).toBeUndefined()
+      expect(fs.readFileSync(env.keychainFile, 'utf8')).not.toContain('AIza-left-behind')
     } finally {
       await quitAndClose(app)
     }

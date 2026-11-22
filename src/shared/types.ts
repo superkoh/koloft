@@ -298,7 +298,8 @@ export interface AccountView extends AccountMeta {
 }
 
 export type SignInResult =
-  { ok: true; tabId: string; cwd: string } | { ok: false; error: 'invalid-name' | 'duplicate' }
+  | { ok: true; tabId: string; cwd: string }
+  | { ok: false; error: 'invalid-name' | 'duplicate' | 'keychain' }
 
 export interface SignInFailure {
   backend: SignInBackend
