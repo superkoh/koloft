@@ -269,9 +269,9 @@ test.describe("App-level browser overlay: a page no session's Browser can show l
       const guest = await guestByUrl(app, '/dialogs')
       void guest.locator('#do-alert').click()
 
-      await expect(page.locator(BROWSER.modal)).toBeVisible({ timeout: 30_000 })
+      await expect(page.locator(OVERLAY.modal)).toBeVisible({ timeout: 30_000 })
       expect(await page.locator(BROWSER.modal).count()).toBe(1)
-      await page.locator(BROWSER.modal).getByRole('button', { name: 'OK' }).click()
+      await page.locator(OVERLAY.modal).getByRole('button', { name: 'OK' }).click()
       await expect(guest.locator('#result')).toHaveText('alert-returned', { timeout: 20_000 })
     } finally {
       await server.close()
@@ -288,7 +288,7 @@ test.describe("App-level browser overlay: a page no session's Browser can show l
     try {
       await overlayShowing(page, env, server.url('/dialogs'))
       const guest = await guestByUrl(app, '/dialogs')
-      const modal = page.locator(BROWSER.modal)
+      const modal = page.locator(OVERLAY.modal)
       const result = guest.locator('#result')
 
       void guest.locator('#do-confirm').click()

@@ -67,7 +67,8 @@ export const OVERLAY = {
   back: '.wovl [aria-label="Back"]',
   external: '.wovl [aria-label="Open in system browser"]',
   entry: '.titlebar [aria-label="Opened page"]',
-  entryUnread: '.titlebar [aria-label="Opened page"].unread'
+  entryUnread: '.titlebar [aria-label="Opened page"].unread',
+  modal: '.wovl-modal .bmodal'
 } as const
 
 // PLATFORM§8
