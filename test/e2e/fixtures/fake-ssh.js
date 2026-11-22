@@ -45,7 +45,7 @@ function runSh(cmd, stdin, extraEnv) {
   return r.status == null ? 1 : r.status
 }
 
-if (remoteCmd.includes('tar xf -')) {
+if (remoteCmd.includes('tar xmf -')) {
   done(runSh(remoteCmd, 'inherit'))
 }
 
