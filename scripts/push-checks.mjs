@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { spawn, spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
+import { depsState, failureNote, worktreeOf } from './worktree-deps-state.mjs'
 
 const CHECK_TIMEOUT_MS = 100_000
 const OUTPUT_TAIL_LINES = 30
@@ -17,7 +18,7 @@ const CHECKS = [
   {
     script: 'check:comments',
     findsProblemsWith: [1],
-    fix: 'remove or replace the comments it lists (see "Comments" in CLAUDE.md), commit, and try again'
+    fix: 'remove or replace the comments it lists (see "Comments" in AGENTS.md), commit, and try again'
   },
   {
     script: 'typecheck',
@@ -73,16 +74,26 @@ function pass(reason) {
   process.exit(0)
 }
 
+function stop(why, lines) {
+  console.error(`Stopped before it reached GitHub, ${why}:\n\n${lines.join('\n\n')}`)
+  process.exit(2)
+}
+const UNTIL_INSTALLED = "until this worktree's node_modules is installed"
+
 const input = JSON.parse(fs.readFileSync(0, 'utf8'))
 if (!isPushOrPr(input.tool_input?.command ?? '')) pass()
 
-const checkout = spawnSync('git', ['rev-parse', '--show-toplevel'], {
-  cwd: input.cwd,
-  encoding: 'utf8'
-}).stdout?.trim()
+const worktree = worktreeOf(input.cwd ?? process.cwd())
+const checkout = worktree.root
 if (!checkout || !fs.existsSync(path.join(checkout, 'scripts', 'push-checks.mjs'))) pass()
+const deps = depsState(worktree)
+if (deps === 'installing')
+  stop(UNTIL_INSTALLED, [
+    `It is still being installed (log: ${worktree.log}). Wait for it to finish, then try again.`
+  ])
+if (deps === 'failed') stop(UNTIL_INSTALLED, [failureNote(worktree)])
 if (!fs.existsSync(path.join(checkout, 'node_modules')))
-  pass('this checkout has no node_modules yet (it may still be installing).')
+  pass('this checkout has no node_modules yet.')
 
 function couldNotCheck({ script, findsProblemsWith }, r) {
   const cmd = `\`npm run ${script}\``
@@ -108,10 +119,9 @@ for (const [i, r] of results.entries()) {
   const tail = r.output.trim().split('\n').slice(-OUTPUT_TAIL_LINES).join('\n')
   failures.push(`\`npm run ${check.script}\` failed: ${check.fix}.\n${tail}`)
 }
-if (failures.length > 0) {
-  console.error(
-    `Stopped before it reached GitHub, because CI would fail on this (the files on disk were checked, uncommitted ones too):\n\n${[...failures, ...skipped].join('\n\n')}`
-  )
-  process.exit(2)
-}
+if (failures.length > 0)
+  stop('because CI would fail on this (the files on disk were checked, uncommitted ones too)', [
+    ...failures,
+    ...skipped
+  ])
 pass(skipped.join(' '))

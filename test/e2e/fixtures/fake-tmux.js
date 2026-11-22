@@ -34,6 +34,14 @@ const WHOLE_DCS = /^\x1bPtmux;(?:[^\x1b]|\x1b\x1b)*\x1b\\/
 const DCS = /\x1bPtmux;((?:[^\x1b]|\x1b\x1b)*)\x1b\\/g
 
 const aliveFile = (name) => path.join(aliveDir, name)
+const envFile = (name) => path.join(STATE, `tmux-env-${name}.json`)
+function sessionEnv(name) {
+  try {
+    return JSON.parse(fs.readFileSync(envFile(name), 'utf8'))
+  } catch {
+    return {}
+  }
+}
 const fifoPath = (io) => path.join(ioDir, `${io}.in`)
 const outPath = (io) => path.join(ioDir, `${io}.out`)
 const rawPaneMark = (io) => path.join(ioDir, `${io}.raw`)
@@ -169,6 +177,12 @@ if (verb === 'new-session') {
       } catch {}
   }
   process.exit(0)
+} else if (verb === 'list-panes' && rest.includes('-a')) {
+  for (const name of fs.readdirSync(aliveDir)) {
+    const pid = pidOf(name)
+    if (alive(pid)) process.stdout.write(`${pid} ${name}\n`)
+  }
+  process.exit(0)
 } else if (verb === 'list-panes') {
   const pid = pidOf(flagVal('-t').replace(/^=(.*):$/, '$1'))
   if (!alive(pid)) process.exit(1)
@@ -185,8 +199,26 @@ if (verb === 'new-session') {
   const from = fs
     .readdirSync(aliveDir)
     .find((n) => (io ? recordOf(n)?.io === io : n === flagVal('-t')))
-  if (from && to && from !== to) fs.renameSync(aliveFile(from), aliveFile(to))
+  if (from && to && from !== to) {
+    fs.renameSync(aliveFile(from), aliveFile(to))
+    if (fs.existsSync(envFile(from))) fs.renameSync(envFile(from), envFile(to))
+  }
   process.exit(0)
+} else if (verb === 'source-file') {
+  for (const line of fs.readFileSync(rest[rest.length - 1], 'utf8').split('\n')) {
+    const [cmd, t, name, key, value] = line.split(' ')
+    if (cmd !== 'set-environment' || t !== '-t') continue
+    fs.writeFileSync(envFile(name), JSON.stringify({ ...sessionEnv(name), [key]: value }))
+  }
+  process.exit(0)
+} else if (verb === 'show-environment') {
+  const key = rest[rest.length - 1]
+  const value = sessionEnv(flagVal('-t'))[key]
+  if (value === undefined) process.exit(1)
+  process.stdout.write(`${key}=${value}\n`)
+  process.exit(0)
+} else if (verb === 'has-session') {
+  process.exit(alive(pidOf(flagVal('-t'))) ? 0 : 1)
 } else if (verb === 'kill-session') {
   const name = flagVal('-t')
   const pid = pidOf(name)

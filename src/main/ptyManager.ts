@@ -12,6 +12,7 @@ import { formatRemoteKey } from '@shared/remoteKey'
 import { aboveItsTools } from './agentLift'
 import { OWNING_TAB_ENV } from './owningTabEnv'
 import { OscCwdParser } from './oscCwd'
+import { passOf, TAB_PASS_ENV } from './tabPass'
 import { userShell } from './userShell'
 import {
   onlyTheTerminalsOwnAnswers,
@@ -285,6 +286,7 @@ export class PtyManager extends EventEmitter {
     if (this.agentDir && args.koloftShim) env.KOLOFT_AGENT_DIR = this.agentDir
     if (process.env.KOLOFT_TEST_BACKGROUND !== '1') delete env.KOLOFT_KEYCHAIN_FILE
     env.KOLOFT_PID = String(process.pid)
+    env[TAB_PASS_ENV] = passOf(id)
     const hookSettings =
       args.util || !args.koloftShim ? undefined : args.koloftShim.hookSettings(id)
     if (hookSettings) env.KOLOFT_HOOK_SETTINGS = hookSettings

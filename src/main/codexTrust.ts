@@ -5,16 +5,18 @@ import { writePrivateAtomically } from '@core/privateFile'
 import { realpathSafe } from './projectInfo'
 import { record } from '@plugins/sessions/main/codexObservation'
 import type { KoloftHook } from './codexLaunchConfig'
+import {
+  appendTable,
+  folderTrustLevel,
+  hookTrusted,
+  projectHeader,
+  tableEnd,
+  withTrustedHash
+} from './codexConfigTables.mjs'
 
 export function codexConfigFile(env: NodeJS.ProcessEnv | undefined): string {
   return path.join(env?.CODEX_HOME || path.join(os.homedir(), '.codex'), 'config.toml')
 }
-
-const projectHeaderOf = (realDir: string): string => `[projects.${JSON.stringify(realDir)}]`
-
-const projectHeader = (dir: string): string => projectHeaderOf(fs.realpathSync(dir))
-
-export const hookStateHeader = (key: string): string => `[hooks.state.${JSON.stringify(key)}]`
 
 function readConfig(configFile: string): string {
   try {
@@ -32,14 +34,9 @@ function writeConfig(configFile: string, text: string): void {
   writePrivateAtomically(target, text)
 }
 
-function appendTable(text: string, table: string): string {
-  const gap = text === '' ? '' : text.endsWith('\n') ? '\n' : '\n\n'
-  return `${text}${gap}${table}`
-}
-
 // CODEX§11 ADR-0026
 export function acceptCodexTrust(configFile: string, dir: string): void {
-  joinProjectTables(configFile, `${projectHeader(dir)}\ntrust_level = "trusted"\n`)
+  joinProjectTables(configFile, `${projectHeader(fs.realpathSync(dir))}\ntrust_level = "trusted"\n`)
 }
 
 // CODEX§15 CODEX§27
@@ -52,8 +49,7 @@ export function joinProjectTables(configFile: string, from: string): void {
     const header = lines[start].trim()
     if (!header.startsWith('[projects.') || have.has(header)) continue
     have.add(header)
-    let end = start + 1
-    while (end < lines.length && !lines[end].trim().startsWith('[')) end++
+    const end = tableEnd(lines, start)
     text = appendTable(text, `${lines.slice(start, end).join('\n').trimEnd()}\n`)
   }
   if (text !== before) writeConfig(configFile, text)
@@ -61,29 +57,11 @@ export function joinProjectTables(configFile: string, from: string): void {
 
 // CODEX§27
 export function codexHookTrusted(configFile: string, key: string, hash: string): boolean {
-  const lines = readConfig(configFile).split('\n')
-  const start = lines.findIndex((line) => line.trim() === hookStateHeader(key))
-  if (start < 0) return false
-  const trusted = `trusted_hash = ${JSON.stringify(hash)}`
-  for (let i = start + 1; i < lines.length && !lines[i].trim().startsWith('['); i++)
-    if (lines[i].trim() === trusted) return true
-  return false
+  return hookTrusted(readConfig(configFile), key, hash)
 }
 
 export function acceptCodexHookTrust(configFile: string, key: string, hash: string): void {
-  const header = hookStateHeader(key)
-  const trusted = `trusted_hash = ${JSON.stringify(hash)}`
-  const lines = readConfig(configFile).split('\n')
-  const start = lines.findIndex((line) => line.trim() === header)
-  if (start < 0) {
-    writeConfig(configFile, appendTable(lines.join('\n'), `${header}\n${trusted}\n`))
-    return
-  }
-  let end = start + 1
-  while (end < lines.length && !lines[end].trim().startsWith('[')) end++
-  const body = lines.slice(start + 1, end).filter((line) => !/^\s*trusted_hash\s*=/.test(line))
-  lines.splice(start, end - start, header, trusted, ...body)
-  writeConfig(configFile, lines.join('\n'))
+  writeConfig(configFile, withTrustedHash(readConfig(configFile), key, hash))
 }
 
 // CODEX§11
@@ -97,15 +75,7 @@ export function codexTrustsFolder(configFile: string, dir: string): boolean {
 
 // CODEX§11
 export function configTrusts(text: string, realDir: string): boolean {
-  const header = projectHeaderOf(realDir)
-  const lines = text.split(/\r?\n/).map((line) => line.trim())
-  const start = lines.indexOf(header)
-  if (start < 0) return false
-  for (const line of lines.slice(start + 1)) {
-    if (line.startsWith('[')) return false
-    if (/^trust_level\s*=\s*"trusted"$/.test(line)) return true
-  }
-  return false
+  return folderTrustLevel(text, realDir) === 'trusted'
 }
 
 export interface ListedHook {

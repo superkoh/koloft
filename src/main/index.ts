@@ -20,16 +20,14 @@ import { anotherLiveInstanceOwns, PtyManager, type PtyHandle } from './ptyManage
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { TerminalOutput } from './flowControl'
-import { SleepingTabs } from '@plugins/sessions/main/sleepingTabs'
 import { SessionTracker, type ToolCall } from '@plugins/sessions/main/sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
 import type { StatusEdge, TurnOverEdge } from '@plugins/sessions/main/sessionRuntime'
-import { CodexSessions } from '@plugins/sessions/main/codexSessions'
 import { codexShowsAPanel } from './inputBox'
 import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from './remote/statusRelay'
 import type { TreeIo } from './sessionWorktrees'
 import { sharedProcessTable, type ProcessTable } from './processTable'
-import { AgySessions, type AgyHomePick } from '@plugins/sessions/main/agySessions'
+import type { AgyHomePick } from '@plugins/sessions/main/agySessions'
 import {
   agyAccountEnv,
   agyApiKeyRoute,
@@ -99,7 +97,6 @@ import {
 import { BUTLER_OFF_ITS_AGENT_LOG, butlerStart } from '@shared/butlerStart'
 import { assistBackendsFor, assistLaunchOn, assistRowBackend } from '@shared/assistPicks'
 import type { Turn } from '@shared/turns'
-import { AttentionTracker } from '@plugins/sessions/main/attention'
 import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
 import { route, dockBadgeText } from './notifyRouter'
 import { setupShim, utilTerminalGuard } from './shim'
@@ -165,6 +162,7 @@ import {
   tmuxSessionName,
   UTIL_BIN_DIR,
   utilShellLine,
+  writeTabPassFile,
   CLAUDE_AUTH_ENV_VARS,
   claudeCodeGuessesWindowOf,
   type MachinePackage
@@ -244,11 +242,7 @@ import {
 } from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
-import {
-  WorkspaceManager,
-  scratchRootsAround,
-  type LiveSession
-} from '@plugins/sessions/main/workspaces'
+import { scratchRootsAround, type LiveSession } from '@plugins/sessions/main/workspaces'
 import { rowsToAdopt } from '@shared/firstRun'
 import {
   isWorkspaceWorkbenchKey,
@@ -287,7 +281,7 @@ import { giveWay, readTaggedTable } from './machineTrees'
 import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { GitFreshnessEngine } from './gitFreshness'
 import { COMMON_GIT_DIR, GitRepoKeys } from './gitRepoKey'
-import { SessionSync, type SyncSession } from '@plugins/sessions/main/sessionSync'
+import type { SyncSession } from '@plugins/sessions/main/sessionSync'
 import { GithubRepos, parseGithubFixture, type GithubReposOptions } from './githubRepos'
 import { ghRead, runGh } from './ghRun'
 import { GitAccountService, newGitRequestDir, sweepStaleGitRequestDirs } from './gitAccountService'
@@ -418,8 +412,8 @@ import type { OwnPick } from '@shared/types'
 import { projectDefaults } from './projectDefaults'
 import type { WebPage } from '@core/webPage'
 import { within } from '@core/within'
-import { SlashCommands, toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
-import { TabLifecycle, subscribeTabSubsystems } from '@plugins/sessions/main/tabLifecycle'
+import { toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
+import { subscribeTabSubsystems } from '@plugins/sessions/main/tabLifecycle'
 import { clicksTheMouse, pressesAKey, typeKeys } from '@core/typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import {
@@ -501,10 +495,9 @@ import {
 } from '@plugins/sessions/api'
 import { A_HELPER_HAS_IT, writeLineInTurn } from '@plugins/sessions/main/crossSessionMessage'
 import { docsWritingOn } from '@plugins/docs-writing/api'
-import { StartedSessions } from '@plugins/sessions/main/startedSessions'
 import { worktreeNameForTask } from '@plugins/sessions/main/sessionTitle'
 import { localFile } from './realFiles'
-import { NewsJudge, judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
+import { judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
 import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
 import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
@@ -598,19 +591,18 @@ const terminalOutput = new TerminalOutput({
 })
 const tracker = new SessionTracker()
 const claudeAsks = new Map<string, AskPayload>()
-let codexSessions: CodexSessions | null = null
-let agySessions: AgySessions | null = null
+let codexSessions: ReturnType<typeof buildCodexSessions> | null = null
+let agySessions: ReturnType<typeof buildAgySessions> | null = null
 const startupErrors: Partial<Record<BackendId, string>> = {}
 
 function storedSessions(): SessionsWithStore[] {
-  return [codexSessions, agySessions].filter((s): s is CodexSessions | AgySessions => !!s)
+  return [codexSessions, agySessions].filter((s): s is NonNullable<typeof s> => !!s)
 }
 function storedOwnerOf(tabId: string): SessionsWithStore | undefined {
   return storedSessions().find((s) => s.hasTab(tabId))
 }
-const startedSessions = new StartedSessions(() =>
+const startedSessionsFile = (): string =>
   path.join(app.getPath('userData'), 'started-sessions.json')
-)
 const workbenchReaderDocs: PluginStartDeps['workbench']['readerDocs'] = {
   file: () => path.join(app.getPath('userData'), 'doc-verdicts.json'),
   assist: (job) => assist(job),
@@ -666,12 +658,12 @@ function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
 
-const newsJudge = new NewsJudge({
+const newsJudgeDeps: PluginStartDeps['sessions']['newsJudge'] = {
   judge: (turn) => judgeTurn(assist, turn),
   awaitingVerdict: (tabId) => attention.awaitingVerdict(tabId),
-  markFyi: (tabId) => attention.markFyi(tabId)
-})
-newsJudge.onVerdict((tabId, verdict) => koloftInbox.judged(tabId, verdict))
+  markFyi: (tabId) => attention.markFyi(tabId),
+  onVerdict: (tabId, verdict) => koloftInbox.judged(tabId, verdict)
+}
 
 // CC§14
 function asksTheOwner(tabId: string): boolean {
@@ -704,7 +696,7 @@ const panelOpenOn: Record<BackendId, PanelOpen> = {
   agy: async () => undefined
 }
 
-const slash = new SlashCommands({
+const slashDeps: PluginStartDeps['sessions']['slash'] = {
   backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
   keyOf: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
   turnOver: (tabId) => tracker.turnOver(tabId),
@@ -730,7 +722,7 @@ const slash = new SlashCommands({
     backendIdOf(ptyMgr.get(tabId)?.kind) === 'agy'
       ? screenOf(tabId).then((s) => ('lines' in s ? s.lines.join('\n').trim() : '') || undefined)
       : undefined
-})
+}
 tracker.on('turn-ended', ({ tabId, turn }: { tabId: string; turn: Turn }) =>
   sessionBackends.observe(tabId, { type: 'turn-ended', turn })
 )
@@ -820,30 +812,33 @@ function watchForWorktreeRemoval(tabId: string, data: string): void {
   sendToRenderer(CH.tab.killedByMain, tabId)
 }
 
-const attention = new AttentionTracker((pending, event) => {
-  if (!quitCommitted) saveAttention(pending)
-  updateDockBadge(pending)
-  pushToSessions.attention(pending)
-  retractStaleOsNotifications(pending)
-  if (event) routeAttentionEvent(event)
-  announceNow(ATTENTION_CHANGED, pending)
-}, loadLastRunAttention())
-attention.asleep = (tabId) => sleepers.has(tabId)
-attention.watching = () => (windowFocused() ? uiActiveTabId : null)
-attention.turnDone = (tabId) => newsJudge.marked(tabId)
-// ADR-0039
-attention.outlivesKoloft = (tabId) => !!remoteHostOfTab(tabId)
-attention.waitsOnAnother = (tabId) => {
-  const me = sessionOfTab(tabId)
-  return (
-    !!me?.sessionId &&
-    waitsOnOtherWork(
-      me,
-      allSessions(),
-      (id) => startedSessions.parentOfRow(id),
-      (id) => sessionCommand.waitsOnAnother(id)
+const attentionDeps: PluginStartDeps['sessions']['attention'] = {
+  onChange: (pending, event) => {
+    if (!quitCommitted) saveAttention(pending)
+    updateDockBadge(pending)
+    pushToSessions.attention(pending)
+    retractStaleOsNotifications(pending)
+    if (event) routeAttentionEvent(event)
+    announceNow(ATTENTION_CHANGED, pending)
+  },
+  lastRun: loadLastRunAttention(),
+  asleep: (tabId) => sleepers.has(tabId),
+  watching: () => (windowFocused() ? uiActiveTabId : null),
+  turnDone: (tabId) => newsJudge.marked(tabId),
+  // ADR-0039
+  outlivesKoloft: (tabId) => !!remoteHostOfTab(tabId),
+  waitsOnAnother: (tabId) => {
+    const me = sessionOfTab(tabId)
+    return (
+      !!me?.sessionId &&
+      waitsOnOtherWork(
+        me,
+        allSessions(),
+        (id) => startedSessions.parentOfRow(id),
+        (id) => sessionCommand.waitsOnAnother(id)
+      )
     )
-  )
+  }
 }
 let uiActiveTabId: string | null = null
 let lastTabTheOwnerLookedAt: string | null = null
@@ -856,12 +851,11 @@ function sidebarTitle(s: SessionInfo): string | undefined {
   return s.title && !placeholder ? s.title : undefined
 }
 
-const tabLifecycle = new TabLifecycle()
-const sleepers = new SleepingTabs({
+const sleepersDeps: PluginStartDeps['sessions']['sleepers'] = {
   write: (tabId, data) => ptyMgr.write(tabId, data),
   ready: (tabId) => tabReady(tabId, RESUMED_TAB_READY_MS, false),
   type: (tabId, keys) => void ptyMgr.type(tabId, keys)
-})
+}
 let openTabsRestoreStarted = false
 let openTabsFile: OpenTabsFile | undefined
 let sessionAccounts: SessionAccounts | undefined
@@ -1277,7 +1271,7 @@ function requestWebglRepair(): void {
   )
 }
 
-let workspaceMgr: WorkspaceManager | null = null
+let workspaceMgr: ReturnType<typeof buildWorkspaces> | null = null
 
 let freshness: GitFreshnessEngine | null = null
 let gitAccounts: GitAccountService | null = null
@@ -1905,11 +1899,11 @@ function noticeOf(tabId: string): NoticeFile | undefined {
   return hookRegDir ? localNotice(noticeFile(hookRegDir, tabId)) : undefined
 }
 
-const sessionSync = new SessionSync({
+const sessionSyncDeps: PluginStartDeps['sessions']['sessionSync'] = {
   repoOf: (dir) => syncRepoKeys.resolve(dir),
   gitOut: (dir, args) => hosts.of(dir).gitOut(dir, args),
   notice: noticeOf
-})
+}
 
 const A_MODEL_LIST_IS_READ_AGAIN_AFTER_MS = 3_600_000
 const modelLists = new Map<BackendId, { at: number; listed: Promise<ListedModel[] | undefined> }>()
@@ -2031,7 +2025,9 @@ const sessionDeps: SessionVerbDeps = {
   },
   assist,
   queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
-  startedSessions,
+  get startedSessions() {
+    return startedSessions
+  },
   closable: closableSessions,
   whatIsLeft: (target, waitUntil) => whatClosingWouldLose(target, undefined, waitUntil),
   closeSoon: (inOrder, tellStarter) =>
@@ -3585,7 +3581,8 @@ app.whenReady().then(() => {
     hookRegDir: hookPaths.regDir
   }
   try {
-    codexSessions = new CodexSessions(path.join(userData, 'sessions.json'), {
+    codexSessions = buildCodexSessions({
+      file: path.join(userData, 'sessions.json'),
       ...storedDeps,
       machine: {
         instance: codexMachineInstance(userData),
@@ -3640,7 +3637,8 @@ app.whenReady().then(() => {
     startupErrors.codex = `Codex session data could not be loaded; the original file is preserved. ${String(error)}`
   }
   try {
-    agySessions = new AgySessions(path.join(userData, 'agy-sessions.json'), {
+    agySessions = buildAgySessions({
+      file: path.join(userData, 'agy-sessions.json'),
       ...storedDeps,
       projectInfo: projectInfoOnHost,
       remoteTreeIo: machineTreeIo,
@@ -3702,7 +3700,7 @@ app.whenReady().then(() => {
   }
   for (const stored of [codexSessions, agySessions])
     if (stored) void watchHistoryOf(stored).catch(() => undefined)
-  workspaceMgr = new WorkspaceManager({
+  workspaceMgr = buildWorkspaces({
     additionalRows: (wsPath) =>
       storedSessions().flatMap((stored) =>
         stored.rows(wsPath).map((r) => ({ ...r, backendId: stored.id }))
@@ -5546,14 +5544,18 @@ const hosts = new Hosts(
         return {
           spawnCwd: os.homedir(),
           shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
-          launchCommand: (tabId) =>
-            utilShellLine({
+          launchCommand: (tabId) => {
+            const tabDir = tabPackageDir(app.getPath('userData'), tabId)
+            writeTabPassFile(tabDir, tabId)
+            return utilShellLine({
               host: machine,
               sshOptions: sshOptions(remoteControlDir, false),
               machine: machinePackage(),
               tabId,
-              dir
+              dir,
+              tabDir
             })
+          }
         }
       },
       github: githubOptions,
@@ -6123,16 +6125,18 @@ const startedPlugins: PluginsStarted = startPlugins(
   { commands, moments, ipc: pluginIpc },
   {
     sessions: {
+      startedSessionsFile,
+      newsJudge: newsJudgeDeps,
+      slash: slashDeps,
+      sleepers: sleepersDeps,
+      sessionSync: sessionSyncDeps,
+      attention: attentionDeps,
       eachTurn: {
-        judge: newsJudge,
-        slash,
         replies: sessionCommand,
         askBeforeAsksAreMade: showAskOnItsRow
       },
       commands: sessionsCommands,
-      endedTabs: { slash },
       eachState: {
-        slash,
         attention: {
           stateChanged: ({ tabId, prev, next }) =>
             attention.onStatusChange(tabId, prev, next, attentionSubjectOf(tabId))
@@ -6388,7 +6392,21 @@ const {
   startRelay,
   writeRelayEnv
 } = startedPlugins['browser-control']
-const { buildAsks: buildSessionAsks, buildInstructionAsks, buildHandOver } = startedPlugins.sessions
+const {
+  startedSessions,
+  newsJudge,
+  slash,
+  tabLifecycle,
+  sleepers,
+  sessionSync,
+  attention,
+  buildAsks: buildSessionAsks,
+  buildInstructionAsks,
+  buildHandOver,
+  buildWorkspaces,
+  buildCodexSessions,
+  buildAgySessions
+} = startedPlugins.sessions
 const { TODO_NEWS } = startedPlugins.todo
 const { koloftInbox, flushInbox } = startedPlugins.inbox
 const { buildRunner: buildCronRunner, stop: stopScheduledTasks } = startedPlugins['scheduled-tasks']
