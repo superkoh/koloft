@@ -56,8 +56,8 @@ it is done.
 ## What a plugin owns
 
 A plugin owns six things. The example column says what the Discord plugin owns. All of
-Discord's code is in its folder; `src/main/index.ts` still builds its main-process parts and
-wires them to the rest of the app.
+Discord's code is in its folder; its start builds its main-process parts, and
+`src/main/index.ts` hands them what they need from the rest of the app.
 
 | # | A plugin owns | Manifest field | Example (Discord) |
 |---|---|---|---|
