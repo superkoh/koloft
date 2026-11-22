@@ -886,7 +886,8 @@ export const start: PluginStart<
   list of plugins, and returns what each gave back, keyed by plugin id (`PluginsStarted`).
   GitHub's start gives back its `GithubMain`, whose `followSwitch` and `sweepNow` the app
   calls. Sessions core's gives back `tookTheTurn`, which the butler's and the Inbox's deps read
-  when a turn ends. Workbench's gives back the web-page parts it builds (`WebPages`,
+  when a turn ends, and `buildAsks`, `buildInstructionAsks` and `buildHandOver`, which build
+  its `SessionAsks`, `InstructionAsks` and `HandOver` once Electron is ready. Workbench's gives back the web-page parts it builds (`WebPages`,
   `SitePermissions`, `PageDialogs`, `PageDownloads`, `PageRouting`, `PageTools`),
   `pagesInUse`, the `ReaderDocs` it builds, the two ways it pushes to the window (an
   open file request, and `pagePushes`) and `compositionDone`, which the app waits on
@@ -932,7 +933,8 @@ export const start: PluginStart<
   the start's own commands, moment listeners and channels, and returns it. Until it is
   built those read it through one getter that answers `null` (a `MadeLater`, from
   `src/core/moment.ts`) and answer as the app did before the part existed. Scheduled tasks' `buildRunner` builds its
-  `CronRunner` this way, Passwords and sign-in's `buildAsks` its `SecretAsks`, and the
+  `CronRunner` this way, Sessions core's `buildAsks`, `buildInstructionAsks` and
+  `buildHandOver` its `SessionAsks`, `InstructionAsks` and `HandOver`, Passwords and sign-in's `buildAsks` its `SecretAsks`, and the
   Butler's `buildButler` and `buildDigest` its `Butler` and `AwayDigest`, and Discord's ten
   its `DiscordBinding`, `DiscordLink`, `Rooms`, `OldThreads`, `ButlerTyping`, `AskButtons`,
   `SecretCards`, `InstructionCards`, `Interactions` and `DiscordRelay`, each called on a
@@ -967,7 +969,8 @@ object, which `src/main/index.ts` builds and hands in. A part built by the plugi
 function gets its deps through the start's `deps`, as Workbench's web-page parts,
 Browser control's `CdpOps`, the Inbox's `Inbox` and `KoloftInbox`, the Butler's
 `OwnerAsleep` and Discord's tab channels and phone copier do, or through the `BuildLater`
-it gives back, as Scheduled tasks' `CronRunner`, Passwords and sign-in's `SecretAsks`, the
+it gives back, as Scheduled tasks' `CronRunner`, Sessions core's `SessionAsks`,
+`InstructionAsks` and `HandOver`, Passwords and sign-in's `SecretAsks`, the
 Butler's `Butler` and `AwayDigest` and Discord's ten parts built once Electron is ready
 do; most
 parts are still built by `src/main/index.ts` itself, which imports them by name and hands them
