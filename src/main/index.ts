@@ -165,6 +165,7 @@ import {
   tmuxSessionName,
   UTIL_BIN_DIR,
   utilShellLine,
+  writeTabPassFile,
   CLAUDE_AUTH_ENV_VARS,
   claudeCodeGuessesWindowOf,
   type MachinePackage
@@ -3444,8 +3445,8 @@ app.whenReady().then(() => {
     }
     butlerHearsSoon()
   })
-  claudeBackend.agentReply = (tabId, raw, stillWaiting) =>
-    agentRequests.replyFor(tabId, raw, stillWaiting)
+  claudeBackend.agentReply = (tabId, raw, stillWaiting, refusal) =>
+    agentRequests.replyFor(tabId, raw, stillWaiting, refusal)
   claudeBackend.watchShimRegistrations(regDir)
   if (watchOpenRequests(openDir)) ptyMgr.openDir = openDir
   if (watchPickRequests(pickDir)) ptyMgr.pickDir = pickDir
@@ -5980,14 +5981,18 @@ const hosts = new Hosts(
         return {
           spawnCwd: os.homedir(),
           shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
-          launchCommand: (tabId) =>
-            utilShellLine({
+          launchCommand: (tabId) => {
+            const tabDir = tabPackageDir(app.getPath('userData'), tabId)
+            writeTabPassFile(tabDir, tabId)
+            return utilShellLine({
               host: machine,
               sshOptions: sshOptions(remoteControlDir, false),
               machine: machinePackage(),
               tabId,
-              dir
+              dir,
+              tabDir
             })
+          }
         }
       },
       github: githubOptions,

@@ -8,7 +8,8 @@ import {
   CODEX_FIRST_ON_PATH,
   REMOTE_ENV_LINES,
   remoteAnswerCommand,
-  remoteShCommand
+  remoteShCommand,
+  sourceTabPass
 } from './install'
 import { assertSafeNames, skillsFromMachineLine, tabPushed, type MachinePackage } from './launch'
 import { REMOTE_HOME, REMOTE_HOOK_DIR, remoteMachineDir } from './paths'
@@ -133,6 +134,7 @@ export function codexTabScript(s: CodexTabSpec): string {
   return `#!/bin/sh
 M="${remoteMachineDir(s.machineName)}"
 ${REMOTE_ENV_LINES}
+${sourceTabPass(s.tabId)}
 sh "$M/${ENSURE_CODEX_FILE}" ${shq(s.version)} || exit $?
 ${CODEX_FIRST_ON_PATH}
 H="${REMOTE_CODEX_HOME}"

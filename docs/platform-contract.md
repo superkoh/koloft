@@ -4160,3 +4160,19 @@ Koloft dependents: none in the app. Every `docker exec` in test/e2e/helpers/dock
 through `labExec`, which sets umask 022, the umask an ssh login there gets, before its
 command. The `docker exec` calls remote-git-accounts.spec.ts makes itself (a port relay,
 a `chown`, a `chmod`) write no file, and do not.
+
+## §74 Reading another process's environment as the same user
+
+- **macOS: the command line always, the environment unless the program is part of
+  macOS.** `sysctl` `KERN_PROCARGS2` on a child process of the same user returned its
+  arguments every time, and its environment for `node` (a marker variable and `HOME` were
+  there) but not for `/bin/sleep` or `/bin/zsh`, whose environment part came back empty.
+  `ps -E` showed no environment for any of them, the caller's own shell included. Measured
+  2026-11-21 on macOS 27.2 (Darwin 27.2.0) with a Python `ctypes` probe; that the split
+  follows Apple's own signed binaries is inferred, not checked.
+- **Linux: always.** As uid 1000 in a Debian container, `/proc/<pid>/environ` of a
+  same-user child (`sleep`) held the marker. Measured 2026-11-21 in the
+  `koloft-probe-muse-agy` Docker image.
+
+Koloft dependents: what `KOLOFT_TAB_PASS` (`src/main/tabPass.ts`) stops and what it does
+not, ADR-0052.

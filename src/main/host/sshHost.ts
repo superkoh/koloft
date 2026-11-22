@@ -45,10 +45,13 @@ import {
   MACHINE_PICTURES_DIR_TAIL,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
   sessionIdOfTmux,
+  STARTED_BEFORE_TAB_PASSES_EXIT,
+  startedBeforeTabPassesCmd,
   tmuxSessionName,
   writeTabPackage,
   type MachinePackage
 } from '../remote/launch'
+import { markStartedBeforeTabPasses } from '../tabPass'
 import { ownerTextOver } from '../launchPrompt'
 import { claudeProjectPrompt } from '../agentPlugin'
 import {
@@ -1063,6 +1066,12 @@ exit ${CALLER_GONE_EXIT}`,
   }
 
   // PLATFORM§35 ADR-0044
+  // ADR-0052
+  private async startedBeforeTabPasses(tmuxName: string): Promise<boolean> {
+    const r = await this.deps.run(startedBeforeTabPassesCmd(tmuxName)).catch(() => undefined)
+    return r?.code === STARTED_BEFORE_TAB_PASSES_EXIT
+  }
+
   private async attachOrStart(sid: string): Promise<'start' | 'attach'> {
     await this.deps.claude.firstHeartbeatDone()
     while (this.kills.size && this.deps.claude.alive().has(sid))
@@ -1158,6 +1167,8 @@ exit ${CALLER_GONE_EXIT}`,
     const attach = !!sid && (await this.attachOrStart(sid)) === 'attach'
     const loginPath = attach ? '' : await asked
     const tmuxName = sid ? tmuxSessionName(sid) : `m-${spec.tabId}${NO_TAB_NAME_IS_ANOTHERS_PREFIX}`
+    const keyless = attach && (await this.startedBeforeTabPasses(tmuxName))
+    if (keyless) markStartedBeforeTabPasses(spec.tabId)
     const pkg = d.machinePackage()
     const tabDir = tabPackageDir(d.userData, spec.tabId)
     return {
@@ -1176,6 +1187,7 @@ exit ${CALLER_GONE_EXIT}`,
           env: spec.env,
           portOffset: spec.portOffset,
           loginPath,
+          startedBeforeTabPasses: keyless,
           program: attach ? { ...spec.program, files: {} } : spec.program
         })
         return this.tabLaunchLine(pkg, tabDir, spec.tabId, attach ? 'attach' : 'start')
@@ -1195,6 +1207,7 @@ exit ${CALLER_GONE_EXIT}`,
     const tmuxName = tmuxSessionName(sid)
     const asked = this.loginPath()
     const mode = await this.attachOrStart(sid)
+    const keyless = mode === 'attach' && (await this.startedBeforeTabPasses(tmuxName))
     // CC§2
     const root = d.realPath(this.bare(spec.root))
     const cwd = spec.cwd ? this.bare(spec.cwd) : root
@@ -1219,6 +1232,7 @@ exit ${CALLER_GONE_EXIT}`,
       shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
       launchCommand: (tabId) => {
         const tabDir = tabPackageDir(d.userData, tabId)
+        if (keyless) markStartedBeforeTabPasses(tabId)
         writeTabPackage(
           tabDir,
           claudeTabSpec(
@@ -1232,7 +1246,8 @@ exit ${CALLER_GONE_EXIT}`,
               env: account?.env,
               portOffset: worktree ? portOffset(worktree) : undefined,
               ownerWords: spec.ownerWords,
-              loginPath
+              loginPath,
+              startedBeforeTabPasses: keyless
             },
             {
               settings: d.hookSettings(tabId, machineDir, agentTools),

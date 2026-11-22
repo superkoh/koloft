@@ -8,10 +8,12 @@ import { ASSIST_ANSWERS_WITHIN_MS } from './assist'
 import { GIT_TIMEOUT_MS } from './gitStatus'
 import { NEWID_FN, NO_REPLY_ENV } from './openShimScript'
 import { REMOTE_HOOK_DIR } from './remote/paths'
+import { TAB_PASS_ENV } from './tabPass'
 import { SECRET_VERB, SUDO_SHIM_FILES, writeSudoShims } from '@plugins/passwords/main/sudoShim'
 import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '@plugins/sessions/main/dialog'
 import { AGENT_SHIM_WAITS_MS } from '@core/command'
 
+const PASS_FIELD = `\\"pass\\":\\"$(jstr "$${TAB_PASS_ENV}")\\",`
 const SHIM_POLL_MS = 50
 const COULD_NOT_REACH_KOLOFT = 'koloft: could not reach Koloft.'
 
@@ -83,7 +85,7 @@ if [ -z "$KOLOFT_AGENT_DIR" ] || [ -z "$KOLOFT_TAB_ID" ] || [ -z "$KOLOFT_PID" ]
   exit 1
 fi
 dir="$KOLOFT_AGENT_DIR"
-tabfield="\\"tabId\\":\\"$(jstr "$KOLOFT_TAB_ID")\\","
+tabfield="\\"tabId\\":\\"$(jstr "$KOLOFT_TAB_ID")\\",${PASS_FIELD}"
 unwritable="${COULD_NOT_REACH_KOLOFT}"
 ${body(AGENT_SHIM_WAITS_MS)}`
 
@@ -95,8 +97,14 @@ fi
 dir="${REMOTE_HOOK_DIR}"
 mkdir -p "$dir" 2>/dev/null
 tm=""
-[ -n "$TMUX" ] && tm="$(tmux display-message -p -t "$TMUX_PANE" '#S' 2>/dev/null)"
-tabfield="\\"tabId\\":\\"$(jstr "$KOLOFT_TAB_ID")\\",\\"tmux\\":\\"$(jstr "$tm")\\","
+if [ -n "$TMUX" ]; then
+  tm="$(tmux display-message -p -t "$TMUX_PANE" '#S' 2>/dev/null)"
+  for v in KOLOFT_TAB_ID ${TAB_PASS_ENV}; do
+    kv="$(tmux show-environment -t "$tm" "$v" 2>/dev/null)"
+    case "$kv" in "$v="*) export "$kv" ;; esac
+  done
+fi
+tabfield="\\"tabId\\":\\"$(jstr "$KOLOFT_TAB_ID")\\",\\"tmux\\":\\"$(jstr "$tm")\\",${PASS_FIELD}"
 [ -n "$${NO_REPLY_ENV}" ] && tabfield="$tabfield\\"reply\\":false,"
 unwritable="${COULD_NOT_REACH_KOLOFT}"
 ${body(
@@ -116,7 +124,7 @@ if [ ! -d "$dir" ]; then
   echo "koloft: this ${BACKEND_LABEL[backend]} session is no longer linked to Koloft." >&2
   exit 1
 fi
-tabfield=""
+tabfield="${PASS_FIELD}"
 unwritable="${backend === 'codex' ? CODEX_SANDBOX_IS_READ_ONLY : COULD_NOT_REACH_KOLOFT}"
 ${body(AGENT_SHIM_WAITS_MS)}`
 }

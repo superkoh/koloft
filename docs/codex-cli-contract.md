@@ -4230,3 +4230,23 @@ to 100×30, `/clear`, a second prompt, Ctrl+C twice. An earlier round with `?u` 
 A remote tab's TUI runs on the Mac (§16), so it asks the same.
 
 Koloft dependents: `asksTheTerminal` in `src/main/flowControl.ts`.
+
+## 38. The model's commands get every `KOLOFT_` variable, and Codex keeps none on disk
+
+- **No `KOLOFT_` name is dropped, `KEY`, `TOKEN` or `SECRET` in it or not.** With
+  `KOLOFT_TAB_ID`, `KOLOFT_TAB_PASS`, `KOLOFT_TAB_KEY`, `KOLOFT_TAB_TOKEN`,
+  `KOLOFT_TAB_SECRET`, `KOLOFT_TAB_SEAL` and `KOLOFT_CALLER` in Codex's environment, the
+  model's `exec_command` (`/bin/zsh -lc …`) printed all seven values, under a `CODEX_HOME`
+  whose `config.toml` set no `shell_environment_policy`.
+- **The value lands on disk only when a command prints it.** A command that tested
+  `KOLOFT_TAB_PASS` without printing it left the value in no file under `CODEX_HOME` or the
+  folder (`grep -rl`); one that printed it put it in the rollout `.jsonl` and in
+  `thread_history_1.sqlite-wal`.
+- Measured 2026-11-21: codex-cli 0.169.0 (Homebrew cask, macOS 27.2), `codex exec -s
+  read-only` in a temp `CODEX_HOME` against a fake Responses API (`env_key` provider) that
+  answered with one `exec_command`. Inferred, not checked: that the app-server Koloft runs
+  hands its commands the same environment, as §10's measurement of `KOLOFT_PORT_OFFSET`
+  through the app-server found for one variable.
+
+Koloft dependents: `TAB_PASS_ENV` in `src/main/tabPass.ts`, given to the app-server in
+`src/plugins/sessions/main/codexSessions.ts`.

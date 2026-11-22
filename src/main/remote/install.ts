@@ -61,6 +61,11 @@ fi`
 }
 
 // PLATFORM§33 PLATFORM§37
+export const TAB_PASS_FILE_SUFFIX = '.pass'
+
+export const sourceTabPass = (tabId: string): string =>
+  `P="${REMOTE_TABS_DIR}/${tabId}${TAB_PASS_FILE_SUFFIX}"; [ -f "$P" ] && { set -a; . "$P"; set +a; rm -f "$P"; }`
+
 export function remoteShCommand(script: string, args: string[] = [], first = ''): string {
   const body = `set -- ${args.map(shq).join(' ')}\n${REMOTE_ENV_LINES}\n${script}`
   return `sh -c '${first}eval "$(printf %s "$0" | base64 -d)"' ${Buffer.from(body).toString('base64')}`
@@ -517,6 +522,7 @@ M=$(cd "$(dirname "$0")" && pwd)
 ${REMOTE_ENV_LINES}
 KOLOFT_UTIL=1
 KOLOFT_TAB_ID=$2
+${sourceTabPass('$2')}
 ${utilShellPath('$M')}
 export KOLOFT_UTIL KOLOFT_TAB_ID PATH
 cd "$1" 2>/dev/null || cd

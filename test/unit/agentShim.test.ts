@@ -9,6 +9,7 @@ vi.mock('node-pty', () => ({ spawn: vi.fn() }))
 import { CLAUDE_AGENT_SHIM, REMOTE_AGENT_SHIM, writeAgentShim } from '../../src/main/agentShim'
 import { AGENT_SHIM_WAITS_MS, answered, refused } from '../../src/core/command'
 import { AgentRequests, replyJson, REQUEST_NAME } from '../../src/main/agentRequests'
+import { passOf } from '../../src/main/tabPass'
 import { testCommands } from './helpers/testCommands'
 import { oncePerName, watchAndSweepJsonDrops, watchJsonDrops } from '../../src/main/jsonDrops'
 import type { SessionInfo } from '../../src/shared/types'
@@ -94,6 +95,7 @@ afterEach(() => {
 const claudeEnv = (): Record<string, string> => ({
   KOLOFT_AGENT_DIR: agentDir,
   KOLOFT_TAB_ID: TAB,
+  KOLOFT_TAB_PASS: passOf(TAB),
   KOLOFT_PID: String(process.pid)
 })
 
@@ -136,12 +138,14 @@ describe('koloft command in a Claude session', () => {
     })
     await requests.answer(agentDir, 'req-gone.json', {
       tabId: TAB,
+      pass: passOf(TAB),
       argv: ['echo', 'hunter2'],
       cwd: base,
       pid: 4242
     })
     await requests.answer(agentDir, 'req-here.json', {
       tabId: TAB,
+      pass: passOf(TAB),
       argv: ['echo', 'hi'],
       cwd: base,
       pid: 4243
@@ -161,7 +165,54 @@ describe('koloft command in a Claude session', () => {
 })
 
 describe('koloft command in a Claude session on a remote machine', () => {
-  it('writes its request, naming its tab and its tmux session, into the folder the mirror brings back, and prints the answer Koloft writes beside it', async () => {
+  function answerEveryRequest(hookDir: string, raws: unknown[]): void {
+    watcher = watchAndSweepJsonDrops(
+      hookDir,
+      oncePerName((name) => {
+        const id = REQUEST_NAME.exec(name)?.[1]
+        return id
+          ? (raw): void => {
+              raws.push(raw)
+              fs.writeFileSync(path.join(hookDir, `res-${id}.json`), replyJson(answered('hi')))
+              fs.rmSync(path.join(hookDir, name))
+            }
+          : null
+      })
+    )
+  }
+
+  it('inside a tmux session whose own environment Koloft gave a tab id and pass, as it does when it attaches after a restart, sends those, not the ones the process started with', async () => {
+    const hookDir = path.join(base, '.koloft', 'hook-sessions')
+    const remoteShim = path.join(base, 'machine-bin', 'koloft')
+    fs.mkdirSync(path.dirname(remoteShim))
+    fs.writeFileSync(remoteShim, REMOTE_AGENT_SHIM, { mode: 0o755 })
+    fs.writeFileSync(
+      path.join(shimDir, 'tmux'),
+      '#!/bin/sh\ncase "$1" in\n  display-message) echo k-sess1 ;;\n  show-environment) [ "$3" = k-sess1 ] && echo "$4=now-$4" ;;\nesac\n',
+      { mode: 0o755 }
+    )
+    fs.mkdirSync(hookDir, { recursive: true })
+    const raws: unknown[] = []
+    answerEveryRequest(hookDir, raws)
+    const r = await run(remoteShim, ['echo', 'hi'], {
+      HOME: base,
+      PATH: `${shimDir}:/usr/bin:/bin`,
+      KOLOFT_TAB_ID: TAB,
+      KOLOFT_TAB_PASS: 'from-the-start',
+      TMUX: '/tmp/tmux-1/koloft,1,0',
+      TMUX_PANE: '%0'
+    })
+    expect(r.stdout).toBe('hi\n')
+    expect(raws).toEqual([
+      expect.objectContaining({
+        tabId: 'now-KOLOFT_TAB_ID',
+        pass: 'now-KOLOFT_TAB_PASS',
+        tmux: 'k-sess1'
+      })
+    ])
+  })
+
+  it('writes its request, naming its tab, its pass and its tmux session, into the folder the mirror brings back, and prints the answer Koloft writes beside it', async () => {
     const hookDir = path.join(base, '.koloft', 'hook-sessions')
     const remoteShim = path.join(base, 'machine-bin', 'koloft')
     fs.mkdirSync(path.dirname(remoteShim))
@@ -186,12 +237,20 @@ describe('koloft command in a Claude session on a remote machine', () => {
       HOME: base,
       PATH: `${shimDir}:/usr/bin:/bin`,
       KOLOFT_TAB_ID: TAB,
+      KOLOFT_TAB_PASS: 'p1',
       TMUX: '/tmp/tmux-1/koloft,1,0',
       TMUX_PANE: '%0'
     })
     expect(r.stdout).toBe('hi\n')
     expect(raws).toEqual([
-      { tabId: TAB, tmux: 'k-sess1', argv: ['echo', 'hi'], cwd: base, pid: expect.any(Number) }
+      {
+        tabId: TAB,
+        tmux: 'k-sess1',
+        pass: 'p1',
+        argv: ['echo', 'hi'],
+        cwd: base,
+        pid: expect.any(Number)
+      }
     ])
     expect(fs.readdirSync(hookDir)).toEqual([])
   })
@@ -228,7 +287,7 @@ describe('koloft command in a Codex session', () => {
     fs.rmSync(requestDir, { recursive: true, force: true })
   })
 
-  it('needs no Koloft variables: its request folder is written into the script', async () => {
+  it('names no tab, as its request folder is written into the script, and carries the pass the tab was given', async () => {
     const tab = new AgentRequests({
       commands,
       tab: () => undefined,
@@ -245,7 +304,9 @@ describe('koloft command in a Codex session', () => {
           }
         : null
     )
-    const r = await run(path.join(shimDir, 'koloft'), ['echo', 'hi'], {})
+    const r = await run(path.join(shimDir, 'koloft'), ['echo', 'hi'], {
+      KOLOFT_TAB_PASS: passOf(TAB)
+    })
     expect(r.stdout).toBe('hi\n')
     expect(received).toEqual([{ argv: ['hi'], tabId: TAB }])
     expect(raws[0]).not.toHaveProperty('tabId')

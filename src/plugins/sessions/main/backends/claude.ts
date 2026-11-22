@@ -29,10 +29,12 @@ import type { ClaudeLaunch, Host } from '../../../../main/host/host'
 import type { RemoteSync } from '../../../../main/remote/sync'
 import {
   AGENT_DROP_NAME,
+  NOT_ITS_PASS,
   REQUEST_NAME,
   replyJson,
   tabSpokenFor
 } from '../../../../main/agentRequests'
+import { holdsPass, isStartedBeforeTabPasses } from '../../../../main/tabPass'
 import type { AgentReply } from '@core/command'
 import { errorText } from '@core/errorText'
 import { accountEnv, sessionIdOfTmux, tmuxSessionName } from '../../../../main/remote/launch'
@@ -254,7 +256,8 @@ export class ClaudeBackend implements SessionBackend {
   agentReply?: (
     tabId: string | undefined,
     raw: unknown,
-    stillWaiting?: () => boolean
+    stillWaiting?: () => boolean,
+    refusal?: string
   ) => Promise<AgentReply>
 
   constructor(private d: ClaudeBackendDeps) {}
@@ -671,8 +674,34 @@ export class ClaudeBackend implements SessionBackend {
     return undefined
   }
 
-  private callerOnMachine(machine: string, raw: unknown): string | undefined {
-    const r = (raw ?? {}) as { tabId?: unknown; tmux?: unknown }
+  // ADR-0052
+  private callerOnMachine(machine: string, raw: unknown): { tabId?: string; refusal?: string } {
+    const r = (raw ?? {}) as { tabId?: unknown; tmux?: unknown; pass?: unknown }
+    if (typeof r.pass === 'string' && r.pass) {
+      const asked = typeof r.tabId === 'string' ? r.tabId : ''
+      const facts = this.d.pty.get(asked)
+      if (!facts) return {}
+      if (!holdsPass(asked, r.pass)) return { refusal: NOT_ITS_PASS }
+      const tabId = tabSpokenFor(asked, facts)
+      return this.runsOnMachine(machine, tabId) ? { tabId } : {}
+    }
+    const named = this.namedOnMachine(machine, r)
+    if (!named) return {}
+    return isStartedBeforeTabPasses(named) ? { tabId: named } : { refusal: NOT_ITS_PASS }
+  }
+
+  private runsOnMachine(machine: string, tabId: string): boolean {
+    if (!this.d.pty.get(tabId)) return false
+    return (
+      this.d.machineOfTab(tabId) === machine ||
+      this.d.otherTabOnMachine?.(machine, '', tabId) === tabId
+    )
+  }
+
+  private namedOnMachine(
+    machine: string,
+    r: { tabId?: unknown; tmux?: unknown }
+  ): string | undefined {
     const byTmux = typeof r.tmux === 'string' && r.tmux && this.tabRunningTmux(r.tmux, machine)
     if (byTmux) return byTmux
     const asked = typeof r.tabId === 'string' ? r.tabId : ''
@@ -693,10 +722,10 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   private answerMachineRequest(machine: string, requestId: string, raw: unknown): void {
-    const tabId = this.callerOnMachine(machine, raw)
+    const { tabId, refusal } = this.callerOnMachine(machine, raw)
     const host = this.d.hosts.machine(machine)
     const noOneWaits = (raw as { reply?: unknown } | null)?.reply === false
-    if (!this.agentReply || (!tabId && !this.fromOwnWorkbenchShell(raw))) {
+    if (!this.agentReply || (!tabId && !refusal && !this.fromOwnWorkbenchShell(raw))) {
       if (noOneWaits) void host.answerAgent(requestId, null)
       return
     }
@@ -705,7 +734,7 @@ export class ClaudeBackend implements SessionBackend {
       noOneWaits || typeof pid !== 'number'
         ? undefined
         : new CallerOnTheMachine(host, requestId, pid)
-    void this.agentReply(tabId, raw, caller?.stillWaiting).then(async (reply) => {
+    void this.agentReply(tabId, raw, caller?.stillWaiting, refusal).then(async (reply) => {
       const nobodyReads = noOneWaits || !!(await caller?.stoppedWaiting())
       await host.answerAgent(requestId, nobodyReads ? null : replyJson(reply))
     })

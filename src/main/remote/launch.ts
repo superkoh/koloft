@@ -9,9 +9,12 @@ import {
   TMUX_PASSES_THE_PANE_TITLE_ON,
   onATerminalEvenWhenSshGaveNone,
   remoteAnswerCommand,
-  remoteShCommand
+  remoteShCommand,
+  sourceTabPass,
+  TAB_PASS_FILE_SUFFIX
 } from './install'
 import { remotePtsFile } from './paths'
+import { passOf, TAB_PASS_ENV } from '../tabPass'
 import { OWNING_TAB_ENV } from '../owningTabEnv'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
 import { ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE } from '../agentLift'
@@ -143,6 +146,7 @@ export interface TabSpec {
   portOffset?: number
   ownerWords?: string
   loginPath?: string
+  startedBeforeTabPasses?: boolean
   program: TabProgram
 }
 
@@ -277,8 +281,10 @@ ${REMOTE_ENV_LINES}
 if [ "$1" = run ]; then
   KOLOFT_TMUX_FOLLOW=1; export KOLOFT_TMUX_FOLLOW
 ${loginPathToo}  KOLOFT_TAB_ID=${spec.tabId}; PATH="$M/${SESSION_BIN_DIR}:$PATH"; export KOLOFT_TAB_ID PATH
-  unset ${CLAUDE_AUTH_ENV_VARS.join(' ')}
+  unset ${CLAUDE_AUTH_ENV_VARS.join(' ')} ${TAB_PASS_ENV}
   E="${T}.env"; [ -f "$E" ] && { set -a; . "$E"; set +a; rm -f "$E"; }
+  ${sourceTabPass(spec.tabId)}
+  ${tabPassIntoTmux(T, spec.tmuxName, spec.tabId)}
 ${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}  trap : INT QUIT
   (
 ${program.run}  )
@@ -292,9 +298,9 @@ exited() {
   c=$?; [ -s "${T}.exit" ] && c=$(cat "${T}.exit")
   [ "$c" = ${SSH_LINK_BROKE_EXIT} ] && c=${AGENT_EXIT_255_PASSED_AS}
   [ -f "${T}.screen" ] && awk 'NF { if (seen) for (; n; n--) print ""; seen = 1; n = 0; print; next } { n++ }' "${T}.screen"
-  rm -f "${T}.env"; exit $c
+  rm -f "${T}.env" "${T}${TAB_PASS_FILE_SUFFIX}"; exit $c
 }
-[ "$1" = attach ] && { ${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u attach -d -t ${attachTo}; exited; }
+[ "$1" = attach ] && { n=${attachTo}; ${sourceTabPass(spec.tabId)}; ${tabPassIntoTmux(T, '$n', spec.tabId)}; ${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u attach -d -t "$n"; exited; }
 ${program.beforeEnsure}sh "$M/ensure.sh"${program.ensureTool ? ` ${program.ensureTool}` : ''} || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
 echo ${shq(spec.banner)}
@@ -314,6 +320,31 @@ export function writeTabPackage(dir: string, spec: TabSpec): void {
     const lines = Object.entries(spec.env).map(([k, v]) => `${k}=${shq(v)}`)
     fs.writeFileSync(path.join(dir, `${spec.tabId}.env`), lines.join('\n') + '\n', { mode: 0o600 })
   }
+  if (!spec.startedBeforeTabPasses) writeTabPassFile(dir, spec.tabId)
+}
+
+export function writeTabPassFile(dir: string, tabId: string): void {
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+  fs.writeFileSync(
+    path.join(dir, `${tabId}${TAB_PASS_FILE_SUFFIX}`),
+    `${TAB_PASS_ENV}=${passOf(tabId)}\n`,
+    { mode: 0o600 }
+  )
+}
+
+// ADR-0052
+const tabPassIntoTmux = (T: string, target: string, tabId: string): string =>
+  `[ -n "$${TAB_PASS_ENV}" ] && ( umask 077; printf 'set-environment -t %s KOLOFT_TAB_ID %s\\nset-environment -t %s ${TAB_PASS_ENV} %s\\n' "${target}" ${tabId} "${target}" "$${TAB_PASS_ENV}" > "${T}.keys" ) && tmux -L koloft source-file "${T}.keys"; rm -f "${T}.keys"`
+
+export const STARTED_BEFORE_TAB_PASSES_EXIT = 3
+
+export function startedBeforeTabPassesCmd(tmuxName: string): string {
+  assertSafeNames(tmuxName)
+  return remoteShCommand(
+    `tmux -L koloft show-environment -t "$1" ${TAB_PASS_ENV} >/dev/null 2>&1 && exit 0\n` +
+      `tmux -L koloft has-session -t "$1" 2>/dev/null && exit ${STARTED_BEFORE_TAB_PASSES_EXIT}\nexit 0`,
+    [tmuxName]
+  )
 }
 
 export interface LaunchLineSpec {
@@ -389,6 +420,7 @@ export interface UtilShellLineSpec {
   machine: MachinePackage
   tabId: string
   dir: string
+  tabDir: string
 }
 
 const NO_MACHINE_PACKAGE_EXIT = 97
@@ -402,7 +434,7 @@ export function utilShellLine(s: UtilShellLineSpec): string {
   const shell = `ssh -t ${ssh} ${shq(untilOwningTab)}"$${OWNING_TAB_ENV}"${shq(afterOwningTab)}" $COLUMNS $LINES"`
   const shellItselfExited97 = `ssh -n ${ssh} ${shq(`test -d ${m}`)} && exit ${NO_MACHINE_PACKAGE_EXIT}`
   return (
-    `clear; ${shell}; c=$?; [ "$c" = ${NO_MACHINE_PACKAGE_EXIT} ] || exit "$c"; ${shellItselfExited97}; ` +
+    `${tabPushed(s)}clear; ${shell}; c=$?; [ "$c" = ${NO_MACHINE_PACKAGE_EXIT} ] || exit "$c"; ${shellItselfExited97}; ` +
     `${pushMachine(s)} || { ${COULD_NOT_CONNECT}; exit 4; }; clear; ${shell}; exit`
   )
 }
