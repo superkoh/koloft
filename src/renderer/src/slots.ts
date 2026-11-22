@@ -50,6 +50,8 @@ export interface PluginSetUp {
 
 export const PLUGIN_SET_UP = slot<PluginSetUp>('plugin-set-up')
 
+export const OWNER_REACH = slot<string>('owner-reach')
+
 export type MarkOf = (
   wsPath: string,
   row: SessionRow,

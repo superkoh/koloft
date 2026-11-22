@@ -4,8 +4,9 @@ import os from 'os'
 import path from 'path'
 import type { PreviewItem, SessionInfo } from '@shared/types'
 import type { Turn } from '@shared/turns'
-import type { AssistJob } from '../../src/core/assistModels'
-import { ReaderDocs } from '../../src/main/readerDocs'
+import type { AssistJob } from '../../../../src/core/assistModels'
+import { localFile } from '../../../../src/main/realFiles'
+import { ReaderDocs } from '../../../../src/plugins/workbench/main/readerDocs'
 
 const TURN_START = 1_000
 
@@ -60,6 +61,7 @@ function setup(opts: {
         if (opts.remoteDown) throw new Error('ssh: connection closed')
         return (opts.remoteFiles ?? []).includes(keyed)
       },
+      localFile,
       changed: () => changed++
     })
     return docs

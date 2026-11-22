@@ -44,6 +44,8 @@ export interface ChannelDeps {
   archive(id: string): boolean
   setResident(id: string, on: boolean): void
   killTab(tabId: string): Promise<boolean>
+  closingLoses(sessionId: string, tabId: string): Promise<string[]>
+  closeFully(sessionId: string, tabId: string): Promise<void>
   leftovers(): Record<string, LeftoverProcess[]>
   stopLeftover(sessionId: string, pid: number): Promise<boolean>
   ports(tabId: string): Promise<ListeningPort[] | null>
@@ -60,6 +62,8 @@ export interface ChannelDeps {
   storedSessions(): Pick<SessionsWithStore, 'id' | 'store'>[]
   dirExists(dir: string): Promise<boolean>
 }
+
+const NO_SESSION_NAMED = 'Koloft was not told which session to close.'
 
 export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
   const { backends } = deps
@@ -89,6 +93,16 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
     const tabId = backends.forSession(id).aliveTabFor(id)
     if (!tabId) return { ok: false }
     return { ok: await deps.killTab(tabId) }
+  })
+  const ids = (id: unknown, tabId: unknown): [string, string] | null =>
+    typeof id === 'string' && id && typeof tabId === 'string' && tabId ? [id, tabId] : null
+  ipc.handle(CHANNELS.closingLoses, async (id: unknown, tabId: unknown): Promise<string[]> => {
+    const both = ids(id, tabId)
+    return both ? deps.closingLoses(...both) : [NO_SESSION_NAMED]
+  })
+  ipc.handle(CHANNELS.closeFully, async (id: unknown, tabId: unknown): Promise<void> => {
+    const both = ids(id, tabId)
+    if (both) await deps.closeFully(...both)
   })
   // CC§2
   ipc.handle(CHANNELS.transcriptExists, (id: unknown): boolean | Promise<boolean> => {

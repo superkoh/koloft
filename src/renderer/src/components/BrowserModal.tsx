@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState, type JSX } from 'react'
+import { createPortal } from 'react-dom'
 
 const CAPTURE_BEFORE_XTERM = true
 
@@ -64,7 +65,8 @@ export function BrowserModal({
     return () => window.removeEventListener('keydown', onKey, CAPTURE_BEFORE_XTERM)
   }, [])
 
-  return (
+  // ADR-0013
+  return createPortal(
     <div className="bmodal-backdrop" onMouseDown={cancel}>
       <div
         ref={box}
@@ -130,6 +132,7 @@ export function BrowserModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

@@ -20,7 +20,7 @@ type PhoneRelay = Pick<
   'quietTurn' | 'reaches' | 'sendWithNextAsk' | 'sendParts' | 'cardsWaitFor'
 >
 
-interface PhoneCopierDeps {
+export interface PhoneCopierDeps {
   relay(): PhoneRelay | null
   channels: Pick<TabChannels, 'askChannelOf' | 'boundChannelOf'>
   butlerSide(tabId: string): boolean

@@ -9,9 +9,14 @@ import {
   TMUX_PASSES_THE_PANE_TITLE_ON,
   onATerminalEvenWhenSshGaveNone,
   remoteAnswerCommand,
-  remoteShCommand
+  remoteShCommand,
+  sourceOnceThenRemove,
+  sourceTabPass,
+  TAB_PASS_FILE_SUFFIX,
+  tmuxHoldsATabPass
 } from './install'
 import { remotePtsFile } from './paths'
+import { passOf, TAB_PASS_ENV } from '../tabPass'
 import { OWNING_TAB_ENV } from '../owningTabEnv'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
 import { ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE } from '../agentLift'
@@ -277,8 +282,10 @@ ${REMOTE_ENV_LINES}
 if [ "$1" = run ]; then
   KOLOFT_TMUX_FOLLOW=1; export KOLOFT_TMUX_FOLLOW
 ${loginPathToo}  KOLOFT_TAB_ID=${spec.tabId}; PATH="$M/${SESSION_BIN_DIR}:$PATH"; export KOLOFT_TAB_ID PATH
-  unset ${CLAUDE_AUTH_ENV_VARS.join(' ')}
-  E="${T}.env"; [ -f "$E" ] && { set -a; . "$E"; set +a; rm -f "$E"; }
+  unset ${CLAUDE_AUTH_ENV_VARS.join(' ')} ${TAB_PASS_ENV}
+  ${sourceOnceThenRemove(`${T}.env`)}
+  ${sourceTabPass(spec.tabId)}
+  ${tabPassIntoTmux(T, spec.tmuxName, spec.tabId)}
 ${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}  trap : INT QUIT
   (
 ${program.run}  )
@@ -287,6 +294,8 @@ ${program.run}  )
   echo $c > "${T}.exit"
   exit
 fi
+trap 'rm -f "${T}${TAB_PASS_FILE_SUFFIX}"' EXIT
+${sourceTabPass(spec.tabId)}
 ${onATerminalEvenWhenSshGaveNone('$2', '$3', spec.tabId, `sh '${T}.sh' $1`)}
 exited() {
   c=$?; [ -s "${T}.exit" ] && c=$(cat "${T}.exit")
@@ -294,12 +303,14 @@ exited() {
   [ -f "${T}.screen" ] && awk 'NF { if (seen) for (; n; n--) print ""; seen = 1; n = 0; print; next } { n++ }' "${T}.screen"
   rm -f "${T}.env"; exit $c
 }
-[ "$1" = attach ] && { ${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u attach -d -t ${attachTo}; exited; }
+[ "$1" = attach ] && { n=${attachTo}; ${passIntoATmuxThatHoldsOne(T, '$n', spec.tabId)}; unset ${TAB_PASS_ENV}; ${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u attach -d -t "$n"; exited; }
 ${program.beforeEnsure}sh "$M/ensure.sh"${program.ensureTool ? ` ${program.ensureTool}` : ''} || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
 echo ${shq(spec.banner)}
 rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}" "${T}.exit" "${T}.screen" "${T}.tmux"
-${program.beforeTmux}${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
+${program.beforeTmux}${passIntoATmuxThatHoldsOne(T, spec.tmuxName, spec.tabId)}
+[ -n "$${TAB_PASS_ENV}" ] && ( umask 077; printf '${TAB_PASS_ENV}=%s\\n' "$${TAB_PASS_ENV}" > "${T}${TAB_PASS_FILE_SUFFIX}" ); unset ${TAB_PASS_ENV}
+${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
 exited
 `
 }
@@ -314,6 +325,29 @@ export function writeTabPackage(dir: string, spec: TabSpec): void {
     const lines = Object.entries(spec.env).map(([k, v]) => `${k}=${shq(v)}`)
     fs.writeFileSync(path.join(dir, `${spec.tabId}.env`), lines.join('\n') + '\n', { mode: 0o600 })
   }
+  writeTabPassFile(dir, spec.tabId)
+}
+
+export function writeTabPassFile(dir: string, tabId: string): void {
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+  fs.writeFileSync(
+    path.join(dir, `${tabId}${TAB_PASS_FILE_SUFFIX}`),
+    `${TAB_PASS_ENV}=${passOf(tabId)}\n`,
+    { mode: 0o600 }
+  )
+}
+
+// ADR-0052
+const tabPassIntoTmux = (T: string, target: string, tabId: string): string =>
+  `[ -n "$${TAB_PASS_ENV}" ] && ( umask 077; printf 'set-environment -t %s KOLOFT_TAB_ID %s\\nset-environment -t %s ${TAB_PASS_ENV} %s\\n' "${target}" ${tabId} "${target}" "$${TAB_PASS_ENV}" > "${T}.keys" ) && tmux -L koloft source-file "${T}.keys"; rm -f "${T}.keys"`
+
+// ADR-0052
+const passIntoATmuxThatHoldsOne = (T: string, target: string, tabId: string): string =>
+  `if ${tmuxHoldsATabPass(target)}; then ${tabPassIntoTmux(T, target, tabId)}; fi`
+
+export function holdsATabPassCmd(tmuxName: string): string {
+  assertSafeNames(tmuxName)
+  return remoteShCommand(tmuxHoldsATabPass('$1'), [tmuxName])
 }
 
 export interface LaunchLineSpec {
@@ -352,13 +386,15 @@ function pushMachine(s: MachineTarget): string {
 const COULD_NOT_CONNECT = `echo '[Koloft] could not connect or push files — see the error above'`
 
 const TAB_IN = 'koloft-tab-in'
+const PASS_FILES_OF_FAILED_LAUNCHES_GO_AFTER_MIN = 1
 
 // PLATFORM§3
 function pushTabDirBesideMachine(s: MachineTarget & { tabDir: string }): string {
   return (
     `COPYFILE_DISABLE=1 tar cf - --no-xattrs -C ${shq(s.tabDir)} . | ssh ${s.sshOptions.join(' ')} ${shq(s.host)} ` +
-    `'umask 077; test -d "$HOME/.koloft/${s.machine.name}" && mkdir -p "$HOME/.koloft/tabs" ` +
-    `&& tar xf - -C "$HOME/.koloft/tabs" && echo ${TAB_IN}'`
+    `'umask 077; find "$HOME/.koloft/tabs" -name \\*${TAB_PASS_FILE_SUFFIX} -mmin +${PASS_FILES_OF_FAILED_LAUNCHES_GO_AFTER_MIN} -delete 2>/dev/null; ` +
+    `test -d "$HOME/.koloft/${s.machine.name}" && mkdir -p "$HOME/.koloft/tabs" ` +
+    `&& tar xmf - -C "$HOME/.koloft/tabs" && echo ${TAB_IN}'`
   )
 }
 
@@ -389,6 +425,7 @@ export interface UtilShellLineSpec {
   machine: MachinePackage
   tabId: string
   dir: string
+  tabDir: string
 }
 
 const NO_MACHINE_PACKAGE_EXIT = 97
@@ -402,7 +439,7 @@ export function utilShellLine(s: UtilShellLineSpec): string {
   const shell = `ssh -t ${ssh} ${shq(untilOwningTab)}"$${OWNING_TAB_ENV}"${shq(afterOwningTab)}" $COLUMNS $LINES"`
   const shellItselfExited97 = `ssh -n ${ssh} ${shq(`test -d ${m}`)} && exit ${NO_MACHINE_PACKAGE_EXIT}`
   return (
-    `clear; ${shell}; c=$?; [ "$c" = ${NO_MACHINE_PACKAGE_EXIT} ] || exit "$c"; ${shellItselfExited97}; ` +
+    `${tabPushed(s)}clear; ${shell}; c=$?; [ "$c" = ${NO_MACHINE_PACKAGE_EXIT} ] || exit "$c"; ${shellItselfExited97}; ` +
     `${pushMachine(s)} || { ${COULD_NOT_CONNECT}; exit 4; }; clear; ${shell}; exit`
   )
 }

@@ -16,7 +16,7 @@ import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { basename } from '@shared/preview'
 import { hostOf, parseRemoteKey } from '@shared/remoteKey'
 import type { PastedPicture } from '@shared/pastedPictures'
-import { askRoute } from '../aiStart'
+import { askPinnedRoute, askRoute, pinnedRoute } from '../aiStart'
 import { isComposing } from '../keys'
 import {
   completeMention,
@@ -173,7 +173,7 @@ export function CommandPalette({
   const pin = pinnedWorkspace(query, named)
   const choice = choices[pin ? hostOf(pin.wsPath) : 'local']
   const twoNamed = new Set(named.map((n) => n.wsPath)).size > 1
-  const asksAssist = !pin
+  const routedByAssist = !pin
   const typed = (pin ? pin.prompt : query).trim()
   const startable = !!typed && !twoNamed && !saving
   const tagging = mode === 'ask' ? mentionTyping(query, caret) : null
@@ -224,17 +224,14 @@ export function CommandPalette({
 
   const start = (backend: BackendId = choice.lead): void => {
     if (mode !== 'ask' || !startable) return
-    if (!asksAssist) {
-      onRouted(
-        typed,
-        backend,
-        pin && { title: '', kind: 'workspace', path: pin.wsPath, worktree: null },
-        pictures
-      )
+    const namesAWorktree = (w: (typeof rows)[number]): boolean =>
+      w.workspace.path === pin?.wsPath && w.workspace.isGit && !w.workspace.missing
+    if (pin && !rows.some(namesAWorktree)) {
+      onRouted(typed, backend, pinnedRoute(pin.wsPath, null), pictures)
       return
     }
     setMode('thinking')
-    const ask = askRoute(typed)
+    const ask = pin ? askPinnedRoute(pin.wsPath, typed) : askRoute(typed)
     asking.current = ask
     void ask.result.then((route) => {
       if (asking.current !== ask) return
@@ -429,7 +426,7 @@ export function CommandPalette({
     if (mode === 'thinking')
       return (
         <div className="pal-status">
-          <BusyLine>Working out who should take this…</BusyLine>
+          <BusyLine>{pin ? 'Naming its worktree…' : 'Working out who should take this…'}</BusyLine>
         </div>
       )
     if (mode === 'search')
@@ -563,7 +560,7 @@ export function CommandPalette({
                   <>
                     <IconAiStart size={12} className="pal-pill-glyph" />{' '}
                     {startLabel(
-                      asksAssist,
+                      routedByAssist,
                       choice.listed.length > 1 ? BACKEND_LABEL[backend] : undefined
                     )}
                   </>

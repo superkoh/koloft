@@ -61,7 +61,7 @@ describe('the guest preload', () => {
     const partitionSetup = partition.slice(partition.indexOf('function setupBrowserPartition'))
     expect(partitionSetup).toMatch(/registerPreloadScript\(\{[^}]*filePath: d\.guestPreload/)
     expect(mainSide.match(/preload\/guest\.js/g)).toHaveLength(1)
-    const handedIn = main.slice(main.indexOf('setupBrowserPartition({'))
+    const handedIn = main.slice(main.indexOf('setUpBrowserPartition({'))
     expect(handedIn.slice(0, handedIn.indexOf('})'))).toContain(
       "guestPreload: path.join(__dirname, '../preload/guest.js')"
     )

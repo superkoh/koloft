@@ -31,6 +31,8 @@ export interface SessionsBridge {
     archive(id: string): Promise<boolean>
     setResident(id: string, on: boolean): void
     forceClose(id: string): Promise<{ ok: boolean }>
+    closingLoses(id: string, tabId: string): Promise<string[]>
+    closeFully(id: string, tabId: string): Promise<void>
     // CC§2
     transcriptExists(sessionId: string): Promise<boolean>
     noAccountToResume(sessionId: string): Promise<string | null>
@@ -77,6 +79,8 @@ export const bridge = (ipc: PreloadIpc): SessionsBridge => ({
     archive: (id) => ipc.invoke(CHANNELS.archive, id),
     setResident: (id, on) => ipc.send(CHANNELS.setResident, id, on),
     forceClose: (id) => ipc.invoke(CHANNELS.forceClose, id),
+    closingLoses: (id, tabId) => ipc.invoke(CHANNELS.closingLoses, id, tabId),
+    closeFully: (id, tabId) => ipc.invoke(CHANNELS.closeFully, id, tabId),
     transcriptExists: (id) => ipc.invoke(CHANNELS.transcriptExists, id),
     noAccountToResume: (id) => ipc.invoke(CHANNELS.noAccountToResume, id),
     leftovers: () => ipc.invoke(CHANNELS.leftovers),

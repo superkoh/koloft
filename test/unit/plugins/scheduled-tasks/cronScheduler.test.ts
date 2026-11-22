@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { CronJob, Schedule } from '@shared/types'
-import { MISS_WINDOW_MS, seedLastDue, tick } from '../../src/main/cronScheduler'
+import {
+  MISS_WINDOW_MS,
+  seedLastDue,
+  tick
+} from '../../../../src/plugins/scheduled-tasks/main/cronScheduler'
 
 let n = 0
 function job(schedule: Schedule, over: Partial<CronJob> = {}): CronJob {
@@ -110,7 +114,7 @@ describe('the spin guard', () => {
     vi.resetModules()
     const stuck = at(9, 2, 10, 0)
     vi.doMock('@shared/schedule', () => ({ nextRun: () => new Date(stuck) }))
-    const mod = await import('../../src/main/cronScheduler')
+    const mod = await import('../../../../src/plugins/scheduled-tasks/main/cronScheduler')
     const j = job({ kind: 'daily', at: '10:00' })
     const out = mod.tick(
       [j],

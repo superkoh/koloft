@@ -8,7 +8,8 @@ import {
   CODEX_FIRST_ON_PATH,
   REMOTE_ENV_LINES,
   remoteAnswerCommand,
-  remoteShCommand
+  remoteShCommand,
+  sourceTabPass
 } from './install'
 import { assertSafeNames, skillsFromMachineLine, tabPushed, type MachinePackage } from './launch'
 import { REMOTE_HOME, REMOTE_HOOK_DIR, remoteMachineDir } from './paths'
@@ -22,7 +23,7 @@ import {
   type ReadFrame
 } from '../codexTransport'
 import { record } from '@plugins/sessions/main/codexObservation'
-import { hookStateHeader } from '../codexTrust'
+import { hookStateHeader, trustedHashLine } from '../codexConfigTables.mjs'
 import {
   CODEX_REPLY_LANGUAGE_ENV,
   CODEX_SAID_ENV,
@@ -87,7 +88,7 @@ function hookTrustLines(hooks: { key: string; hash: string }[]): string {
   return hooks
     .map(({ key, hash }) => {
       const header = hookStateHeader(key)
-      const table = `\\n${header}\\ntrusted_hash = ${JSON.stringify(hash)}\\n`
+      const table = `\\n${header}\\n${trustedHashLine(hash)}\\n`
       return (
         `touch "$H/config.toml"\n` +
         `awk -v h=${shq(header)} '$0==h{s=1;next} s&&/^\\[/{s=0} !s' "$H/config.toml" > "$H/config.toml.koloft" && ` +
@@ -133,6 +134,7 @@ export function codexTabScript(s: CodexTabSpec): string {
   return `#!/bin/sh
 M="${remoteMachineDir(s.machineName)}"
 ${REMOTE_ENV_LINES}
+${sourceTabPass(s.tabId)}
 sh "$M/${ENSURE_CODEX_FILE}" ${shq(s.version)} || exit $?
 ${CODEX_FIRST_ON_PATH}
 H="${REMOTE_CODEX_HOME}"

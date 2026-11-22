@@ -72,7 +72,7 @@ import {
   withHandover,
   type SessionCaller
 } from './handoverPreamble'
-import { distinctTitle, titleForTask } from './sessionTitle'
+import { distinctTitle, titleForTask, worktreeNameForTask } from './sessionTitle'
 import type { Assist } from '@core/assistModels'
 import type { SessionsAssistJobId } from '../shared/assistJobs'
 import { keysFor } from '@core/typeKeys'
@@ -647,24 +647,29 @@ async function launchSibling(
   let held: HeldName | undefined
   let tabId: string | null = null
   try {
-    const [, handover, told] = await Promise.all([
+    const gitWorkspace = d
+      .sidebar()
+      .some((w) => w.workspace.path === workspace && w.workspace.isGit)
+    const wantsWorktree = gitWorkspace && (!!args.worktree || caller.assist)
+    const [, handover, told, assistNamed] = await Promise.all([
       !namedAtLaunch(backend, isRemoteKey(workspace))
         ? undefined
         : args.name !== undefined
           ? (held = names.own(args.name))
           : titleForTask(args.prompt, d.assist, ownerWords).then((t) => (held = names.pick(t))),
       handoverInOwnersLanguage(caller, d.assist),
-      d.announceStarting({ helper })
+      d.announceStarting({ helper }),
+      wantsWorktree && !args.worktree ? worktreeNameForTask(args.prompt, d.assist) : null
     ])
     const name = held?.name
     const preamble = [...told, handover].join('\n\n')
-    const gitWorkspace = d
-      .sidebar()
-      .some((w) => w.workspace.path === workspace && w.workspace.isGit)
-    const worktree =
-      gitWorkspace && (args.worktree || caller.assist)
-        ? freshWorktreeName(await d.worktrees(workspace), Date.now(), args.worktree)
-        : args.worktree
+    const worktree = wantsWorktree
+      ? freshWorktreeName(
+          await d.worktrees(workspace),
+          Date.now(),
+          args.worktree ?? assistNamed ?? undefined
+        )
+      : args.worktree
     tabId = await d.launch({
       kind: backend,
       cwd: workspace,

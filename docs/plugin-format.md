@@ -56,8 +56,8 @@ it is done.
 ## What a plugin owns
 
 A plugin owns six things. The example column says what the Discord plugin owns. All of
-Discord's code is in its folder; `src/main/index.ts` still builds its main-process parts and
-wires them to the rest of the app.
+Discord's code is in its folder; its start builds its main-process parts, and
+`src/main/index.ts` hands them what they need from the rest of the app.
 
 | # | A plugin owns | Manifest field | Example (Discord) |
 |---|---|---|---|
@@ -654,6 +654,7 @@ These are the slots core's window offers, in `src/renderer/src/slots.ts`:
 | `row-extras` | `{ row, useExtras }`: menu items and a status line for another plugin's sidebar row, named by that row's `ui` id | Discord, for `butler-row` |
 | `row-set-up` | `{ row, setUp(settings) }`: whether another plugin's sidebar row counts as set up | Discord, for `butler-row` |
 | `plugin-set-up` | `{ plugin, useLabel, run }`: a "Set up" button on the plugin's own row in Settings ▸ Plugins, shown while it was never set up | Discord ("Set up with Alfred") |
+| `owner-reach` | the name of a place outside this window where the owner talks to the butler. Settings ▸ Assist, the butler's row in Settings and its rename dialog name it while its plugin is on; the Welcome page's phone invites the owner to connect it unless the owner turned its plugin off | Discord ("Discord") |
 | `row-mark` | `{ at, useMarkOf, Mark }`: a mark at the start of a session row's title (`at: 'title'`) or second line (`at: 'sub'`) | Scheduled tasks (title), Butler (sub: "started by …") |
 | `owner-asks` | `{ useWatch, useAsked, useOverTerminal, usePageAsk, useHeldGuests }`: asks that hold a session tab until the owner answers. `useWatch` is called once from the app; a tab in `useAsked` shows its row as waiting on the owner; `useOverTerminal` gives the box drawn over that tab's terminal; `usePageAsk` gives the bar above a Workbench page; the pages in `useHeldGuests` stay loaded | Passwords and sign-in |
 | `workspace-line` | `{ useWatch, Line }`: a line under a workspace's head, above its rows | Scheduled tasks |
@@ -820,11 +821,15 @@ This is what a plugin that is off loses, and where that happens:
 | Main-process parts | stopped by the part itself | [Main-process parts](#main-process-parts) |
 | Settings and data | kept on disk; turning it on again finds them | — |
 
-The window reads slots in three ways, in `src/renderer/src/pluginUi.tsx`:
+The window reads slots in four ways, in `src/renderer/src/pluginUi.tsx`:
 
 - `fillsOf(slot)` gives only the fills of plugins that are on.
 - `fillsOfOnOrOff(slot)` gives every fill. A `plugin-set-up` fill and a `palette-route` fill
   are read this way, so they stay while their plugin is off.
+- `fillsOfNotTurnedOff(slot, settings)` also gives the fills of a plugin that is off only
+  because it was never set up, and leaves out one the owner turned off, or that is off
+  because a plugin it needs is. The Welcome page reads `owner-reach` this way, so its
+  invitation to connect Discord reaches someone who has not set it up yet.
 - `useFillsOf(slot, (fill, on) => …)` is for a slot whose fills are React hooks and that an
   optional plugin fills: `row-extras`, `owner-asks`, `worktree-items` and `workbench-part`.
   It calls every fill's hook on each draw, so a switch never changes how many hooks run. For
@@ -848,10 +853,26 @@ id, and `src/main/index.ts` calls them all with one `startPlugins` call. This is
 tasks' start:
 
 ```ts
-export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments, ipc }, d) => {
-  registerCronCommand(commands, d.command)
-  followEachRun(moments, d.runner, pushRunStarted(ipc))
-  registerChannels(ipc, d.channels)
+export const start: PluginStart<
+  ScheduledTasksStartDeps,
+  { buildRunner: BuildLater<CronRunnerDeps, CronRunner>; stop: StopOnQuit }
+> = ({ commands, moments, ipc }, d) => {
+  let runner: CronRunner | null = null
+  const built = (): CronRunner | null => runner
+  registerCronCommand(commands, { ...d.command, runner: built })
+  followEachRun(moments, built, pushRunStarted(ipc))
+  registerChannels(ipc, { ...d.channels, runner: built })
+  return {
+    buildRunner: ({ userData, pinnedPaths, ...deps }) => {
+      runner = new CronRunner({ ...deps, store: …, push: pushState(ipc) })
+      runner.start()
+      return runner
+    },
+    stop: () => {
+      runner?.quitSweep()
+      runner?.stop()
+    }
+  }
 }
 ```
 
@@ -865,16 +886,93 @@ export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments,
   list of plugins, and returns what each gave back, keyed by plugin id (`PluginsStarted`).
   GitHub's start gives back its `GithubMain`, whose `followSwitch` and `sweepNow` the app
   calls. Sessions core's gives back `tookTheTurn`, which the butler's and the Inbox's deps read
-  when a turn ends.
+  when a turn ends. It also gives back six parts it builds as the app loads, which the app's
+  own code calls from then on: `StartedSessions`, `NewsJudge`, `SlashCommands`,
+  `TabLifecycle`, `SleepingTabs` and `SessionSync`. Its own moment listeners use two of them,
+  `NewsJudge` and `SlashCommands`. The judge has one verdict listener: the deps hand it in
+  as `onVerdict`, and the start signs it up right after it builds the judge. It gives back
+  the `AttentionTracker` it builds as the app loads (from last run's marks,
+  with the five functions its deps hand in set on it right after; the app sets a sixth,
+  `turnTakenElsewhere`, once Electron is ready, from Discord's `turnTakenOnDiscord`), which
+  the app's own code tells of each turn, ask and tab and reads the marks from, and `buildAsks`, `buildInstructionAsks`, `buildHandOver`,
+  `buildWorkspaces`, `buildCodexSessions` and `buildAgySessions`, which build its
+  `SessionAsks`, `InstructionAsks`, `HandOver`, `WorkspaceManager`, `CodexSessions` and
+  `AgySessions` once Electron is ready (the last two take the file their sessions are saved
+  in as `file`, beside their deps). Workbench's gives back the web-page parts it builds (`WebPages`,
+  `SitePermissions`, `PageDialogs`, `PageDownloads`, `PageRouting`, `PageTools`),
+  `pagesInUse`, the `ReaderDocs` it builds, the two ways it pushes to the window (an
+  open file request, and `pagePushes`) and `compositionDone`, which the app waits on
+  before it runs code in a page, all of which the app's own code calls from then on, and
+  two things done once Electron is ready: `setUpBrowserPartition` and `setUpExtensions`.
+  Browser control's gives back the `CdpOps` it builds, `startRelay`, done once Electron is
+  ready, and the CDP relay's functions the app calls (`setRelayEnabled`, `writeRelayEnv`,
+  `relayEndpoint`, `sessionDrivingGuest`, …). Todo's gives back `TODO_NEWS`, which the app
+  hands the butler. The Inbox's gives back the `KoloftInbox` it builds, which the app tells
+  when a turn's verdict comes in, a session is deleted or a tab is rebound, and
+  `flushInbox`, which the app calls as it quits. Scheduled tasks' gives back `buildRunner`,
+  which builds its `CronRunner` once Electron is ready, and `stop`. Passwords and sign-in's
+  gives back `buildAsks`, which builds its `SecretAsks` once Electron is ready, and the
+  `sudo` shim files with `writeSudoShims`, which `src/main/index.ts` writes into the shim
+  folder when a switch changes and into the machine package. The Butler's gives back the
+  `OwnerAsleep` it builds, which the app asks whether Koloft answers a tab for the owner,
+  hands each new ask a tab shows, and tells to mark the machines again, and `buildButler` and `buildDigest`, which build its
+  `Butler` and `AwayDigest` once Electron is ready. Discord's gives back the `channels` it
+  works out for each tab (`roomOf`, `askChannelOf`, `phoneChannelOf`, `turnTakenOnDiscord`),
+  which the app reads to hold a tab open, place a card and tell the attention marks a turn
+  was taken on Discord, and one `BuildLater` for each of its parts built once Electron is
+  ready: `buildDiscordBinding`, `buildDiscordLink`, `buildRooms`, `buildOldThreads`,
+  `buildButlerTyping`, `buildAskButtons`, `buildSecretCards`, `buildInstructionCards`,
+  `buildInteractions` and `buildDiscordRelay`. A builder fills in itself the deps that
+  name Discord's own code (the link's events, where a room's message goes, whether a card
+  is wanted, which card a button press is for). It also gives back `startDiscord`, which
+  the app calls once its parts are built, `followDiscordSwitch`, which it calls whenever
+  the switches change, `discordOn`, `discordConnected`, `commandIntoButler`,
+  `roomNoteOfKey` and `withoutTheRelayTag` for the app's own code, and the page-picture
+  functions the app's other parts use (`shotSession`, `shootHtml`, …).
+- What a start gives back exists only once `startPlugins` returns. A deps object built
+  before that, or a start that runs before the one that gives it, reads it through a
+  function (Workbench's `driverOf` calls Browser control's `sessionDrivingGuest`), never as a
+  value.
 - The app calls `startPlugins` as its main module finishes loading, after every part a deps
   object hands in exists, and before Electron is ready, so before any session runs, any
   `koloft` command arrives or the window opens.
+- **Building later.** A part that can only be built once Electron is ready, or after
+  other parts of the app have started, is not built by the start itself. The start gives
+  back a `BuildLater<Deps, Part>` from `src/core/pluginStart.ts`: `(deps) => part`. The app
+  calls it inside `app.whenReady`, at the point the part must be built, and hands it what
+  exists only by then. It builds the part, starts it if it runs on its own, keeps it for
+  the start's own commands, moment listeners and channels, and returns it. Until it is
+  built those read it through one getter that answers `null` (a `MadeLater`, from
+  `src/core/moment.ts`) and answer as the app did before the part existed. Scheduled tasks' `buildRunner` builds its
+  `CronRunner` this way, Sessions core's `buildAsks` and `buildInstructionAsks` its
+  `SessionAsks` and `InstructionAsks` (its `buildHandOver`, `buildWorkspaces`,
+  `buildCodexSessions` and `buildAgySessions` build a `HandOver`, a `WorkspaceManager`, a
+  `CodexSessions` and an `AgySessions` and only hand them back, as nothing in the start
+  reads them; the app starts the `WorkspaceManager` itself, later in its ready code, and
+  registers the Antigravity and Codex backends itself once both are built), Passwords and sign-in's `buildAsks` its `SecretAsks`, and the
+  Butler's `buildButler` and `buildDigest` its `Butler` and `AwayDigest`, and Discord's ten
+  its `DiscordBinding`, `DiscordLink`, `Rooms`, `OldThreads`, `ButlerTyping`, `AskButtons`,
+  `SecretCards`, `InstructionCards`, `Interactions` and `DiscordRelay`, each called on a
+  line of its own among the parts of other plugins it needs or that need it; Workbench's `setUpBrowserPartition` and `setUpExtensions` and
+  Browser control's `startRelay` are the same shape with nothing given back
+  (`BuildLater<Deps>`). There is no one moment at which the app builds every plugin's
+  later parts: each is called on its own line, so the order the app is ready in does not
+  change.
+- **Stopping.** A start whose parts hold timers, files or connections that must be let go
+  as the app quits gives back a `StopOnQuit` (`() => void`) for each point in the app's
+  `before-quit` handler where it lets something go, named after what it does. The app
+  calls each at that point, once Koloft has decided to quit. It must do nothing for a part
+  not yet built (a quit before Electron is ready). Scheduled tasks' `stop` stops its
+  timers and saves the runs still going as ended; the Inbox's `flushInbox` writes its
+  cards to disk.
+  A switch never stops a start: a part that follows its plugin's switch does that itself
+  ([Main-process parts](#main-process-parts)).
 - Inside one start, the order of its `moments.listen` calls is the order that plugin hears a
   moment in ([Moments](#moments)). Across plugins the order of the starts does not matter,
   since `Moments` orders listeners by the list of plugins whoever listens first.
 - A start given for an id that is not on the list of plugins throws.
 - Every plugin is started, on or off. What a plugin that is off loses is still taken away by
-  the registries ([Switches](#switches)). Nothing stops a started plugin.
+  the registries ([Switches](#switches)). Only quitting stops what a start built.
 - The unit test `test/unit/pluginList.test.ts` checks that `src/plugins/starts.ts` holds the
   start of every plugin that has a `main/` folder, and of no other, in list order.
 
@@ -883,8 +981,18 @@ export const start: PluginStart<ScheduledTasksStartDeps> = ({ commands, moments,
 A plugin's main-process code is a set of parts. A part is a class or function in `main/`
 that holds its own state. It takes what it needs from the rest of the app as a small `deps`
 object, which `src/main/index.ts` builds and hands in. A part built by the plugin's start
-function gets its deps through the start's `deps`; most parts are still built by
-`src/main/index.ts` itself, which imports them by name and hands them to the starts as deps. A part never imports another plugin
+function gets its deps through the start's `deps`, as Workbench's web-page parts,
+Browser control's `CdpOps`, Sessions core's `AttentionTracker`, `StartedSessions`,
+`NewsJudge`, `SlashCommands`, `SleepingTabs` and `SessionSync` (its `TabLifecycle` takes
+no deps), the Inbox's `Inbox` and
+`KoloftInbox`, the Butler's
+`OwnerAsleep` and Discord's tab channels and phone copier do, or through the `BuildLater`
+it gives back, as Scheduled tasks' `CronRunner`, Sessions core's `SessionAsks`,
+`InstructionAsks`, `HandOver`, `WorkspaceManager`, `CodexSessions` and `AgySessions`, Passwords and sign-in's `SecretAsks`, the
+Butler's `Butler` and `AwayDigest` and Discord's ten parts built once Electron is ready
+do; most
+parts are still built by `src/main/index.ts` itself, which imports them by name and hands them
+to the starts as deps. A part never imports another plugin
 past its `api.ts`. When it needs something from a plugin that needs it in turn (Browser
 control needs Workbench), `src/main/index.ts` passes a function in. For example, Workbench's
 `PageRouting` gets `driverOf` and `openAsDrivingAgentsTab` as deps, which Browser control's
@@ -900,8 +1008,9 @@ its "is this branch merged" query. It has
 `followSwitch()`, which `src/main/index.ts` calls whenever the switches change: it starts or
 stops the sweep of issue and pull request counts. The counts reach the sidebar's workspace
 rows through the `pluginData` dep of Sessions core's workspaces, only while the sweep runs.
-Discord's bot follows its switch the same way, from `followDiscordSwitch` in
-`src/main/index.ts`. There is no general way yet to stop a plugin's main-process parts.
+Discord's bot follows its switch the same way, from the `followDiscordSwitch` its start
+gives back. As the app quits, a start's `stop` stops what it built
+([Starting](#starting)).
 
 Two hooks let one plugin hand another plugin's part what it needs, without core naming
 either:
@@ -918,7 +1027,7 @@ either:
   `(From Koloft:) `, and the key is added; a new conversation is added to every list whose
   `on()` holds when it binds, as it already knows. The plugin that hands in a news names its own
   list, so the saved record keeps that name. `src/main/index.ts` hands in Todo's `TODO_NEWS`
-  (`knownBy: 'knowsTodo'`) and the butler's `GUIDE_MOVED_NEWS` (`knownBy: 'knowsAllItsOwnLines'`).
+  (`knownBy: 'knowsTodo'`, given back by Todo's start) and the butler's `GUIDE_MOVED_NEWS` (`knownBy: 'knowsAllItsOwnLines'`).
 
 ## Format version
 
@@ -1012,9 +1121,8 @@ These are not decided:
 
 - Who may add a text slot, a value or a fact, and whether these names, and the window's UI
   slots, are kept stable for plugins written outside Koloft.
-- How the app's main process stops a plugin's main-process code, and how the parts
-  `src/main/index.ts` still builds and imports by name move behind their plugin's start
-  ([Starting](#starting)).
+- How the parts `src/main/index.ts` still builds and imports by name move behind their
+  plugin's start ([Starting](#starting)).
 - If A needs B and B needs C, whether A may import C's `api.ts` without listing C. The check
   allows only the plugins A lists itself.
 - Whether a plugin may import `src/shared/` directly. `src/shared/` holds code Koloft's main
