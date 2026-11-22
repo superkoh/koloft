@@ -2151,3 +2151,18 @@ DECRQM as known asked exactly the same.
 Inside tmux (a remote tab) none of these reach Koloft's terminal: PLATFORM§35.
 
 Koloft dependents: `asksTheTerminal` in `src/main/flowControl.ts`.
+
+## §34 The model's commands get every `KOLOFT_` variable, and agy keeps none on disk
+
+- **No `KOLOFT_` name is dropped.** With `KOLOFT_TAB_ID`, `KOLOFT_TAB_PASS`,
+  `KOLOFT_TAB_KEY`, `KOLOFT_TAB_TOKEN`, `KOLOFT_TAB_SECRET`, `KOLOFT_TAB_SEAL` and
+  `KOLOFT_CALLER` in agy's environment, the model's `run_command` printed all seven values.
+- **The value lands on disk only when a command prints it.** A command that tested
+  `KOLOFT_TAB_PASS` without printing it left the value in no file under agy's `HOME`
+  (`grep -rl`).
+- Measured 2026-11-21: agy 1.5.10, the Linux build in the `koloft-probe-muse-agy` Docker
+  image, `agy -p hi --dangerously-skip-permissions` with `modelProvider: gemini` and a fake
+  Gemini server that answered with one `run_command`. Not probed: the macOS build.
+
+Koloft dependents: `TAB_PASS_ENV` in `src/main/tabPass.ts`, which reaches agy through its
+tab's environment (`src/main/ptyManager.ts`).

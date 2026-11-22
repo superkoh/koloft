@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { CronRunner, type RunnerDeps } from '../../../../src/main/cronRunner'
+import {
+  CronRunner,
+  type RunnerDeps
+} from '../../../../src/plugins/scheduled-tasks/main/cronRunner'
 import {
   cronVerb,
   formatList,

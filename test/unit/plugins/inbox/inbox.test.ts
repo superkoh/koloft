@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { Inbox, type InboxHost } from '../../src/main/inbox'
+import { Inbox, type InboxHost } from '../../../../src/plugins/inbox/main/inbox'
 import {
   DONE_KEPT_MS,
   UNDO_MS,
@@ -8,7 +8,7 @@ import {
   inboxCounts,
   pickToPress,
   type InboxCardInput
-} from '../../src/shared/inbox'
+} from '../../../../src/shared/inbox'
 
 function makeHost(
   over: Partial<InboxHost> = {}

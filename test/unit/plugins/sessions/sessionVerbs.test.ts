@@ -19,7 +19,7 @@ import {
   crossSessionLine
 } from '../../../../src/plugins/sessions/main/crossSessionMessage'
 import type { TranscriptPlaces } from '../../../../src/core/transcriptPlaces'
-import { INBOX_SENDER } from '../../../../src/main/inbox'
+import { INBOX_SENDER } from '../../../../src/plugins/inbox/main/inbox'
 import { butlersFolderClaim } from '../../../../src/plugins/butler/api'
 import type { SendResult } from '../../../../src/plugins/sessions/api'
 import { Moments, SESSION_STARTED, SESSION_STARTING } from '../../../../src/core/moment'

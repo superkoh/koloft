@@ -7,7 +7,6 @@ import { isReaderDocPath, writtenForTheAgent } from '@shared/preview'
 import type { Assist } from '@core/assistModels'
 import type { WorkbenchAssistJobId } from '@plugins/workbench/shared/assistJobs'
 import { PrivateRecordFile } from '@core/privateFile'
-import { localFile } from './realFiles'
 
 const SAID_CHARS_SENT = 1500
 const REPLY_CHARS_SENT = 8000
@@ -32,6 +31,7 @@ export interface ReaderDocsDeps {
   assist: Assist<WorkbenchAssistJobId>
   session(tabId: string): SessionInfo | undefined
   remoteFileExists(host: string, keyed: string): Promise<boolean>
+  localFile(file: string): Promise<string | null>
   changed(): void
 }
 
@@ -115,7 +115,7 @@ export class ReaderDocs {
         if (!src || written.includes(src)) return src
         if (host)
           return (await this.deps.remoteFileExists(host, src).catch(() => false)) ? src : null
-        const real = await localFile(src)
+        const real = await this.deps.localFile(src)
         return real && !writtenForTheAgent(real) ? real : null
       })
     )

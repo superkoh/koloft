@@ -19,8 +19,9 @@ import {
 import { GIT_CALL_TIMEOUT_MS, localHost } from '../../../../src/main/host/localHost'
 import { GithubRepos } from '../../../../src/main/githubRepos'
 import { gitOnPath, realGit, restorePath, seedRepo } from '../../helpers/gitShim'
-import { replyJson } from '../../../../src/main/agentRequests'
-import { answered } from '../../../../src/core/command'
+import { NOT_ITS_PASS, replyJson } from '../../../../src/main/agentRequests'
+import { answered, refused } from '../../../../src/core/command'
+import { markStartedBeforeTabPasses, passOf } from '../../../../src/main/tabPass'
 import { mirrorHookDir } from '../../../../src/main/remote/paths'
 import { START_IN_STATUS_LOG } from '../../../../src/plugins/sessions/main/hooks'
 import type { AgentCallerState } from '../../../../src/main/host/sshHost'
@@ -203,12 +204,14 @@ function machineBackend(): {
 }
 
 const A_FEW_MIRROR_PULLS_MS = 1500
-const request = (tabId: string, tmux: string): unknown => ({
+const request = (tabId: string, tmux: string, pass: string | null = passOf(tabId)): unknown => ({
   tabId,
   tmux,
+  pass,
   argv: ['help'],
   cwd: '/'
 })
+const keyless = (tabId: string, tmux: string): unknown => request(tabId, tmux, null)
 
 describe('ClaudeBackend: koloft requests from a session on a remote machine', () => {
   // PLATFORM§34
@@ -289,17 +292,39 @@ describe('ClaudeBackend: koloft requests from a session on a remote machine', ()
     expect(m.binds).toEqual([['pty-a', 'sid-new']])
   })
 
-  it('finds the calling tab by its tmux session before its tab id, which a Koloft restart can hand to another tab, and leaves a request from no tab of its own on that machine unanswered, for the Koloft that owns it', async () => {
+  it('answers a request carrying a pass for the tab that pass belongs to, whatever tmux session it names; refuses one naming a tab with another tab’s pass; and leaves one from no tab of its own on that machine unanswered, for the Koloft that owns it', async () => {
     const m = machineBackend()
     m.drop('req-r2.json', request('pty-c', 'k-sc'))
     m.drop('req-r3.json', request('pty-gone', 'k-gone'))
     m.drop('req-r4.json', request('pty-b', 'k-sa'))
-    m.drop('req-r5.json', request('pty-b', ''))
+    m.drop('req-r5.json', request('pty-b', '', passOf('pty-a')))
     await vi.waitFor(() => expect(m.sent).toHaveLength(2), { timeout: 5000 })
     await new Promise((r) => setTimeout(r, A_FEW_MIRROR_PULLS_MS))
 
-    expect(m.sent.map(([, id]) => id).sort()).toEqual(['r4', 'r5'])
-    expect(m.answeredFor.sort()).toEqual(['pty-a', 'pty-b'])
+    expect(Object.fromEntries(m.sent.map(([, id, reply]) => [id, reply]))).toEqual({
+      r4: replyJson(answered('for pty-b')),
+      r5: replyJson(refused(NOT_ITS_PASS))
+    })
+  })
+
+  it('a request with no pass, as an older Koloft’s koloft sends, is answered only for a session that was already running before Koloft gave tabs a pass, found by its tmux session before its tab id, and only until that tab starts a session of its own; for any other tab of its own it is refused', async () => {
+    const m = machineBackend()
+    markStartedBeforeTabPasses('pty-a', true)
+    m.drop('req-r13.json', keyless('pty-b', 'k-sa'))
+    m.drop('req-r14.json', keyless('pty-b', 'k-sb'))
+    m.drop('req-r15.json', keyless('pty-gone', 'k-gone'))
+    await vi.waitFor(() => expect(m.sent).toHaveLength(2), { timeout: 5000 })
+    await new Promise((r) => setTimeout(r, A_FEW_MIRROR_PULLS_MS))
+
+    expect(Object.fromEntries(m.sent.map(([, id, reply]) => [id, reply]))).toEqual({
+      r13: replyJson(answered('for pty-a')),
+      r14: replyJson(refused(NOT_ITS_PASS))
+    })
+
+    markStartedBeforeTabPasses('pty-a', false)
+    m.drop('req-r16.json', keyless('pty-a', 'k-sa'))
+    await vi.waitFor(() => expect(m.sent).toHaveLength(3), { timeout: 5000 })
+    expect(m.sent[2]).toEqual(['devbox', 'r16', replyJson(refused(NOT_ITS_PASS))])
   })
 
   // ADR-0039
