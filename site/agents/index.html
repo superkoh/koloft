@@ -214,12 +214,13 @@
             <code class="nowrap">-w</code>; a worktree name already in use gets
             <code class="nowrap">-2</code> after it. When your butler (see below) starts one in a
             folder git tracks and leaves out <code class="nowrap">-w</code>, Koloft still makes a
-            worktree (see <a href="../sessions/#worktrees">worktree sessions</a>). Its row hangs
-            under the session that started it (see
-            <a href="../sessions/#session-tree">sessions an agent starts</a>). A session it starts
-            gets a short title that <a href="../accounts/#assist">Assist</a> makes from its task
-            (when Assist gives no answer, the first line of the task), or the name the agent gave it
-            with <code class="nowrap">--name</code>; the same title shows in the sidebar, in
+            worktree, which Assist names for the task (see
+            <a href="../sessions/#worktrees">worktree sessions</a>). Its row hangs under the session
+            that started it (see <a href="../sessions/#session-tree">sessions an agent starts</a>).
+            A session it starts gets a short title that
+            <a href="../accounts/#assist">Assist</a> makes from its task (when Assist gives no
+            answer, the first line of the task), or the name the agent gave it with
+            <code class="nowrap">--name</code>; the same title shows in the sidebar, in
             <code class="nowrap">session list</code> and in Discord. Every kind of session gets
             this, except an Antigravity session in a <a href="../remote/">remote folder</a>:
             Antigravity names that one itself, and <code class="nowrap">--name</code> is turned
@@ -239,7 +240,7 @@
             Koloft hands its reply to the starter by itself, the same way; a reply already sent with
             <code class="nowrap">session send</code> is not sent twice.
           </li>
-          <li>
+          <li id="session-close">
             <code>koloft session close</code> — close itself, or any session started under it with
             <code class="nowrap">session new</code> (by it, by one it started, and so on down the
             chain), for good: its tab, its row in the sidebar, and its worktree and branches if it
