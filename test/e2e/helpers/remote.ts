@@ -17,12 +17,15 @@ import {
   type AgentName,
   centerTerm,
   encodeCwd,
+  hookContextsIn,
   killSession,
   runIn,
   terminalText,
   termIds,
+  transcriptFile,
   waitBooted
 } from './p1'
+import { CODEX_HOOK_OUTPUT_LOG, codexPromptContexts, type CodexHookOutput } from './codex'
 import {
   PLAYWRIGHT_CLI_JS_UNDER_ITS_FOLDER,
   PLAYWRIGHT_CLI_UNDER_KOLOFT_HOME
@@ -360,42 +363,18 @@ export function machineCodexLog<T>(env: E2EEnv, name: string): T[] {
     .map((line) => JSON.parse(line) as T)
 }
 
+export function machineClaudeTranscript(env: E2EEnv, sessionId: string): string {
+  return transcriptFile(machineHome(env), fs.realpathSync(remoteDir(env)), sessionId)
+}
+
 export function promptContextsOnTheMachine(
   env: E2EEnv,
   backend: Exclude<BackendId, 'agy'>,
-  sessionId: string
+  claudeSessionId: string
 ): string[] {
-  if (backend === 'codex')
-    return machineCodexLog<{ event: string; stdout: string }>(env, 'fake-codex-hook-output.jsonl')
-      .filter((r) => r.event === 'UserPromptSubmit' && r.stdout.trim())
-      .map((r) => JSON.parse(r.stdout).hookSpecificOutput.additionalContext as string)
-  const transcript = path.join(
-    machineHome(env),
-    '.claude',
-    'projects',
-    encodeCwd(fs.realpathSync(remoteDir(env))),
-    `${sessionId}.jsonl`
-  )
-  if (!fs.existsSync(transcript)) return []
-  return fs
-    .readFileSync(transcript, 'utf8')
-    .split('\n')
-    .filter(Boolean)
-    .map((l) => JSON.parse(l) as { attachment?: { type: string; content: string[] } })
-    .filter((r) => r.attachment?.type === 'hook_additional_context')
-    .map((r) => r.attachment!.content[0])
-}
-
-export function messagingSocketOnTheMachine(env: E2EEnv, sessionId: string): string {
-  const dir = path.join(machineHome(env), '.claude', 'sessions')
-  for (const name of fs.readdirSync(dir)) {
-    const entry = JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8')) as {
-      sessionId: string
-      messagingSocketPath: string
-    }
-    if (entry.sessionId === sessionId) return entry.messagingSocketPath
-  }
-  throw new Error(`no message socket for ${sessionId} on the machine`)
+  return backend === 'codex'
+    ? codexPromptContexts(machineCodexLog<CodexHookOutput>(env, CODEX_HOOK_OUTPUT_LOG))
+    : hookContextsIn(machineClaudeTranscript(env, claudeSessionId))
 }
 
 export type OtherAgentName = Exclude<AgentName, 'Claude'>

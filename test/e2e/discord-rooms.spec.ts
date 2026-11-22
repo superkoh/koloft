@@ -212,17 +212,22 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
             expect(fs.readFileSync(`${marks}.discord-ids`, 'utf8')).toContain(
               `koloft-discord-${messageId}`
             )
-          if (backend === 'agy') return
-          const contexts = (): string[] =>
-            promptContextsOnTheMachine(env, backend, identityOf(session.sessionId).nativeSessionId)
-          await expect
-            .poll(() => contexts().some((c) => c.includes('«how is the room»')))
-            .toBe(true)
-          expect(
-            contexts().filter(
-              (c) => c.startsWith(NOT_FROM_THE_RELAY) || c.startsWith(NOT_SENT_BY_KOLOFT)
-            )
-          ).toEqual([])
+          if (backend !== 'agy') {
+            const contexts = (): string[] =>
+              promptContextsOnTheMachine(
+                env,
+                backend,
+                identityOf(session.sessionId).nativeSessionId
+              )
+            await expect
+              .poll(() => contexts().some((c) => c.includes('«how is the room»')))
+              .toBe(true)
+            expect(
+              contexts().filter(
+                (c) => c.includes(NOT_FROM_THE_RELAY) || c.includes(NOT_SENT_BY_KOLOFT)
+              )
+            ).toEqual([])
+          }
         })
       )
     })
