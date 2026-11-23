@@ -557,6 +557,7 @@ const workbenchReaderDocs: PluginStartDeps['workbench']['readerDocs'] = {
   localFile,
   changed: () => pushToSessions.sessions(onSessionsChanged())
 }
+const sessionsEndedThisRun = new Set<string>()
 const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
   turnEnded: (tabId, turn) => announceNow(TURN_ENDED, { tabId, turn }),
   prompted: (tabId) => {
@@ -572,7 +573,10 @@ const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
     ptyMgr.agentBound(tabId)
     ptyMgr.wakeReady(tabId)
   },
-  exited: (tabId, subject) => attention.onExited(tabId, subject),
+  exited: (tabId, subject) => {
+    if (subject.sessionId) sessionsEndedThisRun.add(subject.sessionId)
+    attention.onExited(tabId, subject)
+  },
   asked: (tabId, ask) => {
     claudeAsks.set(tabId, ask)
     announceNow(QUESTION_ASKED, { tabId, ask })
@@ -791,8 +795,10 @@ function sessionOfTab(tabId: string): SessionInfo | undefined {
   return allSessions().find((s) => s.tabId === tabId)
 }
 function sidebarTitle(s: SessionInfo): string | undefined {
-  const placeholder = Object.values(PLACEHOLDER_TITLES).includes(s.title)
-  return s.title && !placeholder ? s.title : undefined
+  return shownTitle(s.title)
+}
+function shownTitle(title: string | undefined): string | undefined {
+  return title && !Object.values(PLACEHOLDER_TITLES).includes(title) ? title : undefined
 }
 
 const sleepersDeps: PluginStartDeps['sessions']['sleepers'] = {
@@ -2057,24 +2063,43 @@ function liveSessionOf(ref: string): SessionInfo | undefined {
   return allSessions().find((s) => s.alive && (s.tabId === ref || s.sessionId === ref))
 }
 
-function inboxSessionOfTab(
-  tabId: string
-): ReturnType<PluginStartDeps['inbox']['koloft']['sessionOfTab']> {
+type AskedSession = NonNullable<ReturnType<PluginStartDeps['inbox']['koloft']['sessionOfTab']>>
+
+function inboxSessionOfTab(tabId: string): AskedSession | undefined {
   const s = sessionOfTab(tabId)
   if (!s?.sessionId) return undefined
   const ws = sessionBackends.workspaceOfTab(tabId)
+  return askedSession(s.sessionId, s.title, s.backendId, ws, ws && parseRemoteKey(ws)?.host)
+}
+
+function inboxSessionOfEndedTab(tabId: string): AskedSession | undefined {
+  const ended = attention.list().find((m) => m.tabId === tabId && m.kind === 'exited')
+  if (!ended?.sessionId || !sessionsEndedThisRun.has(ended.sessionId)) return undefined
+  const ws = workspaceMgr?.workspaceOf(ended.sessionId)
+  const { backendId, sourceId } = identityOf(ended.sessionId)
+  const machine = (ws && parseRemoteKey(ws)?.host) ?? (sourceId === 'local' ? undefined : sourceId)
+  return askedSession(ended.sessionId, ended.title, backendId, ws, machine)
+}
+
+function askedSession(
+  sessionId: string,
+  title: string | undefined,
+  backend: BackendId,
+  ws: string | undefined,
+  machine: string | undefined
+): AskedSession {
   return {
-    sessionId: s.sessionId,
-    title: sidebarTitle(s) ?? BACKEND_LABEL[s.backendId],
-    backend: s.backendId,
+    sessionId,
+    title: shownTitle(title) ?? BACKEND_LABEL[backend],
+    backend,
     workspace: ws ? scopeName(ws) : undefined,
-    machine: ws ? parseRemoteKey(ws)?.host : undefined
+    machine
   }
 }
 
 const inboxKoloft: PluginStartDeps['inbox']['koloft'] = {
   marks: () => attention.list(),
-  sessionOfTab: inboxSessionOfTab,
+  sessionOfTab: (tabId) => inboxSessionOfTab(tabId) ?? inboxSessionOfEndedTab(tabId),
   liveTabOf: (ref) => {
     const s = liveSessionOf(ref)
     return s && { tabId: s.tabId, backend: s.backendId }
