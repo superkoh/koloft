@@ -22,7 +22,7 @@ const NOT_GIT_ITSELF = new Set([
 
 const DOWNLOAD_ATTEMPTS = 5
 const FIRST_RETRY_WAIT_MS = 2_000
-const MAX_RETRY_WAIT_MS = 30_000
+const MAX_RETRY_WAIT_MS = 60_000
 
 const worthRetrying = (status) => status === 429 || status >= 500
 
@@ -35,6 +35,11 @@ function retryWaitMs(retryAfter, attempt) {
   return Math.min(wait, MAX_RETRY_WAIT_MS)
 }
 
+async function waitBeforeRetry(reason, url, wait) {
+  console.error(`download ${reason}, trying again in ${wait / 1000}s: ${url}`)
+  await new Promise((r) => setTimeout(r, wait))
+}
+
 async function download(url, sha256) {
   for (let attempt = 1; ; attempt++) {
     let res
@@ -42,9 +47,12 @@ async function download(url, sha256) {
     try {
       res = await fetch(url)
       if (res.ok) body = Buffer.from(await res.arrayBuffer())
+      else await res.body?.cancel()
     } catch (err) {
-      if (attempt === DOWNLOAD_ATTEMPTS) throw err
-      await new Promise((r) => setTimeout(r, retryWaitMs(null, attempt)))
+      const reason = `failed: ${err.cause?.code ?? err.message}`
+      if (attempt === DOWNLOAD_ATTEMPTS)
+        throw new Error(`download ${reason} ${url}`, { cause: err })
+      await waitBeforeRetry(reason, url, retryWaitMs(null, attempt))
       continue
     }
     if (body) {
@@ -55,7 +63,7 @@ async function download(url, sha256) {
     if (!worthRetrying(res.status) || attempt === DOWNLOAD_ATTEMPTS)
       throw new Error(`download failed: ${res.status} ${url}`)
     const wait = retryWaitMs(res.headers.get('retry-after'), attempt)
-    await new Promise((r) => setTimeout(r, wait))
+    await waitBeforeRetry(`got ${res.status}`, url, wait)
   }
 }
 
