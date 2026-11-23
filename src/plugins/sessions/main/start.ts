@@ -2,9 +2,10 @@ import type { MadeLater } from '@core/moment'
 import type { BuildLater, PluginStart } from '@core/pluginStart'
 import type { Turn } from '@shared/turns'
 import { AgySessions, type AgySessionDeps } from './agySessions'
+import * as appHelpers from './appHelpers'
 import { AttentionTracker, type SavedMark } from './attention'
 import { ClaudeBackend, type ClaudeBackendDeps } from './backends/claude'
-import { registerChannels } from './channels'
+import { pushes, registerChannels } from './channels'
 import { CodexSessions, type CodexSessionDeps } from './codexSessions'
 import { HandOver, type HandOverDeps } from './handOver'
 import { InstructionAsks, type InstructionAskDeps } from './instructionAsks'
@@ -13,7 +14,7 @@ import { SessionBackends, type SessionLifecycle } from './sessionBackends'
 import { followEachState, followEachTurn, forgetAsksOfEndedTabs } from './sessionHooks'
 import { SessionSync, type SessionSyncDeps } from './sessionSync'
 import { SessionTracker } from './sessionTracker'
-import { registerSessionCommands } from './sessionVerbs'
+import { registerSessionCommands, sessionVerb, type SessionVerbDeps } from './sessionVerbs'
 import { SlashCommands, type SlashDeps } from './slashCommands'
 import { SleepingTabs, type SleepingTabsDeps } from './sleepingTabs'
 import { StartedSessions } from './startedSessions'
@@ -66,33 +67,37 @@ export interface SessionsStartDeps {
   sleepers: SleepingTabsDeps
   sessionSync: SessionSyncDeps
   attention: AttentionDeps
-  eachTurn: Omit<Parameters<typeof followEachTurn>[1], 'asks' | 'judge' | 'slash'>
-  commands: Parameters<typeof registerSessionCommands>[1]
+  session: SessionVerbDeps
+  eachTurn: Omit<Parameters<typeof followEachTurn>[1], 'asks' | 'judge' | 'slash' | 'replies'>
+  commands: Omit<Parameters<typeof registerSessionCommands>[1], 'session'>
   eachState: Omit<Parameters<typeof followEachState>[1], 'asks' | 'slash'>
   channels: Omit<ChannelDeps, 'instructionAsks' | 'backends'>
 }
 
 export const start: PluginStart<
   SessionsStartDeps,
-  ReturnType<typeof followEachTurn> & {
-    tracker: SessionTracker
-    sessionBackends: SessionBackends
-    claudeBackend: ClaudeBackend
-    subscribeTabSubsystems: BuildLater<Omit<TabSubsystems, 'attention' | 'claude' | 'tracker'>>
-    startedSessions: StartedSessions
-    newsJudge: NewsJudge
-    slash: SlashCommands
-    tabLifecycle: TabLifecycle
-    sleepers: SleepingTabs
-    sessionSync: SessionSync
-    attention: AttentionTracker
-    buildAsks: BuildLater<SessionAskDeps, SessionAsks>
-    buildInstructionAsks: BuildLater<InstructionAskDeps, InstructionAsks>
-    buildHandOver: BuildLater<HandOverDeps, HandOver>
-    buildWorkspaces: BuildLater<WorkspaceManagerDeps, WorkspaceManager>
-    buildCodexSessions: BuildLater<CodexSessionDeps & { file: string }, CodexSessions>
-    buildAgySessions: BuildLater<AgySessionDeps & { file: string }, AgySessions>
-  }
+  ReturnType<typeof followEachTurn> &
+    typeof appHelpers & {
+      sessionCommand: ReturnType<typeof sessionVerb>
+      pushToSessions: ReturnType<typeof pushes>
+      tracker: SessionTracker
+      sessionBackends: SessionBackends
+      claudeBackend: ClaudeBackend
+      subscribeTabSubsystems: BuildLater<Omit<TabSubsystems, 'attention' | 'claude' | 'tracker'>>
+      startedSessions: StartedSessions
+      newsJudge: NewsJudge
+      slash: SlashCommands
+      tabLifecycle: TabLifecycle
+      sleepers: SleepingTabs
+      sessionSync: SessionSync
+      attention: AttentionTracker
+      buildAsks: BuildLater<SessionAskDeps, SessionAsks>
+      buildInstructionAsks: BuildLater<InstructionAskDeps, InstructionAsks>
+      buildHandOver: BuildLater<HandOverDeps, HandOver>
+      buildWorkspaces: BuildLater<WorkspaceManagerDeps, WorkspaceManager>
+      buildCodexSessions: BuildLater<CodexSessionDeps & { file: string }, CodexSessions>
+      buildAgySessions: BuildLater<AgySessionDeps & { file: string }, AgySessions>
+    }
 > = ({ commands, moments, ipc }, d) => {
   const tracker = new SessionTracker()
   const sessionBackends = Object.assign(new SessionBackends(d.backendLifecycle), d.backendHooks)
@@ -118,13 +123,15 @@ export const start: PluginStart<
   const instructionAsksBuilt: MadeLater<InstructionAsks> = () => instructionAsks
   const instructionAsksOrNone: ChannelDeps['instructionAsks'] = () =>
     instructionAsks ?? { views: () => [], answer: () => undefined }
+  const sessionCommand = sessionVerb(d.session)
   const turnsTaken = followEachTurn(moments, {
     ...d.eachTurn,
+    replies: sessionCommand,
     judge: newsJudge,
     slash,
     asks: asksBuilt
   })
-  registerSessionCommands(commands, d.commands)
+  registerSessionCommands(commands, { ...d.commands, session: sessionCommand.verb })
   forgetAsksOfEndedTabs(moments, {
     slash,
     asks: asksBuilt,
@@ -138,6 +145,9 @@ export const start: PluginStart<
   })
   return {
     ...turnsTaken,
+    ...appHelpers,
+    sessionCommand,
+    pushToSessions: pushes(ipc),
     tracker,
     sessionBackends,
     claudeBackend,
