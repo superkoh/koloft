@@ -1219,7 +1219,7 @@ test.describe('Codex sessions through the real method chooser, process transport
     }
   })
 
-  test('a Codex turn that ends while its child agent still runs shows breathing green with ↻, and turn-done — its mark and its OS notification — waits for the child; a child Codex gave a task name is named by it', async ({
+  test('a Codex turn that ends while its child agent still runs shows breathing green with ↻, and turn-done — its mark and its OS notification — waits for the child; a child Codex gave a task name is named by it; the row says Last: Started a helper', async ({
     env
   }) => {
     installCodex(env)
@@ -1235,6 +1235,9 @@ test.describe('Codex sessions through the real method chooser, process transport
       await runIn(page, centerTerm(page), 'spawn child')
       const running = oneStillRunning(row)
       await expect(running).toBeVisible()
+      await expect(row.locator('.ws-tab-act')).toHaveText(
+        'Last: Started a helper: Check the lint config'
+      )
       await expect(row).toHaveClass(/st-waiting/)
       await expect(row).toHaveClass(/\bst-bg-run\b/)
       expect(await pendingAttention(page)).toHaveLength(0)
@@ -1256,6 +1259,7 @@ test.describe('Codex sessions through the real method chooser, process transport
 
       await runIn(page, centerTerm(page), 'spawn task lint_checker')
       const stillRunning = row.locator('.ws-tab-parked.bg-run')
+      await expect(row.locator('.ws-tab-act')).toHaveText('Last: Started a helper: lint_checker')
       await stillRunning.click()
       await expect(page.locator('.tbu-pop.parked')).toContainText('agent · lint_checker · working')
       await page.keyboard.press('Escape')
