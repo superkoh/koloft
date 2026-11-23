@@ -243,7 +243,13 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   darwin-arm64 (`strings` byte-identical to 2.1.325's list, 2026-11-18; live, `/clear` in
   a pty fired SessionEnd `reason: "clear"` with keys `cwd, hook_event_name, prompt_id,
   reason, session_id, transcript_path`, then SessionStart `source: "clear"` with a new
-  id, and `/exit` gave `prompt_input_exit`, the same on both builds).
+  id, and `/exit` gave `prompt_input_exit`, the same on both builds), and on 2.1.330,
+  darwin-arm64 (`strings` beside 2.1.329, 2026-11-21: the same 33 names; no
+  `CLAUDE_CODE_*` or `ANTHROPIC_*` name gone; new are `CLAUDE_CODE_FULL_SIGN_IN_LINK`
+  (§7) and 10 others none of which `src/` spells; one slash command, `/access`, new and
+  none gone; the one new flag, `--start-dir <owner>/<repo>=<folder>`, is parsed only
+  beside the self-hosted runner's own flags such as `--confine-repo-settings`, not by a
+  session's argv scanner).
 - **Since 2.1.304 the hooks a skill declares in its `SKILL.md` front matter register
   only while the skills of one source stay within 1,024 hooks and 16,384 matcher
   characters per session**; past that, none of that skill's hooks register and its
@@ -915,6 +921,16 @@ not checked. The TUI's `--resume` was not run. Koloft dependent: the butler
 (`src/plugins/butler/main/butler.ts`) remembers the model and thinking it last carried, and
 starts a new conversation when it is set back to the tool's own.
 
+**Up to 2.1.329 a transcript whose last assistant record has no `timestamp` cannot be
+resumed by id; 2.1.330 opens it.** 2026-11-21, a scratch `HOME`, a fake Messages API, a
+python pty: a transcript cut after its last assistant record, that record's `timestamp`
+deleted, then `claude --resume <id>` and one prompt. 2.1.329 printed `No conversation
+found with session ID: <id>` and exited (the same file with the field kept opened);
+2.1.330 showed the old turns and answered, in the same file, its first record unchanged,
+no file renamed or added, SessionStart `"source":"resume"`. On 2.1.330 that SessionStart
+lacks `seconds_since_last_response` and `context_tokens`, which the resume of the same
+file with the field kept carries on both builds.
+
 ## §4 Worktree session exit
 
 - **`/exit` from an UNCHANGED worktree removes it silently — no Keep/Remove page**: dir
@@ -955,8 +971,9 @@ starts a new conversation when it is set back to the tool's own.
   process simply exits with reason=`prompt_input_exit` (E2/E8; re-verified 2026-09-03 on
   2.1.259 for Keep, Remove and dirty-Remove).
 - **A clean exit UNLOCKS the worktree.** CC locks every worktree it runs in (§3), but
-  after a Keep or a Remove the lock is gone, so a later `git worktree remove` needs no
-  `unlock` first. A worktree whose session was killed instead stays locked.
+  after a Keep or a Remove the lock is gone (also when 2.1.330 keeps it for another
+  session, below), so a later `git worktree remove` needs no `unlock`
+  first. A worktree whose session was killed instead stays locked.
 - **The transcript SURVIVES either choice — it is moved to the ROOT checkout's slug**
   (the `relocateSessionTranscript` rename of §5): full content, the `custom-title`
   record intact, while the worktree's own slug directory is left behind **empty**. A
@@ -993,7 +1010,9 @@ starts a new conversation when it is set back to the tool's own.
   (`Worktree removed (no changes)`, `Worktree removed.`, `Worktree removed. Uncommitted
   changes were discarded.`); the others name the trouble (`Could not finish removing the
   worktree at …`, `Removing the worktree at … did not finish within …`, `Stopped waiting
-  for the removal of the worktree at …`, `Worktree could not be removed — kept at …`).
+  for the removal of the worktree at …`, `Worktree could not be removed — kept at …`,
+  and since 2.1.330 `Worktree kept at “…”: another Claude Code session (process N) is
+  running in it…`, below).
   CC waits at most 10 minutes. Time grows with the files in the folder: 27k files (a
   Koloft worktree with `node_modules`) took 3.5 s from `/exit` to exit, 2.6 s of it the
   delete, under the owner's own settings (fullscreen, Koloft's hooks and plugin);
@@ -1078,6 +1097,36 @@ starts a new conversation when it is set back to the tool's own.
   there; of 211 string literals taken from the 8 lines after each `CC§` marker in `src/`,
   plus every `CLAUDE_*` / `ANTHROPIC_*` name `src/` spells, the 73 found in 2.1.328 are
   all found in 2.1.329 and none is new.
+- **Since 2.1.330 `Removing worktree…` no longer means the folder goes: CC keeps a
+  worktree another live Claude Code process works in.** Measured 2026-11-21 on 2.1.330
+  beside 2.1.329 (a python pty, a scratch `HOME`, a fake Messages API, a throwaway repo,
+  `claude -w wtp`, one turn, then `/exit`; one run per case). Alone in its worktree,
+  2.1.330 prints what 2.1.329 does, byte for byte: the Keep/Remove page, `ESC ] 0 ;
+  BEL`, the 119-byte resume hint, `Removing worktree…`, then `Worktree removed.
+  Uncommitted changes were discarded.` (dirty, `2`) or `Worktree removed (no changes)`.
+  With a second plain `claude` running in that folder (one turn done), the exit page is
+  the same and does not name the other session, and the same title, hint and `Removing
+  worktree…` come, but the result line is ``Worktree kept at “<path>”: another Claude Code
+  session (process <pid>) is running in it, though it may be idle. Once that session has
+  ended, if the worktree is still there, you can remove it with `git worktree remove` and
+  that path. `--force` also deletes its uncommitted files.`` (curly quotes, the inner
+  backticks printed as they are, one line with no hard wrap at 120 columns; dirty with
+  `2` and clean alike). The folder, its uncommitted file and the branch stay, the lock is
+  gone, the process exits 0 about 0.23 s after the `2` with SessionEnd
+  `prompt_input_exit`, and the transcript is still moved to the root checkout's slug with
+  `relocated` and `worktree-state: null`. 2.1.329 removed the same worktree under the live
+  second session (`Worktree removed. Uncommitted changes were discarded.`). The
+  `ExitWorktree` tool with `action: "remove", discard_changes: true` and a second session
+  live is refused on 2.1.330 with a `tool_use_error` starting `Another Claude Code
+  session (process <pid>) is running in this worktree, though it may be idle, so this
+  tool will not remove “<path>”, even with discard_changes.`, and no `relocated` or
+  `null` `worktree-state` is written; 2.1.329 removed it. The 2.1.330 changelog: "Fixed
+  `ExitWorktree` and the worktree exit dialog deleting a worktree that another running
+  Claude Code session was working in". Not probed: Keep on 2.1.330, a second session
+  started with `-w` or `-p`, a remote (Linux, tmux) tab. Koloft dependent:
+  `src/main/claudeWorktreeExit.ts` reads the kept line as a removal that did not happen
+  (the row comes back, the line shows in the "did not remove" toast), but the removal it
+  finishes after Koloft quits does not check for another session (issue #2343).
 
 Evidence: experiments E2/E8, 2026-08-10, claude 2.1.227; four live worktree exits on
 2026-09-03, claude 2.1.259 (`-w n5/n6/n7/n8/n9` in a throwaway repo, driven in a pty,
@@ -1805,7 +1854,12 @@ launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.p
   echo done"}` on 2.1.328 and `{"id":"b8qhp2tne","type":"monitor",…}` on 2.1.329.
   The 2.1.329 changelog: "Changed Stop and SubagentStop hooks to list a Monitor's
   script as monitor, not shell, in background_tasks". Not probed on 2.1.329: a
-  plugin's `monitors.json` monitor.
+  plugin's `monitors.json` monitor. A Monitor is still listed as `type: "monitor"` on
+  2.1.330 (2026-11-21, the same probe beside 2.1.329):
+  `{"id":"bfvrobm6z","type":"monitor","status":"running",…}` with
+  the same fields, the ack's `taskId` the same `b…` id, and a background Bash beside it
+  still `type: "shell"`. Not probed on 2.1.330: the Stop of a turn a Monitor event woke,
+  and a plugin's monitor.
   **A Monitor the model arms always has a deadline since 2.1.271**: at most 30 minutes
   (10 in a single-prompt `-p` run), then CC tells the model to re-arm it — the
   changelog says this replaced the no-timeout persistent option. The 2.1.276 binary
@@ -2599,7 +2653,11 @@ rechecks against real installs of 2.1.322 on macOS (darwin-arm64) and Linux
   empty and no backup holds anything" line and gets a full file without
   `hasCompletedOnboarding` (its exit code not seen: the run hit the 40 s limit on the dead
   port). 2.1.329's fix for a file emptied by a save during a network stall or a file
-  lock was not reproduced.
+  lock was not reproduced. On 2.1.330 (2026-11-21, `strings` beside 2.1.329, not run)
+  backups are still `<name>.backup.<ms>` in the backups folder, at most 5 and at most one
+  a minute; the copy that makes one now deletes its half-written file when the copy
+  fails (the changelog's "incomplete backups … when the disk was full"). No new lock or
+  temporary file name for `.claude.json` or `settings.json` appears.
 - **A home can hold two config files, and the legacy one wins; since 2.1.319 claude says
   so on stderr.** The legacy file is `.config.json` in the config folder
   (`$CLAUDE_CONFIG_DIR`, else `~/.claude/`); the current one is `.claude.json` in
@@ -2749,7 +2807,16 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   a fake API key, `"tui": "fullscreen"`, a synthetic 300- and 1000-turn transcript
   resumed and scrolled by SGR wheel reports; 3 replay runs per case. 2.1.232's binary
   wrapped every frame; the versions between were not read. While a window is open, a
-  terminal resize can land inside it (PLATFORM§21).
+  terminal resize can land inside it (PLATFORM§21). Still so on 2.1.330 (2026-11-21):
+  `CLAUDE_CODE_FORCE_SYNC_OUTPUT` and `Apple_Terminal` appear as often in its `strings`
+  as in 2.1.329's (6 and 33). Measured the same day in a hidden Koloft window at 72×49:
+  a resumed 600-turn fullscreen session, scrolled 3 times each by wheel reports in one
+  tab, by trackpad-speed reports in one tab, and by wheel reports in one of 14 tabs while
+  the others flood output; a paint counts as torn when the rows xterm shows have a gap
+  in their line numbers. With Koloft's launch as it ships, 0 of 226 paints tore and
+  claude opened a median 37 synchronized frames per one-tab wheel run; with
+  `CLAUDE_CODE_FORCE_SYNC_OUTPUT` taken out of the launch, 32 tore (wheel 6 of 110,
+  trackpad 19 of 73, 14 tabs 7 of 110) and none came synchronized.
 - **Up to 2.1.325 the cheap scroll (a scroll region, `ESC[<top>;<bottom>r`, and
   `ESC[<n>S`/`T`, then only the rows that came into view) needs synchronized output on,
   no tmux, zellij or JetBrains terminal, and `CLAUDE_CODE_DECSTBM` set or the remote flag
