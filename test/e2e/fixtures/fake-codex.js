@@ -94,7 +94,8 @@ if (argv.includes('--version')) {
 
 if (argv[0] === 'login' && flag('fake-codex-login-waits')) {
   fs.writeSync(1, 'Open this page to sign in: https://auth.openai.com/oauth/authorize?fake=1\n')
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)
+  while (flag('fake-codex-login-waits'))
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
 }
 
 if (argv[0] === 'login' && argv[1] === '--with-api-key') {
