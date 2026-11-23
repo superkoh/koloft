@@ -10,7 +10,7 @@
 .assist-glyph {
   flex: none;
   align-self: center;
-  color: var(--fable);
+  color: var(--violet);
 }
 .project-in .mini {
   flex: none;

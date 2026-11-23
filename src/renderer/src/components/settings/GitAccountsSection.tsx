@@ -420,7 +420,7 @@ function GitAccountRow({
         <span className="acct-name">{a.login}</span>
         <span className="acct-note">{gitHostLabel(a)}</span>
         {a.default && (
-          <span className="acct-badge fable" title={DEFAULT_TITLE}>
+          <span className="acct-badge good" title={DEFAULT_TITLE}>
             DEFAULT
           </span>
         )}

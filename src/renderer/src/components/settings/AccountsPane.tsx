@@ -582,7 +582,7 @@ function AccountRow({
         {a.kind === 'custom' && <span className="acct-badge custom">ENDPOINT</span>}
         {a.kind === 'oauth' && a.fable === 'yes' && (
           <span
-            className="acct-badge fable"
+            className="acct-badge good"
             title="Plan includes a fable allowance — fable launches are routed here first"
           >
             FABLE

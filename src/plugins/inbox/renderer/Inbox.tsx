@@ -185,7 +185,7 @@ export function InboxRow(): JSX.Element {
         <svg className="ibx-ink-defs" aria-hidden>
           <linearGradient id="ibx-ink" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0" stopColor="var(--accent)" />
-            <stop offset="1" stopColor="var(--fable)" />
+            <stop offset="1" stopColor="var(--violet)" />
           </linearGradient>
         </svg>
         <span className="ibx-entry-icon">
