@@ -47,9 +47,9 @@ async function download(url, sha256) {
     try {
       res = await fetch(url)
       if (res.ok) body = Buffer.from(await res.arrayBuffer())
-      else await res.body?.cancel()
+      else await res.body?.cancel().catch(() => {})
     } catch (err) {
-      const reason = `failed: ${err.cause?.code ?? err.message}`
+      const reason = `failed: ${err.cause?.code ?? err.cause?.message ?? err.message}`
       if (attempt === DOWNLOAD_ATTEMPTS)
         throw new Error(`download ${reason} ${url}`, { cause: err })
       await waitBeforeRetry(reason, url, retryWaitMs(null, attempt))

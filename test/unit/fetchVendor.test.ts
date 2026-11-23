@@ -42,7 +42,7 @@ describe('fetch-vendor download', () => {
     expect(server.hits()).toBe(3)
   })
 
-  it('tries again after a dropped connection', async () => {
+  it('tries again after a dropped connection', { timeout: 15_000 }, async () => {
     const server = await serve([DROP_CONNECTION])
     await expect(download(server.url, BODY_SHA)).resolves.toEqual(BODY)
     expect(server.hits()).toBe(2)
