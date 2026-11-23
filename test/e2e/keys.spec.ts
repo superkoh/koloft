@@ -4,17 +4,30 @@ import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import { runGit, setupGitFixture } from './helpers/gitFixture'
 import { installStallingGit } from './helpers/gitSpawnLog'
-import { codexRows, startCodex } from './helpers/codex'
-import { installCodex, type E2EEnv } from './helpers/env'
+import { codexCalls, codexRows, startCodex } from './helpers/codex'
+import {
+  agySessionCalls,
+  installAgentFor,
+  installCodex,
+  seedSettings,
+  type E2EEnv
+} from './helpers/env'
 import {
   addRemoteWorkspace,
   killFakeRemote,
   launchWithRemote,
-  REMOTE_WS_NAME
+  OTHER_AGENTS_ON_THE_MACHINE,
+  REMOTE_WS_NAME,
+  type OtherAgentName
 } from './helpers/remote'
 import {
+  agyConversationOnceFirstTurnEnded,
   centerTerm,
+  chooseBackend,
+  FAKE_CODEX_SESSION_TITLE,
+  gitCommitAll,
   gitInit,
+  newSessionInWith,
   openWorktreeSession,
   processAlive,
   runIn,
@@ -245,7 +258,7 @@ test.describe('Keyboard shortcuts · native accelerators are driven as shortcut:
       expect(fs.existsSync(tree), 'git is still deleting the worktree').toBe(true)
 
       await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
-      expect(runGit(clone, 'branch', '--list', 'worktree-done').trim()).toBe('')
+      await expect.poll(() => runGit(clone, 'branch', '--list', 'worktree-done').trim()).toBe('')
       await expect(rows).toHaveCount(0)
     })
   })
@@ -273,6 +286,23 @@ test.describe('Keyboard shortcuts · native accelerators are driven as shortcut:
     }
   })
 
+  async function onlyTabCloseOnAnotherMachine(
+    app: ElectronApplication,
+    page: Page,
+    rows: Locator
+  ): Promise<void> {
+    await rows.first().click()
+    await sendShortcut(app, 'shortcut:close-session')
+    const dialog = fullCloseDialog(page)
+    const tabOnly = dialog.getByRole('button', { name: 'Close tab only' })
+    await expect(tabOnly).toBeEnabled({ timeout: 30_000 })
+    await expect(dialog).toContainText('runs on another machine')
+    await expect(dialog.getByRole('button', { name: 'Close for good' })).toHaveCount(0)
+    await tabOnly.click()
+    await expect(rows.first()).toHaveClass(/\bcold\b/, { timeout: 60_000 })
+    await expect(rows).toHaveCount(1)
+  }
+
   test('T-KEY-10: ⌘W on a session on another machine says Koloft cannot check what closing would lose there and offers only Close tab only', async ({
     env
   }) => {
@@ -281,20 +311,121 @@ test.describe('Keyboard shortcuts · native accelerators are driven as shortcut:
     try {
       await addRemoteWorkspace(page, env)
       await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
-      const rows = wsRows(page, REMOTE_WS_NAME)
-      await rows.first().click()
-
-      await sendShortcut(app, 'shortcut:close-session')
-      const dialog = fullCloseDialog(page)
-      const tabOnly = dialog.getByRole('button', { name: 'Close tab only' })
-      await expect(tabOnly).toBeEnabled({ timeout: 30_000 })
-      await expect(dialog).toContainText('runs on another machine')
-      await tabOnly.click()
-      await expect(rows.first()).toHaveClass(/\bcold\b/, { timeout: 60_000 })
-      await expect(rows).toHaveCount(1)
+      await onlyTabCloseOnAnotherMachine(app, page, wsRows(page, REMOTE_WS_NAME))
     } finally {
       await quitAndClose(app)
       killFakeRemote(env)
     }
   })
+
+  const WORKTREE_SESSIONS_OF_OTHER_AGENTS: {
+    label: OtherAgentName
+    caseId: string
+    firstTurnEnded: (page: Page) => Promise<unknown>
+    pidsIn: (env: E2EEnv, tree: string) => number[]
+  }[] = [
+    {
+      label: 'Antigravity',
+      caseId: 'T-KEY-11',
+      firstTurnEnded: async (page) => {
+        await runIn(page, centerTerm(page), 'work in the tree')
+        await agyConversationOnceFirstTurnEnded(page)
+      },
+      pidsIn: (env, tree) =>
+        agySessionCalls(env)
+          .filter((c) => sameDir(c.cwd, tree))
+          .map((c) => c.pid)
+    },
+    {
+      label: 'Codex',
+      caseId: 'T-KEY-12',
+      firstTurnEnded: (page) =>
+        expect(wsRows(page, 'ws-a').filter({ hasText: FAKE_CODEX_SESSION_TITLE })).toHaveClass(
+          /\bst-waiting\b/,
+          { timeout: 60_000 }
+        ),
+      pidsIn: (env, tree) =>
+        codexCalls(env)
+          .filter((c) => sameDir(c.cwd, tree))
+          .map((c) => c.pid)
+    }
+  ]
+
+  const sameDir = (a: string, b: string): boolean =>
+    fs.existsSync(a) && fs.existsSync(b) && fs.realpathSync(a) === fs.realpathSync(b)
+
+  const branchesNamed = (repo: string, branch: string): string =>
+    runGit(repo, 'branch', '--list', branch).trim()
+
+  for (const agent of WORKTREE_SESSIONS_OF_OTHER_AGENTS) {
+    test(`${agent.caseId}: ⌘W closes ${agent.label} worktree sessions for good the same way: the tab ends, the row goes, and the worktree and its branch are deleted`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      installAgentFor(env, agent.label, env.workspaces.a)
+      seedSettings(env, { hintsOff: true })
+      gitInit(env.workspaces.a)
+      gitCommitAll(env.workspaces.a)
+      const name = `${agent.label.toLowerCase()}-done`
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        const dialog = await openWorktreeSession(page, 'ws-a')
+        await dialog.locator('input').fill(name)
+        await chooseBackend(page, agent.label)
+        await agent.firstTurnEnded(page)
+        const rows = wsRows(page, 'ws-a')
+        await expect(rows).toHaveCount(1)
+        const tabId = (await rows.getAttribute('data-tab-id'))!
+        const live = await page.evaluate(() => window.api.sessions.list())
+        const tree = live.find((s) => s.tabId === tabId)!.cwd
+        expect(path.basename(tree)).toBe(name)
+        const branch = `worktree-${name}`
+        expect(branchesNamed(env.workspaces.a, branch)).not.toBe('')
+        const pids = agent.pidsIn(env, tree)
+        expect(pids.length).toBeGreaterThan(0)
+        expect(pids.every(processAlive)).toBe(true)
+
+        await sendShortcut(app, 'shortcut:close-session')
+        const go = fullCloseDialog(page).getByRole('button', { name: 'Close for good' })
+        await expect(go).toBeEnabled({ timeout: 30_000 })
+        await go.click()
+        await expect(page.locator('.modal-backdrop')).toHaveCount(0)
+        await expect(rows).toHaveCount(0, { timeout: 15_000 })
+        await expect.poll(() => pids.some(processAlive), { timeout: 30_000 }).toBe(false)
+        await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
+        await expect.poll(() => branchesNamed(env.workspaces.a, branch)).toBe('')
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
+
+  const REMOTE_CASE_IDS: Record<OtherAgentName, string> = {
+    Codex: 'T-KEY-13',
+    Antigravity: 'T-KEY-14'
+  }
+
+  for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
+    test(`${REMOTE_CASE_IDS[agent.label]}: ⌘W on ${agent.label} sessions on another machine offers only Close tab only, as for Claude there`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      agent.install(env)
+      seedSettings(env, { hintsOff: true })
+      const { app, page } = await launchWithRemote(env)
+      try {
+        await addRemoteWorkspace(page, env)
+        await newSessionInWith(page, REMOTE_WS_NAME, agent.label)
+        await agent.bound?.(page)
+        const rows = wsRows(page, REMOTE_WS_NAME)
+        await expect(rows.first()).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+        await onlyTabCloseOnAnotherMachine(app, page, rows)
+      } finally {
+        await quitAndClose(app)
+        killFakeRemote(env)
+      }
+    })
+  }
 })
