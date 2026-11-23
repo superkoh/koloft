@@ -256,7 +256,9 @@ test('E1: settings CRUD — no launch-command field, only the verifiable add ent
     await page.locator('.acct-add-actions button', { hasText: 'Verify and save' }).click()
     await expect(claudeAccounts(page).locator('.acct-row')).toHaveCount(1, { timeout: 15_000 })
     await expect(claudeAccounts(page).locator('.acct-name')).toHaveText('bravo')
-    await expect(page.locator('.acct-badge.fable')).toBeVisible()
+    await expect(
+      claudeAccounts(page).locator('.acct-badge.good', { hasText: /^FABLE$/ })
+    ).toBeVisible()
 
     await page.locator('.acct-row input[type="checkbox"]').first().uncheck()
     await expect(page.locator('.acct-row.off')).toHaveCount(1)

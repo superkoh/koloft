@@ -35,7 +35,7 @@
   width: 72px;
   height: 72px;
   border-radius: 50%;
-  background: conic-gradient(from 0deg, var(--accent), var(--fable), #6fb6a6, var(--accent));
+  background: conic-gradient(from 0deg, var(--accent), var(--violet), #6fb6a6, var(--accent));
   animation: lspin 9s linear infinite;
   box-shadow:
     0 0 60px rgba(169, 154, 216, 0.45),
