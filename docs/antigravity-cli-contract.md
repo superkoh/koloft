@@ -703,8 +703,9 @@ wrote `{"conversation_id":"abc-123"}` into the live tab's log.
     adds a user-role content after the first prompt: "The following is a
     <SYSTEM_MESSAGE> not actually sent by the user… injected by a SessionStart
     hook:\n…". It is stored once in the transcript and sent in every later request,
-    also after a `--conversation` or `-c` resume and in a `/fork`. 300 KB arrived
-    whole.
+    also after a `--conversation` or `-c` resume and in a `/fork`, until a compaction
+    (§17). 300 KB arrived whole. On 1.5.14 (Linux, 2026-11-21, once) a 1,262,401-byte
+    text reached the model as 49,178 bytes ending in `\n<truncated 1213433 bytes>`.
   - **On a remote tab it arrives whole, and a resume keeps the first text.** 2026-11-17,
     agy 1.5.10 (manifest build, sha512 checked) in the e2e SSH lab image (Docker, Debian
     12, arm64), a stand-in Gemini server on the API-key route. The tab was started the
@@ -1331,6 +1332,47 @@ Koloft dependents: the repo's own `.agents/hooks.json` (ADR-0053).
 - `AGY_CLI_AUTO_COMPACT_OVERRIDE` with `zzz`, `1000`, `1k`, `1%`, `5000`, `50%`
   changed nothing. `settings.json` `contextWindow` `"200k"` or `200000` is kept but
   changes neither limit.
+- **A compaction drops the words a `SessionStart` hook injected (§12), and nothing brings
+  them back on its own.** 2026-11-21, agy 1.5.14 Linux arm64 (manifest build, sha512
+  checked) in Docker, `--network none`, the TUI in tmux, a stand-in Gemini server that
+  saved each request, answered the summary call with a fixed summary and other calls
+  with a numbered reply. The hook printed `sessionStartOutput(text)` with a codeword in
+  it. The first request after `/compact` held exactly two user contents, a
+  `<CONTEXT_SUMMARY>` (the user's requests, the summary, the transcript paths) and the
+  new `<USER_REQUEST>`; the codeword was in no content and not in `systemInstruction`,
+  in this and every later request, with or without a `--conversation` resume first (2
+  runs each). The compaction request itself held the injected text and asks the model
+  to keep "standing rules … from user instructions"; only the transcript file keeps the
+  step. No `SessionStart` fires on the resume or the compaction, so a newer text the
+  relaunch had never arrived either.
+- **A `systemMessage` step a `PreInvocation` hook prints is kept like a `SessionStart`
+  one.** Same build and set-up. Printed once after a compaction, it is stored once (a
+  `{"source":"SYSTEM_SDK","type":"SYSTEM_MESSAGE"}` step whose content says "injected by
+  a PreInvocation hook:") and sent once in every later request (`contents[2]`, after the
+  summary), also after a `run_command` and after a `--conversation` resume. Printed on
+  every call, the copies pile up, one more each call. One `injectSteps` array holding a
+  `systemMessage` and an `ephemeralMessage` makes both arrive in the same request.
+  - The hook rendered from `AGY_HOOK_SCRIPT` and installed as Koloft installs it, with
+    texts of 24,000 characters (about 28.9 KB) holding newlines, tabs, quotes,
+    backticks, `$HOME`, `$(whoami)`, `\`, `%s`, `!!`, `{{x}}`, Chinese and an emoji, 2
+    runs each: before a compaction the text was in each request once (the `SessionStart`
+    copy); after it, every request held the text once, as one exact string — the first
+    launch's without a resume, the relaunch's when the compaction came after a
+    `--conversation` resume, still the same one after a second resume. A second
+    `/compact` dropped the older copy and the hook put it back once. A `/fork` after a
+    compaction carried the copy: the fork's own `transcript_full.jsonl` starts at the
+    fork and holds no `CHECKPOINT`, and no `SessionStart` fires for it.
+  - **Automatic compaction leaves one model call without them.** Reached when one turn's
+    `run_command` outputs (each cut by agy to about 14 KB) brought a request to about
+    1.03 MB, at the 69th call; one run held 16 automatic compactions. Each wrote the same
+    `CHECKPOINT` step, but inside a model call, after Koloft's `PreInvocation` for that
+    call had run: the summary request went out, the `CHECKPOINT` was written, and that
+    call's own request followed with only the `<CONTEXT_SUMMARY>` — no start text and no
+    `ephemeralMessage` (16 of 16). No hook fired in between. The next call's
+    `PreInvocation` saw the step and put the text back once; none of the 1,056 later
+    requests held it twice. A 1.26 MB injected text or a 1 MB pasted prompt did not get
+    there (the first arrived cut, the second was never sent).
+  - The Mac build was not run.
 
 ## §18 Fork
 
