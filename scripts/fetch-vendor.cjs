@@ -20,13 +20,43 @@ const NOT_GIT_ITSELF = new Set([
   'uninstall.sh'
 ])
 
+const DOWNLOAD_ATTEMPTS = 5
+const FIRST_RETRY_WAIT_MS = 2_000
+const MAX_RETRY_WAIT_MS = 30_000
+
+const worthRetrying = (status) => status === 429 || status >= 500
+
+function retryWaitMs(retryAfter, attempt) {
+  const seconds = Number(retryAfter)
+  const wait =
+    retryAfter && Number.isFinite(seconds) && seconds >= 0
+      ? seconds * 1000
+      : FIRST_RETRY_WAIT_MS * 2 ** (attempt - 1)
+  return Math.min(wait, MAX_RETRY_WAIT_MS)
+}
+
 async function download(url, sha256) {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`download failed: ${res.status} ${url}`)
-  const body = Buffer.from(await res.arrayBuffer())
-  const sum = createHash('sha256').update(body).digest('hex')
-  if (sum !== sha256) throw new Error(`checksum mismatch: ${sum} ${url}`)
-  return body
+  for (let attempt = 1; ; attempt++) {
+    let res
+    let body
+    try {
+      res = await fetch(url)
+      if (res.ok) body = Buffer.from(await res.arrayBuffer())
+    } catch (err) {
+      if (attempt === DOWNLOAD_ATTEMPTS) throw err
+      await new Promise((r) => setTimeout(r, retryWaitMs(null, attempt)))
+      continue
+    }
+    if (body) {
+      const sum = createHash('sha256').update(body).digest('hex')
+      if (sum !== sha256) throw new Error(`checksum mismatch: ${sum} ${url}`)
+      return body
+    }
+    if (!worthRetrying(res.status) || attempt === DOWNLOAD_ATTEMPTS)
+      throw new Error(`download failed: ${res.status} ${url}`)
+    const wait = retryWaitMs(res.headers.get('retry-after'), attempt)
+    await new Promise((r) => setTimeout(r, wait))
+  }
 }
 
 async function refresh(name, version, unpack) {
@@ -129,6 +159,7 @@ async function fetchVendor() {
 }
 
 exports.default = fetchVendor
+exports.download = download
 
 if (require.main === module) {
   fetchVendor().catch((err) => {
