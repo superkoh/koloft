@@ -37,7 +37,7 @@ function EveryWorkspaceInstructions(): JSX.Element {
         <OwnerInstructionsEditor
           title={`${EVERY_WORKSPACE} · written by you`}
           placeholder="What should every session always know or do? One rule a line."
-          status={`Every session started from now on follows this, in every workspace that does not leave it out. A resumed conversation keeps the text it started with; in Claude Code, only until it next compacts. ${butler} does not get it.`}
+          status={`Every session started from now on follows this, in every workspace that does not leave it out. A resumed conversation keeps the text it started with until it next compacts. ${butler} does not get it.`}
           inUse={text}
           maxBytes={EVERY_WORKSPACE_TEXT_MAX_BYTES}
           save={(typed, opened) => window.api.sessionDefaults.saveEveryWorkspace(typed, opened)}

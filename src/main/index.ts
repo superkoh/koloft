@@ -20,14 +20,11 @@ import { anotherLiveInstanceOwns, PtyManager, type PtyHandle } from './ptyManage
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { TerminalOutput } from './flowControl'
-import { SessionTracker, type ToolCall } from '@plugins/sessions/main/sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
-import type { StatusEdge, TurnOverEdge } from '@plugins/sessions/main/sessionRuntime'
 import { codexShowsAPanel } from './inputBox'
 import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from './remote/statusRelay'
 import type { TreeIo } from './sessionWorktrees'
 import { sharedProcessTable, type ProcessTable } from './processTable'
-import type { AgyHomePick } from '@plugins/sessions/main/agySessions'
 import {
   agyAccountEnv,
   agyApiKeyRoute,
@@ -40,7 +37,6 @@ import {
   setAgyApiKeyRoute
 } from './agyAccounts'
 import { AGY_APP_DIR, AGY_LIST_JS, ownersGeminiDir } from './agyStore'
-import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from '@plugins/sessions/main/agyHooks'
 import {
   AGY_BRAIN_FLAGS,
   AGY_HOOK_FILE,
@@ -50,7 +46,6 @@ import {
   AGY_TITLE_FILE,
   agyStatuslineScript
 } from './remote/agyTab'
-import { agyBackend } from '@plugins/sessions/main/backends/agy'
 import { homeKeyOnDisk } from './homeKeyOnDisk'
 import { watchHistoryOf } from './historyWatch'
 import {
@@ -60,10 +55,8 @@ import {
   outputStartCarry,
   plainTerminalTail
 } from './signInOutput'
-import type { SessionsWithStore } from '@plugins/sessions/main/storedSessions'
 import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
 import { claudeAskLine, storedAskLine } from './rowActivity'
-import type { WorktreeResource } from '@plugins/sessions/main/sessionStore'
 import {
   OpenTabsFile,
   openTabsNow,
@@ -75,7 +68,6 @@ import {
 import { SessionAccounts } from './sessionAccounts'
 import { SavedUsage } from './savedUsage'
 import { saveHomeUsage, type HomeUsage } from './savedHomeUsage'
-import { SessionBackends } from '@plugins/sessions/main/sessionBackends'
 import {
   BACKEND_LABEL,
   backendIdOf,
@@ -96,32 +88,14 @@ import {
 } from '@shared/sessionPicks'
 import { BUTLER_OFF_ITS_AGENT_LOG, butlerStart } from '@shared/butlerStart'
 import { assistBackendsFor, assistLaunchOn, assistRowBackend } from '@shared/assistPicks'
-import type { Turn } from '@shared/turns'
 import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
 import { route, dockBadgeText } from './notifyRouter'
 import { setupShim, utilTerminalGuard } from './shim'
 import { openDropTarget, type OpenDrop } from '@core/openDrop'
 import { leaveForOS, openUrlExternally, osOpenFallback } from './osOpen'
 import { enforceGuestAttach, isAppNavigation } from './browserSecurity'
-import { fileNotFoundHtml } from '@plugins/workbench/main/dirListing'
 import { stripTerminalCodes } from '@core/terminalCodes'
 import type { InstructionsVersion } from '@core/ownerInstructions'
-import {
-  CODEX_REPLY_LANGUAGE_SCRIPT,
-  HOOK_SCRIPT,
-  forgetAssistMarkers,
-  noteOfWhatKoloftSends,
-  noteSent,
-  localNotice,
-  markAnswerable,
-  markOwnerAsleep,
-  noticeFile,
-  pruneStale,
-  quotedPrompt,
-  setupHooks,
-  writeTabHookSettings,
-  type NoticeFile
-} from '@plugins/sessions/main/hooks'
 import { formatRemoteKey, isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import {
   defaultControlDir,
@@ -140,6 +114,7 @@ import {
 import { BrowserTunnels } from './remote/browserTunnel'
 import { anyFreeMacPort, macPortFree, PageForwards } from './remote/portForward'
 import { MACHINE_PLAYWRIGHT_CLI } from './remote/playwrightCli'
+import { MACHINE_CLAUDE } from './advisorOnFable'
 import {
   ENSURE_CODEX_SH,
   ENSURE_SH,
@@ -242,7 +217,6 @@ import {
 } from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
-import { scratchRootsAround, type LiveSession } from '@plugins/sessions/main/workspaces'
 import { rowsToAdopt } from '@shared/firstRun'
 import {
   isWorkspaceWorkbenchKey,
@@ -257,12 +231,6 @@ import {
   type ResumeProbes
 } from './resumePlan'
 import { branchExists, type GitOut, type TidyResult } from '@core/worktree'
-import {
-  ClaudeBackend,
-  machineHookSettings,
-  pickMachineAccount
-} from '@plugins/sessions/main/backends/claude'
-import { codexBackend, trustCodexFolder } from '@plugins/sessions/main/backends/codex'
 import { codexConfigFile } from './codexTrust'
 import {
   HomeAccountPicker,
@@ -276,12 +244,10 @@ import { ResourceGuard, ownerTyped } from './resourceGuard'
 import { readTheMachine, signalLog } from './machineRoom'
 import { STUCK_AFTER_MS, StallWatchWhileFocused, answerTheStuckWatch } from './mainThreadStalls'
 import createMainThreadStuckWorker from './mainThreadStuckWorker?nodeWorker'
-import { envMs } from '@plugins/sessions/main/sessionRuntime'
 import { giveWay, readTaggedTable } from './machineTrees'
 import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { GitFreshnessEngine } from './gitFreshness'
 import { COMMON_GIT_DIR, GitRepoKeys } from './gitRepoKey'
-import type { SyncSession } from '@plugins/sessions/main/sessionSync'
 import { GithubRepos, parseGithubFixture, type GithubReposOptions } from './githubRepos'
 import { ghRead, runGh } from './ghRun'
 import { GitAccountService, newGitRequestDir, sweepStaleGitRequestDirs } from './gitAccountService'
@@ -313,7 +279,6 @@ import {
   type RouteDecision,
   type RouteSource
 } from '@shared/browserRoute'
-import { HTML_HEADERS } from '@plugins/workbench/main/browserPartition'
 import { PASTED_PICTURE_EXTENSIONS, pastedPicturesIn, withPictures } from '@shared/pastedPictures'
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
@@ -397,8 +362,10 @@ import { AgentRequests, tabSpokenFor } from './agentRequests'
 import { errorText } from '@core/errorText'
 import { projectRulesForTheButler } from '@shared/agentGuide'
 import {
+  asPeerName,
   butlersBlock,
   butlersFolderClaim,
+  butlersWords,
   conductorFolder,
   DIGEST_GATHERS_MS,
   GUIDE_MOVED_NEWS,
@@ -412,19 +379,8 @@ import type { OwnPick } from '@shared/types'
 import { projectDefaults } from './projectDefaults'
 import type { WebPage } from '@core/webPage'
 import { within } from '@core/within'
-import { toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
-import { subscribeTabSubsystems } from '@plugins/sessions/main/tabLifecycle'
 import { clicksTheMouse, pressesAKey, typeKeys } from '@core/typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
-import {
-  claudeDialog,
-  codexDialog,
-  isAskedCall,
-  questionsOf,
-  type CodexApproval,
-  type CodexQuestion,
-  type DialogView
-} from '@plugins/sessions/main/dialog'
 import { sleep } from '@core/sleep'
 import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
 import {
@@ -448,7 +404,6 @@ import {
   whenMessagingSocketOnMachine
 } from './claudeSessionRegistry'
 import { GLOBAL_SCOPE, scopeName } from '@shared/scope'
-import { asPeerName } from '@plugins/butler/shared/names'
 import { Commands } from '@core/commands'
 import { PLUGINS } from '@plugins/list'
 import { PLUGIN_STARTS, type PluginStartDeps, type PluginsStarted } from '@plugins/starts'
@@ -469,48 +424,19 @@ import {
   TURN_STARTED,
   type LeftTab,
   type Moment,
-  type TabEnded
+  type StateChanged,
+  type TabEnded,
+  type TurnOver
 } from '@core/moment'
-import { butlersWords } from '@plugins/butler/main/sessionHooks'
 import type { MainIpc } from '@core/ipc'
 import { ClaudeDialogWatch } from './claudeDialogWatch'
-import {
-  A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS,
-  findSessionRow,
-  sessionVerb,
-  type HelperTask,
-  type ClosableSession,
-  type SessionScreen,
-  type SessionVerbDeps,
-  type Target
-} from '@plugins/sessions/main/sessionVerbs'
-import {
-  resolveWorkspace,
-  everyWorkspaceBlock,
-  everyWorkspaceSavedByTheOwner,
-  ownerPartsOf,
-  savedFromTheDialog,
-  workspaceBlock,
-  type Recipient
-} from '@plugins/sessions/api'
-import { A_HELPER_HAS_IT, writeLineInTurn } from '@plugins/sessions/main/crossSessionMessage'
 import { docsWritingOn } from '@plugins/docs-writing/api'
-import { worktreeNameForTask } from '@plugins/sessions/main/sessionTitle'
+import type { SessionsWithStore } from '@plugins/sessions/api'
 import { localFile } from './realFiles'
-import { judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
 import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
 import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
-import {
-  closingTree,
-  leftText,
-  machineUnreachable,
-  removeTree,
-  tidyTree,
-  whatIsLeft,
-  type MergedHeads
-} from '@plugins/sessions/main/sessionClose'
 import { TreeRemovals } from './treeRemovals'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
@@ -523,7 +449,28 @@ import {
   writeDocsPlugin
 } from './agentPlugin'
 import { installThen, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
-import { pushes as sessionsPushes } from '@plugins/sessions/main/channels'
+
+type SessionsStarted = PluginsStarted['sessions']
+type SessionVerbDeps = PluginStartDeps['sessions']['session']
+type ClosableSession = ReturnType<SessionVerbDeps['closable']>[number]
+type Target = Parameters<SessionVerbDeps['command']>[1]
+type SessionScreen = Awaited<ReturnType<SessionVerbDeps['screen']>>
+type HelperTask = Parameters<SessionsStarted['sessionCommand']['startHelper']>[1]
+type SlashTarget = Parameters<SessionsStarted['slash']['typeWhenIdle']>[0]
+type SlashReplyTo = Parameters<SessionsStarted['slash']['typeWhenIdle']>[2]
+type Recipient = Parameters<ReturnType<SessionsStarted['buildHandOver']>['tell']>[0]
+type MergedHeads = NonNullable<Parameters<SessionsStarted['whatIsLeft']>[2]>
+type WorktreeResource = Parameters<SessionsWithStore['worktrees']['untouched']>[0]
+type NoticeFile = ReturnType<SessionsStarted['localNotice']>
+type WorkspaceDeps = Parameters<SessionsStarted['buildWorkspaces']>[0]
+type LiveSession = Parameters<ReturnType<NonNullable<WorkspaceDeps['liveSessions']>>['set']>[1]
+type SyncSession = Parameters<SessionsStarted['sessionSync']['observe']>[0][number]
+type CodexAsk = Parameters<SessionsStarted['codexDialog']>[0]
+type DialogView = ReturnType<SessionsStarted['claudeDialog']>
+type ToolCall = Parameters<SessionsStarted['isAskedCall']>[1]
+type AgyHomePick = NonNullable<
+  ReturnType<Parameters<SessionsStarted['buildAgySessions']>[0]['pickHome']>
+>
 
 const pluginIpc: MainIpc = {
   handle: (channel, handler) =>
@@ -533,7 +480,6 @@ const pluginIpc: MainIpc = {
   onEvent: (channel, listener) => ipcMain.on(channel, listener),
   push: (channel, ...args) => sendToRenderer(channel as Channel, ...args)
 }
-const pushToSessions = sessionsPushes(pluginIpc)
 
 // PLATFORM§4
 if (!app.isPackaged) app.setName('koloft-dev')
@@ -589,7 +535,7 @@ const terminalOutput = new TerminalOutput({
   rendererUp: () => rendererReady,
   now: () => performance.now()
 })
-const tracker = new SessionTracker()
+const trackerDeps: PluginStartDeps['sessions']['tracker'] = {}
 const claudeAsks = new Map<string, AskPayload>()
 let codexSessions: ReturnType<typeof buildCodexSessions> | null = null
 let agySessions: ReturnType<typeof buildAgySessions> | null = null
@@ -611,7 +557,7 @@ const workbenchReaderDocs: PluginStartDeps['workbench']['readerDocs'] = {
   localFile,
   changed: () => pushToSessions.sessions(onSessionsChanged())
 }
-const sessionBackends = new SessionBackends({
+const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
   turnEnded: (tabId, turn) => announceNow(TURN_ENDED, { tabId, turn }),
   prompted: (tabId) => {
     claudeAsks.delete(tabId)
@@ -636,10 +582,11 @@ const sessionBackends = new SessionBackends({
     if (path.isAbsolute(target) && !fs.existsSync(target)) return
     openInWorkbench(tabId, routeFor(target, 'agent'), 'agent', target)
   }
-})
-sessionBackends.isOverseerSession = (id) => !!butler?.isButlerSession(id)
-sessionBackends.turnOver = (tabId) => tracker.turnOver(tabId)
-sessionBackends.askingOf = (tabId) => {
+}
+const backendHooks: PluginStartDeps['sessions']['backendHooks'] = {}
+backendHooks.isOverseerSession = (id) => !!butler?.isButlerSession(id)
+backendHooks.turnOver = (tabId) => tracker.turnOver(tabId)
+backendHooks.askingOf = (tabId) => {
   if (tracker.statusOf(tabId) !== 'approval') return undefined
   const owner = storedOwnerOf(tabId)
   const stored = owner?.openApproval(tabId) ?? owner?.openQuestion(tabId)
@@ -650,10 +597,10 @@ sessionBackends.askingOf = (tabId) => {
 function showAskOnItsRow(tabId: string): void {
   if (tracker.statusOf(tabId) === 'approval') pushToSessions.sessions(onSessionsChanged())
 }
-sessionBackends.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
+backendHooks.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
 const noAccountNow = (backend: BackendId): string => noAccountMessage(listAccounts(), backend)
-sessionBackends.noAccountMessage = noAccountNow
-sessionBackends.turnedOff = turnedOffNow
+backendHooks.noAccountMessage = noAccountNow
+backendHooks.turnedOff = turnedOffNow
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }
@@ -723,13 +670,10 @@ const slashDeps: PluginStartDeps['sessions']['slash'] = {
       ? screenOf(tabId).then((s) => ('lines' in s ? s.lines.join('\n').trim() : '') || undefined)
       : undefined
 }
-tracker.on('turn-ended', ({ tabId, turn }: { tabId: string; turn: Turn }) =>
-  sessionBackends.observe(tabId, { type: 'turn-ended', turn })
-)
-tracker.pidOf = (tabId) => ptyMgr.pidOf(tabId)
+trackerDeps.pidOf = (tabId) => ptyMgr.pidOf(tabId)
 const dirtyTabIds = new Set<string>()
-tracker.activeTabId = () => uiActiveTabId
-tracker.heldTabs = () => {
+trackerDeps.activeTabId = () => uiActiveTabId
+trackerDeps.heldTabs = () => {
   const held = new Set(dirtyTabIds)
   for (const h of ptyMgr.list()) if (h.util && h.alive && h.ownerTabId) held.add(h.ownerTabId)
   for (const s of allSessions())
@@ -742,9 +686,9 @@ tracker.heldTabs = () => {
       held.add(s.tabId)
   return held
 }
-tracker.needsUser = (id) => attention.waitsOnApproval(id)
+trackerDeps.needsUser = (id) => attention.waitsOnApproval(id)
 let leftovers: Record<string, LeftoverProcess[]> = {}
-tracker.leftBehind = (sessionId) => !!leftovers[sessionId]?.length
+trackerDeps.leftBehind = (sessionId) => !!leftovers[sessionId]?.length
 const LEFTOVER_SCAN_MS = 30_000
 const LEFTOVERS_OF_A_CLOSED_SESSION_STOPPED_FOR_MS = 2 * LEFTOVER_SCAN_MS
 const closedSessionsStoppedUntil = new Map<string, number>()
@@ -1276,10 +1220,10 @@ let workspaceMgr: ReturnType<typeof buildWorkspaces> | null = null
 let freshness: GitFreshnessEngine | null = null
 let gitAccounts: GitAccountService | null = null
 let remoteSync: RemoteSync | null = null
-tracker.machineTmp = (host) => remoteSync?.machineTmp(host)
+trackerDeps.machineTmp = (host) => remoteSync?.machineTmp(host)
 const realFilesOn = (host: string, files: string[]): Promise<Map<string, string>> =>
   hosts.machine(host).realFiles(files)
-tracker.realFilesOn = realFilesOn
+trackerDeps.realFilesOn = realFilesOn
 let machinePkg: MachinePackage | null = null
 const remoteControlDir = defaultControlDir()
 const browserTunnels = new BrowserTunnels({
@@ -1334,6 +1278,7 @@ function machinePackage(): MachinePackage {
     [`${SESSION_BIN_DIR}open`]: REMOTE_OPEN_SHIM,
     [`${SESSION_BIN_DIR}gh`]: machineGhWrapperScript(),
     [`${CLAUDE_BIN_DIR}playwright-cli`]: MACHINE_PLAYWRIGHT_CLI,
+    [`${SESSION_BIN_DIR}claude`]: MACHINE_CLAUDE,
     [`${UTIL_BIN_DIR}gh`]: machineGhWrapperScript(),
     [STATUS_RELAY_FILE]: STATUS_RELAY_PY,
     [AGY_HOOK_FILE]: AGY_HOOK_SCRIPT,
@@ -1468,7 +1413,7 @@ async function withPastedPicturesOnItsMachine(
 }
 
 // CODEX§3 CODEX§20
-async function pendingAskOf(tabId: string): Promise<CodexApproval | CodexQuestion | undefined> {
+async function pendingAskOf(tabId: string): Promise<CodexAsk | undefined> {
   for (let polls = CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS; ; polls--) {
     const owner = storedOwnerOf(tabId)
     const ask = owner?.openApproval(tabId) ?? owner?.openQuestion(tabId)
@@ -2090,7 +2035,6 @@ const sessionDeps: SessionVerbDeps = {
   announceStarted: (started) => moments.announce(SESSION_STARTED, started),
   ownersWords: (said) => withoutTheRelayTag(said)
 }
-const sessionCommand = sessionVerb(sessionDeps)
 
 const inboxCards: PluginStartDeps['inbox']['cards'] = {
   now: () => Date.now(),
@@ -2155,7 +2099,7 @@ const claudeDialogs = new ClaudeDialogWatch({
     if (stateAfter === 'working') tracker.dialogAnswered(tabId)
   }
 })
-tracker.dialogJustClosed = (tabId) => claudeDialogs.justClosedADialog(tabId)
+trackerDeps.dialogJustClosed = (tabId) => claudeDialogs.justClosedADialog(tabId)
 
 function claudeAskEnded(tabId: string): void {
   claudeAsks.delete(tabId)
@@ -2184,7 +2128,6 @@ const sessionsCommands: PluginStartDeps['sessions']['commands'] = {
     const workspace = sessionBackends.workspaceOfTab(tabId)
     return workspace && rulesOf(workspace)
   },
-  session: sessionCommand.verb,
   workspace: { sidebar: projectRows },
   instructions: {
     // CC§28 CODEX§4 AGY§13
@@ -3436,10 +3379,7 @@ app.whenReady().then(() => {
   ptyMgr.on('cwd', (c: { id: string; cwd: string }) => {
     sendToRenderer(CH.terminal.cwd, c)
   })
-  subscribeTabSubsystems(tabLifecycle, {
-    attention,
-    claude: claudeBackend,
-    tracker,
+  subscribeTabSubsystems({
     storedOwnerOf,
     toast: (message) => sendToRenderer(CH.toast.show, message),
     workspaces: () => workspaceMgr,
@@ -3541,14 +3481,14 @@ app.whenReady().then(() => {
   tracker.on('command-output', ({ tabId, ...output }: CommandOutput & { tabId: string }) =>
     slash.output(tabId, output)
   )
-  tracker.on('turn-over', ({ tabId, over }: TurnOverEdge) => {
+  tracker.on('turn-over', ({ tabId, over }: TurnOver) => {
     ptyMgr.wakeReady(tabId)
     announceNow(TURN_OVER, { tabId, over })
     if (!over) return
     const workspace = pinnedWorkspaceOfTab(tabId)
     if (workspace) freshness?.fetchSoon(workspace)
   })
-  tracker.on('status', (t: StatusEdge) => {
+  tracker.on('status', (t: StateChanged) => {
     if (t.prev === 'approval') claudeAskEnded(t.tabId)
     ptyMgr.wakeReady(t.tabId)
     announceNow(STATE_CHANGED, t)
@@ -5578,9 +5518,8 @@ const hosts = new Hosts(
     })
 )
 
-const claudeBackend = new ClaudeBackend({
+const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
   pty: ptyMgr,
-  tracker,
   hosts,
   workspaces: () => workspaceMgr,
   remoteSync: () => remoteSync,
@@ -5602,8 +5541,7 @@ const claudeBackend = new ClaudeBackend({
     storedSessions()
       .map((s) => s.tabOnMachine?.(machine, tmuxName, launchTab))
       .find(Boolean)
-})
-sessionBackends.register(claudeBackend)
+}
 
 // ADR-0007
 function shrinkAdoptedClaudePtysOneRowSoFitRepaints(tabs: TabInventoryReply['tabs']): void {
@@ -6125,14 +6063,18 @@ const startedPlugins: PluginsStarted = startPlugins(
   { commands, moments, ipc: pluginIpc },
   {
     sessions: {
+      tracker: trackerDeps,
+      backendLifecycle,
+      backendHooks,
+      claude: claudeBackendDeps,
       startedSessionsFile,
       newsJudge: newsJudgeDeps,
       slash: slashDeps,
       sleepers: sleepersDeps,
       sessionSync: sessionSyncDeps,
       attention: attentionDeps,
+      session: sessionDeps,
       eachTurn: {
-        replies: sessionCommand,
         askBeforeAsksAreMade: showAskOnItsRow
       },
       commands: sessionsCommands,
@@ -6143,7 +6085,6 @@ const startedPlugins: PluginsStarted = startPlugins(
         }
       },
       channels: {
-        backends: sessionBackends,
         noteActivity: (tabId) => tracker.noteActivity(tabId),
         installed: installedBackends,
         installTool,
@@ -6373,7 +6314,9 @@ const {
   readerDocs,
   setUpBrowserPartition,
   setUpExtensions,
-  compositionDone
+  compositionDone,
+  fileNotFoundHtml,
+  HTML_HEADERS
 } = startedPlugins.workbench
 const {
   cdpOps,
@@ -6393,6 +6336,10 @@ const {
   writeRelayEnv
 } = startedPlugins['browser-control']
 const {
+  tracker,
+  sessionBackends,
+  claudeBackend,
+  subscribeTabSubsystems,
   startedSessions,
   newsJudge,
   slash,
@@ -6405,7 +6352,55 @@ const {
   buildHandOver,
   buildWorkspaces,
   buildCodexSessions,
-  buildAgySessions
+  buildAgySessions,
+  sessionCommand,
+  pushToSessions,
+  AGY_HOOK_SCRIPT,
+  AGY_TITLE_SCRIPT,
+  agyBackend,
+  machineHookSettings,
+  pickMachineAccount,
+  codexBackend,
+  trustCodexFolder,
+  A_HELPER_HAS_IT,
+  writeLineInTurn,
+  claudeDialog,
+  codexDialog,
+  isAskedCall,
+  questionsOf,
+  everyWorkspaceBlock,
+  ownerPartsOf,
+  everyWorkspaceSavedByTheOwner,
+  CODEX_REPLY_LANGUAGE_SCRIPT,
+  HOOK_SCRIPT,
+  forgetAssistMarkers,
+  localNotice,
+  markAnswerable,
+  markOwnerAsleep,
+  noteOfWhatKoloftSends,
+  noteSent,
+  noticeFile,
+  pruneStale,
+  quotedPrompt,
+  setupHooks,
+  writeTabHookSettings,
+  resolveWorkspace,
+  closingTree,
+  leftText,
+  machineUnreachable,
+  removeTree,
+  tidyTree,
+  whatIsLeft,
+  envMs,
+  worktreeNameForTask,
+  A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS,
+  findSessionRow,
+  toCaller,
+  judgeTurn,
+  waitsOnOtherWork,
+  savedFromTheDialog,
+  workspaceBlock,
+  scratchRootsAround
 } = startedPlugins.sessions
 const { TODO_NEWS } = startedPlugins.todo
 const { koloftInbox, flushInbox } = startedPlugins.inbox

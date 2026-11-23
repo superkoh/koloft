@@ -330,7 +330,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
   })
 
   // CODEX§4
-  test('a child agent a Codex session there leaves running shows on its row breathing green with ↻, named by the task name Codex gave it, until it ends', async ({
+  test('a child agent a Codex session there leaves running shows on its row breathing green with ↻, named by the task name Codex gave it, until it ends, and the row says Last: Started a helper', async ({
     env
   }) => {
     installCodexOnFakeRemote(env)
@@ -342,6 +342,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       const row = wsRows(page, REMOTE_WS_NAME)
       await runIn(page, centerTerm(page), 'spawn task lint_checker')
       await expect(row).toHaveClass(/\bst-bg-run\b/, { timeout: 30_000 })
+      await expect(row.locator('.ws-tab-act')).toHaveText('Last: Started a helper: lint_checker')
       await oneStillRunning(row).click()
       await expect(page.locator('.tbu-pop.parked')).toContainText('agent · lint_checker · working')
       await page.keyboard.press('Escape')

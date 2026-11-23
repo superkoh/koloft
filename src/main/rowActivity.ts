@@ -24,6 +24,9 @@ const wrote = (file: string): string => `Wrote ${basename(file)}`
 const read = (file: string): string => `Read ${basename(file)}`
 const used = (tool: string): string => `Used ${oneLine(tool)}`
 const searched = (what: string): string => `Searched for ${oneLine(what)}`
+const searchedTheWeb = (query: string): string => `Searched the web for ${oneLine(query)}`
+const opened = (url: string): string => `Opened ${oneLine(url)}`
+const startedAHelper = (label: string): string => `Started a helper: ${oneLine(label)}`
 const withoutMcpServer = (tool: string): string => tool.replace(/^mcp__.+?__/, '')
 
 const CLAUDE_READ_TOOLS: ReadonlySet<string> = new Set(['Read', 'Grep', 'Glob'])
@@ -53,12 +56,12 @@ export function claudeToolDid(name: string, input: Record<string, unknown>): str
     case 'Glob':
       return pattern && searched(pattern)
     case 'WebSearch':
-      return query && `Searched the web for ${oneLine(query)}`
+      return query && searchedTheWeb(query)
     case 'WebFetch':
-      return url && `Opened ${oneLine(url)}`
+      return url && opened(url)
     case 'Agent':
     case 'Task':
-      return `Started a helper: ${oneLine(str(input.description) ?? 'helper')}`
+      return startedAHelper(str(input.description) ?? 'helper')
   }
   return used(withoutMcpServer(name))
 }
@@ -78,11 +81,46 @@ export function codexEditTarget(item: Record<string, unknown>): string | undefin
 }
 
 // CODEX§12
+function codexWebSearchDid(item: Record<string, unknown>): string | undefined {
+  const action = (item.action ?? {}) as Record<string, unknown>
+  if (action.type === 'findInPage' || action.type === 'openPage') {
+    const url = str(action.url) ?? str(item.query)
+    const pattern = action.type === 'findInPage' ? str(action.pattern) : undefined
+    if (url && pattern) return `Searched ${oneLine(url)} for ${oneLine(pattern)}`
+    return url && opened(url)
+  }
+  const queries = Array.isArray(action.queries) ? action.queries : []
+  const query = str(action.query) ?? str(item.query) ?? str(queries[0])
+  return query && searchedTheWeb(query)
+}
+
+// CODEX§4
+export function codexTaskName(agentPath: unknown): string | undefined {
+  return (typeof agentPath === 'string' && agentPath.split('/').pop()) || undefined
+}
+
+// CODEX§4
+function codexHelperDid(item: Record<string, unknown>): string | undefined {
+  if (item.type === 'collabAgentToolCall') {
+    const spawned =
+      item.tool === 'spawnAgent' &&
+      Array.isArray(item.receiverThreadIds) &&
+      item.receiverThreadIds.length > 0
+    return spawned ? startedAHelper(str(item.prompt) ?? 'helper') : undefined
+  }
+  if (item.kind !== 'started') return undefined
+  return startedAHelper(codexTaskName(item.agentPath) ?? 'helper')
+}
+
+// CODEX§4 CODEX§12 CODEX§32
 export function codexItemDid(item: Record<string, unknown>): string | undefined {
   if (item.type === 'fileChange') {
     const file = codexEditTarget(item)
     return file && edited(file)
   }
+  if (item.type === 'webSearch') return codexWebSearchDid(item)
+  if (item.type === 'collabAgentToolCall' || item.type === 'subAgentActivity')
+    return codexHelperDid(item)
   if (item.type !== 'commandExecution') return undefined
   const actions = records(item.commandActions)
   const only = actions.length === 1 ? actions[0] : undefined
@@ -116,7 +154,7 @@ export function agyToolDid(
       return file && read(file)
     case 'search_web': {
       const query = str(arg('query') ?? arg('Query'))
-      return query ? `Searched the web for ${oneLine(query)}` : used(name)
+      return query ? searchedTheWeb(query) : used(name)
     }
     case 'invoke_subagent': {
       const first =
@@ -134,12 +172,12 @@ export function agyToolDid(
         str(arg('Prompt')) ??
         str(first?.Prompt) ??
         'helper'
-      return `Started a helper: ${oneLine(label)}`
+      return startedAHelper(label)
     }
     case 'swarm': {
       const action = str(arg('action') ?? arg('Action'))
       const member = str(arg('name') ?? arg('Name'))
-      if (action === 'add' && member) return `Started a helper: ${oneLine(member)}`
+      if (action === 'add' && member) return startedAHelper(member)
       if (action === 'kill' && member) return `Stopped helper ${oneLine(member)}`
       return action ? `Managed swarm (${oneLine(action)})` : used(name)
     }

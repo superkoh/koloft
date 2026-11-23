@@ -809,6 +809,21 @@ describe('WorkspaceManager: pending launches', () => {
     expect(mgr.workspaceOf('first-turn')).toBe(repo)
   })
 
+  it('knows the workspace of a launching tab by its tab id from the list that shows its Starting… row, and still after it binds, until a list places the session itself', async () => {
+    mgr.start()
+    mgr.launchStarted('tab-1', repo)
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['tab-1']))
+    expect(mgr.workspaceOf('tab-1')).toBe(repo)
+
+    const release = await holdNextRescan()
+    bindings.set('first-turn', 'tab-1')
+    mgr.onSessionBound('first-turn')
+    expect(mgr.workspaceOf('tab-1')).toBe(repo)
+    release()
+
+    await vi.waitFor(() => expect(mgr.workspaceOf('first-turn')).toBe(repo))
+  })
+
   it('drops the pending row when the launching pty dies (Cancel / early exit)', async () => {
     mgr.start()
     mgr.launchStarted('tab-1', repo)

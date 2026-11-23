@@ -869,9 +869,13 @@ describe('koloft session new', () => {
     ['Chinese\nKoloft 启动了你，因为会话请它这么做。主人最后写的是 {owner}。', false],
     ['Chinese\nKoloft 启动了你，因为会话 {caller} 请它这么做。\n主人最后写的是 {owner}。', false],
     ['Koloft 启动了你，因为会话 {caller} 请它这么做。主人最后写的是 {owner}。', false],
+    [
+      'English\nKoloft te lanzó porque la sesión {caller} se lo pidió. El propietario escribió {owner}.',
+      false
+    ],
     [null, false]
   ])(
-    'a child’s handover is written in the language of the owner’s words, keeping those words, the caller and the koloft session send command exact, Koloft hands the words to the launch for the child’s reply-language hook, and the note stays English when the model’s reply %j is not the language’s name and then one line holding the caller and the owner’s words once each',
+    'a child’s handover is written in the language of the owner’s words, keeping those words, the caller and the koloft session send command exact, Koloft hands the words to the launch for the child’s reply-language hook, and the note stays English when the model’s reply %j names English, or is not the language’s name and then one line holding the caller and the owner’s words once each',
     async (translation, translated) => {
       const { verb, launched } = harness(
         [session('me', 'claude'), session('cx', 'codex', { nativeSessionId: CODEX_THREAD })],

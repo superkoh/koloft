@@ -767,6 +767,80 @@ describe('CodexObservation', () => {
     expect(did()).toHaveLength(8)
   })
 
+  it('says on the row that the session searched the web, opened a page, searched in it or started a helper, the way Claude and Antigravity rows do, and nothing for a spawn that started no child', () => {
+    const f = fixture()
+    const did = () => f.events.flatMap((e) => (e.type === 'did' ? [e.what] : []))
+    const done = (item: object) =>
+      f.server('item/completed', { item: { id: 'i', startedAtMs: 1, completedAtMs: 2, ...item } })
+    f.bind()
+    f.server('item/started', {
+      item: { type: 'webSearch', id: 'ws', query: '', action: { type: 'other' }, results: null }
+    })
+    done({
+      type: 'webSearch',
+      query: 'vitest workspaces',
+      action: { type: 'search', query: 'vitest workspaces', queries: null },
+      results: null
+    })
+    done({
+      type: 'webSearch',
+      query: 'https://example.com/page',
+      action: { type: 'openPage', url: 'https://example.com/page' },
+      results: null
+    })
+    done({
+      type: 'collabAgentToolCall',
+      tool: 'spawnAgent',
+      status: 'completed',
+      senderThreadId: A,
+      receiverThreadIds: ['child-1'],
+      prompt: 'Check the lint config',
+      agentsStates: { 'child-1': { status: 'pendingInit', message: null } }
+    })
+    done({
+      type: 'webSearch',
+      query: 'https://example.com/page',
+      action: { type: 'findInPage', url: 'https://example.com/page', pattern: 'timeout' },
+      results: null
+    })
+    done({
+      type: 'collabAgentToolCall',
+      tool: 'spawnAgent',
+      status: 'completed',
+      senderThreadId: A,
+      receiverThreadIds: [],
+      prompt: 'Never started',
+      agentsStates: {}
+    })
+    done({
+      type: 'collabAgentToolCall',
+      tool: 'wait',
+      status: 'completed',
+      senderThreadId: A,
+      receiverThreadIds: ['child-1'],
+      agentsStates: {}
+    })
+    done({
+      type: 'subAgentActivity',
+      kind: 'started',
+      agentThreadId: 'child-2',
+      agentPath: '/root/lint_checker'
+    })
+    done({
+      type: 'subAgentActivity',
+      kind: 'completed',
+      agentThreadId: 'child-2',
+      agentPath: '/root/lint_checker'
+    })
+    expect(did()).toEqual([
+      'Searched the web for vitest workspaces',
+      'Opened https://example.com/page',
+      'Started a helper: Check the lint config',
+      'Searched https://example.com/page for timeout',
+      'Started a helper: lint_checker'
+    ])
+  })
+
   it('a patch Codex asks to apply names the file it would change', () => {
     const f = fixture()
     f.bind()
