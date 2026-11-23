@@ -1729,6 +1729,7 @@ test.describe('remote workspaces: a workspace on another machine over ssh, with 
       expect(await unwrapped('command -v playwright-cli')).toMatch(
         /\.koloft\/m-[0-9a-f]+\/claude-bin\/playwright-cli/
       )
+      expect(await unwrapped('command -v claude')).toMatch(/\.koloft\/m-[0-9a-f]+\/bin\/claude/)
       expect(await unwrapped(`playwright-cli open ${url}`)).toContain(`Page Title: ${title}`)
       await expect(page.locator(BROWSER.drivenTab)).toHaveCount(1, { timeout: 30_000 })
 

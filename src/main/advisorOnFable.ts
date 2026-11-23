@@ -38,3 +38,22 @@ export const ADVISOR_OFF_ON_FABLE_FN = `advisor_off_on_fable() {
       fi ;;
   esac
 }`
+
+const MACHINE_CLAUDE_MARK = 'koloft machine claude'
+
+// CC§29
+export const MACHINE_CLAUDE = `#!/bin/sh
+: ${MACHINE_CLAUDE_MARK}
+${ADVISOR_OFF_ON_FABLE_FN}
+advisor_off_on_fable "$@"
+IFS=:
+set -f
+past_koloft=0
+for d in $PATH; do
+  [ -f "$d/claude" ] && [ -x "$d/claude" ] || continue
+  if head -n 2 "$d/claude" 2>/dev/null | grep -q "${MACHINE_CLAUDE_MARK}"; then past_koloft=1; continue; fi
+  [ "$past_koloft" = 1 ] && exec "$d/claude" "$@"
+done
+echo "claude: not found" >&2
+exit 127
+`

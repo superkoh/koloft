@@ -23,6 +23,8 @@ import {
   type TabSpec
 } from '../../src/main/remote/launch'
 import { TMUX_CONF, heartbeatCmd } from '../../src/main/remote/install'
+import { MACHINE_CLAUDE } from '../../src/main/advisorOnFable'
+import { utilTerminalGuard } from '../../src/main/shim'
 import { passOf } from '../../src/main/tabPass'
 import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from '../../src/main/remote/statusRelay'
 import { AGY_KEY_FROM_KOLOFT, agyTab } from '../../src/main/remote/agyTab'
@@ -455,6 +457,8 @@ function box(
   fs.mkdirSync(m, { recursive: true })
   fs.writeFileSync(path.join(m, 'tmux.conf'), TMUX_CONF)
   fs.writeFileSync(path.join(m, STATUS_RELAY_FILE), STATUS_RELAY_PY)
+  fs.mkdirSync(path.join(m, 'bin'))
+  fs.writeFileSync(path.join(m, 'bin', 'claude'), MACHINE_CLAUDE, { mode: 0o755 })
   fs.writeFileSync(
     path.join(m, 'ensure.sh'),
     `#!/bin/sh\n: > ${JSON.stringify(path.join(logs, 'ensure'))}\n${
@@ -506,6 +510,7 @@ printf 'claude %s\\n' "$*" >> "$L/order"
 env > "$L/env"
 printf '%s\\n' "$@" > "$L/argv"
 [ -t 0 ] && : > "$L/tty"
+[ -f "$L/from-its-bash" ] && { a="$(cat "$L/from-its-bash")"; rm -f "$L/from-its-bash"; claude $a; }
 exit ${opts.claudeExit ?? 0}
 `,
     { mode: 0o755 }
@@ -783,6 +788,48 @@ describe('U-TAB-*: the tab script on the machine', () => {
       })
     ).toBe('')
     expect(advisorOff(['--session-id', 's1', '--model', 'opus'], fableDefault)).toBe('')
+  })
+
+  // CC§29
+  it("gives back the advisor to an Opus claude that a Fable tab's Bash starts on the machine, as the claude shim does on the Mac, and turns it off for a nested Fable one", () => {
+    const nested = (tabArgs: string[], itsBashRuns: string): string[] => {
+      const b = box(spec({ claudeArgs: tabArgs }))
+      fs.writeFileSync(path.join(b.logs, 'from-its-bash'), itsBashRuns)
+      expect(b.run().status).toBe(0)
+      expect(b.claudeCalls()).toHaveLength(2)
+      const env = b.envAt(2)
+      return [env.CLAUDE_CODE_DISABLE_ADVISOR_TOOL ?? '', env.KOLOFT_ADVISOR_OFF ?? '']
+    }
+    expect(nested(['--model', 'fable'], '--model opus')).toEqual(['', ''])
+    expect(nested(['--model', 'fable'], '-p --model claude-sonnet-5-5 hi')).toEqual(['', ''])
+    expect(nested(['--model', 'fable'], '--model fable')).toEqual(['1', '1'])
+    expect(nested(['--model', 'opus'], '--model fable')).toEqual(['1', '1'])
+  })
+
+  it("the machine's claude wrapper hands over to the real claude past any Koloft wrapper on PATH — an older package's, its own spelled with //, or the Workbench shell's guard in front of it", () => {
+    const root = mkroot('wrappers')
+    const dir = (n: string, text: string): string => {
+      fs.mkdirSync(path.join(root, n), { recursive: true })
+      fs.writeFileSync(path.join(root, n, 'claude'), text, { mode: 0o755 })
+      return path.join(root, n)
+    }
+    const [util, fresh, old, real] = [
+      dir('util', utilTerminalGuard('claude')),
+      dir('new', MACHINE_CLAUDE),
+      dir('old', MACHINE_CLAUDE),
+      dir('real', '#!/bin/sh\necho "real $*"\n')
+    ]
+    fs.mkdirSync(path.join(real, 'claude-dir', 'claude'), { recursive: true })
+    const run = (first: string, PATH: string[]): string =>
+      spawnSync(path.join(first, 'claude'), ['-p', '--model', 'opus'], {
+        encoding: 'utf8',
+        env: { PATH: [...PATH, '/usr/bin:/bin'].join(':'), KOLOFT_UTIL: '1' },
+        timeout: 10_000
+      }).stdout
+    expect(run(fresh, [`${root}//new/`, old, fresh, path.join(real, 'claude-dir'), real])).toBe(
+      'real -p --model opus\n'
+    )
+    expect(run(util, [util, fresh, real])).toBe('real -p --model opus\n')
   })
 
   it("with agent tools on, claude gets Koloft's skill and Koloft's prompt from the machine package next to the koloft-docs skill it always gets, and finds the machine's playwright-cli, then its koloft, first on its PATH, told which tab it runs in", () => {
