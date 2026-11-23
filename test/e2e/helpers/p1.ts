@@ -248,6 +248,38 @@ export function transcriptFile(home: string, cwd: string, sessionId: string): st
   return path.join(home, '.claude', 'projects', encodeCwd(cwd), `${sessionId}.jsonl`)
 }
 
+// CC§17
+export function hookContextsIn(transcript: string): string[] {
+  if (!fs.existsSync(transcript)) return []
+  return fs
+    .readFileSync(transcript, 'utf8')
+    .split('\n')
+    .flatMap((l) => {
+      try {
+        const r = JSON.parse(l) as { attachment?: { type: string; content: string[] } }
+        return r.attachment?.type === 'hook_additional_context' ? [r.attachment.content[0]] : []
+      } catch {
+        return []
+      }
+    })
+}
+
+// CC§11
+export function messagingSocketIn(home: string, sessionId: string): string | undefined {
+  const dir = path.join(home, '.claude', 'sessions')
+  if (!fs.existsSync(dir)) return undefined
+  for (const name of fs.readdirSync(dir)) {
+    try {
+      const entry = JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8')) as {
+        sessionId: string
+        messagingSocketPath: string
+      }
+      if (entry.sessionId === sessionId) return entry.messagingSocketPath
+    } catch {}
+  }
+  return undefined
+}
+
 // CC§5
 export function continuedInOf(transcript: string): string | undefined {
   const last = fs.readFileSync(transcript, 'utf8').trimEnd().split('\n').pop() ?? ''

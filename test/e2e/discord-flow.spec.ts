@@ -18,6 +18,7 @@ import {
   centerTerm,
   runIn,
   discordOnDisk,
+  messagingSocketIn,
   newSessionInWith,
   processAlive,
   readAllCalls,
@@ -52,7 +53,14 @@ import {
   remoteDir,
   REMOTE_WS_NAME
 } from './helpers/remote'
-import { codexAnswers, type CodexWireLine } from './helpers/codex'
+import {
+  CODEX_HOOK_OUTPUT_LOG,
+  codexAnswers,
+  codexPromptContexts,
+  fakeCodexLog,
+  type CodexHookOutput,
+  type CodexWireLine
+} from './helpers/codex'
 import { openPluginPage } from './helpers/extensions'
 import type { BackendId, DiscordSettings, SessionInfo } from '../../src/shared/types'
 import { identityOf, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
@@ -193,17 +201,10 @@ function handedBackFrom(env: E2EEnv, sessionId: string): boolean {
   return peerMessages(env).some((m) => m.includes(`, id ${sessionId}:) `))
 }
 
-// CC§11
 function messagingSocketOf(env: E2EEnv, sessionId: string): string {
-  const dir = path.join(env.home, '.claude', 'sessions')
-  for (const name of fs.readdirSync(dir)) {
-    const entry = JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8')) as {
-      sessionId: string
-      messagingSocketPath: string
-    }
-    if (entry.sessionId === sessionId) return entry.messagingSocketPath
-  }
-  throw new Error(`no message socket for ${sessionId}`)
+  const socket = messagingSocketIn(env.home, sessionId)
+  if (!socket) throw new Error(`no message socket for ${sessionId}`)
+  return socket
 }
 
 function codexServerArgs(env: E2EEnv): string[] {
@@ -223,15 +224,7 @@ async function tabOf(page: Page, sessionId: string): Promise<string> {
 }
 
 function promptContexts(env: E2EEnv): string[] {
-  const file = path.join(env.home, 'fake-codex-hook-output.jsonl')
-  if (!fs.existsSync(file)) return []
-  return fs
-    .readFileSync(file, 'utf8')
-    .trim()
-    .split('\n')
-    .map((l) => JSON.parse(l) as { event: string; stdout: string })
-    .filter((r) => r.event === 'UserPromptSubmit' && r.stdout.trim())
-    .map((r) => JSON.parse(r.stdout).hookSpecificOutput.additionalContext as string)
+  return codexPromptContexts(fakeCodexLog<CodexHookOutput>(env, CODEX_HOOK_OUTPUT_LOG))
 }
 
 async function connected(
