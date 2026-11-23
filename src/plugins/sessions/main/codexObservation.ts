@@ -1,5 +1,5 @@
 import { PLAN_READY, type BackgroundItem } from '@shared/types'
-import { codexEditTarget, codexItemDid } from '../../../main/rowActivity'
+import { codexEditTarget, codexItemDid, codexTaskName } from '../../../main/rowActivity'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from './sessionRuntime'
 import path from 'path'
@@ -133,16 +133,18 @@ export function codexTurns(turns: unknown): TurnLog {
 
 // CODEX§4
 function childAgentLabel(id: string, agentPath?: unknown): string {
-  const taskName = typeof agentPath === 'string' ? agentPath.split('/').pop() : undefined
-  return taskName || `Agent ${id.slice(0, 8)}`
+  return codexTaskName(agentPath) ?? `Agent ${id.slice(0, 8)}`
 }
 
 const OPEN_ONE_TARGET = /^open\s+(?:'([^']+)'|"([^"]+)"|([^\s'"-]\S*))$/
 const OPEN_RAN = ['completed', 'failed']
 
+const ITEMS_WITHOUT_STATUS: ReadonlySet<string> = new Set(['webSearch', 'subAgentActivity'])
+
 // CODEX§4 CODEX§12
 function itemFinished(item: Record<string, unknown>): boolean {
   if (item.status === 'completed') return true
+  if (ITEMS_WITHOUT_STATUS.has(item.type as string)) return item.status === undefined
   return (
     item.type === 'commandExecution' &&
     item.status === 'failed' &&

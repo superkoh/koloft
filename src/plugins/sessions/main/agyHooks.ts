@@ -46,6 +46,19 @@ const LAST_REPLY_FN = `last_reply() {
     head -c ${QUOTED_NOTE_BYTES} | whole_chars
 }`
 
+const INJECT_STEPS_OPEN = '{"injectSteps":['
+const INJECT_STEPS_CLOSE = ']}'
+const STEP_THIS_HOOK_INJECTED = 'injected by a PreInvocation hook:'
+
+// AGY§12 AGY§17
+const START_STEP_ONCE_COMPACTED_FN = `start_step_once_compacted() {
+  [ -f "$${AGY_START_ENV}" ] || return 0
+  LC_ALL=C grep -F -e '"type":"CHECKPOINT"' -e ${shq(STEP_THIS_HOOK_INJECTED)} "$tp" 2>/dev/null | awk ${shq(`/"type":"SYSTEM_MESSAGE"/ && index($0, "${STEP_THIS_HOOK_INJECTED}") { put = 1 } /"type":"CHECKPOINT"/ { compacted = 1; put = 0 } END { exit !(compacted && !put) }`)} || return 0
+  st="$(cat "$${AGY_START_ENV}")"
+  st="\${st#${shq(INJECT_STEPS_OPEN)}}"
+  printf '%s' "\${st%${shq(INJECT_STEPS_CLOSE)}}"
+}`
+
 // AGY§12 AGY§16 ADR-0028 ADR-0031
 export const AGY_HOOK_SCRIPT = `#!/bin/sh
 : koloft agy hook
@@ -61,6 +74,7 @@ ${LANGUAGE_FNS}
 ${LAST_REPLY_FN}
 ${STALE_PR_STATUS_FN}
 ${SHELL_WRITES_FNS}
+${START_STEP_ONCE_COMPACTED_FN}
 case "$event:$input" in
   PreToolUse:*'"name":"run_command"'*|PostToolUse:*'"name":"run_command"'*)
     where="$(printf '%s' "$input" | tr -d '\\n' | ${hookField('Cwd')})"
@@ -85,7 +99,9 @@ case "$event" in
       [ -f "$notice" ] && take_notice >> "$turn"
     fi
     told="$([ -n "$turn" ] && cat "$turn" 2>/dev/null)$said"
-    [ -n "$told" ] && printf '{"injectSteps":[{"ephemeralMessage":"%s"}]}' "$told"
+    steps="$(start_step_once_compacted)"
+    [ -n "$told" ] && steps="\${steps:+$steps,}{\\"ephemeralMessage\\":\\"$told\\"}"
+    [ -n "$steps" ] && printf '${INJECT_STEPS_OPEN}%s${INJECT_STEPS_CLOSE}' "$steps"
     ;;
   # AGY§12 PLATFORM§36
   PostToolUse) case "$input" in *'gh pr '*) stale_pr_status "$(printf '%s' "$input" | tr -d '\\n' | LC_ALL=C sed -n -E 's/.*"CommandLine" *: *"${JSON_STRING_BODY}".*/\\1/p')" ;; esac ;;
@@ -162,7 +178,7 @@ export function koloftHookEntry(runScript: string): Record<string, unknown> {
 
 // AGY§12
 export function sessionStartOutput(text: string): string {
-  return JSON.stringify({ injectSteps: [{ systemMessage: { systemMessage: text } }] })
+  return `${INJECT_STEPS_OPEN}${JSON.stringify({ systemMessage: { systemMessage: text } })}${INJECT_STEPS_CLOSE}`
 }
 
 export interface AgyHook {

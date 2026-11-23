@@ -25,7 +25,6 @@ import { docsWritingOn } from '@plugins/docs-writing/api'
 import { saidFile, seedHandedOverOwnerWords, STATUS_LOG_SUFFIX } from '@plugins/sessions/main/hooks'
 import { STATUS_RELAY_FILE } from './statusRelay'
 import { TRUST_CWD_JS } from './claudeTrustJs'
-import { ADVISOR_OFF_ON_FABLE_FN } from '../advisorOnFable'
 
 export const CLAUDE_AUTH_ENV_VARS = [
   'CLAUDE_CODE_OAUTH_TOKEN',
@@ -228,8 +227,6 @@ function claudeRun(tabId: string, c: ClaudeTab): string {
   const ownerText = c.ownerText ? ` --append-system-prompt "$(cat "${T}${OWNER_TEXT_SUFFIX}")"` : ''
   return `  PATH="$M/${CLAUDE_BIN_DIR}:$PATH"; export PATH
   set -- claude --settings "${T}.json"${c.docsPlugin ? ` --plugin-dir "$M/${DOCS_PLUGIN_DIR}"` : ''}${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "${prompt}"` : ''}${ownerText} ${c.claudeArgs.map(shq).join(' ')}
-${ADVISOR_OFF_ON_FABLE_FN}
-  advisor_off_on_fable "$@"
   ${EXEC_ARGS_THROUGH_THE_STATUS_RELAY.join('\n  ')}\n`
 }
 

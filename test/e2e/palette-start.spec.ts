@@ -24,6 +24,7 @@ import {
   terminalText,
   waitBooted,
   waitForAllCalls,
+  wsMenuTexts,
   wsRows,
   type ClaudeCall
 } from './helpers/p1'
@@ -72,6 +73,19 @@ async function ask(app: ElectronApplication, page: Page, text: string): Promise<
   await sendShortcut(app, 'shortcut:command-palette')
   await expect(askBox(page)).toBeFocused()
   await askBox(page).fill(text)
+}
+
+async function askAtTheRemoteWorkspace(
+  app: ElectronApplication,
+  page: Page,
+  words: string
+): Promise<void> {
+  await ask(app, page, `@${REMOTE_HOST}`)
+  const suggested = palette(page).getByRole('group', { name: 'Workspaces' })
+  await expect(suggested.locator('.cb-row')).toHaveCount(1)
+  await page.keyboard.press('Tab')
+  await expect(askBox(page)).toHaveValue(new RegExp(`^@${REMOTE_HOST}:\\S+ $`))
+  await page.keyboard.type(words)
 }
 
 function textAfterDashes(call: ClaudeCall): string {
@@ -199,6 +213,15 @@ const OTHER_AGENTS_HERE: ({
     titleSentToTheAgent: agyTitlesSet
   }
 ]
+
+function worktreeItStartedIn(workspace: string, call: Launch): string | undefined {
+  const root = fs.realpathSync(workspace)
+  const ranIn = fs.realpathSync(call.cwd)
+  const named = firstPromptAfter('-w')(call.argv)
+  if (named) return ranIn === root ? named : undefined
+  const inside = path.relative(path.join(root, '.claude', 'worktrees'), ranIn)
+  return inside && !inside.startsWith('..') ? inside : undefined
+}
 
 const ON_THE_MACHINE: Record<OtherAgentName, { backend: BackendId } & AgentStart> = {
   Codex: {
@@ -412,6 +435,34 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       await quitAndClose(app)
     }
   })
+
+  for (const { backend, install, launches, firstPrompt } of OTHER_AGENTS_HERE) {
+    test(`local ${BACKEND_LABEL[backend]}: @ naming a git workspace starts it in a worktree Assist names for the task`, async ({
+      env
+    }) => {
+      test.setTimeout(180_000)
+      install(env)
+      gitInit(env.workspaces.a)
+      assistAnswers(env, 'read-the-readme')
+      const app = await launchApp(env)
+      try {
+        const page = await app.firstWindow()
+        await waitBooted(page)
+        await makeDefaultAgent(page, backend)
+        await ask(app, page, '@ws-a read the readme')
+        await page.keyboard.press('Enter')
+
+        await expect.poll(() => launches(env).length, { timeout: 40_000 }).toBe(1)
+        const [call] = launches(env)
+        expect(worktreeItStartedIn(env.workspaces.a, call)).toBe('read-the-readme')
+        expect(firstPrompt(call.argv)).toBe('read the readme')
+        await expect(page.locator('.modal')).toHaveCount(0)
+        expect(readAllCalls(env)).toHaveLength(0)
+      } finally {
+        await quitAndClose(app)
+      }
+    })
+  }
 
   test('an issue Assist names starts in a new worktree named for it, and the first prompt carries the issue first, then a blank line, then what was typed; the same issue again never reuses that worktree, it starts in issue-218-2', async ({
     env
@@ -795,12 +846,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       try {
         const page = await app.firstWindow()
         await waitBooted(page)
-        await ask(app, page, `@${REMOTE_HOST}`)
-        const suggested = palette(page).getByRole('group', { name: 'Workspaces' })
-        await expect(suggested.locator('.cb-row')).toHaveCount(1)
-        await page.keyboard.press('Tab')
-        await expect(askBox(page)).toHaveValue(new RegExp(`^@${REMOTE_HOST}:\\S+ $`))
-        await page.keyboard.type('read the logs')
+        await askAtTheRemoteWorkspace(app, page, 'read the logs')
         await page.keyboard.press('Enter')
         const [onRemote] = await waitForAllCalls(env, 1, 90_000)
         expect(onRemote.cwd).toBe(remoteDir(env))
@@ -823,9 +869,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       try {
         const page = await app.firstWindow()
         await waitBooted(page)
-        await ask(app, page, `@${REMOTE_HOST}`)
-        await page.keyboard.press('Tab')
-        await page.keyboard.type('read the logs')
+        await askAtTheRemoteWorkspace(app, page, 'read the logs')
         await page.keyboard.press('Enter')
         const [onRemote] = await waitForAllCalls(env, 1, 90_000)
         expect(onRemote.cwd).toBe(remoteDir(env))
@@ -907,6 +951,52 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
               .poll(() => titleSentToTheAgent(env), { timeout: 30_000 })
               .toContain('Deploy check')
           expect(readAllCalls(env)).toHaveLength(0)
+        } finally {
+          await quitAndClose(app)
+        }
+      })
+    }
+
+    const EVERY_AGENT_ON_THE_MACHINE = [
+      {
+        label: 'Claude',
+        backend: 'claude' as BackendId,
+        install: (): void => {},
+        launches: (env: E2EEnv): Launch[] =>
+          readAllCalls(env).map(({ argv, cwd }) => ({ argv, cwd })),
+        firstPrompt: firstPromptAfter('--')
+      },
+      ...OTHER_AGENTS_ON_THE_MACHINE.map((agent) => ({ ...agent, ...ON_THE_MACHINE[agent.label] }))
+    ]
+    for (const { label, backend, install, launches, firstPrompt } of EVERY_AGENT_ON_THE_MACHINE) {
+      test(`remote ${label}: @ naming a git ssh workspace starts it on that machine in a worktree Assist names for the task`, async ({
+        env
+      }) => {
+        test.setTimeout(300_000)
+        installFakeRemote(env)
+        install(env)
+        gitInit(remoteDir(env))
+        seedRemoteWorkspace(env)
+        assistAnswers(env, 'read-the-readme')
+        const app = await launchApp(env)
+        try {
+          const page = await app.firstWindow()
+          await waitBooted(page)
+          await makeDefaultAgent(page, backend)
+          await expect
+            .poll(async () => (await wsMenuTexts(page, REMOTE_WS_NAME)).join(' | '), {
+              timeout: 60_000
+            })
+            .toContain('New worktree session')
+          await askAtTheRemoteWorkspace(app, page, 'read the readme')
+          await page.keyboard.press('Enter')
+
+          await expect.poll(() => launches(env).length, { timeout: 90_000 }).toBe(1)
+          const [call] = launches(env)
+          expect(worktreeItStartedIn(remoteDir(env), call)).toBe('read-the-readme')
+          expect(firstPrompt(call.argv)).toBe('read the readme')
+          await expect(page.locator('.modal')).toHaveCount(0)
+          expect(readAllCalls(env)).toHaveLength(backend === 'claude' ? 1 : 0)
         } finally {
           await quitAndClose(app)
         }

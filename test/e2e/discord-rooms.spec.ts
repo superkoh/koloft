@@ -22,12 +22,14 @@ import {
   installRemoteAgy,
   killFakeRemote,
   machineHome,
+  promptContextsOnTheMachine,
   REMOTE_HOST,
   REMOTE_WS_NAME
 } from './helpers/remote'
 import type { BackendId, SessionInfo } from '../../src/shared/types'
 import { identityOf } from '../../src/shared/sessionBackend'
 import { CLOSED_IN_ROOM, STARTED_OVER_IN_ROOM } from '../../src/plugins/discord/main/rooms'
+import { NOT_FROM_THE_RELAY, NOT_SENT_BY_KOLOFT } from '../../src/plugins/sessions/main/hooks'
 
 test.setTimeout(180_000)
 
@@ -198,7 +200,7 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
     })
 
   for (const { backend, install } of REMOTE)
-    test(`a ${backend} session on another machine gets its room the same way, and what the owner writes there reaches it on that machine and its reply comes back there`, async ({
+    test(`a ${backend} session on another machine gets its room the same way, and what the owner writes there reaches it on that machine, a Claude or Codex one told it is the owner’s words and never that Koloft did not send it, and its reply comes back there`, async ({
       env
     }) => {
       test.setTimeout(300_000)
@@ -210,6 +212,22 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
             expect(fs.readFileSync(`${marks}.discord-ids`, 'utf8')).toContain(
               `koloft-discord-${messageId}`
             )
+          if (backend !== 'agy') {
+            const contexts = (): string[] =>
+              promptContextsOnTheMachine(
+                env,
+                backend,
+                identityOf(session.sessionId).nativeSessionId
+              )
+            await expect
+              .poll(() => contexts().some((c) => c.includes('«how is the room»')))
+              .toBe(true)
+            expect(
+              contexts().filter(
+                (c) => c.includes(NOT_FROM_THE_RELAY) || c.includes(NOT_SENT_BY_KOLOFT)
+              )
+            ).toEqual([])
+          }
         })
       )
     })

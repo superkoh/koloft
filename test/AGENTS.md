@@ -140,7 +140,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
     `/enter-worktree <name>`, `/exit-worktree`, `/bg-work`, `/bg-reported`,
     `/bg-monitor` (`/bg-monitor 2.1.329` lists it in Stop as that version does),
     `/bg-shell`. Any other line is a prompt answered by a Read and a
-    Stop, its UserPromptSubmit hook given the line as `prompt`. It reads its pty raw, as
+    Stop, its UserPromptSubmit hook given the line as `prompt`; once its cwd is gone, that
+    Stop is followed by a status line run in `<home>` (CC§6) into
+    `<home>/fake-claude-statusline.out`, as the startup turn's run in its cwd is. It reads its pty raw, as
     the real one does, and writes `ESC[?2004h` as it starts (CC§12): Enter (`\r`) sends
     the line (a line sent before it binds waits for the bind), Shift+Enter (`\n`) adds a
     new line to it, Backspace and Ctrl+U erase, Ctrl+C empties a line, and Ctrl+C or
