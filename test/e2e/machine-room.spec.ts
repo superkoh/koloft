@@ -22,7 +22,7 @@ import {
 } from './helpers/remote'
 import {
   centerTerm,
-  mainThreadPriority,
+  basePriority,
   newSessionInWith,
   openSessionTerminal,
   panelTerm,
@@ -61,7 +61,7 @@ function pidOfSleep(seconds: number): number | undefined {
 
 function priorityOfSleep(seconds: number): number | undefined {
   const pid = pidOfSleep(seconds)
-  return pid === undefined ? undefined : mainThreadPriority(pid)
+  return pid === undefined ? undefined : basePriority(pid)
 }
 
 function aToolThatStartsASecondOneOnAsking(
@@ -124,7 +124,7 @@ test('at warning nothing is slowed; once memory stays critical the tools of the 
     await runIn(page, centerTerm(page), `/run ${watchedTool.command}`)
     await expect.poll(() => priorityOfSleep(watchedTool.first)).toBe(WHAT_ANY_OTHER_PROGRAM_GETS)
     const agents = readCalls(env).map((c) => c.pid)
-    expect(agents.map(mainThreadPriority)).toEqual([ABOVE_ITS_TOOLS, ABOVE_ITS_TOOLS])
+    expect(agents.map(basePriority)).toEqual([ABOVE_ITS_TOOLS, ABOVE_ITS_TOOLS])
 
     memoryPressure(env, 2)
     await expect
@@ -140,7 +140,7 @@ test('at warning nothing is slowed; once memory stays critical the tools of the 
     expect(priorityOfSleep(awayTool.first)).toBe(GIVING_WAY)
     expect(priorityOfSleep(watchedTool.first)).toBe(WHAT_ANY_OTHER_PROGRAM_GETS)
     expect(priorityOfSleep(ownersOwnCommand)).toBe(WHAT_ANY_OTHER_PROGRAM_GETS)
-    expect(agents.map(mainThreadPriority)).toEqual([ABOVE_ITS_TOOLS, ABOVE_ITS_TOOLS])
+    expect(agents.map(basePriority)).toEqual([ABOVE_ITS_TOOLS, ABOVE_ITS_TOOLS])
     await expect(slowedMark(rowOf(page, watched))).toHaveCount(0)
 
     awayTool.startTheSecond()
@@ -223,9 +223,9 @@ test('the tools of a Codex and an Antigravity session nobody looks at give way t
       })
     expect(tools.map(priorityOfSleep)).toEqual(tools.map(() => GIVING_WAY))
     expect({
-      codex: mainThreadPriority(codex.pid),
-      agy: mainThreadPriority(agySessionCalls(env)[0].pid),
-      codexServer: mainThreadPriority(codexServer.pid)
+      codex: basePriority(codex.pid),
+      agy: basePriority(agySessionCalls(env)[0].pid),
+      codexServer: basePriority(codexServer.pid)
     }).toEqual({
       codex: ABOVE_ITS_TOOLS,
       agy: ABOVE_ITS_TOOLS,
