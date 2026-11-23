@@ -316,7 +316,7 @@ Working principles:
   - Never git -C another checkout: diff origin/<branch>; gh pr diff <n> takes no path.
   - A path no tool printed is a guess: grep -rl 'word' src.
   - No gh api -o or --comments with --json; strings -o is offsets: use > file.
-  - Read stops at 25,000 tokens (~50 KB), not lines: wc -c, then slice.
+  - Read ends at 25,000 tokens (~50KB), not lines: wc -c, offset+limit.
   - {0,N} spans: /usr/bin/grep -o -E, never bare grep (ugrep); N ≤ 255.
   - Findings go in your final message; the harness refuses report files.
   ```
