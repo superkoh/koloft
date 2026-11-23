@@ -581,7 +581,7 @@ function PopRow({ a, now, cols }: { a: AccountView; now: number; cols: Columns }
           <>
             {a.kind === 'custom' && <span className="acct-badge api">ENDPOINT</span>}
             {a.kind === 'oauth' && a.fable === 'yes' && (
-              <span className="acct-badge fable">FABLE</span>
+              <span className="acct-badge good">FABLE</span>
             )}
           </>
         }
