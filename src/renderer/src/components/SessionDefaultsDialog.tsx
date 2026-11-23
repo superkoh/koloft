@@ -40,9 +40,9 @@ const BAD_MODEL = 'A model name is letters, digits, dots, colons, dashes or unde
 const PROJECT_FILE_MAY_WIN =
   "Where the project's own AGENTS.md or CLAUDE.md says otherwise, an agent may follow that file instead."
 
-// CC§23 CODEX§17 AGY§12
+// CC§23 CODEX§17 AGY§12 AGY§17
 const whenItCounts = (butler: string): string =>
-  `Every session started from now on in this workspace, or in another copy of the same repository, follows this. A resumed conversation keeps the text it started with; in Claude Code, only until it next compacts. ${butler} does not get it.`
+  `Every session started from now on in this workspace, or in another copy of the same repository, follows this. A resumed conversation keeps the text it started with until it next compacts. ${butler} does not get it.`
 
 const modelHint = (label: string): string => `Default = the model ${label} itself starts on.`
 const effortHint = (label: string): string =>

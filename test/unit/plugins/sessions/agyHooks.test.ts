@@ -7,6 +7,7 @@ import {
   agyLogLine,
   koloftHookEntry,
   runWithSh,
+  sessionStartOutput,
   writeAgyScripts,
   type AgyScripts
 } from '../../../../src/plugins/sessions/main/agyHooks'
@@ -270,6 +271,47 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
       env
     )
     expect(JSON.parse(nextTurn).injectSteps[0].ephemeralMessage).toMatch(/^The user's latest/)
+  })
+
+  // AGY§17
+  it('the first model call after each compaction puts the words the tab started with back as a step agy keeps, because the compaction drops them, and the calls after it do not add them again; before any compaction, or with no words to start with, nothing is added', () => {
+    const start = path.join(dir, 'start.json')
+    const words = 'Owner says: "always" use\ttabs.\nSecond line, 中文 $HOME `x` \\ end'
+    fs.writeFileSync(start, sessionStartOutput(words))
+    const checkpoint = { source: 'SYSTEM', type: 'CHECKPOINT', status: 'DONE', content: '# Resume' }
+    const injected = (by: string): Record<string, unknown> => ({
+      source: 'SYSTEM_SDK',
+      type: 'SYSTEM_MESSAGE',
+      status: 'DONE',
+      content: `The following is a <SYSTEM_MESSAGE> not actually sent by the user.\n\n<SYSTEM_MESSAGE>\nThe following system message was injected by a ${by} hook:\n${words}\n</SYSTEM_MESSAGE>`
+    })
+    const before = [ownerSays('hello'), injected('SessionStart'), modelSays('ok')]
+    const steps = (transcriptPath: string, env = { KOLOFT_AGY_START: start }): unknown[] =>
+      JSON.parse(hook('PreInvocation', { conversationId: C1, transcriptPath }, env)).injectSteps
+    const quote = {
+      ephemeralMessage: `${REPLY_LANGUAGE_BEFORE_QUOTE}look around${REPLY_LANGUAGE_AFTER_QUOTE}`
+    }
+    const putBack = { systemMessage: { systemMessage: words } }
+    const compacted = transcriptOf(...before, checkpoint, ownerSays('look around'))
+    expect(steps(compacted)).toEqual([putBack, quote])
+    expect(
+      steps(
+        transcriptOf(...before, checkpoint, ownerSays('look around'), injected('PreInvocation'))
+      )
+    ).toEqual([quote])
+    expect(
+      steps(
+        transcriptOf(
+          ...before,
+          checkpoint,
+          injected('PreInvocation'),
+          checkpoint,
+          ownerSays('look around')
+        )
+      )
+    ).toEqual([putBack, quote])
+    expect(steps(transcriptOf(...before, ownerSays('look around')))).toEqual([quote])
+    expect(steps(compacted, { KOLOFT_AGY_START: path.join(dir, 'none.json') })).toEqual([quote])
   })
 
   // AGY§12

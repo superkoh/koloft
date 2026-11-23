@@ -306,6 +306,19 @@ spawn tool at all, so no
 (`prompt`, `model` and `reasoningEffort` only), so a child it announces is still named by
 its thread ID.
 
+**A spawn through `multi_agent_v1` is a `collabAgentToolCall` whose `prompt` is the task
+(measured 2026-11-21, codex-cli 0.169.0, the same throwaway setup as section 12's web
+search, `[features]` left at its defaults, 1 run).** Here the request did offer a
+`namespace` tool `multi_agent_v1` holding `close_agent`, `resume_agent`, `send_input`,
+`spawn_agent` and `wait_agent`; why the run above saw none was not probed. The fake
+model called `spawn_agent {message: "Check the lint config"}`; the parent thread got
+`item/started` `{type: "collabAgentToolCall", tool: "spawnAgent", status: "inProgress",
+receiverThreadIds: [], prompt: "Check the lint config"}`, then `item/completed` with
+`status: "completed"`, `receiverThreadIds: [<child>]` and `agentsStates[<child>].status:
+"pendingInit"`. No `subAgentActivity` item came. The 0.169.0 `CollabAgentTool` values are
+`spawnAgent`, `sendInput`, `resumeAgent`, `wait`, `closeAgent`, `sendMessage`,
+`followupTask`, `interruptAgent`, `listAgents`.
+
 ### No Monitor; a server left in a background terminal
 
 **Measured 2026-10-28, codex-cli 0.162.0 (`~/.codex/packages/standalone/current/bin/codex`),
@@ -1473,6 +1486,25 @@ so the folder can be shared between account homes like `sessions/` (section 15).
 second, fresh app-server's `thread/resume` of that thread answered the same non-null
 `path` under `$CODEX_HOME/sessions/`.
 
+### A web search, and items with no status
+
+**Measured 2026-11-21, codex-cli 0.169.0 (`/opt/homebrew/bin/codex`), `codex app-server`
+driven by a Node script in a throwaway `HOME` and `CODEX_HOME` whose `config.toml` set
+`web_search = "live"` and pointed `model_provider` at a fake Responses server on localhost
+(`wire_api = "responses"`, a made-up `env_key`, no login); 1 run per case.** The request's
+tool list held a hosted `{type: "web_search"}` tool. The fake model answered with a
+`web_search_call` output item (`action: {type: "search", query}`), and in a second run
+with `action: {type: "open_page", url}`.
+
+- The app-server turned each into a `webSearch` item. `item/started` came with
+  `query: ""` and `action: {type: "other"}`; `item/completed` with the real values:
+  `query: "<the query>"`, `action: {type: "search", query: "<the query>", queries: null}`,
+  `results: null`. For the page: `query` and `action.url` both the URL,
+  `action: {type: "openPage", url}`. The 0.169.0 schema's `WebSearchAction` also has
+  `findInPage {url, pattern}` and `other`.
+- A `webSearch` item has no `status` field at all (the schema has none), and neither does
+  `subAgentActivity` (section 4); only `item/completed` says it is done.
+
 ## 13. Token counts and the price table
 
 **Token counts checked on 2026-09-24 with standalone Codex CLI 0.153.4**, reading the
@@ -2463,7 +2495,37 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   under ZEBRA that never named the word was then `thread/resume`d on a server with
   `-c …YAK`, and another with the `developerInstructions: <HERON>` param: both answered
   ZEBRA, and neither YAK nor HERON reached the rollout. So a newer Koloft prompt does not
-  reach a resumed older session.
+  reach a resumed older session — until it next compacts (next bullet).
+- **From a compaction on, a thread runs on the `-c developer_instructions=` of the
+  app-server it compacts in.** 2026-11-21, Codex CLI 0.169.0 (Homebrew, macOS) and 0.170.0
+  (npm, in a scratch folder), `codex app-server --stdio` with Koloft's `initialize`
+  (`experimentalApi: true`), a scratch `HOME` and `CODEX_HOME`, and a local stand-in
+  Responses server that saved each request body. Two provider set-ups: a
+  `model_providers` entry with `wire_api="responses"`, and the built-in `openai` provider
+  with an API-key `auth.json` (made-up key) and `openai_base_url` at the stand-in. A
+  server with `-c …ALPHA` ran `thread/start` and one turn and was killed; a second server
+  `thread/resume`d the thread, compacted it, then ran two turns. The first reply and the
+  summary were sentinels: every request after a compaction held the summary and not the
+  first reply.
+  - Manual compaction is `thread/compact/start {threadId}`: a turn of its own with an
+    item `type:"contextCompaction"`. Through the custom provider it is an ordinary
+    `POST /v1/responses` ending in a "CONTEXT CHECKPOINT COMPACTION" user message;
+    through the `openai` provider it is also `POST /v1/responses`, ending in
+    `{type:"compaction_trigger"}` and answered by one `{type:"compaction",
+    encrypted_content}` item. Automatic compaction (`model_auto_compact_token_limit=1000`,
+    the stand-in reporting 200,000 tokens) runs inside the next turn, before its request,
+    by the same route.
+  - Resumed on a server with the same ALPHA, manual or automatic: ALPHA was in every
+    later request, as the first `input_text` of a `developer` message.
+  - Resumed on a server with `-c …BETA`: before a compaction only ALPHA reached the model
+    (as above); the compaction request itself still held ALPHA; every request after it
+    held BETA and no ALPHA, manual and automatic, both providers, both versions.
+  - A fresh thread compacted with no resume kept ALPHA. Every case ran twice, with the
+    same result.
+  - Resumed on a server with no `-c developer_instructions=` at all (0.169.0, `openai`
+    provider, 2 runs, manual and automatic): ALPHA reached the model until the compaction
+    and the compaction request, and no request after it held ALPHA or any text in its
+    place.
 - **`$CODEX_HOME/AGENTS.md` reaches the model** as a `user` message
   `# AGENTS.md instructions\n\n<INSTRUCTIONS>…`: its codeword came back (same run).
   **Skills reach it only as a list**: a `developer` message `<skills_instructions>` holds
@@ -4025,6 +4087,11 @@ owner's login, `gpt-6.1-sol`, told to call no tool:
   and a prompt line telling the model to prefer `clock.sleep` "over automations". No
   app-server method or model tool that makes an automation was found in its strings;
   what makes one in the Codex desktop app was not probed.
+- 2026-11-21, codex-cli 0.169.0, the fake Responses server of section 12's web search:
+  the request's tools were `exec_command, write_stdin, request_user_input, view_image`,
+  the `multi_agent_v1` namespace (section 4), `get_goal, create_goal, update_goal` and the
+  hosted `web_search`; none schedules a later turn, so a Codex row has no "Scheduled …"
+  line to show, unlike Claude Code's `ScheduleWakeup` or Antigravity's `schedule`.
 
 ## 33. A message queued from outside Koloft
 

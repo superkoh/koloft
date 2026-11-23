@@ -69,10 +69,11 @@ export async function handoverInOwnersLanguage(
     .split('\n')
     .map((l) => l.trim())
     .filter(Boolean)
-  const translation = lines.length === 2 ? lines[1] : ''
+  const [language, translation] = lines.length === 2 ? lines : ['', '']
+  const ownerWroteEnglish = /^english\b/i.test(language)
   const holdsEachSlotOnce =
     holdsOnce(translation, CALLER_SLOT) && holdsOnce(translation, OWNER_WORDS_SLOT)
-  return preambleFrom(caller, holdsEachSlotOnce ? translation : english)
+  return preambleFrom(caller, !ownerWroteEnglish && holdsEachSlotOnce ? translation : english)
 }
 
 export function withHandover(preamble: string, prompt: string): string {

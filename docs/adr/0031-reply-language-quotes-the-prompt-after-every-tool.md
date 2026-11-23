@@ -71,6 +71,10 @@ translates Koloft's English sentence into the language of the owner's words; Kol
 puts the owner's words, the caller's name and the `koloft session send` command in
 itself, so the model cannot change them, and keeps the English sentence when the call
 fails or the reply is not the language's name followed by one line holding each slot once.
+It also keeps it when that name is English, whatever the line says: gpt-6-luna (Codex
+0.169.0, Assist's one-shot arguments, an English owner's words cut at 150 characters,
+2026-11-22) named English and wrote the line in Spanish 1 time in 20, and a Codex child
+handed that Spanish note answered the English owner in Spanish.
 The hook no longer reads the owner's words out of the preamble, since a translated one has
 no fixed words to find them by. The sentence says the words were written to the session
 that started the child, not to the child, and only show the language: a child otherwise

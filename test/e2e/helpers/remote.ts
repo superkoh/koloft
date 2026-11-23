@@ -17,12 +17,15 @@ import {
   type AgentName,
   centerTerm,
   encodeCwd,
+  hookContextsIn,
   killSession,
   runIn,
   terminalText,
   termIds,
+  transcriptFile,
   waitBooted
 } from './p1'
+import { CODEX_HOOK_OUTPUT_LOG, codexPromptContexts, type CodexHookOutput } from './codex'
 import {
   PLAYWRIGHT_CLI_JS_UNDER_ITS_FOLDER,
   PLAYWRIGHT_CLI_UNDER_KOLOFT_HOME
@@ -360,8 +363,27 @@ export function machineCodexLog<T>(env: E2EEnv, name: string): T[] {
   return fs
     .readFileSync(file, 'utf8')
     .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as T)
+    .flatMap((line) => {
+      try {
+        return [JSON.parse(line) as T]
+      } catch {
+        return []
+      }
+    })
+}
+
+export function machineClaudeTranscript(env: E2EEnv, sessionId: string): string {
+  return transcriptFile(machineHome(env), fs.realpathSync(remoteDir(env)), sessionId)
+}
+
+export function promptContextsOnTheMachine(
+  env: E2EEnv,
+  backend: Exclude<BackendId, 'agy'>,
+  claudeSessionId: string
+): string[] {
+  return backend === 'codex'
+    ? codexPromptContexts(machineCodexLog<CodexHookOutput>(env, CODEX_HOOK_OUTPUT_LOG))
+    : hookContextsIn(machineClaudeTranscript(env, claudeSessionId))
 }
 
 export type OtherAgentName = Exclude<AgentName, 'Claude'>

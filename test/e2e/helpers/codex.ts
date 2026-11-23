@@ -32,6 +32,19 @@ export function fakeCodexLog<T>(env: E2EEnv, name: string): T[] {
     })
 }
 
+export const CODEX_HOOK_OUTPUT_LOG = 'fake-codex-hook-output.jsonl'
+
+export interface CodexHookOutput {
+  event: string
+  stdout: string
+}
+
+export function codexPromptContexts(hookOutputs: CodexHookOutput[]): string[] {
+  return hookOutputs
+    .filter((r) => r.event === 'UserPromptSubmit' && r.stdout.trim())
+    .map((r) => JSON.parse(r.stdout).hookSpecificOutput.additionalContext as string)
+}
+
 export interface CodexWireLine {
   direction: 'client' | 'server'
   frame: {
