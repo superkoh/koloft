@@ -3673,6 +3673,15 @@ server unless a line says so.
   is short. Three short runs on 2026-11-11 saw its pages on the background queue twice
   and compressed no sooner than an unlowered process's once; no run was made under real
   memory pressure.
+- **A thread that has just run reads below its priority for a moment.** `ps -M` shows the
+  thread's current priority, which macOS lowers while it uses CPU and gives back within
+  about a second once it stops; `nice` stays 0 and `ps -o pri` keeps the base 31 the whole
+  time. A `node` that spun for 300 ms beside 30 busy loops on a 30-core Mac read 22, 25,
+  29 and then 31, 250 ms apart. A fake `codex app-server` that had just answered a Koloft
+  tab, read while `vitest run` loaded the Mac, read 30 or 28 in 6 of 23 runs, and the one
+  run that read again read 31 250 ms later. So a priority read right after a program did work is read again
+  until it holds. Measured 2026-11-23 on macOS 27.2.1, Apple silicon, by node scripts
+  from a Koloft Claude Code tab.
 
 Koloft dependents: `aboveItsTools` in `src/main/agentLift.ts`, which starts every agent
 program on this Mac through `taskpolicy -a`, and `ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE`
