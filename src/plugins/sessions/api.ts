@@ -29,6 +29,7 @@ export type { ReplyChoices, Verdict } from './main/turnNews'
 export { SHOWS_NO_DIALOG } from './main/sessionAsks'
 export { HandOver, type HandOverDeps, type HandingMarks, type Recipient } from './main/handOver'
 export type { SendResult, StartResult, StartSpec } from './main/sendAndStart'
+export type { SessionsWithStore } from './main/storedSessions'
 export {
   placedRows,
   resolveWorkspace,

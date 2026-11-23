@@ -20,14 +20,11 @@ import { anotherLiveInstanceOwns, PtyManager, type PtyHandle } from './ptyManage
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { TerminalOutput } from './flowControl'
-import type { ToolCall } from '@plugins/sessions/main/sessionTracker'
 import type { CommandOutput } from './claudeCommandOutput'
-import type { StatusEdge, TurnOverEdge } from '@plugins/sessions/main/sessionRuntime'
 import { codexShowsAPanel } from './inputBox'
 import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from './remote/statusRelay'
 import type { TreeIo } from './sessionWorktrees'
 import { sharedProcessTable, type ProcessTable } from './processTable'
-import type { AgyHomePick } from '@plugins/sessions/main/agySessions'
 import {
   agyAccountEnv,
   agyApiKeyRoute,
@@ -40,7 +37,6 @@ import {
   setAgyApiKeyRoute
 } from './agyAccounts'
 import { AGY_APP_DIR, AGY_LIST_JS, ownersGeminiDir } from './agyStore'
-import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from '@plugins/sessions/main/agyHooks'
 import {
   AGY_BRAIN_FLAGS,
   AGY_HOOK_FILE,
@@ -50,7 +46,6 @@ import {
   AGY_TITLE_FILE,
   agyStatuslineScript
 } from './remote/agyTab'
-import { agyBackend } from '@plugins/sessions/main/backends/agy'
 import { homeKeyOnDisk } from './homeKeyOnDisk'
 import { watchHistoryOf } from './historyWatch'
 import {
@@ -60,10 +55,8 @@ import {
   outputStartCarry,
   plainTerminalTail
 } from './signInOutput'
-import type { SessionsWithStore } from '@plugins/sessions/main/storedSessions'
 import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
 import { claudeAskLine, storedAskLine } from './rowActivity'
-import type { WorktreeResource } from '@plugins/sessions/main/sessionStore'
 import {
   OpenTabsFile,
   openTabsNow,
@@ -101,25 +94,8 @@ import { setupShim, utilTerminalGuard } from './shim'
 import { openDropTarget, type OpenDrop } from '@core/openDrop'
 import { leaveForOS, openUrlExternally, osOpenFallback } from './osOpen'
 import { enforceGuestAttach, isAppNavigation } from './browserSecurity'
-import { fileNotFoundHtml } from '@plugins/workbench/main/dirListing'
 import { stripTerminalCodes } from '@core/terminalCodes'
 import type { InstructionsVersion } from '@core/ownerInstructions'
-import {
-  CODEX_REPLY_LANGUAGE_SCRIPT,
-  HOOK_SCRIPT,
-  forgetAssistMarkers,
-  noteOfWhatKoloftSends,
-  noteSent,
-  localNotice,
-  markAnswerable,
-  markOwnerAsleep,
-  noticeFile,
-  pruneStale,
-  quotedPrompt,
-  setupHooks,
-  writeTabHookSettings,
-  type NoticeFile
-} from '@plugins/sessions/main/hooks'
 import { formatRemoteKey, isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import {
   defaultControlDir,
@@ -138,6 +114,7 @@ import {
 import { BrowserTunnels } from './remote/browserTunnel'
 import { anyFreeMacPort, macPortFree, PageForwards } from './remote/portForward'
 import { MACHINE_PLAYWRIGHT_CLI } from './remote/playwrightCli'
+import { MACHINE_CLAUDE } from './advisorOnFable'
 import {
   ENSURE_CODEX_SH,
   ENSURE_SH,
@@ -240,7 +217,6 @@ import {
 } from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
-import { scratchRootsAround, type LiveSession } from '@plugins/sessions/main/workspaces'
 import { rowsToAdopt } from '@shared/firstRun'
 import {
   isWorkspaceWorkbenchKey,
@@ -255,8 +231,6 @@ import {
   type ResumeProbes
 } from './resumePlan'
 import { branchExists, type GitOut, type TidyResult } from '@core/worktree'
-import { machineHookSettings, pickMachineAccount } from '@plugins/sessions/main/backends/claude'
-import { codexBackend, trustCodexFolder } from '@plugins/sessions/main/backends/codex'
 import { codexConfigFile } from './codexTrust'
 import {
   HomeAccountPicker,
@@ -270,12 +244,10 @@ import { ResourceGuard, ownerTyped } from './resourceGuard'
 import { readTheMachine, signalLog } from './machineRoom'
 import { STUCK_AFTER_MS, StallWatchWhileFocused, answerTheStuckWatch } from './mainThreadStalls'
 import createMainThreadStuckWorker from './mainThreadStuckWorker?nodeWorker'
-import { envMs } from '@plugins/sessions/main/sessionRuntime'
 import { giveWay, readTaggedTable } from './machineTrees'
 import { isRunFolderOf, worktreeHomeOf } from '@shared/cronNames'
 import { GitFreshnessEngine } from './gitFreshness'
 import { COMMON_GIT_DIR, GitRepoKeys } from './gitRepoKey'
-import type { SyncSession } from '@plugins/sessions/main/sessionSync'
 import { GithubRepos, parseGithubFixture, type GithubReposOptions } from './githubRepos'
 import { ghRead, runGh } from './ghRun'
 import { GitAccountService, newGitRequestDir, sweepStaleGitRequestDirs } from './gitAccountService'
@@ -307,7 +279,6 @@ import {
   type RouteDecision,
   type RouteSource
 } from '@shared/browserRoute'
-import { HTML_HEADERS } from '@plugins/workbench/main/browserPartition'
 import { PASTED_PICTURE_EXTENSIONS, pastedPicturesIn, withPictures } from '@shared/pastedPictures'
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
 import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
@@ -391,8 +362,10 @@ import { AgentRequests, tabSpokenFor } from './agentRequests'
 import { errorText } from '@core/errorText'
 import { projectRulesForTheButler } from '@shared/agentGuide'
 import {
+  asPeerName,
   butlersBlock,
   butlersFolderClaim,
+  butlersWords,
   conductorFolder,
   DIGEST_GATHERS_MS,
   GUIDE_MOVED_NEWS,
@@ -406,18 +379,8 @@ import type { OwnPick } from '@shared/types'
 import { projectDefaults } from './projectDefaults'
 import type { WebPage } from '@core/webPage'
 import { within } from '@core/within'
-import { toCaller, type SlashReplyTo, type SlashTarget } from '@plugins/sessions/api'
 import { clicksTheMouse, pressesAKey, typeKeys } from '@core/typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
-import {
-  claudeDialog,
-  codexDialog,
-  isAskedCall,
-  questionsOf,
-  type CodexApproval,
-  type CodexQuestion,
-  type DialogView
-} from '@plugins/sessions/main/dialog'
 import { sleep } from '@core/sleep'
 import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
 import {
@@ -441,7 +404,6 @@ import {
   whenMessagingSocketOnMachine
 } from './claudeSessionRegistry'
 import { GLOBAL_SCOPE, scopeName } from '@shared/scope'
-import { asPeerName } from '@plugins/butler/shared/names'
 import { Commands } from '@core/commands'
 import { PLUGINS } from '@plugins/list'
 import { PLUGIN_STARTS, type PluginStartDeps, type PluginsStarted } from '@plugins/starts'
@@ -462,48 +424,19 @@ import {
   TURN_STARTED,
   type LeftTab,
   type Moment,
-  type TabEnded
+  type StateChanged,
+  type TabEnded,
+  type TurnOver
 } from '@core/moment'
-import { butlersWords } from '@plugins/butler/main/sessionHooks'
 import type { MainIpc } from '@core/ipc'
 import { ClaudeDialogWatch } from './claudeDialogWatch'
-import {
-  A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS,
-  findSessionRow,
-  sessionVerb,
-  type HelperTask,
-  type ClosableSession,
-  type SessionScreen,
-  type SessionVerbDeps,
-  type Target
-} from '@plugins/sessions/main/sessionVerbs'
-import {
-  resolveWorkspace,
-  everyWorkspaceBlock,
-  everyWorkspaceSavedByTheOwner,
-  ownerPartsOf,
-  savedFromTheDialog,
-  workspaceBlock,
-  type Recipient
-} from '@plugins/sessions/api'
-import { A_HELPER_HAS_IT, writeLineInTurn } from '@plugins/sessions/main/crossSessionMessage'
 import { docsWritingOn } from '@plugins/docs-writing/api'
-import { worktreeNameForTask } from '@plugins/sessions/main/sessionTitle'
+import type { SessionsWithStore } from '@plugins/sessions/api'
 import { localFile } from './realFiles'
-import { judgeTurn, waitsOnOtherWork } from '@plugins/sessions/main/turnNews'
 import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
 import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
-import {
-  closingTree,
-  leftText,
-  machineUnreachable,
-  removeTree,
-  tidyTree,
-  whatIsLeft,
-  type MergedHeads
-} from '@plugins/sessions/main/sessionClose'
 import { TreeRemovals } from './treeRemovals'
 import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
@@ -516,7 +449,28 @@ import {
   writeDocsPlugin
 } from './agentPlugin'
 import { installThen, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
-import { pushes as sessionsPushes } from '@plugins/sessions/main/channels'
+
+type SessionsStarted = PluginsStarted['sessions']
+type SessionVerbDeps = PluginStartDeps['sessions']['session']
+type ClosableSession = ReturnType<SessionVerbDeps['closable']>[number]
+type Target = Parameters<SessionVerbDeps['command']>[1]
+type SessionScreen = Awaited<ReturnType<SessionVerbDeps['screen']>>
+type HelperTask = Parameters<SessionsStarted['sessionCommand']['startHelper']>[1]
+type SlashTarget = Parameters<SessionsStarted['slash']['typeWhenIdle']>[0]
+type SlashReplyTo = Parameters<SessionsStarted['slash']['typeWhenIdle']>[2]
+type Recipient = Parameters<ReturnType<SessionsStarted['buildHandOver']>['tell']>[0]
+type MergedHeads = NonNullable<Parameters<SessionsStarted['whatIsLeft']>[2]>
+type WorktreeResource = Parameters<SessionsWithStore['worktrees']['untouched']>[0]
+type NoticeFile = ReturnType<SessionsStarted['localNotice']>
+type WorkspaceDeps = Parameters<SessionsStarted['buildWorkspaces']>[0]
+type LiveSession = Parameters<ReturnType<NonNullable<WorkspaceDeps['liveSessions']>>['set']>[1]
+type SyncSession = Parameters<SessionsStarted['sessionSync']['observe']>[0][number]
+type CodexAsk = Parameters<SessionsStarted['codexDialog']>[0]
+type DialogView = ReturnType<SessionsStarted['claudeDialog']>
+type ToolCall = Parameters<SessionsStarted['isAskedCall']>[1]
+type AgyHomePick = NonNullable<
+  ReturnType<Parameters<SessionsStarted['buildAgySessions']>[0]['pickHome']>
+>
 
 const pluginIpc: MainIpc = {
   handle: (channel, handler) =>
@@ -526,7 +480,6 @@ const pluginIpc: MainIpc = {
   onEvent: (channel, listener) => ipcMain.on(channel, listener),
   push: (channel, ...args) => sendToRenderer(channel as Channel, ...args)
 }
-const pushToSessions = sessionsPushes(pluginIpc)
 
 // PLATFORM§4
 if (!app.isPackaged) app.setName('koloft-dev')
@@ -604,6 +557,7 @@ const workbenchReaderDocs: PluginStartDeps['workbench']['readerDocs'] = {
   localFile,
   changed: () => pushToSessions.sessions(onSessionsChanged())
 }
+const sessionsEndedThisRun = new Set<string>()
 const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
   turnEnded: (tabId, turn) => announceNow(TURN_ENDED, { tabId, turn }),
   prompted: (tabId) => {
@@ -619,7 +573,10 @@ const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
     ptyMgr.agentBound(tabId)
     ptyMgr.wakeReady(tabId)
   },
-  exited: (tabId, subject) => attention.onExited(tabId, subject),
+  exited: (tabId, subject) => {
+    if (subject.sessionId) sessionsEndedThisRun.add(subject.sessionId)
+    attention.onExited(tabId, subject)
+  },
   asked: (tabId, ask) => {
     claudeAsks.set(tabId, ask)
     announceNow(QUESTION_ASKED, { tabId, ask })
@@ -838,8 +795,10 @@ function sessionOfTab(tabId: string): SessionInfo | undefined {
   return allSessions().find((s) => s.tabId === tabId)
 }
 function sidebarTitle(s: SessionInfo): string | undefined {
-  const placeholder = Object.values(PLACEHOLDER_TITLES).includes(s.title)
-  return s.title && !placeholder ? s.title : undefined
+  return shownTitle(s.title)
+}
+function shownTitle(title: string | undefined): string | undefined {
+  return title && !Object.values(PLACEHOLDER_TITLES).includes(title) ? title : undefined
 }
 
 const sleepersDeps: PluginStartDeps['sessions']['sleepers'] = {
@@ -1325,6 +1284,7 @@ function machinePackage(): MachinePackage {
     [`${SESSION_BIN_DIR}open`]: REMOTE_OPEN_SHIM,
     [`${SESSION_BIN_DIR}gh`]: machineGhWrapperScript(),
     [`${CLAUDE_BIN_DIR}playwright-cli`]: MACHINE_PLAYWRIGHT_CLI,
+    [`${SESSION_BIN_DIR}claude`]: MACHINE_CLAUDE,
     [`${UTIL_BIN_DIR}gh`]: machineGhWrapperScript(),
     [STATUS_RELAY_FILE]: STATUS_RELAY_PY,
     [AGY_HOOK_FILE]: AGY_HOOK_SCRIPT,
@@ -1459,7 +1419,7 @@ async function withPastedPicturesOnItsMachine(
 }
 
 // CODEX§3 CODEX§20
-async function pendingAskOf(tabId: string): Promise<CodexApproval | CodexQuestion | undefined> {
+async function pendingAskOf(tabId: string): Promise<CodexAsk | undefined> {
   for (let polls = CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS; ; polls--) {
     const owner = storedOwnerOf(tabId)
     const ask = owner?.openApproval(tabId) ?? owner?.openQuestion(tabId)
@@ -2081,7 +2041,6 @@ const sessionDeps: SessionVerbDeps = {
   announceStarted: (started) => moments.announce(SESSION_STARTED, started),
   ownersWords: (said) => withoutTheRelayTag(said)
 }
-const sessionCommand = sessionVerb(sessionDeps)
 
 const inboxCards: PluginStartDeps['inbox']['cards'] = {
   now: () => Date.now(),
@@ -2104,24 +2063,43 @@ function liveSessionOf(ref: string): SessionInfo | undefined {
   return allSessions().find((s) => s.alive && (s.tabId === ref || s.sessionId === ref))
 }
 
-function inboxSessionOfTab(
-  tabId: string
-): ReturnType<PluginStartDeps['inbox']['koloft']['sessionOfTab']> {
+type AskedSession = NonNullable<ReturnType<PluginStartDeps['inbox']['koloft']['sessionOfTab']>>
+
+function inboxSessionOfTab(tabId: string): AskedSession | undefined {
   const s = sessionOfTab(tabId)
   if (!s?.sessionId) return undefined
   const ws = sessionBackends.workspaceOfTab(tabId)
+  return askedSession(s.sessionId, s.title, s.backendId, ws, ws && parseRemoteKey(ws)?.host)
+}
+
+function inboxSessionOfEndedTab(tabId: string): AskedSession | undefined {
+  const ended = attention.list().find((m) => m.tabId === tabId && m.kind === 'exited')
+  if (!ended?.sessionId || !sessionsEndedThisRun.has(ended.sessionId)) return undefined
+  const ws = workspaceMgr?.workspaceOf(ended.sessionId)
+  const { backendId, sourceId } = identityOf(ended.sessionId)
+  const machine = (ws && parseRemoteKey(ws)?.host) ?? (sourceId === 'local' ? undefined : sourceId)
+  return askedSession(ended.sessionId, ended.title, backendId, ws, machine)
+}
+
+function askedSession(
+  sessionId: string,
+  title: string | undefined,
+  backend: BackendId,
+  ws: string | undefined,
+  machine: string | undefined
+): AskedSession {
   return {
-    sessionId: s.sessionId,
-    title: sidebarTitle(s) ?? BACKEND_LABEL[s.backendId],
-    backend: s.backendId,
+    sessionId,
+    title: shownTitle(title) ?? BACKEND_LABEL[backend],
+    backend,
     workspace: ws ? scopeName(ws) : undefined,
-    machine: ws ? parseRemoteKey(ws)?.host : undefined
+    machine
   }
 }
 
 const inboxKoloft: PluginStartDeps['inbox']['koloft'] = {
   marks: () => attention.list(),
-  sessionOfTab: inboxSessionOfTab,
+  sessionOfTab: (tabId) => inboxSessionOfTab(tabId) ?? inboxSessionOfEndedTab(tabId),
   liveTabOf: (ref) => {
     const s = liveSessionOf(ref)
     return s && { tabId: s.tabId, backend: s.backendId }
@@ -2175,7 +2153,6 @@ const sessionsCommands: PluginStartDeps['sessions']['commands'] = {
     const workspace = sessionBackends.workspaceOfTab(tabId)
     return workspace && rulesOf(workspace)
   },
-  session: sessionCommand.verb,
   workspace: { sidebar: projectRows },
   instructions: {
     // CC§28 CODEX§4 AGY§13
@@ -3531,14 +3508,14 @@ app.whenReady().then(() => {
   tracker.on('command-output', ({ tabId, ...output }: CommandOutput & { tabId: string }) =>
     slash.output(tabId, output)
   )
-  tracker.on('turn-over', ({ tabId, over }: TurnOverEdge) => {
+  tracker.on('turn-over', ({ tabId, over }: TurnOver) => {
     ptyMgr.wakeReady(tabId)
     announceNow(TURN_OVER, { tabId, over })
     if (!over) return
     const workspace = pinnedWorkspaceOfTab(tabId)
     if (workspace) freshness?.fetchSoon(workspace)
   })
-  tracker.on('status', (t: StatusEdge) => {
+  tracker.on('status', (t: StateChanged) => {
     if (t.prev === 'approval') claudeAskEnded(t.tabId)
     ptyMgr.wakeReady(t.tabId)
     announceNow(STATE_CHANGED, t)
@@ -6123,8 +6100,8 @@ const startedPlugins: PluginsStarted = startPlugins(
       sleepers: sleepersDeps,
       sessionSync: sessionSyncDeps,
       attention: attentionDeps,
+      session: sessionDeps,
       eachTurn: {
-        replies: sessionCommand,
         askBeforeAsksAreMade: showAskOnItsRow
       },
       commands: sessionsCommands,
@@ -6364,7 +6341,9 @@ const {
   readerDocs,
   setUpBrowserPartition,
   setUpExtensions,
-  compositionDone
+  compositionDone,
+  fileNotFoundHtml,
+  HTML_HEADERS
 } = startedPlugins.workbench
 const {
   cdpOps,
@@ -6400,7 +6379,55 @@ const {
   buildHandOver,
   buildWorkspaces,
   buildCodexSessions,
-  buildAgySessions
+  buildAgySessions,
+  sessionCommand,
+  pushToSessions,
+  AGY_HOOK_SCRIPT,
+  AGY_TITLE_SCRIPT,
+  agyBackend,
+  machineHookSettings,
+  pickMachineAccount,
+  codexBackend,
+  trustCodexFolder,
+  A_HELPER_HAS_IT,
+  writeLineInTurn,
+  claudeDialog,
+  codexDialog,
+  isAskedCall,
+  questionsOf,
+  everyWorkspaceBlock,
+  ownerPartsOf,
+  everyWorkspaceSavedByTheOwner,
+  CODEX_REPLY_LANGUAGE_SCRIPT,
+  HOOK_SCRIPT,
+  forgetAssistMarkers,
+  localNotice,
+  markAnswerable,
+  markOwnerAsleep,
+  noteOfWhatKoloftSends,
+  noteSent,
+  noticeFile,
+  pruneStale,
+  quotedPrompt,
+  setupHooks,
+  writeTabHookSettings,
+  resolveWorkspace,
+  closingTree,
+  leftText,
+  machineUnreachable,
+  removeTree,
+  tidyTree,
+  whatIsLeft,
+  envMs,
+  worktreeNameForTask,
+  A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS,
+  findSessionRow,
+  toCaller,
+  judgeTurn,
+  waitsOnOtherWork,
+  savedFromTheDialog,
+  workspaceBlock,
+  scratchRootsAround
 } = startedPlugins.sessions
 const { TODO_NEWS } = startedPlugins.todo
 const { koloftInbox, flushInbox } = startedPlugins.inbox

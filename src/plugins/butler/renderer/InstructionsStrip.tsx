@@ -11,9 +11,9 @@ import { isButlerTab } from './butlerTabs'
 import { openButler, useButler } from './state'
 import './butler.css'
 
-// CC§23
+// CC§23 CODEX§17 AGY§17
 const whenItTakesEffect = (name: string): string =>
-  `${name} uses it from the next fresh conversation (on Claude Code, also from its next compaction).`
+  `${name} uses it from the next fresh conversation, or from the next compaction of the one it resumes.`
 
 export function InstructionsStrip(): JSX.Element | null {
   const opened = useButler((s) => s.openedTab)

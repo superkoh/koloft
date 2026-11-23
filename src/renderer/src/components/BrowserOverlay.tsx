@@ -99,6 +99,7 @@ export function BrowserOverlay({
       {dialogIsThisGuests && dialog && (
         <BrowserModal
           dialog={dialog}
+          inOverlay
           onAnswer={(id, answer) => {
             window.api.browser.answerJsDialog(id, answer)
             setOverlayDialog(null)

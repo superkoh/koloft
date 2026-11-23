@@ -22,10 +22,12 @@ export interface BrowserDialogAnswer {
 
 export function BrowserModal({
   dialog,
-  onAnswer
+  onAnswer,
+  inOverlay = false
 }: {
   dialog: BrowserDialog
   onAnswer: (id: string, answer: BrowserDialogAnswer) => void
+  inOverlay?: boolean
 }): JSX.Element {
   const [value, setValue] = useState(dialog.kind === 'prompt' ? (dialog.defaultValue ?? '') : '')
   const [user, setUser] = useState('')
@@ -67,7 +69,10 @@ export function BrowserModal({
 
   // ADR-0013
   return createPortal(
-    <div className="bmodal-backdrop" onMouseDown={cancel}>
+    <div
+      className={inOverlay ? 'bmodal-backdrop wovl-modal' : 'bmodal-backdrop'}
+      onMouseDown={cancel}
+    >
       <div
         ref={box}
         className="bmodal"
