@@ -35,6 +35,9 @@ export interface AgentFlags {
   conversationStartsAtFirstPrompt: boolean
   pasteKeepsItsLastLineFeeds: boolean
   passedOnMessageShowsAsFromAnotherSession: boolean
+  commandsItRunsCanHaveATerminalOfTheirOwn: boolean
+  runsCommandsInASandboxWhereSudoCannotStart: boolean
+  questionToolTakesNoOptionDescriptions: boolean
 }
 
 export interface AgentPureFunctions {
@@ -59,6 +62,7 @@ export interface AgentManifest {
   picksByTaskTier: Readonly<Record<TaskTier, ModelPick>>
   ownSettings: Readonly<Record<string, OwnSetting>>
   slotFills: Readonly<Record<string, string>>
+  slotAdditions: Readonly<Record<string, string>>
   flags: AgentFlags
   pureFunctions: AgentPureFunctions
 }

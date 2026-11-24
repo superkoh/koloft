@@ -10,3 +10,13 @@ QUESTIONS
 
 When the owner has to choose or answer something, ask with {{question-tool}}, called as a tool of its own (not inside exec): it shows the owner a box with choices and waits for the answer. Never use {{question-tool}}_async, which does not wait, and never sleep or poll while you wait.`
 }
+
+export const SLOT_ADDITIONS = {
+  'koloft-help-session-new-examples': `
+    Example: koloft session new --workspace koloft --backend codex --model astra --effort high -- "Find why the latest release is missing files."`,
+  // CODEX§21
+  'koloft-help-new-conversation-also': ' (or /new in Codex)',
+  'koloft-help-secret-url-like': ', like codex login',
+  'koloft-help-secret-url-examples': `
+    Example: koloft secret url "https://auth.openai.com/oauth/authorize?..."`
+}

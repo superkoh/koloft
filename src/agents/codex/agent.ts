@@ -1,6 +1,6 @@
 import type { AgentManifest } from '@core/agent/manifest'
 import { CRON_EFFORTS } from '@shared/efforts'
-import { SLOT_FILLS } from './prompts/text'
+import { SLOT_ADDITIONS, SLOT_FILLS } from './prompts/text'
 
 export const agent = {
   id: 'codex',
@@ -46,13 +46,20 @@ export const agent = {
   },
   ownSettings: {},
   slotFills: SLOT_FILLS,
+  slotAdditions: SLOT_ADDITIONS,
   flags: {
     // CODEX§9
     resumeCanWaitOnAQuestionBeforeAnySign: true,
     conversationStartsAtFirstPrompt: false,
     pasteKeepsItsLastLineFeeds: true,
     // CODEX§17
-    passedOnMessageShowsAsFromAnotherSession: false
+    passedOnMessageShowsAsFromAnotherSession: false,
+    // CODEX§12
+    commandsItRunsCanHaveATerminalOfTheirOwn: true,
+    // CODEX§12
+    runsCommandsInASandboxWhereSudoCannotStart: true,
+    // CODEX§20
+    questionToolTakesNoOptionDescriptions: false
   },
   pureFunctions: { effortsAModelTakes: () => CRON_EFFORTS }
 } as const satisfies AgentManifest

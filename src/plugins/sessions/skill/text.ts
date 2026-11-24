@@ -4,13 +4,21 @@ import {
   SESSION_BACKENDS,
   kindsOf,
   messagingOf,
-  namedAtLaunch
+  namedAtLaunch,
+  reachedBySendMessage,
+  whenAny
 } from '@shared/sessionBackend'
+import { listsModels } from '@shared/sessionPicks'
+import { agentManifest } from '@core/agent/registry'
 import { EVERY_KIND, PICKED_FLAGS } from '../prompts/text'
 
 const ALL_KINDS = kindsOf(SESSION_BACKENDS, 'and')
-const KINDS_BUT_CLAUDE = kindsOf(
-  SESSION_BACKENDS.filter((b) => b !== 'claude'),
+const KINDS_WITH_A_MESSAGE_TOOL_OF_THEIR_OWN = kindsOf(
+  SESSION_BACKENDS.filter(reachedBySendMessage),
+  'or'
+)
+const KINDS_WITHOUT_ONE = kindsOf(
+  SESSION_BACKENDS.filter((b) => !reachedBySendMessage(b)),
   'or'
 )
 const KINDS_UNNAMED_REMOTELY = kindsOf(
@@ -21,6 +29,11 @@ const KINDS_TYPED_INTO = kindsOf(
   SESSION_BACKENDS.filter((b) =>
     [false, true].some((remote) => messagingOf(b, remote) === 'typed')
   ),
+  'or'
+)
+const KINDS_WHOSE_MODELS_KOLOFT_LISTS = kindsOf(SESSION_BACKENDS.filter(listsModels), 'or')
+const KINDS_WITH_A_STAND_IN_FOR_THEIR_NORMAL_MODEL = kindsOf(
+  SESSION_BACKENDS.filter((b) => agentManifest(b).normalTaskFamilyEveryAccountHas),
   'or'
 )
 const UNNAMED_IN_A_REMOTE_WORKSPACE = `${/^[AEIOU]/.test(KINDS_UNNAMED_REMOTELY) ? 'An' : 'A'} ${KINDS_UNNAMED_REMOTELY}`
@@ -53,22 +66,19 @@ koloft instructions set [--workspace <workspace> | --every-workspace] -- "<the w
     Example: koloft instructions add -- "Run npm test before you say a change is done."
 
 koloft session new [--name <name>] [--workspace <workspace>] [-w <worktree name>] [--backend ${BACKEND_CHOICE}] ${PICKED_FLAGS} -- "<first message>"
-    Pick the model and effort that fit the task, every time. {{koloft-help-pick-model}} A Codex or Antigravity model is named by its family, and Koloft starts the newest version of it the account has; a full model id works too. When the account cannot run the very hard model, or Antigravity's normal one, Koloft starts the next best one and says so.
-    Start a sibling session of your own kind (${OWN_KIND}) unless --backend picks another, and print the name to reach it by. The session's name is also the title the owner sees in Koloft{{koloft-help-session-title}}: leave --name out and Koloft makes a short title from the first message, or give a short phrase in the owner's language. It starts in this workspace, on the same machine as you, or in the one --workspace names, which may be on another machine (SSH). ${UNNAMED_IN_A_REMOTE_WORKSPACE} session in a remote workspace has no name. For a ${KINDS_BUT_CLAUDE} session you also get its tab id; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. -w starts it in a new git worktree of its own (a separate copy of the repository), never in one that already exists: a name already taken gets -2, -3 and so on. The new session is told to report back to you; if it ends its first turn without doing so, Koloft hands its reply to you as a message from it.
-    Example: koloft session new --name "Fix docs links" --backend claude --model sonnet --effort low -- "Fix the broken links in docs/."
-    Example: koloft session new --workspace koloft --backend codex --model astra --effort high -- "Find why the latest release is missing files."
+    Pick the model and effort that fit the task, every time. {{koloft-help-pick-model}} ${whenAny(KINDS_WHOSE_MODELS_KOLOFT_LISTS, (kinds) => `A ${kinds} model is named by its family, and Koloft starts the newest version of it the account has; a full model id works too. `)}When the account cannot run the very hard model${whenAny(KINDS_WITH_A_STAND_IN_FOR_THEIR_NORMAL_MODEL, (kinds) => `, or ${kinds}'s normal one`)}, Koloft starts the next best one and says so.
+    Start a sibling session of your own kind (${OWN_KIND}) unless --backend picks another, and print the name to reach it by. The session's name is also the title the owner sees in Koloft{{koloft-help-session-title}}: leave --name out and Koloft makes a short title from the first message, or give a short phrase in the owner's language. It starts in this workspace, on the same machine as you, or in the one --workspace names, which may be on another machine (SSH). ${UNNAMED_IN_A_REMOTE_WORKSPACE} session in a remote workspace has no name. ${whenAny(KINDS_WITHOUT_ONE, (kinds) => `For a ${kinds} session you also get its tab id; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. `)}-w starts it in a new git worktree of its own (a separate copy of the repository), never in one that already exists: a name already taken gets -2, -3 and so on. The new session is told to report back to you; if it ends its first turn without doing so, Koloft hands its reply to you as a message from it.{{koloft-help-session-new-examples}}
 
-How to talk to a session you started:
-    Claude to Claude on the same machine: use your SendMessage tool with its name. ListAgents shows the sessions on this machine; SendMessage cannot reach one on another machine, so use "koloft session send" for that.
-    Any other pair (a ${KINDS_BUT_CLAUDE} session, or a Claude session talking to one): use "koloft session send".
+How to talk to a session you started:{{koloft-help-own-message-tool}}
+    Any other pair (a ${KINDS_WITHOUT_ONE} session${whenAny(KINDS_WITH_A_MESSAGE_TOOL_OF_THEIR_OWN, (kinds) => `, or a ${kinds} session talking to one`)}): use "koloft session send".
 
 koloft session send <id or name> "<message>"
-    Send a message to any session in any workspace: ${EVERY_KIND}, except from one open Claude session to another on the same machine, which uses SendMessage. A closed one is resumed first, and a ${KINDS_TYPED_INTO} session, which Koloft types into, only gets it once its turn has ended; then you are told "Will deliver when … is ready." at once, and if it never gets there you hear "[Koloft] Could not deliver to …" later.
+    Send a message to any session in any workspace: ${EVERY_KIND}{{koloft-help-send-but-own-message-tool}}. A closed one is resumed first${whenAny(KINDS_TYPED_INTO, (kinds) => `, and a ${kinds} session, which Koloft types into, only gets it once its turn has ended`)}; then you are told "Will deliver when … is ready." at once, and if it never gets there you hear "[Koloft] Could not deliver to …" later.
     Report back to the session that started you, with the id it gave you. If it is not running, Koloft starts it again first.
     Example: koloft session send 0199c3f2-7a41-7c30-9e55-1d2b8f6a0c11 "Tell me what you found."
 
 koloft session command <id or name | me> /<command> [arguments]
-    Run one slash command (like /compact, /clear or /context) in any session, or in yourself with "me". Koloft waits until that session is idle with no question showing, types the command, and hands you what it printed as a message from Koloft. The command line itself only tells you it was handed over. After /clear (or /new in Codex) the session gets a new id: reach it by its name, or run koloft session list again. A command that opens a menu is closed with Esc, so give the command its arguments (like /model haiku).
+    Run one slash command (like /compact, /clear or /context) in any session, or in yourself with "me". Koloft waits until that session is idle with no question showing, types the command, and hands you what it printed as a message from Koloft. The command line itself only tells you it was handed over. After /clear{{koloft-help-new-conversation-also}} the session gets a new id: reach it by its name, or run koloft session list again. A command that opens a menu is closed with Esc, so give the command its arguments{{koloft-help-command-arguments-example}}.
     Example: koloft session command fix-login /compact keep the test plan
 
 koloft session screen <id or name | me>
@@ -94,7 +104,7 @@ koloft session stop <id or name>
     Example: koloft session stop "Fix docs links"
 
 koloft session close [<id or name>]
-    Close a session for good: Koloft ends it, closes its tab and takes it off the sidebar list. If it runs in its own git worktree, Koloft also deletes that worktree and its branches. With no id or name it closes the session you run it in; run that as your very last step, only when the owner asked for it. With an id or name it closes a session started with "koloft session new" by you, or by a session you started, and so on down (open, or already ended), once you have its result; or, when the owner asks, any other session on this computer, open or ended (an open one is ended first, so do not stop it yourself): one on another machine is refused. Do not resume a session to ask it to close itself. If anything in the worktree is not committed, or a commit is on no other branch and no remote branch, nothing is closed and Koloft lists what is left. Koloft has no merge button: to bring a worktree session's work into the main checkout, commit it in the worktree, merge its branch in the main checkout, then close. From inside the worktree, git aimed at the main checkout may be refused (Claude Code refuses it, and a ! command too): then start a session in the main checkout with koloft session new ${PICKED_FLAGS} -- "<task>" (from a worktree session, without -w it starts there), ask it to merge the branch, and close it once it reports the merge done.
+    Close a session for good: Koloft ends it, closes its tab and takes it off the sidebar list. If it runs in its own git worktree, Koloft also deletes that worktree and its branches. With no id or name it closes the session you run it in; run that as your very last step, only when the owner asked for it. With an id or name it closes a session started with "koloft session new" by you, or by a session you started, and so on down (open, or already ended), once you have its result; or, when the owner asks, any other session on this computer, open or ended (an open one is ended first, so do not stop it yourself): one on another machine is refused. Do not resume a session to ask it to close itself. If anything in the worktree is not committed, or a commit is on no other branch and no remote branch, nothing is closed and Koloft lists what is left. Koloft has no merge button: to bring a worktree session's work into the main checkout, commit it in the worktree, merge its branch in the main checkout, then close. From inside the worktree, git aimed at the main checkout may be refused{{koloft-help-git-at-the-main-checkout-refused-by}}: then start a session in the main checkout with koloft session new ${PICKED_FLAGS} -- "<task>" (from a worktree session, without -w it starts there), ask it to merge the branch, and close it once it reports the merge done.
     Example: koloft session close "Fix docs links"`
 
 // CC§3 CODEX§12 AGY§25

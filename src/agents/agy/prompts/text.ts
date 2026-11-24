@@ -10,3 +10,5 @@ QUESTIONS
 
 When the owner has to choose or answer something, ask with {{question-tool}}: it shows the owner a box with choices and waits for the answer.`
 }
+
+export const SLOT_ADDITIONS = {}

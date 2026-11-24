@@ -1,6 +1,6 @@
 import type { AgentManifest } from '@core/agent/manifest'
 import { CRON_EFFORTS } from '@shared/efforts'
-import { SLOT_FILLS } from './prompts/text'
+import { SLOT_ADDITIONS, SLOT_FILLS } from './prompts/text'
 
 export const agent = {
   id: 'claude',
@@ -52,12 +52,19 @@ export const agent = {
   },
   ownSettings: { fablePriority: { default: true, keptOnReset: true } },
   slotFills: SLOT_FILLS,
+  slotAdditions: SLOT_ADDITIONS,
   flags: {
     resumeCanWaitOnAQuestionBeforeAnySign: false,
     conversationStartsAtFirstPrompt: false,
     pasteKeepsItsLastLineFeeds: true,
     // CC§13
-    passedOnMessageShowsAsFromAnotherSession: true
+    passedOnMessageShowsAsFromAnotherSession: true,
+    // PLATFORM§58
+    commandsItRunsCanHaveATerminalOfTheirOwn: false,
+    // PLATFORM§58
+    runsCommandsInASandboxWhereSudoCannotStart: false,
+    // CC§14
+    questionToolTakesNoOptionDescriptions: false
   },
   pureFunctions: { effortsAModelTakes: () => CRON_EFFORTS }
 } as const satisfies AgentManifest
