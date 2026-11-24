@@ -1,4 +1,5 @@
 import type { AgentManifest } from '@core/agent/manifest'
+import { CRON_EFFORTS } from '@shared/efforts'
 import { SLOT_ADDITIONS, SLOT_FILLS } from './prompts/text'
 
 export const agent = {
@@ -29,6 +30,21 @@ export const agent = {
   trustQuestion: 'do you trust the contents of this directory?',
   ownLogFolderNames: [],
   atTopOfSessionFolder: { internalNames: [], internalNameEndings: [], foldersMadeEmptyAhead: [] },
+  // CODEX§15
+  modelEveryAccountTakes: 'gpt-6-luna',
+  // CODEX§14
+  namedModels: [
+    { id: 'gpt-6.1-sol', label: 'GPT-6.1-Sol' },
+    { id: 'gpt-6-astra', label: 'GPT-6-Astra' },
+    { id: 'gpt-6-luna', label: 'GPT-6-Luna' }
+  ],
+  // CODEX§14
+  picksByTaskTier: {
+    'very simple': { model: 'luna', effort: 'low' },
+    normal: { model: 'sol', effort: 'medium' },
+    'very hard': { model: 'astra', effort: 'high' }
+  },
+  ownSettings: {},
   slotFills: SLOT_FILLS,
   slotAdditions: SLOT_ADDITIONS,
   flags: {
@@ -44,5 +60,6 @@ export const agent = {
     runsCommandsInASandboxWhereSudoCannotStart: true,
     // CODEX§20
     questionToolTakesNoOptionDescriptions: false
-  }
+  },
+  pureFunctions: { effortsAModelTakes: () => CRON_EFFORTS }
 } as const satisfies AgentManifest

@@ -8,7 +8,8 @@ import {
   reachedBySendMessage,
   whenAny
 } from '@shared/sessionBackend'
-import { hasAStandInForItsNormalModel, listsModels } from '@shared/sessionPicks'
+import { listsModels } from '@shared/sessionPicks'
+import { agentManifest } from '@core/agent/registry'
 import { EVERY_KIND, PICKED_FLAGS } from '../prompts/text'
 
 const ALL_KINDS = kindsOf(SESSION_BACKENDS, 'and')
@@ -32,7 +33,7 @@ const KINDS_TYPED_INTO = kindsOf(
 )
 const KINDS_WHOSE_MODELS_KOLOFT_LISTS = kindsOf(SESSION_BACKENDS.filter(listsModels), 'or')
 const KINDS_WITH_A_STAND_IN_FOR_THEIR_NORMAL_MODEL = kindsOf(
-  SESSION_BACKENDS.filter(hasAStandInForItsNormalModel),
+  SESSION_BACKENDS.filter((b) => agentManifest(b).normalTaskFamilyEveryAccountHas),
   'or'
 )
 const UNNAMED_IN_A_REMOTE_WORKSPACE = `${/^[AEIOU]/.test(KINDS_UNNAMED_REMOTELY) ? 'An' : 'A'} ${KINDS_UNNAMED_REMOTELY}`
