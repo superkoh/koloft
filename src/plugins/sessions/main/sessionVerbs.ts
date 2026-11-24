@@ -53,6 +53,7 @@ import {
   type AgentVerb,
   type Parsed
 } from '@core/command'
+import { AGENT_PICKED_ON_FIRST_OPEN } from '@core/agent/registry'
 import { errorText } from '@core/errorText'
 import { composePrompt } from '@core/prompt'
 import type { Commands } from '@core/commands'
@@ -1512,7 +1513,7 @@ export function sessionVerb(d: SessionVerbDeps): {
     const backend =
       backendIdOf(spec.backend) ??
       about?.backendId ??
-      (aboutRow ? identityOf(aboutRow).backendId : 'claude')
+      (aboutRow ? identityOf(aboutRow).backendId : AGENT_PICKED_ON_FIRST_OPEN)
     const held =
       spec.name && namedAtLaunch(backend, isRemoteKey(workspace)) ? names.own(spec.name) : undefined
     let tabId: string | null = null

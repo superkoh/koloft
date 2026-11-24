@@ -6,6 +6,7 @@ const alias = {
   '@shared': resolve(__dirname, 'src/shared'),
   '@core': resolve(__dirname, 'src/core'),
   '@plugins': resolve(__dirname, 'src/plugins'),
+  '@agents': resolve(__dirname, 'src/agents'),
   '@renderer': resolve(__dirname, 'src/renderer/src')
 }
 

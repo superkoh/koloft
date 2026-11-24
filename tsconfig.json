@@ -17,6 +17,7 @@
       "@shared/*": ["./src/shared/*"],
       "@core/*": ["./src/core/*"],
       "@plugins/*": ["./src/plugins/*"],
+      "@agents/*": ["./src/agents/*"],
       "@renderer/*": ["./src/renderer/src/*"]
     }
   },
