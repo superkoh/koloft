@@ -81,7 +81,8 @@ function runHook(
 const callsIn = (file: string): string[] =>
   fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').sort() : []
 
-const ALL_THREE = [
+const ALL_CHECKS = [
+  'npm run --silent check:agent-words',
   'npm run --silent check:comments',
   'npm run --silent format:check',
   'npm run --silent typecheck'
@@ -97,14 +98,17 @@ describe('push-checks PreToolUse hook', () => {
     'gh -R owner/repo pr create',
     'gh pr new --fill',
     'koloft gh pr create --title t'
-  ])('runs format:check, check:comments and typecheck before `%s`', (command) => {
-    const root = repo()
-    const { bin, calls } = fakeNpm()
-    const r = runHook(root, command, bin)
-    expect(r.status).toBe(0)
-    expect(r.stdout).toBe('')
-    expect(callsIn(calls)).toEqual(ALL_THREE)
-  })
+  ])(
+    'runs format:check, check:comments, check:agent-words and typecheck before `%s`',
+    (command) => {
+      const root = repo()
+      const { bin, calls } = fakeNpm()
+      const r = runHook(root, command, bin)
+      expect(r.status).toBe(0)
+      expect(r.stdout).toBe('')
+      expect(callsIn(calls)).toEqual(ALL_CHECKS)
+    }
+  )
 
   it.each([
     'git status',
@@ -129,10 +133,11 @@ describe('push-checks PreToolUse hook', () => {
     expect(r.stderr).toContain('[warn] src/a.ts')
   })
 
-  it('stops the push when check:comments or typecheck finds problems, a missing import included', () => {
+  it('stops the push when check:comments, check:agent-words or typecheck finds problems, a missing import included', () => {
     const root = repo()
     const { bin } = fakeNpm({
       'check:comments': { exit: 1 },
+      'check:agent-words': { exit: 1, says: 'check-agent-words: 1 new lines name an agent.' },
       typecheck: {
         exit: 2,
         says: "src/a.ts(1,1): error TS2307: Cannot find module './gone' or its corresponding type declarations."
@@ -141,6 +146,8 @@ describe('push-checks PreToolUse hook', () => {
     const r = runHook(root, 'git push', bin)
     expect(r.status).toBe(2)
     expect(r.stderr).toContain('`npm run check:comments` failed')
+    expect(r.stderr).toContain('`npm run check:agent-words` failed')
+    expect(r.stderr).toContain('1 new lines name an agent')
     expect(r.stderr).toContain('`npm run typecheck` failed')
   })
 

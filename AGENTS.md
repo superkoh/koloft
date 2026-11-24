@@ -101,6 +101,16 @@ Working principles:
   built and checked for local Claude Code alone is not done, and the e2e flows picked
   for a change include the other agents' and remote specs whenever the change reaches
   those tabs.
+- Code outside an agent's own folder never names an agent (ADR-0054). Code about one
+  agent goes in `src/agents/<id>/` — or, until issue #2410 moves them there, in that
+  agent's old files listed under `awaitingMove` in `scripts/agent-words-baseline.json`,
+  which are not checked; other code asks the agent list
+  (`src/core/agent/registry.ts`). `npm run check:agent-words` (CI and the before-push
+  hook) fails on every new line that names one — the words each agent lists in its
+  `agent.ts` — and on a baseline line that is gone, so the baseline only shrinks. A
+  line that truly must stay, and any new `awaitingMove` or `allowed` entry, gets its
+  reason in the PR body (`npm run check:agent-words -- --accept-new` takes new lines
+  in and drops gone ones); removed lines leave with `-- --prune`.
 - Comments: none. In `.ts/.tsx/.js/.mjs/.cjs/.css` — and in the `#` lines of a
   `#!/` script written as a template string — `npm run check:comments` (CI, an
   after-edit hook, and the before-push hook) rejects every comment except two kinds,
@@ -164,10 +174,11 @@ Working principles:
   hand-back says it was checked. An agent that cannot launch agents says its report
   is unreviewed.
 - Finish the code, then review, then test. While writing code, only the fast checks
-  run (`format`, typecheck, `check:comments`, `test:unit:changed`; there is no lint) —
-  CI's first gate is `format:check`. No hook rewrites files: every agent's
-  `git push` or `gh pr create` waits for `format:check`, `check:comments` and
-  typecheck (`scripts/push-checks.mjs`) and is stopped if one finds problems. Once the
+  run (`format`, typecheck, `check:comments`, `check:agent-words`, `test:unit:changed`;
+  there is no lint) — CI's first gate is `format:check`. No hook rewrites files: every
+  agent's `git push` or `gh pr create` waits for `format:check`, `check:comments`,
+  `check:agent-words` and typecheck (`scripts/push-checks.mjs`) and is stopped if one
+  finds problems. Once the
   diff is final, commit it, `git fetch origin`, and start `node scripts/code-review.mjs`
   in the background: two reviews at once, up to about 15 minutes (ADR-0040); it runs
   Claude Code whichever agent you are, and on a machine with no signed-in `claude`,
