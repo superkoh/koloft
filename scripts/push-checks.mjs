@@ -22,8 +22,8 @@ const CHECKS = [
   },
   {
     script: 'check:agent-words',
-    findsProblemsWith: [1],
-    fix: 'do what it says under "How to fix", commit, and try again'
+    findsProblemsWith: [1, 2],
+    fix: 'do what its last lines say, commit, and try again'
   },
   {
     script: 'typecheck',

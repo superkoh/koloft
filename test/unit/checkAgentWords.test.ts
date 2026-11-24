@@ -81,14 +81,20 @@ describe('check-agent-words', () => {
     )
     const r = check(dir)
     expect(r.code).toBe(0)
-    expect(r.out).toContain('baseline 1 lines in 1 files (.ts/.tsx) and 1 lines in 1 files (.css)')
+    expect(r.out).toMatch(/\b1 lines in 1 files\b.*\b1 lines in 1 files\b/)
   })
 
-  it('fails on a new line that names an agent, saying where agent code goes and how to add a reasoned exception', () => {
-    const dir = fixtureRepo({ 'src/main/a.ts': lines('const x = 1', 'const alphaHome = 2') }, {})
+  it('fails on a new line that names an agent in any code file, saying where agent code goes and how to add a reasoned exception', () => {
+    const dir = fixtureRepo(
+      {
+        'src/main/a.ts': lines('const x = 1', 'const alphaHome = 2'),
+        'src/main/b.mjs': lines("export const id = 'beta'")
+      },
+      {}
+    )
     const r = check(dir)
     expect(r.code).toBe(1)
-    expect(r.reported).toEqual(['src/main/a.ts:2'])
+    expect(r.reported).toEqual(['src/main/a.ts:2', 'src/main/b.mjs:1'])
     expect(r.out).toContain('src/agents/<id>/')
     expect(r.out).toContain('npm run check:agent-words -- --accept-new')
   })
@@ -117,7 +123,9 @@ describe('check-agent-words', () => {
       { 'src/main/a.ts': lines('const fresh = beta') },
       { lines: { 'src/main/a.ts': ['const gone = alpha'] } }
     )
-    expect(check(dir).out).toContain('1 baseline entries no longer match the code')
+    const before = check(dir)
+    expect(before.code).toBe(1)
+    expect(before.out).toContain('src/main/a.ts  const gone = alpha')
     const pruned = check(dir, '--prune')
     expect(pruned.code).toBe(1)
     expect(pruned.reported).toEqual(['src/main/a.ts:1'])
@@ -133,24 +141,36 @@ describe('check-agent-words', () => {
     expect(check(dir).code).toBe(0)
   })
 
-  it('does not check a file on the awaiting-move list, checks a new agent-named file that is not on it, and fails on a listed file that is gone', () => {
+  it('lets a file on the awaiting-move list name its own agent but not another, checks a new agent-named file that is not on it, and fails on a listed file that is gone', () => {
     const dir = fixtureRepo(
       {
-        'src/main/alphaTrust.ts': lines('export const alphaTrust = beta'),
+        'src/main/alphaTrust.ts': lines('export const alphaTrust = 1', 'const b = beta'),
         'src/main/alphaNew.ts': lines('export const alphaNew = 1')
       },
       { awaitingMove: { 'src/main/alphaTrust.ts': 'alpha', 'src/main/alphaMoved.ts': 'alpha' } }
     )
     const r = check(dir)
-    expect(r.reported).toEqual(['src/main/alphaNew.ts:1'])
+    expect(r.reported).toEqual(['src/main/alphaNew.ts:1', 'src/main/alphaTrust.ts:2'])
     expect(r.out).toContain('awaitingMove src/main/alphaMoved.ts (no such file any more)')
   })
 
-  it('lets a line allowed by name through, and fails when that line is gone', () => {
+  it('stops with exit 2 and names the file when the baseline cannot be read', () => {
+    const dir = fixtureRepo({ 'src/main/a.ts': lines('const x = 1') }, {})
+    fs.writeFileSync(path.join(dir, BASELINE), '<<<<<<< HEAD\n{}\n')
+    const r = check(dir)
+    expect(r.code).toBe(2)
+    expect(r.out).toContain(BASELINE)
+  })
+
+  it('lets a line allowed by name through once per entry, and fails when that line is gone', () => {
     const allowed = [
       { file: 'src/main/a.ts', line: "mode: 'tok'", reason: 'a git host sign-in mode' }
     ]
     expect(check(fixtureRepo({ 'src/main/a.ts': lines("mode: 'tok'") }, { allowed })).code).toBe(0)
+    const twice = check(
+      fixtureRepo({ 'src/main/a.ts': lines("mode: 'tok'", "mode: 'tok'") }, { allowed })
+    )
+    expect(twice.reported).toEqual(['src/main/a.ts:2'])
     const gone = check(fixtureRepo({ 'src/main/a.ts': lines('mode: 1') }, { allowed }))
     expect(gone.code).toBe(1)
     expect(gone.out).toContain("allowed src/main/a.ts  mode: 'tok' (no such line any more)")

@@ -8,7 +8,6 @@ export const agent = {
       'AskUserQuestion',
       'ExitPlanMode',
       'SendMessage',
-      '--dangerously-skip-permissions',
       '--permission-mode',
       '--append-system-prompt',
       '--session-id',
@@ -18,6 +17,6 @@ export const agent = {
       '--no-session-persistence',
       '--fallback-model'
     ],
-    quoted: ['oauth', 'apikey', 'custom']
+    quoted: ['oauth', 'custom']
   }
 } as const satisfies AgentManifest

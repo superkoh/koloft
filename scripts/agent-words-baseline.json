@@ -13,6 +13,8 @@
     "src/main/claudeTrust.ts": "claude",
     "src/main/claudeWorktreeExit.ts": "claude",
     "src/main/codexAccounts.ts": "codex",
+    "src/main/codexConfigTables.d.mts": "codex",
+    "src/main/codexConfigTables.mjs": "codex",
     "src/main/codexLaunchConfig.ts": "codex",
     "src/main/codexRuntime.ts": "codex",
     "src/main/codexSideServers.ts": "codex",
@@ -130,6 +132,13 @@
       "export const CLAUDE_AGENT_SHIM = `${HEAD}",
       "unwritable=\"${backend === 'codex' ? CODEX_SANDBOX_IS_READ_ONLY : COULD_NOT_REACH_KOLOFT}\""
     ],
+    "src/main/agyAccounts.ts": ["import { record } from '@plugins/sessions/main/codexObservation'"],
+    "src/main/agyApi.ts": [
+      "import { nonEmptyString, record } from '@plugins/sessions/main/codexObservation'"
+    ],
+    "src/main/agyStore.ts": [
+      "import { nonEmptyString, record } from '@plugins/sessions/main/codexObservation'"
+    ],
     "src/main/assist.ts": [
       "'--ephemeral',",
       "'--ignore-rules',",
@@ -172,6 +181,13 @@
       "update: `if command -v timeout >/dev/null 2>&1; then timeout ${AGY_UPDATE_TIMEOUT_MS / 1000} \"$1\" update; else \"$1\" update; fi`,"
     ],
     "src/main/cliRuntime.ts": ["command: Exclude<AgentCommand, 'claude'>"],
+    "src/main/codexTransport.ts": [
+      "'CLAUDECODE',",
+      "'CLAUDE_EFFORT',",
+      "'GEMINI_API_KEY',",
+      "key.startsWith('ANTIGRAVITY_')",
+      "key.startsWith('CLAUDE_CODE_') ||"
+    ],
     "src/main/fileWatch.ts": [
       "import { AGY_LOGS_FOLDER } from '@shared/agyBrain'",
       "return !passesHeavy(rel) || rel.split(path.sep).includes(AGY_LOGS_FOLDER)"
@@ -591,7 +607,6 @@
       "interface ClaudeTabExit {",
       "ipcMain.handle(CH.accounts.codexUseReset, (_e, name: string) => codexUseReset(name))",
       "kind: 'oauth',",
-      "kind?: 'apikey'",
       "leaving?: { sessionId?: string; claudePid?: number; treeRoot?: string }",
       "leftWorktree: (resource) => removeUntouchedWorktree(agySessions, resource),",
       "leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),",
@@ -780,6 +795,9 @@
       "key === 'KOLOFT_CODEX_SAID' ||",
       "key.startsWith('ANTIGRAVITY_') ||",
       "key.startsWith('CLAUDE_CODE_') ||"
+    ],
+    "src/main/remote/agyTab.ts": [
+      "import { record } from '@plugins/sessions/main/codexObservation'"
     ],
     "src/main/remote/install.ts": [
       "# AGY§3",
@@ -988,8 +1006,6 @@
       "export GEMINI_API_KEY=\"$ptok\"",
       "for (const tool of GUARDED_OUTSIDE_THE_CLAUDE_SHIM) {",
       "fs.writeFileSync(agentShimPath, CLAUDE_AGENT_SHIM, { mode: 0o755 })",
-      "if [ \"$(pick_field kind)\" = \"apikey\" ]; then",
-      "if [ \"$pkind\" = \"apikey\" ]; then",
       "if [ \"$skip\" = \"0\" ]; then ensure_claude_minimum \"$real\" || exit 1; fi",
       "if [ -z \"$real\" ]; then echo \"koloft-shim: real 'claude' not found on PATH\" >&2; exit 127; fi",
       "if head -n 2 \"$d/claude\" 2>/dev/null | grep -q \"koloft claude shim\"; then continue; fi",
@@ -998,7 +1014,6 @@
       "import { CLAUDE_AUTH_ENV_VARS } from './remote/launch'",
       "import { ENSURE_CLAUDE_MINIMUM_FN } from './cliMinimums'",
       "import { agyAccountEnv } from './agyAccounts'",
-      "inj+=(--dangerously-skip-permissions)",
       "pick_account claude \"${NO_USABLE_ACCOUNT.claude}\"",
       "psvc=\"__KOLOFT_KEYCHAIN_NS__-claude-oauth\"",
       "reachesTheModel: AGY_PRINT_OUTSIDE_A_SUBCOMMAND,",
@@ -1257,6 +1272,20 @@
       "codex: 'do you trust the contents of this directory?',"
     ],
     "src/plugins/sessions/api.ts": ["type CodexApproval,", "type CodexQuestion,"],
+    "src/plugins/sessions/main/agyHooks.ts": [
+      "import { nonEmptyString, record } from './codexObservation'"
+    ],
+    "src/plugins/sessions/main/agySessions.ts": [
+      "approval?: CodexApproval",
+      "codexKeyFor,",
+      "const key = codexKeyFor(reply)",
+      "import { record } from './codexObservation'",
+      "openApproval(tabId: string): CodexApproval | undefined {",
+      "openQuestion(tabId: string): CodexQuestion | undefined {",
+      "question?: CodexQuestion",
+      "type CodexApproval,",
+      "type CodexQuestion,"
+    ],
     "src/plugins/sessions/main/appHelpers.ts": [
       "CODEX_REPLY_LANGUAGE_SCRIPT,",
       "export { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from './agyHooks'",
@@ -1499,11 +1528,11 @@
     "src/preload/index.ts": [
       "codexUseReset: (name) => ipcRenderer.invoke(CH.accounts.codexUseReset, name),"
     ],
-    "src/renderer/src/accounts.css": [".acct-badge.nofable {"],
     "src/renderer/src/App.tsx": [
       "return `Workbench followed Claude to ${basename(dir)}`",
       "{t.resuming && (t.kind === 'claude' || t.kind === 'agy') && ("
     ],
+    "src/renderer/src/accounts.css": [".acct-badge.nofable {"],
     "src/renderer/src/browseModel.ts": [
       "AGY_ARTIFACT_SIDECAR,",
       "AGY_LOGS_FOLDER,",
@@ -1519,16 +1548,6 @@
     ],
     "src/renderer/src/closeSession.ts": [
       "if (backend === 'claude' && !exit.signal && exit.exitCode === SHIM_FOUND_NO_ACCOUNT_EXIT)"
-    ],
-    "src/renderer/src/components/accountMeter.tsx": [
-      "const FABLE_WARN_AT = 0.85",
-      "const level = win === 'oi' ? fableLevel(v, soi ?? '?') : meterLevel(v)",
-      "export function codexBalanceLabel(l: CodexLimits, nowMs: number): string {",
-      "export function fableLevel(v: number, soi: string): MeterLevel {",
-      "import type { AccountView, CodexLimits } from '@shared/types'",
-      "import { FABLE_STOP, meterLevel, type MeterLevel } from '@shared/accountUsage'",
-      "return a.kind === 'agy-home' ? 'Signed in' : 'Not probed yet'",
-      "return v >= FABLE_STOP ? 'bad' : v >= FABLE_WARN_AT ? 'warn' : ''"
     ],
     "src/renderer/src/components/AssistSetup.tsx": [
       "<button className=\"ob-link\" onClick={() => openForm({ paste: 'oauth' })}>",
@@ -1559,111 +1578,6 @@
     "src/renderer/src/components/SessionDefaultsDialog.tsx": [
       "\"Where the project's own AGENTS.md or CLAUDE.md says otherwise, an agent may follow that file instead.\"",
       "(b === 'agy' && m && familyEfforts?.[m]) || effortsFor(b, m)"
-    ],
-    "src/renderer/src/components/settings/AccountsPane.tsx": [
-      "'No Antigravity accounts yet — Antigravity sessions start only once there is one. Each account here is its own Google sign-in or Gemini API key. Every Antigravity session picks the least-used sign-in, and a Gemini API key only when every sign-in is at its limit.',",
-      "'No Codex accounts yet — Codex sessions start only once there is one. Each account here is its own Codex sign-in or API key. Every Codex session picks the least-used sign-in, and an API key only when every sign-in is at its limit.',",
-      "'No accounts yet — add one below. Claude sessions start only once there is one.',",
-      "'agy',",
-      "'claude',",
-      "'codex',",
-      ") : a.kind === 'apikey' ? (",
-      ") : a.kind === 'custom' ? (",
-      ": kind === 'agy-home'",
-      ": kind === 'agy-home'",
-      ": kind === 'agy-home'",
-      ": kind === 'apikey'",
-      ": kind === 'apikey'",
-      ": kind === 'codex-home'",
-      ": kind === 'codex-home'",
-      "<IconPlus size={14} /> Paste Gemini API key",
-      "<IconWebPage size={14} /> Sign in to Codex",
-      "<IconWebPage size={14} /> Sign in with Google",
-      "<Switch checked={settings.fablePriority} onChange={(on) => update({ fablePriority: on })} />",
-      "<b>Prefer accounts with fable allowance</b>",
-      "<button className=\"mini\" onClick={() => openForm({ paste: 'agy-home' })}>",
-      "<button className=\"mini\" onClick={() => openForm({ paste: 'codex-home' })}>",
-      "<button className=\"mini\" onClick={() => openForm({ paste: 'oauth' })}>",
-      "<div className=\"set-grp\">Antigravity</div>",
-      "<div className=\"set-grp\">Claude</div>",
-      "<div className=\"set-grp\">Codex</div>",
-      "<span className=\"acct-badge nofable\">FABLE</span>",
-      "? 'Add Gemini API key'",
-      "? 'Add OpenAI API key'",
-      "? 'Gemini API key'",
-      "? 'Koloft hands the key to codex login, which keeps it in this account’s own sign-in folder; Koloft itself never echoes or stores it. Codex does not check the key here: a wrong one shows as signed in and fails at the first message a session sends.'",
-      "? 'Sign in, then pick a colour scheme and answer Google’s Terms and data-use screen yourself, then type /exit. Your Antigravity conversations, rules, plugins and MCP servers are shared by every account.'",
-      "? 'The key goes into your Keychain and is handed to agy when a session starts. Saving opens agy in a terminal tab once: pick a colour scheme and answer Google’s Terms screen there, then type /exit, and the account is ready.'",
-      "? 'sk-ant-api03-…'",
-      "? 'sk-ant-oat01-… (from claude setup-token)'",
-      "? 'sk-proj-… (OpenAI API key)'",
-      "? () => openClaudeSignIn(a.name)",
-      "Adds <code>--dangerously-skip-permissions</code> to Claude and Antigravity when Koloft",
-      "FABLE",
-      "Koloft runs the official <code>claude setup-token</code> in the <b>background</b> — no",
-      "Running <code>claude setup-token</code>…",
-      "a.kind === 'oauth'",
-      "agy: 'agy'",
-      "backend === 'agy'",
-      "busy || !name.trim() || !secret.trim() || (kind === 'custom' && !baseUrl.trim())",
-      "codex: 'codex login',",
-      "codexBalanceLabel,",
-      "const claudeLoginRunning = !!login && loginRunning(login.progress)",
-      "const codexBalance = a.status === 'ok' && a.limits ? codexBalanceLabel(a.limits, now) : ''",
-      "const openClaudeSignIn = (again?: string): void => {",
-      "const setup = await window.api.accounts.signIn('agy-home', r.account.name, true)",
-      "if (claudeLoginRunning) return",
-      "if (kind === 'agy-home' && r.account && r.account.status !== 'ok') {",
-      "if (login && !claudeLoginRunning) clearLogin()",
-      "injects an account, and starts new Codex sessions with{' '}",
-      "kind === 'custom' ? { baseUrl: baseUrl.trim(), model: model.trim() || undefined } : undefined",
-      "kind === 'oauth'",
-      "kind === 'oauth'",
-      "onClick={() => openClaudeSignIn()}",
-      "onClick={() => openForm({ signIn: 'agy' })}",
-      "onClick={() => openForm({ signIn: 'codex' })}",
-      "openSignInTab(setup, `${BACKEND_LABEL.agy} sign in: ${r.account.name}`)",
-      "placeholder=\"Base URL (e.g. https://example.com/api/anthropic)\"",
-      "setError('Saved, but agy could not be opened — use Sign in again on its row')",
-      "that when fable is nearly spent and one account is taking every session.",
-      "title=\"Plan includes a fable allowance — fable launches are routed here first\"",
-      "title=\"Runs agy in a terminal tab for a new Antigravity account\"",
-      "title=\"Runs claude setup-token in the background and stores the token for you\"",
-      "title=\"Runs codex login in a terminal tab for a new Codex account\"",
-      "{(a.kind === 'apikey' || a.apiKey) && <ApiKeyBadge />}",
-      "{a.kind === 'agy-home' && a.status === 'ok' && a.quota && a.quota.length > 0 ? (",
-      "{a.kind === 'custom' && <span className=\"acct-badge custom\">ENDPOINT</span>}",
-      "{a.kind === 'oauth' && a.fable === 'no' && (",
-      "{a.kind === 'oauth' && a.fable === 'yes' && (",
-      "{backend === 'claude' && login && <LoginDialog key={login.reauthName ?? ''} />}",
-      "{codexBalance && <span className=\"acct-note\">{codexBalance}</span>}",
-      "{kind === 'codex-home'",
-      "{kind === 'custom' &&",
-      "{kind === 'custom' && (",
-      "{u.hasOi && <Meter label=\"fable\" v={u.uoi} win=\"oi\" soi={u.soi} />}"
-    ],
-    "src/renderer/src/components/settings/AppearancePane.tsx": [
-      "Antigravity session, in place of the one you set yourself. Applies to sessions started",
-      "Shows Koloft&rsquo;s own status line under the prompt of every Claude Code, Codex and"
-    ],
-    "src/renderer/src/components/settings/AssistSection.tsx": [
-      "'A small job waits 15 seconds for its answer, 30 on Codex. A bigger model or more thinking is slower; when no answer comes, Koloft does the job without AI.'"
-    ],
-    "src/renderer/src/components/settings/SessionMethodsSection.tsx": [
-      "agy: 'Runs on a Google sign-in or a Gemini API key from Settings ▸ Accounts'",
-      "claude: 'Runs on a Claude account from Settings ▸ Accounts',",
-      "codex: 'Runs on a Codex account from Settings ▸ Accounts',"
-    ],
-    "src/renderer/src/components/settings/UsagePane.tsx": [
-      "Claude Code, Codex and Antigravity sessions are read from the files each tool keeps, on",
-      "agy: 'ANTIGRAVITY'",
-      "b !== 'claude' && (",
-      "codex: 'CODEX',",
-      "const BADGE: Record<Exclude<BackendId, 'claude'>, string> = {"
-    ],
-    "src/renderer/src/components/settings/WelcomePane.tsx": [
-      "['Real Claude Code, Codex and Antigravity terminals', 'yes', 'yes'],",
-      "title: 'Claude Code, Codex and Antigravity sessions',"
     ],
     "src/renderer/src/components/TopbarUsage.tsx": [
       "(a) => a.kind === 'agy-home' && a.enabled && (a.quota || a.apiKey)",
@@ -1722,10 +1636,8 @@
       "two={!(cols.fiveHour && cols.fable)}",
       "walled={!dead && !!l && codexWalled(l)}",
       "{ win: '7d', v: claudePool.t7 },",
-      "{(a.kind === 'apikey' || a.apiKey) && <ApiKeyBadge />}",
       "{(claude || homePools.length > 0) && agy.length > 0 && <div className=\"tbu-sep\" />}",
       "{(claude || i > 0) && <div className=\"tbu-sep\" />}",
-      "{a.kind === 'apikey' ? (",
       "{a.kind === 'custom' && <span className=\"acct-badge api\">ENDPOINT</span>}",
       "{a.kind === 'oauth' && a.fable === 'yes' && (",
       "{agy.length > 0 && (",
@@ -1761,6 +1673,117 @@
       "if (pick === 'claude') {",
       "setSigningFor('claude')",
       "{loginPhase === 'starting' && !isInstalled('claude')"
+    ],
+    "src/renderer/src/components/accountMeter.tsx": [
+      "const FABLE_WARN_AT = 0.85",
+      "const level = win === 'oi' ? fableLevel(v, soi ?? '?') : meterLevel(v)",
+      "export function codexBalanceLabel(l: CodexLimits, nowMs: number): string {",
+      "export function fableLevel(v: number, soi: string): MeterLevel {",
+      "import type { AccountView, CodexLimits } from '@shared/types'",
+      "import { FABLE_STOP, meterLevel, type MeterLevel } from '@shared/accountUsage'",
+      "return a.kind === 'agy-home' ? 'Signed in' : 'Not probed yet'",
+      "return v >= FABLE_STOP ? 'bad' : v >= FABLE_WARN_AT ? 'warn' : ''"
+    ],
+    "src/renderer/src/components/settings/AccountsPane.tsx": [
+      "'No Antigravity accounts yet — Antigravity sessions start only once there is one. Each account here is its own Google sign-in or Gemini API key. Every Antigravity session picks the least-used sign-in, and a Gemini API key only when every sign-in is at its limit.',",
+      "'No Codex accounts yet — Codex sessions start only once there is one. Each account here is its own Codex sign-in or API key. Every Codex session picks the least-used sign-in, and an API key only when every sign-in is at its limit.',",
+      "'No accounts yet — add one below. Claude sessions start only once there is one.',",
+      "'agy',",
+      "'claude',",
+      "'codex',",
+      ") : a.kind === 'custom' ? (",
+      ": kind === 'agy-home'",
+      ": kind === 'agy-home'",
+      ": kind === 'agy-home'",
+      ": kind === 'codex-home'",
+      ": kind === 'codex-home'",
+      "<IconPlus size={14} /> Paste Gemini API key",
+      "<IconWebPage size={14} /> Sign in to Codex",
+      "<IconWebPage size={14} /> Sign in with Google",
+      "<Switch checked={settings.fablePriority} onChange={(on) => update({ fablePriority: on })} />",
+      "<b>Prefer accounts with fable allowance</b>",
+      "<button className=\"mini\" onClick={() => openForm({ paste: 'agy-home' })}>",
+      "<button className=\"mini\" onClick={() => openForm({ paste: 'codex-home' })}>",
+      "<button className=\"mini\" onClick={() => openForm({ paste: 'oauth' })}>",
+      "<div className=\"set-grp\">Antigravity</div>",
+      "<div className=\"set-grp\">Claude</div>",
+      "<div className=\"set-grp\">Codex</div>",
+      "<span className=\"acct-badge nofable\">FABLE</span>",
+      "? 'Add Gemini API key'",
+      "? 'Add OpenAI API key'",
+      "? 'Gemini API key'",
+      "? 'Koloft hands the key to codex login, which keeps it in this account’s own sign-in folder; Koloft itself never echoes or stores it. Codex does not check the key here: a wrong one shows as signed in and fails at the first message a session sends.'",
+      "? 'Sign in, then pick a colour scheme and answer Google’s Terms and data-use screen yourself, then type /exit. Your Antigravity conversations, rules, plugins and MCP servers are shared by every account.'",
+      "? 'The key goes into your Keychain and is handed to agy when a session starts. Saving opens agy in a terminal tab once: pick a colour scheme and answer Google’s Terms screen there, then type /exit, and the account is ready.'",
+      "? 'sk-ant-api03-…'",
+      "? 'sk-ant-oat01-… (from claude setup-token)'",
+      "? 'sk-proj-… (OpenAI API key)'",
+      "? () => openClaudeSignIn(a.name)",
+      "Adds <code>--dangerously-skip-permissions</code> to Claude and Antigravity when Koloft",
+      "FABLE",
+      "Koloft runs the official <code>claude setup-token</code> in the <b>background</b> — no",
+      "Running <code>claude setup-token</code>…",
+      "a.kind === 'oauth'",
+      "agy: 'agy'",
+      "backend === 'agy'",
+      "busy || !name.trim() || !secret.trim() || (kind === 'custom' && !baseUrl.trim())",
+      "codex: 'codex login',",
+      "codexBalanceLabel,",
+      "const claudeLoginRunning = !!login && loginRunning(login.progress)",
+      "const codexBalance = a.status === 'ok' && a.limits ? codexBalanceLabel(a.limits, now) : ''",
+      "const openClaudeSignIn = (again?: string): void => {",
+      "const setup = await window.api.accounts.signIn('agy-home', r.account.name, true)",
+      "if (claudeLoginRunning) return",
+      "if (kind === 'agy-home' && r.account && r.account.status !== 'ok') {",
+      "if (login && !claudeLoginRunning) clearLogin()",
+      "injects an account, and starts new Codex sessions with{' '}",
+      "kind === 'custom' ? { baseUrl: baseUrl.trim(), model: model.trim() || undefined } : undefined",
+      "kind === 'oauth'",
+      "kind === 'oauth'",
+      "onClick={() => openClaudeSignIn()}",
+      "onClick={() => openForm({ signIn: 'agy' })}",
+      "onClick={() => openForm({ signIn: 'codex' })}",
+      "openSignInTab(setup, `${BACKEND_LABEL.agy} sign in: ${r.account.name}`)",
+      "placeholder=\"Base URL (e.g. https://example.com/api/anthropic)\"",
+      "setError('Saved, but agy could not be opened — use Sign in again on its row')",
+      "that when fable is nearly spent and one account is taking every session.",
+      "title=\"Plan includes a fable allowance — fable launches are routed here first\"",
+      "title=\"Runs agy in a terminal tab for a new Antigravity account\"",
+      "title=\"Runs claude setup-token in the background and stores the token for you\"",
+      "title=\"Runs codex login in a terminal tab for a new Codex account\"",
+      "{a.kind === 'agy-home' && a.status === 'ok' && a.quota && a.quota.length > 0 ? (",
+      "{a.kind === 'custom' && <span className=\"acct-badge custom\">ENDPOINT</span>}",
+      "{a.kind === 'oauth' && a.fable === 'no' && (",
+      "{a.kind === 'oauth' && a.fable === 'yes' && (",
+      "{backend === 'claude' && login && <LoginDialog key={login.reauthName ?? ''} />}",
+      "{codexBalance && <span className=\"acct-note\">{codexBalance}</span>}",
+      "{kind === 'codex-home'",
+      "{kind === 'custom' &&",
+      "{kind === 'custom' && (",
+      "{u.hasOi && <Meter label=\"fable\" v={u.uoi} win=\"oi\" soi={u.soi} />}"
+    ],
+    "src/renderer/src/components/settings/AppearancePane.tsx": [
+      "Antigravity session, in place of the one you set yourself. Applies to sessions started",
+      "Shows Koloft&rsquo;s own status line under the prompt of every Claude Code, Codex and"
+    ],
+    "src/renderer/src/components/settings/AssistSection.tsx": [
+      "'A small job waits 15 seconds for its answer, 30 on Codex. A bigger model or more thinking is slower; when no answer comes, Koloft does the job without AI.'"
+    ],
+    "src/renderer/src/components/settings/SessionMethodsSection.tsx": [
+      "agy: 'Runs on a Google sign-in or a Gemini API key from Settings ▸ Accounts'",
+      "claude: 'Runs on a Claude account from Settings ▸ Accounts',",
+      "codex: 'Runs on a Codex account from Settings ▸ Accounts',"
+    ],
+    "src/renderer/src/components/settings/UsagePane.tsx": [
+      "Claude Code, Codex and Antigravity sessions are read from the files each tool keeps, on",
+      "agy: 'ANTIGRAVITY'",
+      "b !== 'claude' && (",
+      "codex: 'CODEX',",
+      "const BADGE: Record<Exclude<BackendId, 'claude'>, string> = {"
+    ],
+    "src/renderer/src/components/settings/WelcomePane.tsx": [
+      "['Real Claude Code, Codex and Antigravity terminals', 'yes', 'yes'],",
+      "title: 'Claude Code, Codex and Antigravity sessions',"
     ],
     "src/renderer/src/costs.css": [".acct-badge.agy {", ".acct-badge.codex {"],
     "src/renderer/src/sessionRows.ts": [
@@ -2007,7 +2030,6 @@
     "src/shared/settingsOps.ts": ["'fablePriority',"],
     "src/shared/types.ts": [
       "'agy-home'",
-      "'apikey',",
       "'codex-home',",
       "'custom',",
       "'oauth',",
