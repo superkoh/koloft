@@ -15,6 +15,7 @@ export interface AgentFlags {
   resumeCanWaitOnAQuestionBeforeAnySign: boolean
   conversationStartsAtFirstPrompt: boolean
   pasteKeepsItsLastLineFeeds: boolean
+  passedOnMessageShowsAsFromAnotherSession: boolean
 }
 
 export interface AgentManifest {
@@ -29,5 +30,6 @@ export interface AgentManifest {
   trustQuestion: string
   ownLogFolderNames: readonly string[]
   atTopOfSessionFolder: AtTopOfSessionFolder
+  slotFills: Readonly<Record<string, string>>
   flags: AgentFlags
 }

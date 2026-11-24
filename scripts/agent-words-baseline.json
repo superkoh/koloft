@@ -1199,11 +1199,6 @@
     "src/plugins/discord/main/setupSteps.ts": [
       "- Ask the owner only inside Koloft, never on Discord, and ask one question at a time: wait for the answer before the next, and skip any question that answer has already settled. Ask every question with your question tool, which shows the owner a box with choices and waits for the answer: ${ASK.claude} in Claude Code, ${ASK.codex} in Codex (call it as a tool of its own, not inside exec; never ${ASK.codex}_async, which does not wait), ${ASK.agy} in Antigravity CLI. Never sleep or poll while you wait: the owner's reply starts your next turn."
     ],
-    "src/plugins/discord/prompts/text.ts": [
-      "agy: ''",
-      "claude: \", and reaches you as a message from another session, sent by Koloft's Discord relay\",",
-      "codex: '',"
-    ],
     "src/plugins/inbox/main/koloftInbox.ts": [
       "export function askFromClaude(p: AskPayload): KoloftAsk {",
       "export function askFromCodex(a: CodexApproval | CodexQuestion): KoloftAsk {",
@@ -1414,18 +1409,6 @@
       "this.claudeUsedFolders(),",
       "used.push({ path: cwd, ...use, agents: { claude: use } })",
       "}).map(claudeRow)"
-    ],
-    "src/plugins/sessions/prompts/text.ts": [
-      "'A side job that only hands you back an answer, like searching, reading or checking: never a Koloft session. Use a sub-agent (spawn_agent) when the owner asked for sub-agents or for work in the background; otherwise do it yourself. Your sub-agents share this folder, so never let two of them change files at the same time; use rule 1 for that.',",
-      "'A side job that only hands you back an answer, like searching, reading or checking: never a Koloft session. Use a subagent (invoke_subagent) when the owner asked for subagents or for work in the background; otherwise do it yourself. Your subagents share this folder, so never let two of them change files at the same time; use rule 1 for that.',",
-      "`${WAITING_QUESTION_TOOL.codex}, called as a tool of its own (not inside exec)`,",
-      "`Never use ${WAITING_QUESTION_TOOL.codex}_async, which does not wait, and never sleep or poll while you wait.`",
-      "agy: [",
-      "agy: questionRule(WAITING_QUESTION_TOOL.agy)",
-      "claude: '',",
-      "claude: [",
-      "codex: [",
-      "codex: questionRule("
     ],
     "src/plugins/sessions/shared/assistJobs.ts": [
       "agy: { model: 'gemini-4-argon', effort: 'medium' }",

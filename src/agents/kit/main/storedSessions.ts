@@ -110,6 +110,7 @@ export interface StoredSessionDeps {
   events(tabId: string, event: SessionEvent): void
   error(message: string): void
   noAccountMessage(backend: BackendId): string
+  koloftPrompt(backend: BackendId, rules?: string): string
   fallbackBin?: string
   gitBin?: string
   gitAccounts: { configEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv }

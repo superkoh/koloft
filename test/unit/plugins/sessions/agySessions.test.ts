@@ -24,6 +24,7 @@ import { SessionRuntime } from '../../../../src/core/agent/sessionRuntime'
 import { PROGRAM_STATUS_REPLY } from '../../../../src/main/programStatus'
 import type { SessionEvent } from '../../../../src/shared/sessionEvent'
 import { NO_USABLE_ACCOUNT } from '../../../../src/shared/accountUsage'
+import { koloftPrompt } from '../../../../src/plugins/sessions/api'
 import { appendConversation, ownerTyped, writeSummaries } from '../../helpers/agyStore'
 const mocks = vi.hoisted(() => ({ runtime: vi.fn() }))
 vi.mock('../../../../src/main/cliRuntime', () => ({ resolveCliRuntime: mocks.runtime }))
@@ -271,6 +272,7 @@ beforeEach(() => {
     events: vi.fn((tabId, event) => sessions.observe(tabId, event)),
     error: vi.fn(),
     noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],
+    koloftPrompt,
     openShimRoot: path.join(home, 'agy-open'),
     scriptsDir: path.join(home, 'scripts'),
     ownersGemini: () => gemini,

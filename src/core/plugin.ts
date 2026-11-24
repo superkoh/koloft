@@ -1,5 +1,6 @@
 // ADR-0051
 import type { BackendId } from '@shared/types'
+import type { AgentFlags } from './agent/manifest'
 import { AGENT_PICKED_ON_FIRST_OPEN, ofEachAgent } from './agent/registry'
 import type { ModelAndEffort } from './assistModels'
 
@@ -11,6 +12,7 @@ export interface TextBlock {
   byAgent?: Partial<Record<BackendId, string>>
   byModel?: Readonly<Record<string, string>>
   when?: string
+  whenAgentFlag?: keyof AgentFlags
 }
 
 export const eachAgent = (slot: string, textOf: (agent: BackendId) => string): TextBlock => ({
@@ -80,6 +82,7 @@ export interface PluginManifest {
   needs: readonly string[]
   offUntilSetUp?: string
   text?: readonly TextBlock[]
+  slotsEachAgentFills?: readonly string[]
   skills?: readonly string[]
   commands?: readonly PluginCommand[]
   channels?: readonly string[]

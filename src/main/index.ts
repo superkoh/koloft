@@ -435,7 +435,7 @@ import {
 import type { MainIpc } from '@core/ipc'
 import { ClaudeDialogWatch } from '@agents/claude/main/claudeDialogWatch'
 import { docsWritingOn } from '@plugins/docs-writing/api'
-import type { SessionsWithStore } from '@plugins/sessions/api'
+import { koloftPrompt, type SessionsWithStore } from '@plugins/sessions/api'
 import { localFile } from './realFiles'
 import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
 import { koloftAssist, type AssistTarget } from './assist'
@@ -3552,6 +3552,7 @@ app.whenReady().then(() => {
     events: (tabId: string, event: SessionEvent) => sessionBackends.observe(tabId, event),
     error: (message: string) => sendToRenderer(CH.toast.show, message),
     noAccountMessage: noAccountNow,
+    koloftPrompt,
     hookRegDir: hookPaths.regDir
   }
   try {
