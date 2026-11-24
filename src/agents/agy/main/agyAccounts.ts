@@ -6,9 +6,9 @@ import type { QuotaBucket } from '@shared/types'
 import { FIVE_HOUR_MINUTES, WEEK_MINUTES, windowLabel } from '@shared/accountUsage'
 import { agyListedModels, type ListedModel } from '@shared/sessionPicks'
 import { record } from '@core/unknownValue'
-import { readJson, writeWholeBeforeVisible } from './jsonDrops'
+import { readJson, writeWholeBeforeVisible } from '../../../main/jsonDrops'
 import { AGY_APP_DIR } from './agyStore'
-import { runsPlaywrightMcp } from './browserControlEnv'
+import { runsPlaywrightMcp } from '../../../main/browserControlEnv'
 
 const AGY_HOMES = 'agy-homes'
 

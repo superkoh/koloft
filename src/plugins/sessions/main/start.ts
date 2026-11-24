@@ -1,7 +1,7 @@
 import type { MadeLater } from '@core/moment'
 import type { BuildLater, PluginStart } from '@core/pluginStart'
 import type { Turn } from '@shared/turns'
-import { AgySessions, type AgySessionDeps } from './agySessions'
+import { AgySessions, type AgySessionDeps } from '@agents/agy/main/agySessions'
 import * as appHelpers from './appHelpers'
 import { AttentionTracker, type SavedMark } from './attention'
 import { ClaudeBackend, type ClaudeBackendDeps } from '@agents/claude/main/backend'

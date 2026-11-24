@@ -10,11 +10,15 @@ import {
   AgySessions,
   type AgyHomePick,
   type AgySessionDeps
-} from '../../../../src/plugins/sessions/main/agySessions'
+} from '../../../../src/agents/agy/main/agySessions'
 import { BackgroundFile } from '../../../../src/main/backgroundFile'
 import { agySessionKey } from '../../../../src/agents/kit/main/sessionStore'
-import { agyTranscript, annotationFile, type SummaryRow } from '../../../../src/main/agyStore'
-import type { AgyMachineLaunch, RemoteAgyConfig } from '../../../../src/main/remote/agyTab'
+import {
+  agyTranscript,
+  annotationFile,
+  type SummaryRow
+} from '../../../../src/agents/agy/main/agyStore'
+import type { AgyMachineLaunch, RemoteAgyConfig } from '../../../../src/agents/agy/main/agyTab'
 import { TAB_TMUX_NAME_SH } from '../../../../src/main/remote/launch'
 import { SessionRuntime } from '../../../../src/core/agent/sessionRuntime'
 import { PROGRAM_STATUS_REPLY } from '../../../../src/main/programStatus'

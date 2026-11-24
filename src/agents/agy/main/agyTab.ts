@@ -1,19 +1,24 @@
 import { shq } from '@shared/shellQuote'
 import { record } from '@core/unknownValue'
-import { AGY_APP_DIR, TOP_LEVEL_ROWS } from '../agyStore'
-import { SHARED_FILES, SHARED_FOLDERS } from '../agyAccounts'
-import { AGY_LOG_ENV, AGY_LOG_POINTER_SUFFIX, AGY_START_ENV } from '@plugins/sessions/main/agyHooks'
+import { AGY_APP_DIR, TOP_LEVEL_ROWS } from './agyStore'
+import { SHARED_FILES, SHARED_FOLDERS } from './agyAccounts'
+import { AGY_LOG_ENV, AGY_LOG_POINTER_SUFFIX, AGY_START_ENV } from './agyHooks'
 import { NOTICE_ENV, remoteNoticeFile } from '@plugins/sessions/main/hooks'
-import { CSRF_HEADER, SERVICE } from '../agyApi'
-import { remoteAnswerCommand, remoteShCommand } from './install'
+import { CSRF_HEADER, SERVICE } from './agyApi'
+import { remoteAnswerCommand, remoteShCommand } from '../../../main/remote/install'
 import {
   EXEC_ARGS_THROUGH_THE_STATUS_RELAY,
   machineToolProgram,
   skillsFromMachineLine,
   type TabProgram
-} from './launch'
-import { REMOTE_COMPILE_CACHE, REMOTE_HOOK_DIR, REMOTE_HOME, remoteMachineDir } from './paths'
-import { STATUS_RELAY_FILE } from './statusRelay'
+} from '../../../main/remote/launch'
+import {
+  REMOTE_COMPILE_CACHE,
+  REMOTE_HOOK_DIR,
+  REMOTE_HOME,
+  remoteMachineDir
+} from '../../../main/remote/paths'
+import { STATUS_RELAY_FILE } from '../../../main/remote/statusRelay'
 
 const AGY_KEY_ENV = 'GEMINI_API_KEY'
 const AGY_STATUS_FRAMES_ENV = 'AGY_CLI_OSC7501'

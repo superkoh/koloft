@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { DatabaseSync } from 'node:sqlite'
-import { agyTranscript, conversationDb, summariesDb } from '../../../src/main/agyStore'
+import { agyTranscript, conversationDb, summariesDb } from '../../../src/agents/agy/main/agyStore'
 
 export interface SummaryFixture {
   conversation_id: string

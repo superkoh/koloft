@@ -2,7 +2,7 @@ import type { ResumePlan } from '@shared/types'
 import { isRemoteKey } from '@shared/remoteKey'
 import type { SessionBackend } from '@core/agent/sessionBackends'
 import type { CodexSessions } from '@agents/codex/main/codexSessions'
-import type { AgySessions } from '@plugins/sessions/main/agySessions'
+import type { AgySessions } from '@agents/agy/main/agySessions'
 import { planResume, ResumeRefused, type ResumeProbes } from '../../../main/resumePlan'
 import { errorText } from '@core/errorText'
 

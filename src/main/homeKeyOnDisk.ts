@@ -1,6 +1,6 @@
 import path from 'path'
 import type { SignInFolderKind } from '@shared/types'
-import { agyApiKeyRoute, agyHomeOf } from './agyAccounts'
+import { agyApiKeyRoute, agyHomeOf } from '@agents/agy/main/agyAccounts'
 import { codexHomeOf } from '@agents/codex/main/codexAccounts'
 import { readJson } from './jsonDrops'
 

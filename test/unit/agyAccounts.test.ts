@@ -13,7 +13,7 @@ import {
   ownersPlaywrightMcp,
   prepareAgyHome,
   setAgyApiKeyRoute
-} from '../../src/main/agyAccounts'
+} from '../../src/agents/agy/main/agyAccounts'
 
 let root: string
 let home: string
