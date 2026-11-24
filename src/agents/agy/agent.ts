@@ -13,6 +13,6 @@ export const agent = {
       '--conversation',
       '--print-timeout'
     ],
-    quoted: ['agy-home']
+    quoted: []
   }
 } as const satisfies AgentManifest

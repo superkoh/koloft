@@ -17,7 +17,7 @@ const manifest = (id: string, anyCase: string[], wholeWord: string[], quoted: st
 
 type Baseline = {
   awaitingMove?: Record<string, string>
-  allowed?: { file: string; line: string; reason: string }[]
+  allowed?: { file: string; text: string; reason: string }[]
   lines?: Record<string, string[]>
 }
 
@@ -164,7 +164,7 @@ describe('check-agent-words', () => {
 
   it('lets a line allowed by name through once per entry, and fails when that line is gone', () => {
     const allowed = [
-      { file: 'src/main/a.ts', line: "mode: 'tok'", reason: 'a git host sign-in mode' }
+      { file: 'src/main/a.ts', text: "mode: 'tok'", reason: 'a git host sign-in mode' }
     ]
     expect(check(fixtureRepo({ 'src/main/a.ts': lines("mode: 'tok'") }, { allowed })).code).toBe(0)
     const twice = check(
@@ -236,11 +236,17 @@ describe('check-agent-words', () => {
           'type Rest = Exclude<AgentId, typeof first>',
           'const second = AGENTS[1]',
           'const last = AGENT_IDS.at(-1)',
-          'const every = AGENTS.map((a) => a.id)'
+          'const every = AGENTS.map((a) => a.id)',
+          'type Others = Exclude<SessionBackend, typeof picked>'
         )
       },
       {}
     )
-    expect(check(dir).reported).toEqual(['src/main/a.ts:1', 'src/main/a.ts:2', 'src/main/a.ts:3'])
+    expect(check(dir).reported).toEqual([
+      'src/main/a.ts:1',
+      'src/main/a.ts:2',
+      'src/main/a.ts:3',
+      'src/main/a.ts:5'
+    ])
   })
 })

@@ -14,6 +14,6 @@ export const agent = {
       '--ignore-user-config',
       '--ignore-rules'
     ],
-    quoted: ['codex-home']
+    quoted: []
   }
 } as const satisfies AgentManifest

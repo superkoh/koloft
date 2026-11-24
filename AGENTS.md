@@ -110,7 +110,7 @@ Working principles:
   `agent.ts` — and on a baseline line that is gone, so the baseline only shrinks. A
   line that truly must stay, and any new `awaitingMove` or `allowed` entry, gets its
   reason in the PR body (`npm run check:agent-words -- --accept-new` takes new lines
-  in); removed lines leave with `-- --prune`.
+  in and drops gone ones); removed lines leave with `-- --prune`.
 - Comments: none. In `.ts/.tsx/.js/.mjs/.cjs/.css` — and in the `#` lines of a
   `#!/` script written as a template string — `npm run check:comments` (CI, an
   after-edit hook, and the before-push hook) rejects every comment except two kinds,

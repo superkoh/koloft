@@ -28,7 +28,7 @@ const MARKER_COMMENT = new RegExp(
   'g'
 )
 const ROUNDABOUT = [
-  { label: 'Exclude<agent id type>', re: /\bExclude<\s*(?:AgentId|BackendId)\b/ },
+  { label: 'Exclude<agent id type>', re: /\bExclude<\s*(?:AgentId|BackendId|SessionBackend)\b/ },
   {
     label: 'agent list[N]',
     re: /\b(?:AGENTS|AGENT_IDS|SESSION_BACKENDS)\s*(?:\[\s*\d+\s*\]|\.at\(\s*-?\d+\s*\))/
@@ -117,7 +117,7 @@ async function writeBaseline(baseline) {
       Object.entries(baseline.awaitingMove).sort(([a], [b]) => byCodeUnit(a, b))
     ),
     allowed: [...baseline.allowed].sort(
-      (a, b) => byCodeUnit(a.file, b.file) || byCodeUnit(a.line, b.line)
+      (a, b) => byCodeUnit(a.file, b.file) || byCodeUnit(a.text, b.text)
     ),
     lines: Object.fromEntries(
       Object.entries(baseline.lines)
@@ -158,7 +158,7 @@ function compare(baseline, files, agents) {
     const text = fs.readFileSync(path.join(ROOT, file), 'utf8')
     const hits = hitsIn(file, text, agents, ownerOf(file, baseline)).filter((h) => {
       const allow = baseline.allowed.find(
-        (a) => !allowedUsed.has(a) && a.file === file && a.line === h.key
+        (a) => !allowedUsed.has(a) && a.file === file && a.text === h.key
       )
       if (allow) allowedUsed.add(allow)
       return !allow
@@ -178,7 +178,7 @@ function compare(baseline, files, agents) {
   }
   for (const allow of baseline.allowed)
     if (!allowedUsed.has(allow))
-      gone.push(`allowed ${allow.file}  ${allow.line} (no such line any more)`)
+      gone.push(`allowed ${allow.file}  ${allow.text} (no such line any more)`)
   return { fresh, gone, current, allowedUsed }
 }
 
@@ -221,9 +221,10 @@ const NEW_HELP = [
   '- Elsewhere, ask the agent list (src/core/agent/registry.ts) instead of naming one.',
   '- A changed line that already named an agent counts as new.',
   '- If it truly must stay where it is, say why in the PR body, then run',
-  '  `npm run check:agent-words -- --accept-new` and commit the baseline.',
+  '  `npm run check:agent-words -- --accept-new` (it also drops what --prune drops) and',
+  '  commit the baseline.',
   '- A false hit (a word that means something else there) goes under "allowed" in the',
-  '  baseline as { file, line, reason }; say so in the PR body too.'
+  '  baseline as { file, text, reason }, text being the whole line; say so in the PR body.'
 ]
 const GONE_HELP = [
   'These baseline entries are gone. Run `npm run check:agent-words -- --prune` and commit',

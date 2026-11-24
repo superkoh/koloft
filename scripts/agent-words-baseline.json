@@ -35,27 +35,27 @@
   "allowed": [
     {
       "file": "src/main/gitCredentialManager.ts",
-      "line": "GCM_BITBUCKET_AUTHMODES: 'oauth',",
+      "text": "GCM_BITBUCKET_AUTHMODES: 'oauth',",
       "reason": "Bitbucket's sign-in mode for Git Credential Manager, not an agent's account kind"
     },
     {
       "file": "src/plugins/workbench/main/pageRules.ts",
-      "line": "'Sec-CH-UA': `\"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"${v}\", \"Google Chrome\";v=\"${v}\"`,",
+      "text": "'Sec-CH-UA': `\"Not;A=Brand\";v=\"8\", \"Chromium\";v=\"${v}\", \"Google Chrome\";v=\"${v}\"`,",
       "reason": "Google Chrome is the browser brand a web page is told, not an agent's vendor"
     },
     {
       "file": "src/preload/guest.ts",
-      "line": "if (!list || list.some((b) => b.brand === 'Google Chrome')) return list",
+      "text": "if (!list || list.some((b) => b.brand === 'Google Chrome')) return list",
       "reason": "Google Chrome is the browser brand a web page is told, not an agent's vendor"
     },
     {
       "file": "src/preload/guest.ts",
-      "line": "return chromium ? [...list, { brand: 'Google Chrome', version: chromium.version }] : list",
+      "text": "return chromium ? [...list, { brand: 'Google Chrome', version: chromium.version }] : list",
       "reason": "Google Chrome is the browser brand a web page is told, not an agent's vendor"
     },
     {
       "file": "src/shared/types.ts",
-      "line": "export const CHROME_WEB_STORE_URL = 'https://chromewebstore.google.com/'",
+      "text": "export const CHROME_WEB_STORE_URL = 'https://chromewebstore.google.com/'",
       "reason": "the Chrome Web Store's address, not an agent's vendor"
     }
   ],

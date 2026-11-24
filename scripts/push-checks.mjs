@@ -23,7 +23,7 @@ const CHECKS = [
   {
     script: 'check:agent-words',
     findsProblemsWith: [1, 2],
-    fix: 'do what its last lines say, commit, and try again'
+    fix: 'run `npm run check:agent-words` to see all it lists, do what it says, commit, and try again'
   },
   {
     script: 'typecheck',
