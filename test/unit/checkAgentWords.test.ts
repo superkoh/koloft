@@ -141,7 +141,7 @@ describe('check-agent-words', () => {
     expect(check(dir).code).toBe(0)
   })
 
-  it('lets a file on the awaiting-move list name its own agent but not another, checks a new agent-named file that is not on it, and fails on a listed file that is gone', () => {
+  it('does not check a file on the awaiting-move list at all, checks a new agent-named file that is not on it, and fails on a listed file that is gone', () => {
     const dir = fixtureRepo(
       {
         'src/main/alphaTrust.ts': lines('export const alphaTrust = 1', 'const b = beta'),
@@ -150,7 +150,7 @@ describe('check-agent-words', () => {
       { awaitingMove: { 'src/main/alphaTrust.ts': 'alpha', 'src/main/alphaMoved.ts': 'alpha' } }
     )
     const r = check(dir)
-    expect(r.reported).toEqual(['src/main/alphaNew.ts:1', 'src/main/alphaTrust.ts:2'])
+    expect(r.reported).toEqual(['src/main/alphaNew.ts:1'])
     expect(r.out).toContain('awaitingMove src/main/alphaMoved.ts (no such file any more)')
   })
 

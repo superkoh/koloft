@@ -104,7 +104,7 @@ Working principles:
 - Code outside an agent's own folder never names an agent (ADR-0054). Code about one
   agent goes in `src/agents/<id>/` — or, until issue #2410 moves them there, in that
   agent's old files listed under `awaitingMove` in `scripts/agent-words-baseline.json`,
-  which count as its folder; other code asks the agent list
+  which are not checked; other code asks the agent list
   (`src/core/agent/registry.ts`). `npm run check:agent-words` (CI and the before-push
   hook) fails on every new line that names one — the words each agent lists in its
   `agent.ts` — and on a baseline line that is gone, so the baseline only shrinks. A

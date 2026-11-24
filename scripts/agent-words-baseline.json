@@ -132,13 +132,6 @@
       "export const CLAUDE_AGENT_SHIM = `${HEAD}",
       "unwritable=\"${backend === 'codex' ? CODEX_SANDBOX_IS_READ_ONLY : COULD_NOT_REACH_KOLOFT}\""
     ],
-    "src/main/agyAccounts.ts": ["import { record } from '@plugins/sessions/main/codexObservation'"],
-    "src/main/agyApi.ts": [
-      "import { nonEmptyString, record } from '@plugins/sessions/main/codexObservation'"
-    ],
-    "src/main/agyStore.ts": [
-      "import { nonEmptyString, record } from '@plugins/sessions/main/codexObservation'"
-    ],
     "src/main/assist.ts": [
       "'--ephemeral',",
       "'--ignore-rules',",
@@ -181,13 +174,6 @@
       "update: `if command -v timeout >/dev/null 2>&1; then timeout ${AGY_UPDATE_TIMEOUT_MS / 1000} \"$1\" update; else \"$1\" update; fi`,"
     ],
     "src/main/cliRuntime.ts": ["command: Exclude<AgentCommand, 'claude'>"],
-    "src/main/codexTransport.ts": [
-      "'CLAUDECODE',",
-      "'CLAUDE_EFFORT',",
-      "'GEMINI_API_KEY',",
-      "key.startsWith('ANTIGRAVITY_')",
-      "key.startsWith('CLAUDE_CODE_') ||"
-    ],
     "src/main/fileWatch.ts": [
       "import { AGY_LOGS_FOLDER } from '@shared/agyBrain'",
       "return !passesHeavy(rel) || rel.split(path.sep).includes(AGY_LOGS_FOLDER)"
@@ -796,9 +782,6 @@
       "key.startsWith('ANTIGRAVITY_') ||",
       "key.startsWith('CLAUDE_CODE_') ||"
     ],
-    "src/main/remote/agyTab.ts": [
-      "import { record } from '@plugins/sessions/main/codexObservation'"
-    ],
     "src/main/remote/install.ts": [
       "# AGY§3",
       "# AGY§8",
@@ -1272,20 +1255,6 @@
       "codex: 'do you trust the contents of this directory?',"
     ],
     "src/plugins/sessions/api.ts": ["type CodexApproval,", "type CodexQuestion,"],
-    "src/plugins/sessions/main/agyHooks.ts": [
-      "import { nonEmptyString, record } from './codexObservation'"
-    ],
-    "src/plugins/sessions/main/agySessions.ts": [
-      "approval?: CodexApproval",
-      "codexKeyFor,",
-      "const key = codexKeyFor(reply)",
-      "import { record } from './codexObservation'",
-      "openApproval(tabId: string): CodexApproval | undefined {",
-      "openQuestion(tabId: string): CodexQuestion | undefined {",
-      "question?: CodexQuestion",
-      "type CodexApproval,",
-      "type CodexQuestion,"
-    ],
     "src/plugins/sessions/main/appHelpers.ts": [
       "CODEX_REPLY_LANGUAGE_SCRIPT,",
       "export { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from './agyHooks'",

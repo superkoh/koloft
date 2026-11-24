@@ -80,8 +80,7 @@ async function agentMatchers() {
   }))
 }
 
-function ownerOf(file, baseline) {
-  if (Object.hasOwn(baseline.awaitingMove, file)) return baseline.awaitingMove[file]
+function folderOf(file) {
   return file.startsWith(AGENTS_DIR) ? file.slice(AGENTS_DIR.length).split('/')[0] : undefined
 }
 
@@ -154,9 +153,9 @@ function compare(baseline, files, agents) {
   const current = {}
   const allowedUsed = new Set()
   for (const file of files) {
-    if (LISTS_THAT_MAY_NAME_AGENTS.has(file)) continue
+    if (LISTS_THAT_MAY_NAME_AGENTS.has(file) || Object.hasOwn(baseline.awaitingMove, file)) continue
     const text = fs.readFileSync(path.join(ROOT, file), 'utf8')
-    const hits = hitsIn(file, text, agents, ownerOf(file, baseline)).filter((h) => {
+    const hits = hitsIn(file, text, agents, folderOf(file)).filter((h) => {
       const allow = baseline.allowed.find(
         (a) => !allowedUsed.has(a) && a.file === file && a.text === h.key
       )
@@ -217,7 +216,7 @@ const NEW_HELP = [
   'How to fix:',
   '- Put code that is about one agent in that agent’s folder, src/agents/<id>/. Until an',
   `  agent’s old files move there, the files listed under "awaitingMove" in ${BASELINE}`,
-  '  count as its folder: they may name that agent, not another one.',
+  '  are that agent’s own too, and are not checked.',
   '- Elsewhere, ask the agent list (src/core/agent/registry.ts) instead of naming one.',
   '- A changed line that already named an agent counts as new.',
   '- If it truly must stay where it is, say why in the PR body, then run',
