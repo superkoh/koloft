@@ -3164,7 +3164,9 @@ folder trusted. Text was typed in one write and CR in a second write 0.3–0.6 s
   last row `enter select · esc back`; `/keymap` ends `… · esc close`; `/mention` draws
   its list *above* a still-visible composer (`› @`) with `enter/tab insert · esc close ·
   …` two rows over it; `/resume` fills the screen and ends `enter resume   esc exit …`;
-  the `/diff` pager ends ` q close`. One Esc closed each but the pager, which `q`
+  the `/diff` pager ends ` q close`; the `/statusline` and `/experimental` pickers (a
+  `›` highlighted row too) end `… · esc cancel` (0.171.0 and 0.172.0, 2026-11-24, see
+  below). One Esc closed each but the pager, which `q`
   closed, and the composer came back. `/status` and `/mcp` open nothing: they print
   their answer into the transcript above the composer, whose bottom rows stay the
   footer (`<model> · <folder>`, `? for shortcuts`), and Esc after them changes nothing
@@ -4366,8 +4368,8 @@ the label underlined in the link colour only on 0.172.0; no build wrote OSC 8 fo
 0.172.0 it sent `thread/read` three times, `thread/resume` of the linked thread,
 `thread/turns/list`, `thread/items/list`, then `thread/unsubscribe` of the open one —
 `/resume <id>`'s order (§21) — and drew the linked thread, with typed words still landing
-in the composer. Koloft's own link handling never sees it (no OSC 8, not `http`); that
-Koloft follows the switch as it follows a `/resume` is **inferred, not checked** in
+in the composer. Koloft's own link handling never sees it (no OSC 8, not `http`; read
+from `termLinks.ts` and `routeFor`, not run); that Koloft follows the switch as it follows a `/resume` is **inferred, not checked** in
 Koloft. **0.172.0 recolours an OSC 8 link's label while the pointer is over it**
 (openai/codex#62390): a motion report `ESC[<35;x;yM` over a web link's label changed the
 foreground of its cells and redrew it with the same OSC 8 target, and moving away

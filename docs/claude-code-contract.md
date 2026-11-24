@@ -611,8 +611,8 @@ Unless a bullet below says more, it is inferred, not checked.
   12 of 12. A subagent's own file held its final reply when SubagentStop ran in 30 of 67
   on 2.1.330 and 69 of 69 on 2.1.331 (background subagents). The changelog: "Fixed Stop
   hooks that read the transcript missing the last reply in Claude Desktop; SubagentStop
-  hooks now wait for it too". Every version from the minimum to 2.1.330 still flushes
-  late, so the poll stays.
+  hooks now wait for it too". The minimum and 2.1.330 both flush late, so the poll stays;
+  that every version between them does too is **inferred, not checked**.
 - **A Stop always ends a turn with lines of its own: no Stop comes twice, or after its
   turn has already ended.** Each Stop that runs a hook writes a `stop_hook_summary`
   record after its turn's records. Sweep of every main transcript on a dev Mac
