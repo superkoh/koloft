@@ -75,11 +75,12 @@ export function fillSlots(text: string, context: PromptContext = {}): string {
   const { values = {} } = context
   return text.replace(SLOT_OR_VALUE, (_, name: string) => {
     if (Object.hasOwn(values, name)) return values[name]
-    if (SLOTS_EACH_AGENT_FILLS.has(name))
-      return fillSlots(
-        agentManifest(theAgentReading(context.agent, `{{${name}}}`)).slotFills[name],
-        context
-      )
+    if (SLOTS_EACH_AGENT_FILLS.has(name)) {
+      const agent = theAgentReading(context.agent, `{{${name}}}`)
+      const words: string | undefined = agentManifest(agent).slotFills[name]
+      if (words === undefined) throw new Error(`The agent ${agent} fills no {{${name}}}`)
+      return fillSlots(words, context)
+    }
     if (!DECLARED_SLOTS.has(name))
       throw new Error(`No text block fills {{${name}}} and no value was given for it`)
     return composePrompt(name, context)

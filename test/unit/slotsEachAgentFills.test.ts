@@ -38,6 +38,17 @@ describe('the slots a plugin leaves for each agent to fill', () => {
     ).toEqual([])
   })
 
+  it('only the plugin that leaves a slot writes it in its text, so an agent’s words for it go when that plugin is off', () => {
+    const writtenElsewhere = PLUGINS.flatMap((plugin) =>
+      SLOTS_EACH_AGENT_FILLS.filter(
+        (slot) =>
+          !plugin.slotsEachAgentFills?.includes(slot) &&
+          (plugin.text ?? []).some((block) => block.text.includes(`{{${slot}}}`))
+      ).map((slot) => `${plugin.id} writes {{${slot}}}`)
+    )
+    expect(writtenElsewhere).toEqual([])
+  })
+
   it.each([
     ['on', () => {}],
     ['off', turnEveryOptionalPluginOff]
