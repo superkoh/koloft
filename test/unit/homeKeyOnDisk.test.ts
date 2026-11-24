@@ -3,7 +3,7 @@ import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { homeKeyOnDisk } from '../../src/main/homeKeyOnDisk'
-import { agyHomeOf, setAgyApiKeyRoute } from '../../src/main/agyAccounts'
+import { agyHomeOf, setAgyApiKeyRoute } from '../../src/agents/agy/main/agyAccounts'
 
 let userData: string
 

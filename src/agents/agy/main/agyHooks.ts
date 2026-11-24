@@ -6,7 +6,7 @@ import {
   A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
   FROM_A_SESSION,
   FROM_KOLOFT
-} from './messageOpenings'
+} from '@plugins/sessions/main/messageOpenings'
 import {
   hookField,
   JSON_STRING_BODY,
@@ -20,7 +20,7 @@ import {
   STALE_PR_STATUS_FN,
   TAKE_NOTICE_FN,
   TRANSCRIPT_LINES_SEARCHED_FOR_THE_LAST_NOTE
-} from './hooks'
+} from '@plugins/sessions/main/hooks'
 import { UUID } from '@agents/kit/main/sessionStore'
 
 export const AGY_LOG_ENV = 'KOLOFT_AGY_LOG'

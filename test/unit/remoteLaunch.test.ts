@@ -27,7 +27,7 @@ import { MACHINE_CLAUDE } from '../../src/agents/claude/main/advisorOnFable'
 import { utilTerminalGuard } from '../../src/main/shim'
 import { passOf } from '../../src/main/tabPass'
 import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from '../../src/main/remote/statusRelay'
-import { AGY_KEY_FROM_KOLOFT, agyTab } from '../../src/main/remote/agyTab'
+import { AGY_KEY_FROM_KOLOFT, agyTab } from '../../src/agents/agy/main/agyTab'
 
 const PLAINEST_SHELL_THE_LINE_MUST_SURVIVE = fs.existsSync('/bin/dash') ? '/bin/dash' : '/bin/sh'
 const PYTHON_WITH_PTY = spawnSync('python3', ['-c', 'import pty, termios']).status === 0

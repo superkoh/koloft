@@ -6,7 +6,7 @@ import {
 } from '@shared/pricing'
 import type { UsageRecord } from '@shared/types'
 import { localDayKey } from '@shared/usageFormat'
-import { stepOf } from './agyStore'
+import { stepOf } from '@agents/agy/main/agyStore'
 
 interface CodexScan {
   sessionId: string

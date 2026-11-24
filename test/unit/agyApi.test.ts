@@ -1,7 +1,7 @@
 import http from 'http'
 import { spawnSync } from 'child_process'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AgyApi, agentStateUpdate, type PendingInteraction } from '../../src/main/agyApi'
+import { AgyApi, agentStateUpdate, type PendingInteraction } from '../../src/agents/agy/main/agyApi'
 
 const TOKEN = 'csrf-123'
 const SERVICE = '/exa.language_server_pb.LanguageServerService/'

@@ -83,7 +83,7 @@ import {
   type SentNote
 } from '@plugins/sessions/main/hooks'
 import { claudeArgv } from '@agents/claude/main/claudeArgs'
-import { parseAnnotationTitle, type SummaryRow } from '../agyStore'
+import { parseAnnotationTitle, type SummaryRow } from '@agents/agy/main/agyStore'
 import {
   AGY_HELD_ELSEWHERE_EXIT,
   AGY_SEND_SSH_OUTLASTS_THE_SCRIPT_MS,
@@ -96,7 +96,7 @@ import {
   type AgyMachineLaunch,
   type AgyMachinePlan,
   type RemoteAgyConfig
-} from '../remote/agyTab'
+} from '@agents/agy/main/agyTab'
 import { listSkills, skillFolders, type SkillFs, type SkillPlaces } from '../skillList'
 import { worktreeNameAround } from '../resumePlan'
 import type { GitOut } from '@core/worktree'

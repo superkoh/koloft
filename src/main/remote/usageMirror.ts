@@ -1,5 +1,5 @@
 import path from 'path'
-import { AGY_APP_DIR } from '../agyStore'
+import { AGY_APP_DIR } from '@agents/agy/main/agyStore'
 import { CODEX_ROLLOUT_FOLDERS, type UsageHome } from '../usageCache'
 import { REMOTE_CODEX_HOME } from '@agents/codex/main/codexMachine'
 import { mirrorAgyGemini, mirrorCodexHome } from './paths'

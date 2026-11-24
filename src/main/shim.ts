@@ -2,7 +2,7 @@ import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { keychainNamespace, keychainServiceSuffix } from '@shared/types'
-import { agyAccountEnv } from './agyAccounts'
+import { agyAccountEnv } from '@agents/agy/main/agyAccounts'
 import { NEWID_FN, OPEN_SHIM_HEAD, OPEN_SHIM_TARGET } from './openShimScript'
 import { CLAUDE_AGENT_SHIM } from './agentShim'
 import {

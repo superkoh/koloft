@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import type { BackendAvailability, BackendId } from '@shared/types'
-import { AGY_APP_DIR, ownersGeminiDir } from './agyStore'
+import { AGY_APP_DIR, ownersGeminiDir } from '@agents/agy/main/agyStore'
 import { codexConfigFile } from '@agents/codex/main/codexTrust'
 
 export interface HistoryStore {

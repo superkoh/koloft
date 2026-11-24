@@ -15,7 +15,7 @@ import {
   readAgyTurns,
   saidInTranscript,
   TranscriptFollower
-} from '../../src/main/agyStore'
+} from '../../src/agents/agy/main/agyStore'
 import type { Turn } from '../../src/shared/turns'
 import { appendTranscript, ownerTyped, writeSummaries } from './helpers/agyStore'
 

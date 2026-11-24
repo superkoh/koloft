@@ -10,7 +10,7 @@ import {
   sessionStartOutput,
   writeAgyScripts,
   type AgyScripts
-} from '../../../../src/plugins/sessions/main/agyHooks'
+} from '../../../../src/agents/agy/main/agyHooks'
 import {
   handoverPreamble,
   withHandover

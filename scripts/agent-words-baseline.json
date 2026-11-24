@@ -1,14 +1,5 @@
 {
-  "awaitingMove": {
-    "src/main/agyAccounts.ts": "agy",
-    "src/main/agyApi.ts": "agy",
-    "src/main/agyStore.ts": "agy",
-    "src/main/remote/agyTab.ts": "agy",
-    "src/plugins/sessions/main/agyHooks.ts": "agy",
-    "src/plugins/sessions/main/agySessions.ts": "agy",
-    "src/plugins/sessions/main/backends/agy.ts": "agy",
-    "src/shared/agyBrain.ts": "agy"
-  },
+  "awaitingMove": { "src/shared/agyBrain.ts": "agy" },
   "allowed": [
     {
       "file": "src/main/gitCredentialManager.ts",
@@ -37,6 +28,16 @@
     }
   ],
   "lines": {
+    "src/agents/agy/main/agySessions.ts": [
+      "approval?: CodexApproval",
+      "codexKeyFor,",
+      "const key = codexKeyFor(reply)",
+      "openApproval(tabId: string): CodexApproval | undefined {",
+      "openQuestion(tabId: string): CodexQuestion | undefined {",
+      "question?: CodexQuestion",
+      "type CodexApproval,",
+      "type CodexQuestion,"
+    ],
     "src/agents/codex/main/codexTransport.ts": [
       "'CLAUDECODE',",
       "'CLAUDE_EFFORT',",
@@ -51,7 +52,7 @@
       "private keyOf: KeyOf = codexSessionKey"
     ],
     "src/agents/kit/main/stored.ts": [
-      "import type { AgySessions } from '@plugins/sessions/main/agySessions'",
+      "import type { AgySessions } from '@agents/agy/main/agySessions'",
       "import type { CodexSessions } from '@agents/codex/main/codexSessions'",
       "sessions: CodexSessions | AgySessions,"
     ],
@@ -172,7 +173,7 @@
       "dir: (env) => path.join(ownersGeminiDir(env), AGY_APP_DIR, 'conversations'),",
       "dir: (env) => path.join(path.dirname(codexConfigFile(env)), 'sessions'),",
       "export const HISTORY_STORES: Record<Exclude<BackendId, 'claude'>, HistoryStore> = {",
-      "import { AGY_APP_DIR, ownersGeminiDir } from './agyStore'",
+      "import { AGY_APP_DIR, ownersGeminiDir } from '@agents/agy/main/agyStore'",
       "import { codexConfigFile } from '@agents/codex/main/codexTrust'",
       "readonly id: Exclude<BackendId, 'claude'>",
       "settleMs: AGY_LISTS_A_NEW_CONVERSATION_WITHIN_MS",
@@ -181,7 +182,7 @@
     "src/main/homeKeyOnDisk.ts": [
       "'agy-home': (userData, name) => agyApiKeyRoute(agyHomeOf(userData, name))",
       "'codex-home': (userData, name) =>",
-      "import { agyApiKeyRoute, agyHomeOf } from './agyAccounts'",
+      "import { agyApiKeyRoute, agyHomeOf } from '@agents/agy/main/agyAccounts'",
       "import { codexHomeOf } from '@agents/codex/main/codexAccounts'",
       "readJson(path.join(codexHomeOf(userData, name), 'auth.json')).auth_mode === 'apikey',"
     ],
@@ -262,7 +263,7 @@
       "import { TRUSTED_JS } from '@agents/claude/main/claudeTrustJs'",
       "import { claudeArgv } from '@agents/claude/main/claudeArgs'",
       "import { claudeProjectPrompt } from '../agentPlugin'",
-      "import { parseAnnotationTitle, type SummaryRow } from '../agyStore'",
+      "import { parseAnnotationTitle, type SummaryRow } from '@agents/agy/main/agyStore'",
       "listAgyCmd,",
       "node -e \"$2\" \"$HOME/.claude.json\" \"$(pwd -P)\"`",
       "parseAgyConfig,",
@@ -278,7 +279,7 @@
       "type AgyMachinePlan,",
       "type RemoteAgyConfig",
       "while (this.kills.size && this.deps.claude.alive().has(sid))",
-      "} from '../remote/agyTab'"
+      "} from '@agents/agy/main/agyTab'"
     ],
     "src/main/index.ts": [
       "'agy-home': (name) => probeAgyAccount(name)",
@@ -564,7 +565,7 @@
       "if (t.prev === 'approval') claudeAskEnded(t.tabId)",
       "if (views.some((a) => a.kind === 'codex-home' && a.enabled && stale(a))) void probeCodexAccounts()",
       "import type { CommandOutput } from '@agents/claude/main/claudeCommandOutput'",
-      "import { AGY_APP_DIR, AGY_LIST_JS, ownersGeminiDir } from './agyStore'",
+      "import { AGY_APP_DIR, AGY_LIST_JS, ownersGeminiDir } from '@agents/agy/main/agyStore'",
       "import { ClaudeDialogWatch } from '@agents/claude/main/claudeDialogWatch'",
       "import { MACHINE_CLAUDE } from '@agents/claude/main/advisorOnFable'",
       "import { claudeAskLine, storedAskLine } from './rowActivity'",
@@ -683,8 +684,8 @@
       "void agySessions",
       "void codexSessions",
       "void probeAgyAccounts()",
-      "} from './agyAccounts'",
-      "} from './remote/agyTab'",
+      "} from '@agents/agy/main/agyAccounts'",
+      "} from '@agents/agy/main/agyTab'",
       "} from '@agents/claude/main/claudeSessionRegistry'",
       "} from '@agents/claude/main/claudeWorktreeExit'",
       "} from '@agents/codex/main/codexAccounts'",
@@ -861,7 +862,7 @@
       "from: `${codexHome}/${folder}`,",
       "from: `.gemini/${AGY_APP_DIR}/conversations`,",
       "geminiDir: mirrorAgyGemini(userData, host)",
-      "import { AGY_APP_DIR } from '../agyStore'",
+      "import { AGY_APP_DIR } from '@agents/agy/main/agyStore'",
       "import { CODEX_ROLLOUT_FOLDERS, type UsageHome } from '../usageCache'",
       "import { REMOTE_CODEX_HOME } from '@agents/codex/main/codexMachine'",
       "import { mirrorAgyGemini, mirrorCodexHome } from './paths'",
@@ -982,7 +983,7 @@
       "import { CLAUDE_AGENT_SHIM } from './agentShim'",
       "import { CLAUDE_AUTH_ENV_VARS } from './remote/launch'",
       "import { ENSURE_CLAUDE_MINIMUM_FN } from './cliMinimums'",
-      "import { agyAccountEnv } from './agyAccounts'",
+      "import { agyAccountEnv } from '@agents/agy/main/agyAccounts'",
       "pick_account claude \"${NO_USABLE_ACCOUNT.claude}\"",
       "psvc=\"__KOLOFT_KEYCHAIN_NS__-claude-oauth\"",
       "reachesTheModel: AGY_PRINT_OUTSIDE_A_SUBCOMMAND,",
@@ -1015,7 +1016,7 @@
       "export const AGY_STATUSLINE_JS = `const fs = require('fs')",
       "export function setupAgyStatusline(paths: StatuslinePaths): string {",
       "fs.writeFileSync(script, AGY_STATUSLINE_JS)",
-      "import { AGY_COST_ENV } from '@plugins/sessions/main/agyHooks'"
+      "import { AGY_COST_ENV } from '@agents/agy/main/agyHooks'"
     ],
     "src/main/taskProcs.ts": [
       ".filter((row) => looksLikeClaude(row.command))",
@@ -1066,7 +1067,7 @@
       "if (gone.some((file) => cached[file].claudeCalls)) this.claudeGeneration++",
       "if (scanned.claudeCalls || cached[file]?.claudeCalls) this.claudeGeneration++",
       "if (this.claudeOnce?.generation === this.claudeGeneration) return this.claudeOnce.recordsByFile",
-      "import { AGY_APP_DIR, agyTranscript, conversationDb } from './agyStore'",
+      "import { AGY_APP_DIR, agyTranscript, conversationDb } from '@agents/agy/main/agyStore'",
       "import { claudeCallKeys, recordsOfClaudeCalls, type ClaudeCalls } from './usageScan'",
       "let found = this.unpackedClaude.get(calls)",
       "private claudeGeneration = 0",
@@ -1127,7 +1128,7 @@
       "export interface ClaudeCalls {",
       "function packClaudeCalls(calls: ClaudeCall[]): ClaudeCalls {",
       "function packedEntries(c: ClaudeCalls): string[] {",
-      "import { stepOf } from './agyStore'",
+      "import { stepOf } from '@agents/agy/main/agyStore'",
       "interface ClaudeCall {",
       "interface CodexScan {",
       "return packClaudeCalls(calls)"
@@ -1243,8 +1244,8 @@
     "src/plugins/sessions/api.ts": ["type CodexApproval,", "type CodexQuestion,"],
     "src/plugins/sessions/main/appHelpers.ts": [
       "CODEX_REPLY_LANGUAGE_SCRIPT,",
-      "export { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from './agyHooks'",
-      "export { agyBackend } from './backends/agy'",
+      "export { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from '@agents/agy/main/agyHooks'",
+      "export { agyBackend } from '@agents/agy/main/backend'",
       "export { claudeDialog, codexDialog, isAskedCall, questionsOf } from './dialog'",
       "export { codexBackend, trustCodexFolder } from '@agents/codex/main/backend'",
       "export { machineHookSettings, pickMachineAccount } from '@agents/claude/main/backend'",
@@ -1403,7 +1404,7 @@
       "claudeBackend,",
       "claudeBackend: ClaudeBackend",
       "const claudeBackend = new ClaudeBackend({ ...d.claude, tracker })",
-      "import { AgySessions, type AgySessionDeps } from './agySessions'",
+      "import { AgySessions, type AgySessionDeps } from '@agents/agy/main/agySessions'",
       "import { ClaudeBackend, type ClaudeBackendDeps } from '@agents/claude/main/backend'",
       "import { CodexSessions, type CodexSessionDeps } from '@agents/codex/main/codexSessions'",
       "sessionBackends.register(claudeBackend)",

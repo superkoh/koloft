@@ -10,7 +10,7 @@ import {
   historyEntries,
   parseAnnotationTitle,
   type SummaryRow
-} from '../../src/main/agyStore'
+} from '../../src/agents/agy/main/agyStore'
 import {
   AGY_BRAIN_FLAGS,
   AGY_LIST_FILE,
@@ -18,7 +18,7 @@ import {
   listAgyCmd,
   parseAgyConfig,
   readAgyConfigCmd
-} from '../../src/main/remote/agyTab'
+} from '../../src/agents/agy/main/agyTab'
 import { answerOf } from '../../src/main/remote/ssh'
 import { appendTranscript, writeSummaries } from './helpers/agyStore'
 

@@ -44,7 +44,7 @@ import { A_HELPER_HAS_IT, FROM_KOLOFT } from '../../../../src/plugins/sessions/m
 import { crossSessionLine } from '../../../../src/agents/claude/main/crossSessionMessage'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../../../src/main/remote/paths'
 import { machineHookSettings } from '../../../../src/agents/claude/main/backend'
-import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from '../../../../src/plugins/sessions/main/agyHooks'
+import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from '../../../../src/agents/agy/main/agyHooks'
 
 let hookScript: string
 let codexReplyLanguage: string

@@ -35,8 +35,8 @@ import {
   prepareAgyHome,
   readAgyQuota,
   setAgyApiKeyRoute
-} from './agyAccounts'
-import { AGY_APP_DIR, AGY_LIST_JS, ownersGeminiDir } from './agyStore'
+} from '@agents/agy/main/agyAccounts'
+import { AGY_APP_DIR, AGY_LIST_JS, ownersGeminiDir } from '@agents/agy/main/agyStore'
 import {
   AGY_BRAIN_FLAGS,
   AGY_HOOK_FILE,
@@ -45,7 +45,7 @@ import {
   AGY_STATUSLINE_FILE,
   AGY_TITLE_FILE,
   agyStatuslineScript
-} from './remote/agyTab'
+} from '@agents/agy/main/agyTab'
 import { homeKeyOnDisk } from './homeKeyOnDisk'
 import { watchHistoryOf } from './historyWatch'
 import {
