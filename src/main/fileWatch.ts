@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { AGY_LOGS_FOLDER } from '@shared/agyBrain'
+import { AGENT_MANIFESTS } from '@core/agent/registry'
 import type { DirChangeListener, DirChanges } from '@shared/types'
 import { passesHeavy } from './fileTree'
 
@@ -54,12 +54,14 @@ interface DirWatch {
 const dirWatchers = new Map<string, DirWatch>()
 const DIR_CHANGE_DEBOUNCE_MS = 300
 const CHANGED_PATHS_PAST_WHICH_EVERY_OPEN_FOLDER_RELISTS = 500
+const FOLDER_NAMES_NOT_WATCHED = new Set(
+  AGENT_MANIFESTS.flatMap((agent) => agent.folderNamesNotWatched)
+)
 
 function watchIgnored(filename: string | Buffer | null): boolean {
   if (!filename) return false
   const rel = typeof filename === 'string' ? filename : filename.toString()
-  // AGY§8
-  return !passesHeavy(rel) || rel.split(path.sep).includes(AGY_LOGS_FOLDER)
+  return !passesHeavy(rel) || rel.split(path.sep).some((name) => FOLDER_NAMES_NOT_WATCHED.has(name))
 }
 
 function closeWatcher(entry: DirWatch): void {

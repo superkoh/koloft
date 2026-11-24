@@ -15,5 +15,7 @@ export const agent = {
       '--ignore-rules'
     ],
     quoted: []
-  }
+  },
+  folderNamesNotWatched: [],
+  hiddenAtTopOfScratchpad: { named: [], nameEndingIn: [], foldersWhileEmpty: [] }
 } as const satisfies AgentManifest

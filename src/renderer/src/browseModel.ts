@@ -8,12 +8,7 @@ import type {
   SessionInfo
 } from '@shared/types'
 import { isWebPagePath, previewKindForPath } from '@shared/preview'
-import {
-  AGY_ARTIFACT_SIDECAR,
-  AGY_LOGS_FOLDER,
-  AGY_SCRATCH_FOLDER,
-  AGY_UPLOADS_FOLDER
-} from '@shared/agyBrain'
+import { agentManifest } from '@core/agent/registry'
 
 export function inRoot(p: string, root: string): boolean {
   return p === root || p.startsWith(root + '/')
@@ -122,16 +117,7 @@ export function isOutsideEligible(p: string): boolean {
   return k === 'markdown' || k === 'image' || isWebPagePath(p)
 }
 
-// AGY§8 AGY§19
-const AGY_OWN_FOLDERS = new Set([AGY_LOGS_FOLDER, AGY_UPLOADS_FOLDER])
-
 type Listed = Readonly<Record<string, readonly DirEntry[] | undefined>>
-
-function isAgyBookkeeping(e: DirEntry, dir: string | undefined, listed: Listed): boolean {
-  if (e.path !== `${dir}/${e.name}`) return false
-  if (e.name === AGY_SCRATCH_FOLDER && e.isDir) return !listed[e.path]?.length
-  return AGY_OWN_FOLDERS.has(e.name) || e.name.endsWith(AGY_ARTIFACT_SIDECAR)
-}
 
 export function scratchpadEntries(
   entries: readonly DirEntry[] | undefined,
@@ -140,9 +126,23 @@ export function scratchpadEntries(
   listed: Listed
 ): DirEntry[] {
   if (!entries) return []
-  if (backend === 'agy') return entries.filter((e) => !isAgyBookkeeping(e, scratchpadDir, listed))
-  if (backend === 'claude') return entries.filter((e) => !isTasksPath(e.path, scratchpadDir))
-  return [...entries]
+  if (!backend) return [...entries]
+  const { named, nameEndingIn, foldersWhileEmpty } = agentManifest(backend).hiddenAtTopOfScratchpad
+  return entries.filter((e) => {
+    if (e.path !== `${scratchpadDir}/${e.name}`) return true
+    if (e.isDir && foldersWhileEmpty.includes(e.name)) return !!listed[e.path]?.length
+    return !named.includes(e.name) && !nameEndingIn.some((ending) => e.name.endsWith(ending))
+  })
+}
+
+export function scratchpadFoldersHiddenWhileEmpty(
+  scratchpadDir: string | undefined,
+  backend: BackendId | undefined
+): string[] {
+  if (!scratchpadDir || !backend) return []
+  return agentManifest(backend).hiddenAtTopOfScratchpad.foldersWhileEmpty.map(
+    (name) => `${scratchpadDir}/${name}`
+  )
 }
 
 export interface OutsideInput {

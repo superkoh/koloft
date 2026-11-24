@@ -195,6 +195,25 @@ describe('FR-46 — the file tree shows the session scratchpad but never its sib
     expect(names([scratch, plan], { [scratch.path]: [] })).toEqual(['plan.md'])
     expect(names([{ ...scratch, isDir: false }, plan], {})).toEqual(['scratch', 'plan.md'])
   })
+
+  it('each agent’s names are hidden only in its own sessions: a Claude Code scratchpad shows the names Antigravity hides, and a Codex session’s folder, or one whose agent is not known, hides nothing', () => {
+    const dir = '/home/u/session-folder'
+    const entry = (name: string, isDir: boolean): DirEntry => ({
+      name,
+      path: `${dir}/${name}`,
+      isDir
+    })
+    const all: DirEntry[] = [
+      entry('tasks', true),
+      entry('.system_generated', true),
+      entry('.user_uploaded', true),
+      entry('scratch', true),
+      entry('plan.md.metadata.json', false)
+    ]
+    expect(scratchpadEntries(all, dir, 'claude', {})).toEqual(all.slice(1))
+    expect(scratchpadEntries(all, dir, 'codex', {})).toEqual(all)
+    expect(scratchpadEntries(all, dir, undefined, {})).toEqual(all)
+  })
 })
 
 describe('FR-46 — ↗ Outside', () => {

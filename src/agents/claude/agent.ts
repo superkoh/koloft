@@ -18,5 +18,8 @@ export const agent = {
       '--fallback-model'
     ],
     quoted: ['oauth', 'custom']
-  }
+  },
+  folderNamesNotWatched: [],
+  // CC§2
+  hiddenAtTopOfScratchpad: { named: ['tasks'], nameEndingIn: [], foldersWhileEmpty: [] }
 } as const satisfies AgentManifest
