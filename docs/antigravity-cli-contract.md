@@ -89,7 +89,14 @@ only downloaded the public release.
 - Each new conversation makes two calls: `gemini-3.1-flash-lite-preview` gets the
   first prompt with no tools, and its answer becomes the title (§8);
   `gemini-3.1-pro-preview` does the turn with 13 tools (§13), a `systemInstruction`
-  and `thinkingBudget:1024`. `-p` runs do the same.
+  and `thinkingBudget:1024`. `-p` runs did the same on 1.3.6.
+- **On 1.5.16 a `-p` run makes only the turn call.** The TUI still makes both (the
+  title call with no tools, then the turn call, which now carries 15 tools); `agy -p
+  "<text>"` sent `gemini-3.1-pro-preview` one request and no title request, also in
+  the 3 s after it exited 0 (3 of 3 runs, each in a new `--gemini_dir` folder).
+  2026-11-24, agy 1.5.16 linux-arm64 from the manifest (sha512 checked), in the e2e SSH
+  lab image (Docker, Debian 12.15, plain user), API-key route on a fake Gemini server on
+  that machine that logged each request's model and tool count.
 - The user's words arrive wrapped:
   `<USER_REQUEST>\n…\n</USER_REQUEST>\n<ADDITIONAL_METADATA>…local time…</ADDITIONAL_METADATA>`.
   The first turn also carries a `<USER_SETTINGS_CHANGE>` block.
@@ -107,7 +114,19 @@ only downloaded the public release.
   binary to `~/.local/bin/agy` (or `--dir`), then runs `agy install`. It installs the
   current release (1.4.0 when run on macOS). If `~/.local/bin/agy` already exists it
   exits 0 and does nothing.
-- The binary is one 207 MB file, no launcher script (Linux 1.3.6).
+- The binary is one 207 MB file, no launcher script (Linux 1.3.6). On 1.5.16 the
+  arm64 tarball, `…/linux-arm/cli_linux_arm64.tar.gz`, is 93 MB (92,724,848 bytes) and
+  holds one file, `antigravity`, of 258 MB (257,774,256 bytes). The Linux manifests are
+  `linux_arm64.json` and `linux_amd64.json` (its tarball is `…/linux-x64/cli_linux_x64.tar.gz`);
+  `linux_x64.json` is a 404 (read 2026-11-24 from a Docker container).
+- **The e2e SSH lab image takes the installer once curl is there.** The image
+  (`test/e2e/fixtures/sshd.Dockerfile`: Debian 12.15 on `node:22-bookworm-slim`, tmux
+  3.3a, python3 3.11) has no curl, wget or sudo, and the installer stops without curl
+  or wget; it also uses `tar` and `sha512sum`, which the image has. With curl added by
+  apt, the installer run by a plain user with a `.bashrc` and a `.profile` took 6 s,
+  exited 0, put 1.5.16 at `~/.local/bin/agy` and appended its `PATH` line to both
+  files; `agy --version` then printed `1.5.16` (2026-11-24, Docker on an arm64 Mac,
+  network on, one run).
 - `agy install` (flags `--dir`, `--skip-path`, `--skip-aliases`) appends
   `# Added by Antigravity CLI installer` and `export PATH="$HOME/.local/bin:$PATH"`
   only to shell start-up files that already exist: `.bashrc` and `.profile` for a bash
@@ -121,7 +140,11 @@ only downloaded the public release.
 - Every launch spawns a background updater ("Spawned background update process")
   unless the last check was under 15 minutes ago, kept in
   `<appDataDir>/last_check.timestamp`, so a new data folder checks again on its first
-  launch.
+  launch. On 1.5.16 it is a process of its own, seen in `ps` beside the TUI as
+  `<path>/agy --bg-updater --app_data_dir=antigravity-cli --gemini_dir=<dir>`: it
+  carries the TUI's `--gemini_dir` but not its `--csrf_token` (2026-11-24, linux-arm64
+  just put in by the installer, a Koloft remote tab on the e2e SSH lab machine, one
+  sighting a few seconds after launch; how long it lives was not measured).
 - An update replaces the binary in place at the path that was run, as a new file; the
   old one stays beside it as `<name>.<unixnanos>.old` (still there after the next
   start). `<appDataDir>/updater/update_status.json` says
@@ -262,7 +285,12 @@ only downloaded the public release.
   asks "Do you trust the contents of this project?" just as in an unrelated folder, and
   `trustedWorkspaces` is unchanged after. None of the flags in §1 trusts a folder for one
   run. (1.4.12 Linux arm64 from the manifest, sha512 checked, Docker, tmux, API-key route
-  with `onboarding.json`, 2026-11-03.)
+  with `onboarding.json`, 2026-11-03.) The same on 1.5.16, in a Koloft remote tab on the
+  e2e SSH lab machine (2026-11-24, linux-arm64 from the installer, tmux 3.3a, API-key
+  route): with only the project in the account folder's `trustedWorkspaces`, agy started
+  in `<project>/.claude/worktrees/<name>` stopped on "Accessing workspace: <that folder>
+  / Do you trust the contents of this project?"; with that folder listed too it opened on
+  the prompt (one run each).
 - **Resuming behind a first-run screen** (1.4.7, Linux arm64, Docker, tmux, fake
   Gemini server, 2026-10-24): `--conversation=<id>` with the folder missing from
   `trustedWorkspaces` shows the same trust screen, but the title script already runs
@@ -1908,6 +1936,20 @@ Koloft dependents: the repo's own `.agents/hooks.json` (ADR-0053).
   with the folder, a `title` command) and `cache/onboarding.json`, with
   `GEMINI_API_KEY` from a sourced env file, opens straight on the prompt. agy rewrites
   `settings.json` in its own form and keeps the `title` block.
+- **1.5.16 started by Koloft itself on a machine that had no agy.** A Koloft remote
+  tab (OpenSSH through a jump host into the e2e SSH lab container, Koloft's own tab
+  script, `ensure.sh`, tmux 3.3a and status relay; curl added to the machine first):
+  the installer ran inside the tab and agy opened straight on the prompt with no Google
+  account. `GEMINI_API_KEY` came from the tab's sourced env file; `GOOGLE_GEMINI_BASE_URL`
+  came from `/etc/environment`, which sshd's `pam_env` gives every login and which
+  reached agy through tmux, and pointed at a fake Gemini server on that machine. One
+  typed prompt made the two calls of §2, both with the key in `x-goog-api-key`; the
+  model's title reached the title script; the text of Koloft's SessionStart hook and of
+  its per-prompt hook landed in the transcript as a `SYSTEM_MESSAGE` and an
+  `EPHEMERAL_MESSAGE` step before the `PLANNER_RESPONSE`. With the tab's tmux session
+  killed, no agy process was left, and the key was in no file under `~/.koloft` or
+  `~/.gemini`. 2026-11-24, agy 1.5.16 linux-arm64, Docker on an arm64 Mac, network on;
+  it is the case E-SSH-A6 of `test/e2e/agy-ssh-lab.spec.ts`.
 - Inside that tab `SSH_CONNECTION`, `SSH_TTY` and `SSH_CLIENT` reach agy; its log says
   "Using file-based token storage because SSH session detected". A non-tty `ssh host
   cmd` gives "no D-Bus session bus detected" instead — a token file either way.

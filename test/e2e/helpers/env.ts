@@ -41,6 +41,7 @@ export const E2E_CLAUDE_ACCOUNT = 'e2e-key'
 const E2E_CLAUDE_ACCOUNT_KEY = 'sk-ant-api03-e2e-fixture'
 export const E2E_CODEX_ACCOUNT = 'e2e-codex'
 export const E2E_AGY_ACCOUNT = 'e2e-agy'
+export const E2E_AGY_ACCOUNT_KEY = 'fake-gemini-key'
 export const UNPACKAGED_BUILD_AGY_SVC = 'koloft-dev-agy-home'
 
 export function seededAccount(
@@ -371,7 +372,7 @@ export function addAgyAccount(env: E2EEnv, name = E2E_AGY_ACCOUNT): void {
     path.join(cache, 'onboarding.json'),
     JSON.stringify({ onboardingComplete: true })
   )
-  addKeychainEntry(env, UNPACKAGED_BUILD_AGY_SVC, name, 'fake-gemini-key')
+  addKeychainEntry(env, UNPACKAGED_BUILD_AGY_SVC, name, E2E_AGY_ACCOUNT_KEY)
   const file = path.join(env.userData, 'settings.json')
   const current = JSON.parse(fs.readFileSync(file, 'utf8')) as { accounts?: unknown[] }
   seedSettings(env, {

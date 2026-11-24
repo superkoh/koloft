@@ -221,7 +221,10 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `~/.gemini` settings trust the folder (`trustInAgy`), logs every launch to
   `<home>/fake-agy-calls.jsonl` (the account probe's `-p /usage` and `--version` too),
   and serves agy's local API. On the fake remote machine `installRemoteAgy`
-  (helpers/remote.ts) puts it at `.local/bin/agy` and trusts the remote folder.
+  (helpers/remote.ts) puts it at `.local/bin/agy` and trusts the remote folder. On the
+  Docker lab machine agy-ssh-lab.spec.ts copies it to `/usr/local/bin/agy`; its last case
+  has Koloft install the real agy there instead, which asks fixtures/fake-gemini.js on
+  that machine in place of Google, so it needs no account.
 
 ### Keys, focus and the hidden window
 
