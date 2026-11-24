@@ -2136,7 +2136,7 @@ against their transcripts, `lsof`/`ps` on live sessions, and a headless probe
 the prompt must ride stdin or `--allowedTools` swallows it). Koloft dependents: the
 `bgl` list in `src/plugins/sessions/main/hooks.ts`'s injected script, `src/main/taskProcs.ts`,
 `judgeReported` and the server test (`IDLE_SERVER_CPU_MS_PER_MINUTE`,
-`SERVER_QUIET_WINDOW_MS`) in `src/plugins/sessions/main/sessionTracker.ts`.
+`SERVER_QUIET_WINDOW_MS`) in `src/agents/claude/main/sessionTracker.ts`.
 
 ## §9 Launch flags for a run nobody is watching
 

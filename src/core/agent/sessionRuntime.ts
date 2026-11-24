@@ -64,11 +64,16 @@ interface RuntimeEntry extends StatusSignals {
   closeTimer?: ReturnType<typeof setTimeout>
 }
 
-export class SessionRuntime extends EventEmitter {
+export class SessionRuntime extends EventEmitter<{
+  status: [StatusEdge]
+  'turn-over': [TurnOverEdge]
+  'auto-close': [{ tabId: string }]
+}> {
   private entries = new Map<string, RuntimeEntry>()
   activeTabId?: () => string | null
   heldTabs?: () => ReadonlySet<string>
   needsUser?: (tabId: string) => boolean
+  workStillRunning: (tabId: string) => Promise<boolean> = async () => false
 
   statusOf(tabId: string): SessionStatus | undefined {
     return this.entries.get(tabId)?.status
@@ -87,15 +92,11 @@ export class SessionRuntime extends EventEmitter {
     return turn === 'ended' || turn === 'input'
   }
 
-  protected turnNow(tabId: string): Turn | undefined {
-    return this.entries.get(tabId)?.turn
-  }
-
-  protected statusSince(tabId: string): number {
+  statusSince(tabId: string): number {
     return this.entries.get(tabId)?.since ?? 0
   }
 
-  protected isHeldByBackground(tabId: string): boolean {
+  isHeldByBackground(tabId: string): boolean {
     const e = this.entries.get(tabId)
     return !!e && e.turn === 'ended' && e.heldByBackground
   }
@@ -111,8 +112,7 @@ export class SessionRuntime extends EventEmitter {
     this.evaluate(tabId, e, Date.now())
     const over = this.turnOver(tabId)
     if (over === wasOver) return
-    this.turnOverChanged(tabId)
-    this.emit('turn-over', { tabId, over } satisfies TurnOverEdge)
+    this.emit('turn-over', { tabId, over })
   }
 
   recordCompaction(
@@ -167,14 +167,6 @@ export class SessionRuntime extends EventEmitter {
     this.entries.delete(tabId)
   }
 
-  protected statusChanged(_tabId: string, _status: SessionStatus): void {}
-
-  protected turnOverChanged(_tabId: string): void {}
-
-  protected async workStillRunning(_tabId: string): Promise<boolean> {
-    return false
-  }
-
   async stillWorking(tabId: string): Promise<boolean> {
     const e = this.entries.get(tabId)
     if (!e) return false
@@ -217,8 +209,7 @@ export class SessionRuntime extends EventEmitter {
       e.since = now
       this.disarmClose(e)
     }
-    this.statusChanged(tabId, status)
-    this.emit('status', { tabId, prev, next: status } satisfies StatusEdge)
+    this.emit('status', { tabId, prev, next: status })
   }
 
   private armClose(tabId: string, e: RuntimeEntry): void {

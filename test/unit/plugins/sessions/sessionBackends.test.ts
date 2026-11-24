@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { SessionBackends, type SessionBackend } from '../../../../src/core/agent/sessionBackends'
-import { sessionEventFromHook } from '../../../../src/plugins/sessions/main/sessionTracker'
+import { sessionEventFromHook } from '../../../../src/agents/claude/main/sessionTracker'
 import {
   capabilitiesFor,
   effectiveBackend,
@@ -48,7 +48,8 @@ function stubBackend(
     transcriptPlaces: () => undefined,
     permissionClass: () => 'prompting' as const,
     peerNames: () => async () => null,
-    runningElsewhere: () => false
+    runningElsewhere: () => false,
+    workStillRunning: async () => false
   } satisfies SessionBackend
 }
 
@@ -412,5 +413,20 @@ describe('launchMenus (the agents a New session menu offers, by where the worksp
       'codex',
       'agy'
     ])
+  })
+})
+
+describe('whether work a session started still runs after its turn ended', () => {
+  it('is asked of the backend that owns the tab, and a tab no backend owns has none', async () => {
+    const registry = new SessionBackends(lifecycle())
+    registry.register({
+      ...stubBackend('claude'),
+      hasTab: (tabId) => tabId === 'busy',
+      workStillRunning: async () => true
+    })
+    registry.register({ ...stubBackend('codex'), hasTab: (tabId) => tabId === 'done' })
+    expect(await registry.workStillRunning('busy')).toBe(true)
+    expect(await registry.workStillRunning('done')).toBe(false)
+    expect(await registry.workStillRunning('nobodys')).toBe(false)
   })
 })
