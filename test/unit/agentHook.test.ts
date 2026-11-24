@@ -8,6 +8,7 @@ const repoRoot = path.resolve(__dirname, '../..')
 const SCRIPTS = [
   'agent-hook.mjs',
   'check-comments.mjs',
+  'ledgers.mjs',
   'push-checks.mjs',
   'worktree-deps.mjs',
   'worktree-deps-state.mjs'

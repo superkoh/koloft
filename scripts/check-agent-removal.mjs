@@ -12,7 +12,8 @@ import {
   importedPath,
   parseSource,
   sourceFilesUnder,
-  walk
+  walk,
+  withoutCasts
 } from './source-imports.mjs'
 
 const ROOT = process.cwd()
@@ -65,9 +66,7 @@ function foldersInListOrder() {
   let elements
   walk(program, (node) => {
     if (node.type === 'VariableDeclarator' && node.id.name === MANIFEST_ARRAY) {
-      let init = node.init
-      while (/^TS(As|Satisfies)Expression$/.test(init?.type ?? '')) init = init.expression
-      elements = init?.elements
+      elements = withoutCasts(node.init)?.elements
     }
   })
   if (!elements) cannotRun(`${MANIFEST_LIST} has no array ${MANIFEST_ARRAY}`)
@@ -91,15 +90,30 @@ function lineEnd(text, at) {
   return text[at] === '\n' ? at + 1 : at
 }
 
-function takeOutEntriesOf(root, file, folder) {
+function withOverlapsMerged(cuts) {
+  const merged = []
+  for (const cut of [...cuts].sort((a, b) => a.start - b.start)) {
+    const last = merged.at(-1)
+    if (last && cut.start < last.end) {
+      if (last.with || cut.with) cannotRun(`two changes overlap in a list file`)
+      last.end = Math.max(last.end, cut.end)
+    } else merged.push({ ...cut })
+  }
+  return merged
+}
+
+function takeOutEntriesOf(root, file, folder, agentFolders) {
   const text = fs.readFileSync(path.join(root, file), 'utf8')
   const { program, imports } = agentImports(root, file)
   const mine = imports.filter((i) => i.folder === folder)
   if (mine.length === 0) return
   const names = new Set(mine.flatMap((i) => i.node.specifiers.map((s) => s.local.name)))
   const stayingNames = imports
-    .filter((i) => i.folder !== folder)
-    .flatMap((i) => i.node.specifiers.map((s) => s.local.name))
+    .filter((i) => i.folder !== folder && agentFolders.includes(i.folder))
+    .filter((i) => i.node.importKind !== 'type')
+    .flatMap((i) =>
+      i.node.specifiers.filter((s) => s.importKind !== 'type').map((s) => s.local.name)
+    )
   const cuts = mine.map(({ node }) => ({
     start: node.start,
     end: lineEnd(text, node.end),
@@ -124,10 +138,16 @@ function takeOutEntriesOf(root, file, folder) {
     }
   })
   let out = text
-  for (const cut of cuts.sort((a, b) => b.start - a.start))
+  for (const cut of withOverlapsMerged(cuts).reverse())
     out = out.slice(0, cut.start) + cut.with + out.slice(cut.end)
   fs.writeFileSync(path.join(root, file), out)
-  const left = identifiersNamed(parseSource(root, file), names)
+  let after
+  try {
+    after = parseSource(root, file)
+  } catch (e) {
+    cannotRun(`${file}: no longer parses once ${folder} is taken out (${e.message})`)
+  }
+  const left = identifiersNamed(after, names)
   if (left.length > 0)
     cannotRun(
       `${file}: cannot take out ${left.join(', ')} (used in a way this script does not know; teach takeOutEntriesOf)`
@@ -151,10 +171,10 @@ function copyOfRepo(into, files) {
   fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(into, 'node_modules'))
 }
 
-function deleteAgent(dir, folder) {
+function deleteAgent(dir, folder, agentFolders) {
   fs.rmSync(path.join(dir, AGENTS_DIR, folder), { recursive: true, force: true })
   for (const list of LISTS_OF_AGENTS)
-    if (fs.existsSync(path.join(dir, list))) takeOutEntriesOf(dir, list, folder)
+    if (fs.existsSync(path.join(dir, list))) takeOutEntriesOf(dir, list, folder, agentFolders)
 }
 
 function typecheck(dir, config) {
@@ -183,14 +203,16 @@ function typecheck(dir, config) {
 
 async function inTurn(jobs, atOnce) {
   const results = new Array(jobs.length)
+  const failures = []
   let next = 0
   const worker = async () => {
     while (next < jobs.length) {
       const i = next++
-      results[i] = await jobs[i]()
+      results[i] = await jobs[i]().catch((e) => failures.push(e))
     }
   }
   await Promise.all(Array.from({ length: Math.min(atOnce, jobs.length) }, worker))
+  if (failures.length > 0) throw failures[0]
   return results
 }
 
@@ -300,7 +322,7 @@ async function main() {
     ].map((plan, i) => ({ ...plan, dir: path.join(scratch, String(i)) }))
     for (const plan of plans) {
       copyOfRepo(plan.dir, files)
-      if (plan.folder) deleteAgent(plan.dir, plan.folder)
+      if (plan.folder) deleteAgent(plan.dir, plan.folder, folders)
     }
     const jobs = plans.flatMap((plan) => CHECKS.map((c) => () => typecheck(plan.dir, c.config)))
     const results = await inTurn(jobs, TYPECHECKS_AT_ONCE)

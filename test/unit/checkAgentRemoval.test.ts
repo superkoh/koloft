@@ -107,9 +107,23 @@ describe('check-agent-removal', () => {
   )
 
   it(
-    'takes an agent out of the list file and points the first-open pick at the next agent, so a list with no other users types clean',
+    'takes an agent out of every list file, side-by-side entries too, and points a single pick at the next agent, so lists with no other users type clean',
     () => {
-      const dir = fixtureRepo()
+      const dir = fixtureRepo({
+        'src/agents/kit/start.ts': 'export type Start = () => void\n',
+        'src/agents/alpha/main/start.ts': 'export const start = (): void => {}\n',
+        'src/agents/alpha/main/stop.ts': 'export const stop = (): void => {}\n',
+        'src/agents/beta/main/start.ts': 'export const start = (): void => {}\n',
+        'src/agents/starts.ts': [
+          "import type { Start } from './kit/start'",
+          "import { start as betaStart } from './beta/main/start'",
+          "import { start as alphaStart } from './alpha/main/start'",
+          "import { stop as alphaStop } from './alpha/main/stop'",
+          'export const STARTS: Start[] = [betaStart, alphaStart, alphaStop]',
+          'export const FIRST: Start = alphaStart',
+          ''
+        ].join('\n')
+      })
       const r = check(dir)
       expect(r.code).toBe(0)
       expect(r.rows.alpha).toMatchObject({ files: 0 })
