@@ -889,7 +889,10 @@
       "type CodexApproval,",
       "type CodexQuestion"
     ],
-    "src/main/sessionAggregate.ts": ["const home = wsPath + '/.claude/worktrees/'"],
+    "src/main/sessionAggregate.ts": [
+      "const home = wsPath + '/.claude/worktrees/'",
+      "} from '@agents/claude/main/sessionTracker'"
+    ],
     "src/main/sessionWorktrees.ts": [
       "const target = `${root}/.claude/worktrees/${name}`",
       "const worktreePath = `${root}/.claude/worktrees/${name}`",
@@ -1320,27 +1323,6 @@
       "type CodexApproval,",
       "type CodexQuestion,"
     ],
-    "src/plugins/sessions/main/sessionTracker.ts": [
-      "(machine && path.join(machine.tmpRoot, `claude-${machine.uid}`))",
-      "const PEER_MESSAGE = /^Another Claude session sent a message:\\n([\\s\\S]*?)\\n\\nThis came from another/",
-      "const WRITTEN_BY_CLAUDE_CODE = /^<(task-notification|system-reminder|teammate-message)[\\s>]/",
-      "export const PROJECTS_ROOT = path.join(os.homedir(), '.claude', 'projects')",
-      "for (const piece of claudeTurnPieces(obj)) {",
-      "for (const piece of claudeTurnPieces(parseRecord(line))) {",
-      "function claudeTurnPieces(obj: TranscriptRecord | null): TurnPiece[] {",
-      "if (WRITTEN_BY_CLAUDE_CODE.test(text)) return null",
-      "import type { ClaudeSessionInfo as SessionInfo, SessionStatus, BackgroundItem } from '@shared/types'",
-      "import { ClaudeTouchedFiles, toolFilePath } from '@agents/claude/main/claudeTouchedFiles'",
-      "import { REMOTE_CLAUDE_PROJECTS } from '../../../main/remote/paths'",
-      "import { claudeToolDid } from '../../../main/rowActivity'",
-      "import { claudeWroteIt, commandOutputOf } from '@agents/claude/main/claudeCommandOutput'",
-      "onMachine: path.posix.join('~', REMOTE_CLAUDE_PROJECTS, inProjects)",
-      "return raw !== null && raw.startsWith('/') && claudeWroteIt(obj)",
-      "t.info.lastAction = claudeToolDid(call.name, call.input) ?? t.info.lastAction",
-      "t.touched = new ClaudeTouchedFiles()",
-      "touched: ClaudeTouchedFiles",
-      "touched: new ClaudeTouchedFiles(),"
-    ],
     "src/plugins/sessions/main/sessionVerbs.ts": [
       "'a Claude session talks to another Claude session on the same machine with its SendMessage tool; ListAgents shows their names. This command reaches Codex and Antigravity sessions, Claude sessions on another machine, and the session or Assist that started you.'",
       "? `Started session \"${name}\" in a new tab. Talk to it with SendMessage to \"${name}\".`",
@@ -1381,12 +1363,14 @@
       "import { AgySessions, type AgySessionDeps } from '@agents/agy/main/agySessions'",
       "import { ClaudeBackend, type ClaudeBackendDeps } from '@agents/claude/main/backend'",
       "import { CodexSessions, type CodexSessionDeps } from '@agents/codex/main/codexSessions'",
+      "import { SessionTracker } from '@agents/claude/main/sessionTracker'",
       "sessionBackends.register(claudeBackend)",
       "subscribeTabSubsystems: BuildLater<Omit<TabSubsystems, 'attention' | 'claude' | 'tracker'>>"
     ],
     "src/plugins/sessions/main/tabLifecycle.ts": [
       "claude: Pick<ClaudeBackend, 'onPtyExit'>",
       "import type { ClaudeBackend } from '@agents/claude/main/backend'",
+      "import type { SessionTracker } from '@agents/claude/main/sessionTracker'",
       "lifecycle.on('teardown', ({ tabId, crashed }) => s.claude.onPtyExit(tabId, crashed))"
     ],
     "src/plugins/sessions/main/workspaces.ts": [

@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'util'
 import type { AskPayload } from '@shared/sessionEvent'
 import type { BackendId } from '@shared/types'
 import { fail, type Parsed } from '@core/command'
-import type { ToolCall } from './sessionTracker'
+import type { ToolCall } from '@core/moment'
 import { keysFor, typedPieces } from '@core/typeKeys'
 import { CLEAR_TO_LINE_START } from '@shared/lineEditKeys'
 

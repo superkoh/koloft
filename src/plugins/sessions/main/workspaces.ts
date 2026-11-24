@@ -42,7 +42,7 @@ import {
   withWorkbenchState,
   type WorktreeEntry
 } from '../../../main/workspaceOps'
-import { encodeCwd } from './sessionTracker'
+import { encodeCwd } from '@shared/cwdKey'
 import { dirExists } from '../../../main/fileTree'
 import { dirExistsSync } from '../../../main/resumePlan'
 import { isGitCheckoutAsync } from '../../../main/projectInfo'

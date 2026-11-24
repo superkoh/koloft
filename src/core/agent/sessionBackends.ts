@@ -48,6 +48,7 @@ export interface SessionBackend {
   permissionClass(tabId: string): ModeClass
   peerNames(): (key: string) => Promise<string | null>
   runningElsewhere(key: string): boolean | Promise<boolean>
+  workStillRunning(tabId: string): Promise<boolean>
 }
 
 export interface SessionLifecycle {
@@ -192,6 +193,10 @@ export class SessionBackends {
 
   async runningElsewhere(backendId: BackendId, key: string): Promise<boolean> {
     return (await this.adapters.get(backendId)?.runningElsewhere(key)) ?? false
+  }
+
+  async workStillRunning(tabId: string): Promise<boolean> {
+    return (await this.ownerOfTab(tabId)?.workStillRunning(tabId)) ?? false
   }
 
   async historyRows(

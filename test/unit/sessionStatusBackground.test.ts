@@ -1,9 +1,17 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import type { EventEmitter } from 'events'
-import type { SessionInfo, SessionStatus } from '@shared/types'
+import type { ClaudeSessionInfo as SessionInfo, SessionStatus } from '@shared/types'
+import { encodeCwd } from '@shared/cwdKey'
+
+vi.mock('electron', async () => {
+  const nfs = await import('node:fs')
+  const nos = await import('node:os')
+  const npath = await import('node:path')
+  const base = nfs.mkdtempSync(npath.join(nos.tmpdir(), 'koloft-run-state-'))
+  return { app: { getPath: () => base, getName: () => 'koloft-dev', isPackaged: false } }
+})
 
 const HOLD_MS = 400
 const SILENCE_MS = 1500
@@ -15,10 +23,12 @@ const PROCS_SCAN_MS = 100
 const IDLE_MS = 2000
 const IDLE_CLOSE_MS = 400
 const ACK_AGE_PAST_THE_TRUNCATION_TICK_YET_INSIDE_ITS_SILENCE_CAP_MS = SILENCE_MS - 400
+const EMIT_THROTTLE_PASSED_MS = 700
 
-let SessionTracker: typeof import('../../src/plugins/sessions/main/sessionTracker').SessionTracker
-let encodeCwd: typeof import('../../src/plugins/sessions/main/sessionTracker').encodeCwd
-let sessionEventFromHook: typeof import('../../src/plugins/sessions/main/sessionTracker').sessionEventFromHook
+type SessionTracker = import('../../src/agents/claude/main/sessionTracker').SessionTracker
+let sessionEventFromHook: typeof import('../../src/agents/claude/main/sessionTracker').sessionEventFromHook
+let trackerWiredAsTheAppWiresIt: typeof import('./helpers/claudeRunState').trackerWiredAsTheAppWiresIt
+let runtimeOf: typeof import('./helpers/claudeRunState').runtimeOf
 let home: string
 let projectsRoot: string
 
@@ -35,8 +45,8 @@ beforeAll(async () => {
   process.env.KOLOFT_IDLE_MS = String(IDLE_MS)
   process.env.KOLOFT_IDLE_CLOSE_MS = String(IDLE_CLOSE_MS)
   projectsRoot = path.join(home, '.claude', 'projects')
-  ;({ SessionTracker, encodeCwd, sessionEventFromHook } =
-    await import('../../src/plugins/sessions/main/sessionTracker'))
+  ;({ sessionEventFromHook } = await import('../../src/agents/claude/main/sessionTracker'))
+  ;({ trackerWiredAsTheAppWiresIt, runtimeOf } = await import('./helpers/claudeRunState'))
 })
 
 afterAll(() => {
@@ -52,14 +62,14 @@ afterAll(() => {
   fs.rmSync(home, { recursive: true, force: true })
 })
 
-const trackers: InstanceType<typeof SessionTracker>[] = []
+const trackers: SessionTracker[] = []
 afterEach(() => {
   for (const t of trackers) for (const s of t.list()) t.untrack(s.tabId)
   trackers.length = 0
 })
 
-function newTracker(): InstanceType<typeof SessionTracker> {
-  const t = new SessionTracker()
+function newTracker(): SessionTracker {
+  const t = trackerWiredAsTheAppWiresIt()
   trackers.push(t)
   return t
 }
@@ -306,12 +316,12 @@ function initialLines(cwd: string): unknown[] {
   ]
 }
 
-function status(tracker: InstanceType<typeof SessionTracker>, tabId: string): string | undefined {
+function status(tracker: SessionTracker, tabId: string): string | undefined {
   return tracker.list().find((s) => s.tabId === tabId)?.status
 }
 
 function waitFor(
-  tracker: EventEmitter,
+  tracker: SessionTracker,
   pred: (s: SessionInfo) => boolean,
   timeoutMs = 10_000
 ): Promise<SessionInfo> {
@@ -330,7 +340,7 @@ function waitFor(
       reject(new Error('timed out waiting for session update'))
     }, timeoutMs)
     tracker.on('update', onUpdate)
-    const cur = (tracker as unknown as { list(): SessionInfo[] }).list().find(pred)
+    const cur = tracker.list().find(pred)
     if (cur) done(cur)
   })
 }
@@ -338,7 +348,7 @@ function waitFor(
 const SID = '22222222-2222-4222-8222-222222222222'
 
 async function bindCaughtUp(
-  tracker: InstanceType<typeof SessionTracker>,
+  tracker: SessionTracker,
   tabId: string,
   cwd: string,
   lines: unknown[]
@@ -358,7 +368,9 @@ describe('run-state vs background work: any live background task keeps the sessi
     tracker.setStatus('tabB1', 'working')
 
     const edges: Array<{ prev?: SessionStatus; next: SessionStatus }> = []
-    tracker.on('status', (e: { prev?: SessionStatus; next: SessionStatus }) => edges.push(e))
+    runtimeOf(tracker).on('status', (e: { prev?: SessionStatus; next: SessionStatus }) =>
+      edges.push(e)
+    )
 
     appendJsonl(file, [spawnRec('toolu_bg1', cwd)])
     await tracker.reportTurnEnd('tabB1')
@@ -377,7 +389,9 @@ describe('run-state vs background work: any live background task keeps the sessi
     expect(status(tracker, 'tabB16')).toBe('working')
 
     const edges: Array<{ prev?: SessionStatus; next: SessionStatus }> = []
-    tracker.on('status', (e: { prev?: SessionStatus; next: SessionStatus }) => edges.push(e))
+    runtimeOf(tracker).on('status', (e: { prev?: SessionStatus; next: SessionStatus }) =>
+      edges.push(e)
+    )
     tracker.receive('tabB16', sessionEventFromHook('notify', 'Claude is waiting for your input')!)
     await sleep(200)
 
@@ -457,7 +471,7 @@ describe('run-state vs background work: any live background task keeps the sessi
     expect(status(tracker, 'tabB5b')).toBe('working')
 
     const edges: SessionStatus[] = []
-    tracker.on('status', (e: { tabId: string; next: SessionStatus }) => {
+    runtimeOf(tracker).on('status', (e: { tabId: string; next: SessionStatus }) => {
       if (e.tabId === 'tabB5b') edges.push(e.next)
     })
     const lines: unknown[] = [subagentRec(Date.now())]
@@ -604,7 +618,7 @@ describe('run-state vs background work: any live background task keeps the sessi
     const tracker = newTracker()
     const file = await bindCaughtUp(tracker, 'tabB20', cwd, initialLines(cwd))
     tracker.setStatus('tabB20', 'approval')
-    tracker.on('status', (e: { tabId: string; next: SessionStatus }) => {
+    runtimeOf(tracker).on('status', (e: { tabId: string; next: SessionStatus }) => {
       if (e.tabId === 'tabB20' && e.next === 'working') throw new Error('listener failed')
     })
 
@@ -790,7 +804,9 @@ describe('run-state vs background work: any live background task keeps the sessi
     tracker.setStatus('tabF1', 'working')
 
     const edges: Array<{ prev?: SessionStatus; next: SessionStatus }> = []
-    tracker.on('status', (e: { prev?: SessionStatus; next: SessionStatus }) => edges.push(e))
+    runtimeOf(tracker).on('status', (e: { prev?: SessionStatus; next: SessionStatus }) =>
+      edges.push(e)
+    )
 
     writeSubagentJsonl(cwd, SID, 'agent-forked.jsonl', [subagentRec(Date.now() - 1000)])
     appendJsonl(file, [forkedSkillRec('toolu_fork', cwd), mainAssistantRec(cwd)])
@@ -923,7 +939,9 @@ describe('run-state vs background work: any live background task keeps the sessi
     tracker.setStatus('tabD1', 'working')
 
     const edges: Array<{ prev?: SessionStatus; next: SessionStatus }> = []
-    tracker.on('status', (e: { prev?: SessionStatus; next: SessionStatus }) => edges.push(e))
+    runtimeOf(tracker).on('status', (e: { prev?: SessionStatus; next: SessionStatus }) =>
+      edges.push(e)
+    )
 
     appendJsonl(file, [spawnRec('toolu_wrap', cwd)])
     await tracker.reportTurnEnd('tabD1')
@@ -1004,7 +1022,9 @@ describe("run-state from the turn-end payload: the Stop hook's own task list dec
     tracker.setStatus('tabP1', 'working')
 
     const edges: Array<{ prev?: SessionStatus; next: SessionStatus }> = []
-    tracker.on('status', (e: { prev?: SessionStatus; next: SessionStatus }) => edges.push(e))
+    runtimeOf(tracker).on('status', (e: { prev?: SessionStatus; next: SessionStatus }) =>
+      edges.push(e)
+    )
 
     await tracker.reportTurnEnd('tabP1', [
       { id: 'a1', type: 'subagent' },
@@ -1067,7 +1087,9 @@ describe('Esc interrupt as turn-end: no Stop ever fires, so the interrupt record
     tracker.setStatus('tabI2', 'approval')
 
     const edges: Array<{ prev?: SessionStatus; next: SessionStatus }> = []
-    tracker.on('status', (e: { prev?: SessionStatus; next: SessionStatus }) => edges.push(e))
+    runtimeOf(tracker).on('status', (e: { prev?: SessionStatus; next: SessionStatus }) =>
+      edges.push(e)
+    )
 
     appendJsonl(file, [interruptRec(cwd, Date.now(), true)])
     await waitFor(tracker, (s) => s.tabId === 'tabI2' && s.status === 'waiting', 8000)
@@ -1095,7 +1117,9 @@ describe('Esc interrupt as turn-end: no Stop ever fires, so the interrupt record
     tracker.setStatus('tabI4', 'working')
 
     const edges: Array<{ prev?: SessionStatus; next: SessionStatus }> = []
-    tracker.on('status', (e: { prev?: SessionStatus; next: SessionStatus }) => edges.push(e))
+    runtimeOf(tracker).on('status', (e: { prev?: SessionStatus; next: SessionStatus }) =>
+      edges.push(e)
+    )
 
     appendJsonl(file, [
       interruptRec(cwd),
@@ -1138,10 +1162,7 @@ describe('Esc interrupt as turn-end: no Stop ever fires, so the interrupt record
 
 type StagedShell = { ageMs?: number; listening?: boolean; cpuMs?: number }
 
-function stageProcs(
-  tracker: InstanceType<typeof SessionTracker>,
-  shells: Record<string, StagedShell>
-): void {
+function stageProcs(tracker: SessionTracker, shells: Record<string, StagedShell>): void {
   tracker.pidOf = () => 4242
   tracker.inspect = async () => ({
     at: Date.now(),
@@ -1195,14 +1216,14 @@ function writeTeammateJsonl(
   return file
 }
 
-function parked(tracker: InstanceType<typeof SessionTracker>, tabId: string): unknown {
+function parked(tracker: SessionTracker, tabId: string): unknown {
   return tracker.list().find((s) => s.tabId === tabId)?.background
 }
 
 // CC§8
 describe('run-state from the typed task list: each task judged by what it is, and what is parked shows as a badge, not the dot', () => {
   it('parses the hook list; an empty string is an empty list, no string is no list', async () => {
-    const { parseReportedTasks } = await import('../../src/plugins/sessions/main/sessionTracker')
+    const { parseReportedTasks } = await import('../../src/agents/claude/main/sessionTracker')
     expect(parseReportedTasks('b0167powo:shell,t6fdjbjat:teammate')).toEqual([
       { id: 'b0167powo', type: 'shell' },
       { id: 't6fdjbjat', type: 'teammate' }
@@ -1312,7 +1333,7 @@ describe('run-state from the typed task list: each task judged by what it is, an
     stageProcs(tracker, { btoolu_sh: { ageMs: 0 } })
     await tracker.reportTurnEnd('tabL2', [{ id: 'btoolu_sh', type: 'shell' }])
     expect(status(tracker, 'tabL2')).toBe('working')
-    expect(tracker.turnOver('tabL2')).toBe(true)
+    expect(runtimeOf(tracker).turnOver('tabL2')).toBe(true)
     expect(parked(tracker, 'tabL2')).toEqual([
       { id: 'btoolu_sh', kind: 'command', label: 'npm test', state: 'working' }
     ])
@@ -1730,24 +1751,20 @@ describe('run-state from the typed task list: each task judged by what it is, an
   }, 10_000)
 })
 
-function stageAllClear(tracker: InstanceType<typeof SessionTracker>): void {
+function stageAllClear(tracker: SessionTracker): void {
   stageProcs(tracker, {})
-  tracker.activeTabId = () => null
-  tracker.heldTabs = () => new Set<string>()
-  tracker.needsUser = () => false
+  runtimeOf(tracker).activeTabId = () => null
+  runtimeOf(tracker).heldTabs = () => new Set<string>()
+  runtimeOf(tracker).needsUser = () => false
 }
 
-function recordAutoCloses(tracker: EventEmitter): string[] {
+function recordAutoCloses(tracker: SessionTracker): string[] {
   const seen: string[] = []
-  tracker.on('auto-close', ({ tabId }: { tabId: string }) => seen.push(tabId))
+  runtimeOf(tracker).on('auto-close', ({ tabId }: { tabId: string }) => seen.push(tabId))
   return seen
 }
 
-async function idleSession(
-  tracker: InstanceType<typeof SessionTracker>,
-  tabId: string,
-  cwd: string
-): Promise<string[]> {
+async function idleSession(tracker: SessionTracker, tabId: string, cwd: string): Promise<string[]> {
   const closes = recordAutoCloses(tracker)
   await bindCaughtUp(tracker, tabId, cwd, initialLines(cwd))
   await waitFor(tracker, (s) => s.tabId === tabId && s.status === 'idle', 5000)
@@ -1791,7 +1808,7 @@ describe('auto-closing an idle session: every reason to keep it is read fresh at
     const cwd = makeWorkspace()
     const tracker = newTracker()
     stageAllClear(tracker)
-    tracker.activeTabId = () => 'tabA3'
+    runtimeOf(tracker).activeTabId = () => 'tabA3'
     const closes = await idleSession(tracker, 'tabA3', cwd)
     await expectStays(closes)
   }, 10_000)
@@ -1857,7 +1874,7 @@ describe('auto-closing an idle session: every reason to keep it is read fresh at
     const tracker = newTracker()
     stageAllClear(tracker)
     let dirty = new Set(['tabA6'])
-    tracker.heldTabs = () => dirty
+    runtimeOf(tracker).heldTabs = () => dirty
     const closes = await idleSession(tracker, 'tabA6', cwd)
     await expectStays(closes)
 
@@ -1870,7 +1887,7 @@ describe('auto-closing an idle session: every reason to keep it is read fresh at
     const tracker = newTracker()
     stageAllClear(tracker)
     let unanswered = true
-    tracker.needsUser = () => unanswered
+    runtimeOf(tracker).needsUser = () => unanswered
     const closes = await idleSession(tracker, 'tabA12', cwd)
     await expectStays(closes)
 
@@ -1883,7 +1900,7 @@ describe('auto-closing an idle session: every reason to keep it is read fresh at
     const tracker = newTracker()
     stageAllClear(tracker)
     const closes = await idleSession(tracker, 'tabA7', cwd)
-    const typing = setInterval(() => tracker.noteActivity('tabA7'), IDLE_CLOSE_MS / 2)
+    const typing = setInterval(() => runtimeOf(tracker).noteActivity('tabA7'), IDLE_CLOSE_MS / 2)
     await expectStays(closes)
     clearInterval(typing)
     await waitForClose(closes, 'tabA7')
@@ -1921,7 +1938,7 @@ describe('auto-closing an idle session: every reason to keep it is read fresh at
     }
     const closes = await idleSession(tracker, 'tabA11', cwd)
     await looking
-    tracker.noteActivity('tabA11')
+    runtimeOf(tracker).noteActivity('tabA11')
     finishLook()
     await expectStays(closes)
   }, 10_000)
@@ -2000,8 +2017,8 @@ describe('a compaction the owner asked for', () => {
     await bindCaughtUp(tracker, 'tabK5', cwd, initialLines(cwd))
     tracker.setStatus('tabK5', 'waiting')
     const edges: string[] = []
-    tracker.on('status', (e: { next: string }) => edges.push(`status ${e.next}`))
-    tracker.on('turn-over', (e: { over: boolean }) => edges.push(`over ${e.over}`))
+    runtimeOf(tracker).on('status', (e: { next: string }) => edges.push(`status ${e.next}`))
+    runtimeOf(tracker).on('turn-over', (e: { over: boolean }) => edges.push(`over ${e.over}`))
     tracker.receive('tabK5', { type: 'compacting', trigger: 'auto' })
     tracker.receive('tabK5', { type: 'compacting', trigger: 'auto' })
     tracker.receive('tabK5', hook('compacted'))
@@ -2017,5 +2034,34 @@ describe('a compaction the owner asked for', () => {
     tracker.receive('tabK3', hook('compacting'))
     tracker.receive('tabK3', hook('compacted'))
     expect(status(tracker, 'tabK3')).toBe('working')
+  })
+})
+
+describe('what the rest of the app is told about a run state', () => {
+  it('whoever hears a status change finds the new status already on the session’s row', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    await bindCaughtUp(tracker, 'tabT1', cwd, initialLines(cwd))
+    const onTheRowWhenHeard: (string | undefined)[] = []
+    runtimeOf(tracker).on('status', (e: { tabId: string }) => {
+      if (e.tabId === 'tabT1') onTheRowWhenHeard.push(status(tracker, 'tabT1'))
+    })
+    tracker.setStatus('tabT1', 'working')
+    tracker.setStatus('tabT1', 'waiting')
+    expect(onTheRowWhenHeard).toEqual(['working', 'waiting'])
+  })
+
+  it('the rows are sent again when a tab of another agent ends its turn with background work running, though its status stays working', async () => {
+    const tracker = newTracker()
+    let rowsSent = 0
+    tracker.on('update', () => rowsSent++)
+    runtimeOf(tracker).recordTurn('tabOfAnotherAgent', 'working')
+    await sleep(EMIT_THROTTLE_PASSED_MS)
+    expect(rowsSent).toBe(0)
+    runtimeOf(tracker).recordTurn('tabOfAnotherAgent', 'ended', true)
+    expect(runtimeOf(tracker).statusOf('tabOfAnotherAgent')).toBe('working')
+    await sleep(EMIT_THROTTLE_PASSED_MS)
+    expect(rowsSent).toBe(1)
+    runtimeOf(tracker).forget('tabOfAnotherAgent')
   })
 })

@@ -19,7 +19,7 @@ import { isValidWorktreeName } from '@shared/worktreeName'
 import type { ModeClass, SessionBackend } from '@core/agent/sessionBackends'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
 import type { PtyManager } from '../../../main/ptyManager'
-import type { SessionTracker } from '@plugins/sessions/main/sessionTracker'
+import type { SessionTracker } from './sessionTracker'
 import type { WorkspaceManager } from '@plugins/sessions/main/workspaces'
 import type { Hosts } from '../../../main/host/hosts'
 import { publicClaudeSession } from '../../../main/host/hosts'
@@ -74,7 +74,7 @@ import {
   PROJECTS_ROOT,
   sessionEventFromHook,
   transcriptTurns
-} from '@plugins/sessions/main/sessionTracker'
+} from './sessionTracker'
 import { readAppendedLines, type AppendCursor } from '../../../main/appendedLines'
 import {
   continuedInOf,
@@ -318,6 +318,10 @@ export class ClaudeBackend implements SessionBackend {
     const closed = this.closedClaudes.get(key)
     const pid = await runningClaudePidBesides(key, closed?.pids ?? new Set(), closed?.until ?? 0)
     return pid !== null
+  }
+
+  workStillRunning(tabId: string): Promise<boolean> {
+    return this.d.tracker.workStillRunning(tabId)
   }
 
   trustsFolder(dir: string): Promise<boolean> {
