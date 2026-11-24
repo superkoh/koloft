@@ -35,6 +35,7 @@ export const plugin: PluginManifest = {
     { verb: 'instructions' }
   ],
   text: [...TEXT, ...SKILL_TEXT],
+  slotsEachAgentFills: ['session-helper-rules', 'session-questions'],
   assistJobs: ASSIST_JOBS,
   channels: Object.values(CHANNELS),
   moments: {

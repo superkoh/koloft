@@ -49,6 +49,7 @@ vi.mock('../../src/agents/codex/main/codexTransport', () => ({
 
 import { barePath } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
+import { koloftPrompt } from '@plugins/sessions/api'
 import type { CreateTabOptions } from '@shared/types'
 import { portOffset } from '@shared/worktreeName'
 import { ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE } from '../../src/main/agentLift'
@@ -221,6 +222,7 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
     events: () => {},
     error: () => {},
     noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],
+    koloftPrompt,
     trustFolder: trustCodexFolder,
     pickHome: () => ({ account: 'work', home: path.join(home, 'codex-home') }),
     homeOf: () => undefined,

@@ -6,6 +6,7 @@ import {
   effectiveBackend,
   identityOf,
   launchMenus,
+  messagingOf,
   SESSION_BACKENDS,
   sessionKey,
   shownAsInstalled,
@@ -14,6 +15,7 @@ import {
 } from '@shared/sessionBackend'
 import type { BackendId, BackendSessionInfo, BackendSessionRow, HostId } from '@shared/types'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
+import { agentManifest } from '@core/agent/registry'
 import { coversTerminalWhileResuming } from '../../../../src/renderer/src/agentUi'
 
 function stubBackend(
@@ -296,6 +298,17 @@ describe('coversTerminalWhileResuming (which resuming tabs get the "Resuming" co
   it('covers a Claude Code or Antigravity tab, and never a Codex one, whose question before it binds the cover would hide, nor a plain terminal', () => {
     const kinds = [...SESSION_BACKENDS, 'shell'] as const
     expect(kinds.filter(coversTerminalWhileResuming)).toEqual(['claude', 'agy'])
+  })
+})
+
+describe('passedOnMessageShowsAsFromAnotherSession (the flag in each agent’s manifest that picks a half sentence of its prompt)', () => {
+  // CC§13 CODEX§17 AGY§15 AGY§16
+  it('is yes for exactly the agents Koloft reaches through their own channel for messages between sessions, on this Mac and on a machine', () => {
+    const saysYes = SESSION_BACKENDS.filter(
+      (b) => agentManifest(b).flags.passedOnMessageShowsAsFromAnotherSession
+    )
+    for (const remote of [false, true])
+      expect(SESSION_BACKENDS.filter((b) => messagingOf(b, remote) === 'peerLine')).toEqual(saysYes)
   })
 })
 

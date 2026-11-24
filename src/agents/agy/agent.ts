@@ -5,6 +5,7 @@ import {
   AGY_SCRATCH_FOLDER,
   AGY_UPLOADS_FOLDER
 } from './shared/agyBrain'
+import { SLOT_FILLS } from './prompts/text'
 
 export const agent = {
   id: 'agy',
@@ -40,12 +41,15 @@ export const agent = {
     internalNameEndings: [AGY_ARTIFACT_SIDECAR],
     foldersMadeEmptyAhead: [AGY_SCRATCH_FOLDER]
   },
+  slotFills: SLOT_FILLS,
   flags: {
     // AGY§5
     resumeCanWaitOnAQuestionBeforeAnySign: false,
     // AGY§8
     conversationStartsAtFirstPrompt: true,
     // AGY§15
-    pasteKeepsItsLastLineFeeds: false
+    pasteKeepsItsLastLineFeeds: false,
+    // AGY§15 AGY§16
+    passedOnMessageShowsAsFromAnotherSession: false
   }
 } as const satisfies AgentManifest

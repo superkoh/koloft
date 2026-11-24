@@ -1,4 +1,5 @@
 import type { AgentManifest } from '@core/agent/manifest'
+import { SLOT_FILLS } from './prompts/text'
 
 export const agent = {
   id: 'claude',
@@ -36,9 +37,12 @@ export const agent = {
     internalNameEndings: [],
     foldersMadeEmptyAhead: []
   },
+  slotFills: SLOT_FILLS,
   flags: {
     resumeCanWaitOnAQuestionBeforeAnySign: false,
     conversationStartsAtFirstPrompt: false,
-    pasteKeepsItsLastLineFeeds: true
+    pasteKeepsItsLastLineFeeds: true,
+    // CC§13
+    passedOnMessageShowsAsFromAnotherSession: true
   }
 } as const satisfies AgentManifest

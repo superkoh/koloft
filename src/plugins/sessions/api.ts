@@ -1,5 +1,7 @@
 import type { BackendId } from '@shared/types'
 import { composePrompt } from '@core/prompt'
+import { agentManifest } from '@core/agent/registry'
+import { tiersOf } from '@shared/sessionPicks'
 import {
   PICKED_FLAGS,
   PICK_FOR_THE_TASK,
@@ -65,5 +67,9 @@ export {
 export const koloftPrompt = (backend: BackendId, rules?: string): string =>
   composePrompt('session', {
     agent: backend,
-    values: { 'project-rules': withProjectRules(rules, '') }
+    values: {
+      'project-rules': withProjectRules(rules, ''),
+      'question-tool': agentManifest(backend).questionToolName,
+      'session-model-tiers': tiersOf(backend)
+    }
   })

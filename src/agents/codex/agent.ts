@@ -1,4 +1,5 @@
 import type { AgentManifest } from '@core/agent/manifest'
+import { SLOT_FILLS } from './prompts/text'
 
 export const agent = {
   id: 'codex',
@@ -28,10 +29,13 @@ export const agent = {
   trustQuestion: 'do you trust the contents of this directory?',
   ownLogFolderNames: [],
   atTopOfSessionFolder: { internalNames: [], internalNameEndings: [], foldersMadeEmptyAhead: [] },
+  slotFills: SLOT_FILLS,
   flags: {
     // CODEX§9
     resumeCanWaitOnAQuestionBeforeAnySign: true,
     conversationStartsAtFirstPrompt: false,
-    pasteKeepsItsLastLineFeeds: true
+    pasteKeepsItsLastLineFeeds: true,
+    // CODEX§17
+    passedOnMessageShowsAsFromAnotherSession: false
   }
 } as const satisfies AgentManifest
