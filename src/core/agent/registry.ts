@@ -16,8 +16,8 @@ export function ofEachAgent<T>(value: (id: AgentId) => T): Record<AgentId, T> {
   return Object.fromEntries(AGENT_IDS.map((id) => [id, value(id)])) as Record<AgentId, T>
 }
 
-export function agentsThatSay(flag: keyof AgentFlags, answer = true): AgentId[] {
-  return AGENT_IDS.filter((id) => agentManifest(id).flags[flag] === answer)
+export function agentsThatSay(flag: keyof AgentFlags): AgentId[] {
+  return AGENT_IDS.filter((id) => agentManifest(id).flags[flag])
 }
 
 export const AGENT_PICKED_ON_FIRST_OPEN: AgentId = PICKED_ON_FIRST_OPEN.id

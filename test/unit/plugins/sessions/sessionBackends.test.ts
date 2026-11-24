@@ -7,6 +7,7 @@ import {
   identityOf,
   launchMenus,
   messagingOf,
+  reachedBySendMessage,
   SESSION_BACKENDS,
   sessionKey,
   shownAsInstalled,
@@ -309,6 +310,21 @@ describe('passedOnMessageShowsAsFromAnotherSession (the flag in each agent’s m
     )
     for (const remote of [false, true])
       expect(SESSION_BACKENDS.filter((b) => messagingOf(b, remote) === 'peerLine')).toEqual(saysYes)
+  })
+})
+
+describe('koloft help on how sessions talk to each other', () => {
+  // CC§13
+  it('gets its line on an agent’s own message tool from exactly the agents whose sessions Koloft leaves to that tool, so the line and the names beside it cannot part', () => {
+    const addsTheLine = SESSION_BACKENDS.filter((b) =>
+      Object.hasOwn(agentManifest(b).slotAdditions, 'koloft-help-own-message-tool')
+    )
+    const addsTheExcept = SESSION_BACKENDS.filter((b) =>
+      Object.hasOwn(agentManifest(b).slotAdditions, 'koloft-help-send-but-own-message-tool')
+    )
+    const leftToItsOwnTool = SESSION_BACKENDS.filter(reachedBySendMessage)
+    expect(addsTheLine).toEqual(leftToItsOwnTool)
+    expect(addsTheExcept).toEqual(leftToItsOwnTool)
   })
 })
 

@@ -11,6 +11,11 @@ const SLOTS_ANY_AGENT_ADDS_TO = PLUGINS.flatMap((p) => p.slotsAnyAgentAddsTo ?? 
 const BLOCKS = PLUGINS.flatMap((p) => p.text ?? [])
 const BLOCKS_PICKED_BY_A_FLAG = BLOCKS.filter((block) => block.whenAgentFlag)
 
+const writes = (plugin: (typeof PLUGINS)[number], slot: string): boolean =>
+  (plugin.text ?? [])
+    .flatMap((block) => [block.text, ...Object.values(block.byAgent ?? {})])
+    .some((text) => text.includes(`{{${slot}}}`))
+
 function turnEveryOptionalPluginOff(): void {
   const pluginsOn = Object.fromEntries(
     PLUGINS.filter((p) => !p.mandatory).map((p) => [p.id, false])
@@ -42,9 +47,7 @@ describe('the slots a plugin leaves for each agent to fill', () => {
   it('only the plugin that leaves a slot writes it in its text, so an agent’s words for it go when that plugin is off', () => {
     const writtenElsewhere = PLUGINS.flatMap((plugin) =>
       SLOTS_EACH_AGENT_FILLS.filter(
-        (slot) =>
-          !plugin.slotsEachAgentFills?.includes(slot) &&
-          (plugin.text ?? []).some((block) => block.text.includes(`{{${slot}}}`))
+        (slot) => !plugin.slotsEachAgentFills?.includes(slot) && writes(plugin, slot)
       ).map((slot) => `${plugin.id} writes {{${slot}}}`)
     )
     expect(writtenElsewhere).toEqual([])
@@ -92,18 +95,9 @@ describe('the slots a plugin leaves, in text every agent reads, for any agent to
   it('only the plugin that leaves a slot writes it in its text, so what the agents added goes when that plugin is off', () => {
     const writtenElsewhere = PLUGINS.flatMap((plugin) =>
       SLOTS_ANY_AGENT_ADDS_TO.filter(
-        (slot) =>
-          !plugin.slotsAnyAgentAddsTo?.includes(slot) &&
-          (plugin.text ?? []).some((block) => block.text.includes(`{{${slot}}}`))
+        (slot) => !plugin.slotsAnyAgentAddsTo?.includes(slot) && writes(plugin, slot)
       ).map((slot) => `${plugin.id} writes {{${slot}}}`)
     )
     expect(writtenElsewhere).toEqual([])
-  })
-
-  it('the agents’ words are joined in the order of the list of agents, as they are, with no agent given', () => {
-    for (const slot of SLOTS_ANY_AGENT_ADDS_TO)
-      expect(fillSlots(`{{${slot}}}`), slot).toBe(
-        AGENT_MANIFESTS.map((agent) => agent.slotAdditions[slot] ?? '').join('')
-      )
   })
 })

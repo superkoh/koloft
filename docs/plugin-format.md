@@ -409,7 +409,7 @@ say gives its words for that name in `slotAdditions` of its manifest (the words 
 
 **Names picked by a flag**, for a sentence of the plugin's own that holds for some agents.
 The sentence stays in the plugin; the names come from the agents whose manifest answers yes
-(or no) to a yes-or-no flag, in the order of the list: `agentsThatSay(flag)` in
+to a yes-or-no flag, in the order of the list: `agentsThatSay(flag)` in
 `src/core/agent/registry.ts` gives their ids, and `kindsOf`, `productList` and `whenAny` in
 `src/shared/sessionBackend.ts` turn them into "Codex or Antigravity", and into nothing at
 all when no agent answers so. A flag states the agent's own fact, with a measured basis in
