@@ -39,10 +39,8 @@ function fixtureRepo(files: Record<string, string>): string {
   createdDirs.push(dir)
   gitInit(dir)
   fs.mkdirSync(path.join(dir, 'scripts'))
-  fs.copyFileSync(
-    path.join(repoRoot, 'scripts/check-comments.mjs'),
-    path.join(dir, 'scripts/check-comments.mjs')
-  )
+  for (const script of ['check-comments.mjs', 'ledgers.mjs'])
+    fs.copyFileSync(path.join(repoRoot, 'scripts', script), path.join(dir, 'scripts', script))
   fs.symlinkSync(path.join(repoRoot, 'node_modules'), path.join(dir, 'node_modules'))
   write(dir, {
     '.gitignore': 'node_modules\n',

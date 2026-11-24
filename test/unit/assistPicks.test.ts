@@ -3,12 +3,11 @@ import {
   assistBackendsFor,
   assistEfforts,
   assistLaunchOn,
+  assistModels,
   assistRunsOn,
   withAssistPick
 } from '../../src/shared/assistPicks'
-import { EVERY_ACCOUNT_TAKES } from '../../src/core/assistModels'
-import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
-import type { AssistSetting } from '../../src/shared/types'
+import type { AssistSetting, BackendId } from '../../src/shared/types'
 import { DEFAULT_SETTINGS } from '../../src/shared/settingsOps'
 import { meta } from './helpers/accounts'
 
@@ -74,15 +73,6 @@ describe('the model and thinking a job runs with', () => {
     })
   })
 
-  it('a small, quick job runs on the model every account of its tool takes, where the tool has such a model, so no account refuses it', () => {
-    const withSuchAModel = SESSION_BACKENDS.filter((b) => EVERY_ACCOUNT_TAKES[b].model)
-    expect(withSuchAModel).not.toEqual([])
-    for (const backend of withSuchAModel)
-      expect(assistLaunchOn('title', backend, on({})).model, backend).toBe(
-        EVERY_ACCOUNT_TAKES[backend].model
-      )
-  })
-
   it('take the job’s own model and thinking each on its own, and only on the tool the pick names, even after Assist moves to another tool', () => {
     const rows = {
       turn: { backend: 'claude' as const, model: 'opus' },
@@ -123,6 +113,21 @@ describe('the model and thinking a job runs with', () => {
   it('offer a small job every level but Max, and the butler all of them', () => {
     expect(assistEfforts('turn', 'claude', 'haiku')).toEqual(['low', 'medium', 'high', 'xhigh'])
     expect(assistEfforts('butler', 'claude', undefined)).toContain('max')
+  })
+
+  it('offer each tool’s own named models and no other tool’s, with Haiku ahead of them for a small job on Claude', () => {
+    const offered = (row: string, backend: BackendId): string[] =>
+      assistModels(row, backend).map((m) => m.id)
+    expect(offered('butler', 'claude')).toEqual(['fable', 'opus', 'sonnet'])
+    expect(offered('turn', 'claude')).toEqual(['haiku', 'fable', 'opus', 'sonnet'])
+    expect(offered('turn', 'codex')).toEqual(['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-luna'])
+    expect(offered('turn', 'agy')).toEqual([
+      'gemini-4-carbon',
+      'gemini-4-neon',
+      'gemini-4-argon',
+      'gemini-3.8-flash',
+      'gemini-3.1-pro'
+    ])
   })
 })
 

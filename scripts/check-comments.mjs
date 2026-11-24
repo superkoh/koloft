@@ -3,17 +3,12 @@ import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { parse } from '@babel/parser'
 import postcss from 'postcss'
+import { LEDGERS } from './ledgers.mjs'
 
 const ROOT = path.resolve(import.meta.dirname, '..')
 const ADR_DIR = 'docs/adr'
 const CODE_FILE = /\.(ts|tsx|js|mjs|cjs|css)$/
 const MARKERS = /^(?:(?:ADR-\d{4}|AGY§\d+|CC§\d+|CODEX§\d+|PLATFORM§\d+)(?: |$))+$/
-const LEDGERS = {
-  AGY: { file: 'docs/antigravity-cli-contract.md', heading: /^## §(\d+) /gm },
-  CC: { file: 'docs/claude-code-contract.md', heading: /^## §(\d+) /gm },
-  CODEX: { file: 'docs/codex-cli-contract.md', heading: /^## (\d+)\. /gm },
-  PLATFORM: { file: 'docs/platform-contract.md', heading: /^## §(\d+) /gm }
-}
 const DIRECTIVES = [
   /^@ts-expect-error$/,
   /^prettier-ignore$/,

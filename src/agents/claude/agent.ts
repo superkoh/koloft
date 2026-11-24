@@ -1,5 +1,9 @@
 import type { AgentManifest } from '@core/agent/manifest'
+import { CRON_EFFORTS } from '@shared/efforts'
 import { SLOT_ADDITIONS, SLOT_FILLS } from './prompts/text'
+
+// CC§9
+const MODEL_EVERY_ACCOUNT_TAKES = 'haiku'
 
 export const agent = {
   id: 'claude',
@@ -37,14 +41,26 @@ export const agent = {
     internalNameEndings: [],
     foldersMadeEmptyAhead: []
   },
-  slotFills: SLOT_FILLS,
-  slotAdditions: SLOT_ADDITIONS,
+  modelEveryAccountTakes: MODEL_EVERY_ACCOUNT_TAKES,
+  namedModels: [
+    { id: 'fable', label: 'Fable' },
+    { id: 'opus', label: 'Opus' },
+    { id: 'sonnet', label: 'Sonnet' }
+  ],
+  picksByTaskTier: {
+    'very simple': { model: 'sonnet', effort: 'low' },
+    normal: { model: 'opus', effort: 'medium' },
+    'very hard': { model: 'fable', effort: 'high' }
+  },
   // CC§9
   smallJobModels: {
-    smallAndQuick: { model: 'haiku' },
+    smallAndQuick: { model: MODEL_EVERY_ACCOUNT_TAKES },
     judgesAReply: { model: 'haiku' },
     picksFromAList: { model: 'sonnet', effort: 'low' }
   },
+  ownSettings: { fablePriority: { default: true, keptOnReset: true } },
+  slotFills: SLOT_FILLS,
+  slotAdditions: SLOT_ADDITIONS,
   flags: {
     resumeCanWaitOnAQuestionBeforeAnySign: false,
     conversationStartsAtFirstPrompt: false,
@@ -57,5 +73,6 @@ export const agent = {
     runsCommandsInASandboxWhereSudoCannotStart: false,
     // CC§14
     questionToolTakesNoOptionDescriptions: false
-  }
+  },
+  pureFunctions: { effortsAModelTakes: () => CRON_EFFORTS }
 } as const satisfies AgentManifest

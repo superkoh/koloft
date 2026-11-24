@@ -180,7 +180,7 @@ the types a plugin registers with.
 | `src/core/pluginStart.ts` | `PluginCore`, what a start function is handed; `PluginStart`, the type of a start function; and `startPlugins`, which calls them ([Starting](#starting)) |
 | `src/core/switches.ts` | `pluginStates`, `pluginStateOf` and `turnedOffLine`: which plugins are on ([Switches](#switches)) |
 | `src/core/hints.ts` | `HINT_IDS`, `hintOn` and `tipNumber`: the app's tips and the plugins' ([Tips](#tips)) |
-| `src/core/assistModels.ts` | the `ModelAndEffort` type, the model and thinking every account of an agent takes (`EVERY_ACCOUNT_TAKES`), and the `AssistJob` and `Assist` types, so a plugin can take Assist as a function |
+| `src/core/assistModels.ts` | the `ModelAndEffort` type, the model every account of an agent takes (`EVERY_ACCOUNT_TAKES`, built from the agents' manifests), and the `AssistJob` and `Assist` types, so a plugin can take Assist as a function |
 | `src/core/presence.ts` | `OwnerPresence`: where the owner is. `where()` answers `at-the-mac`, `away` or `asleep`, and `listenToSleep` tells a plugin when the night starts and ends. A plugin asks it and never works this out itself |
 | `src/core/ownerWaits.ts` | `OwnerWaits`: a plugin marks a session as waiting on the owner, and clears that mark, with no other way to reach the attention marks |
 | `src/core/ownerInstructions.ts` | the versions of the owner's Instructions, the edits an agent may propose to them, and the one way a list of versions is saved under a byte limit, by the owner or by an agent the owner agreed with |

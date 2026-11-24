@@ -5,6 +5,7 @@ import {
   AGY_SCRATCH_FOLDER,
   AGY_UPLOADS_FOLDER
 } from './shared/agyBrain'
+import { agyEffortsAModelTakes } from './shared/agyEfforts'
 import { SLOT_ADDITIONS, SLOT_FILLS } from './prompts/text'
 
 export const agent = {
@@ -41,14 +42,31 @@ export const agent = {
     internalNameEndings: [AGY_ARTIFACT_SIDECAR],
     foldersMadeEmptyAhead: [AGY_SCRATCH_FOLDER]
   },
-  slotFills: SLOT_FILLS,
-  slotAdditions: SLOT_ADDITIONS,
+  // AGY§21
+  normalTaskFamilyEveryAccountHas: 'argon',
+  // AGY§21
+  namedModels: [
+    { id: 'gemini-4-carbon', label: 'Gemini 4 Carbon', notOnEveryAccount: true },
+    { id: 'gemini-4-neon', label: 'Gemini 4 Neon', notOnEveryAccount: true },
+    { id: 'gemini-4-argon', label: 'Gemini 4 Argon' },
+    { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
+    { id: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro' }
+  ],
+  // AGY§21
+  picksByTaskTier: {
+    'very simple': { model: 'flash', effort: 'low' },
+    normal: { model: 'neon', effort: 'medium' },
+    'very hard': { model: 'carbon', effort: 'high' }
+  },
   // AGY§21
   smallJobModels: {
     smallAndQuick: { model: 'gemini-3.8-flash', effort: 'low' },
     judgesAReply: { model: 'gemini-4-argon', effort: 'medium' },
     picksFromAList: { model: 'gemini-3.8-flash', effort: 'low' }
   },
+  ownSettings: {},
+  slotFills: SLOT_FILLS,
+  slotAdditions: SLOT_ADDITIONS,
   flags: {
     // AGY§5
     resumeCanWaitOnAQuestionBeforeAnySign: false,
@@ -64,5 +82,6 @@ export const agent = {
     runsCommandsInASandboxWhereSudoCannotStart: false,
     // AGY§14
     questionToolTakesNoOptionDescriptions: true
-  }
+  },
+  pureFunctions: { effortsAModelTakes: agyEffortsAModelTakes }
 } as const satisfies AgentManifest
