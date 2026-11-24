@@ -1,7 +1,7 @@
 import path from 'path'
 import type { SignInFolderKind } from '@shared/types'
 import { agyApiKeyRoute, agyHomeOf } from './agyAccounts'
-import { codexHomeOf } from './codexAccounts'
+import { codexHomeOf } from '@agents/codex/main/codexAccounts'
 import { readJson } from './jsonDrops'
 
 export const homeKeyOnDisk: Record<SignInFolderKind, (userData: string, name: string) => boolean> =

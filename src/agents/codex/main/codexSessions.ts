@@ -30,7 +30,7 @@ import {
   DEFAULT_MAX_FRAME,
   type CodexProcessOptions,
   type CodexTransport
-} from '../../../main/codexTransport'
+} from './codexTransport'
 import {
   codexLaunchLine,
   codexTabScript,
@@ -45,7 +45,7 @@ import {
   type LoginParams,
   type MachineLogin,
   type MachineUpstreamOptions
-} from '../../../main/remote/codexMachine'
+} from './codexMachine'
 import { writeTabPassFile, type MachinePackage } from '../../../main/remote/launch'
 import { problemOf, sshLinkBroke, type RunResult } from '../../../main/remote/ssh'
 import {
@@ -66,7 +66,7 @@ import {
   TUI_FEATURES,
   trustedInPlace,
   type KoloftHook
-} from '../../../main/codexLaunchConfig'
+} from './codexLaunchConfig'
 import {
   CODEX_REPLY_LANGUAGE_ENV,
   CODEX_REPLY_LANGUAGE_HOOKS,
@@ -80,7 +80,7 @@ import {
   seedHandedOverOwnerWords,
   SHELL_WROTE_FIELD,
   SHELL_WROTE_SUFFIX
-} from './hooks'
+} from '@plugins/sessions/main/hooks'
 import { shellWrittenFiles } from '../../../main/touchedFiles'
 import {
   acceptCodexHookTrust,
@@ -90,8 +90,8 @@ import {
   configTrusts,
   koloftHooksIn,
   type ListedHook
-} from '../../../main/codexTrust'
-import { CodexSideServers } from '../../../main/codexSideServers'
+} from './codexTrust'
+import { CodexSideServers } from './codexSideServers'
 import { mapAtMost } from '@core/mapAtMost'
 import { seedAssistMemory } from '../../../main/assistMemory'
 import { pipeSecretTo } from '../../../main/secretOnStdin'
@@ -102,7 +102,7 @@ import {
   removeFoldersLeftByEndedRuns
 } from '../../../main/leftovers'
 import { codexSessionKey } from '@agents/kit/main/sessionStore'
-import { resolveCodexRuntime, updateCodex } from '../../../main/codexRuntime'
+import { resolveCodexRuntime, updateCodex } from './codexRuntime'
 import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from '../../../main/cliMinimums'
 import { startToolShim } from '../../../main/toolShim'
 import { passOf, TAB_PASS_ENV } from '../../../main/tabPass'
@@ -113,11 +113,11 @@ import {
 } from '../../../main/openShimScript'
 import { aboveItsTools } from '../../../main/agentLift'
 import { AGENT_SHIM_WAITS_MS } from '@core/command'
-import { koloftPrompt } from '../api'
+import { koloftPrompt } from '@plugins/sessions/api'
 import { codexListedModels, type ListedModel } from '@shared/sessionPicks'
 import { browserControlEnv } from '../../../main/browserControlEnv'
 import { portOffset } from '@shared/worktreeName'
-import type { CodexApproval, CodexQuestion } from './dialog'
+import type { CodexApproval, CodexQuestion } from '@plugins/sessions/main/dialog'
 import {
   StoredSessions,
   hostOfKey,

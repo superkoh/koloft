@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { hookOverrides, trustedInPlace } from '../../src/main/codexLaunchConfig'
+import { hookOverrides, trustedInPlace } from '../../src/agents/codex/main/codexLaunchConfig'
 
 // CODEX§27
 describe("Koloft's Codex hooks on an app-server's command line", () => {

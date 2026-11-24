@@ -9,7 +9,7 @@ import {
   CODEX_ASKS_AND_WAITS,
   NO_FILE_SIDE_PANEL,
   STATUS_LINE_CONFIG
-} from '../../src/main/codexLaunchConfig'
+} from '../../src/agents/codex/main/codexLaunchConfig'
 import {
   agentRow,
   centerTerm,

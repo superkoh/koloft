@@ -6,7 +6,7 @@ import {
   folderTrustLevel,
   withTrustedFolder,
   withTrustedHash
-} from '../src/main/codexConfigTables.mjs'
+} from '../src/agents/codex/main/codexConfigTables.mjs'
 
 // CODEX§11 CODEX§27 ADR-0053
 

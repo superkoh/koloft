@@ -3,7 +3,7 @@ import {
   CodexObservation,
   userThread,
   type CodexEvent
-} from '../../../../src/plugins/sessions/main/codexObservation'
+} from '../../../../src/agents/codex/main/codexObservation'
 import { SessionRuntime, turnOf, type StatusEdge } from '../../../../src/core/agent/sessionRuntime'
 import { AttentionTracker } from '../../../../src/plugins/sessions/main/attention'
 import { PLAN_READY, type AttentionKind, type BackgroundItem } from '../../../../src/shared/types'

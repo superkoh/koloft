@@ -1,7 +1,7 @@
 import path from 'path'
 import { AGY_APP_DIR } from '../agyStore'
 import { CODEX_ROLLOUT_FOLDERS, type UsageHome } from '../usageCache'
-import { REMOTE_CODEX_HOME } from './codexMachine'
+import { REMOTE_CODEX_HOME } from '@agents/codex/main/codexMachine'
 import { mirrorAgyGemini, mirrorCodexHome } from './paths'
 import type { ExtraPull } from './sync'
 

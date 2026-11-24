@@ -2,9 +2,9 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { resolveCodexRuntime } from '../../src/main/codexRuntime'
+import { resolveCodexRuntime } from '../../src/agents/codex/main/codexRuntime'
 import { PtyManager } from '../../src/main/ptyManager'
-import { CODEX_TAB_ENV } from '../../src/plugins/sessions/main/codexSessions'
+import { CODEX_TAB_ENV } from '../../src/agents/codex/main/codexSessions'
 import { MIN_CODEX_VERSION } from '../../src/main/cliMinimums'
 
 const fake = vi.hoisted(() => ({ spawn: vi.fn() }))

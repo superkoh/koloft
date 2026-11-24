@@ -4303,8 +4303,8 @@ and once with `-c disable_paste_burst=true` on the TUI's command line, in a fres
   gave 26.8 / 66.0 and 26.0 / 52.8. Other work ran on the same Mac meanwhile (load
   average 4–8 before the 12 processes), one run per cell.
 
-Koloft dependents: `EVERY_KEY_SHOWS_AT_ONCE` in `src/main/codexLaunchConfig.ts`, passed
-to the TUI of every Codex tab; a remote tab's TUI runs on the Mac too (§16).
+Koloft dependents: `EVERY_KEY_SHOWS_AT_ONCE` in `src/agents/codex/main/codexLaunchConfig.ts`,
+passed to the TUI of every Codex tab; a remote tab's TUI runs on the Mac too (§16).
 
 ## 37. What the TUI asks the terminal
 
@@ -4369,4 +4369,4 @@ Koloft dependents: `asksTheTerminal` in `src/main/flowControl.ts`.
   that, not run.
 
 Koloft dependents: `TAB_PASS_ENV` in `src/main/tabPass.ts`, given to the app-server in
-`src/plugins/sessions/main/codexSessions.ts`.
+`src/agents/codex/main/codexSessions.ts`.

@@ -125,7 +125,11 @@ import {
   remoteAnswerCommand,
   remoteShCommand
 } from './remote/install'
-import { codexMachineInstance, ENSURE_CODEX_FILE, replyLanguageFiles } from './remote/codexMachine'
+import {
+  codexMachineInstance,
+  ENSURE_CODEX_FILE,
+  replyLanguageFiles
+} from '@agents/codex/main/codexMachine'
 import { machineGhWrapperScript } from './gitCredentialScripts'
 import {
   AGENT_PLUGIN_DIR,
@@ -231,14 +235,14 @@ import {
   type ResumeProbes
 } from './resumePlan'
 import { branchExists, type GitOut, type TidyResult } from '@core/worktree'
-import { codexConfigFile } from './codexTrust'
+import { codexConfigFile } from '@agents/codex/main/codexTrust'
 import {
   HomeAccountPicker,
   codexHomeOf,
   codexHomes,
   limitsFrom,
   prepareCodexHome
-} from './codexAccounts'
+} from '@agents/codex/main/codexAccounts'
 import { shq } from '@shared/shellQuote'
 import { ResourceGuard, ownerTyped } from './resourceGuard'
 import { readTheMachine, signalLog } from './machineRoom'

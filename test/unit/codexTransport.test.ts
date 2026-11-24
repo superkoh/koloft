@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 import { once } from 'events'
 import WebSocket from 'ws'
-import type { CodexFrame } from '../../src/main/codexTransport'
+import type { CodexFrame } from '../../src/agents/codex/main/codexTransport'
 import { remoteAnswerCommand } from '../../src/main/remote/install'
 
 const PROCESS_SAMPLE_MS = 1000
@@ -16,7 +16,7 @@ const {
   DEFAULT_MAX_FRAME,
   readFrame,
   TUI_STALLED_AFTER_MS
-} = await import('../../src/main/codexTransport')
+} = await import('../../src/agents/codex/main/codexTransport')
 type CodexRpc = InstanceType<typeof CodexRpc>
 
 let directory: string

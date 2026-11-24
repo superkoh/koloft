@@ -8,7 +8,7 @@ import {
   CodexSessions,
   machineImagesDir,
   type CodexSessionDeps
-} from '../../../../src/plugins/sessions/main/codexSessions'
+} from '../../../../src/agents/codex/main/codexSessions'
 import { storedBackend } from '../../../../src/agents/kit/main/stored'
 import {
   codexSessionKey,
@@ -17,9 +17,12 @@ import {
 import type {
   CodexProcessOptions,
   CodexTransportOptions
-} from '../../../../src/main/codexTransport'
-import { HAS_CODEX_HOME_CMD, type MachineLogin } from '../../../../src/main/remote/codexMachine'
-import { CODEX_ASKS_AND_WAITS } from '../../../../src/main/codexLaunchConfig'
+} from '../../../../src/agents/codex/main/codexTransport'
+import {
+  HAS_CODEX_HOME_CMD,
+  type MachineLogin
+} from '../../../../src/agents/codex/main/codexMachine'
+import { CODEX_ASKS_AND_WAITS } from '../../../../src/agents/codex/main/codexLaunchConfig'
 import { SessionRuntime } from '../../../../src/core/agent/sessionRuntime'
 import {
   CODEX_REPLY_LANGUAGE_HOOKS,
@@ -52,13 +55,14 @@ vi.mock('../../../../src/main/leftovers', async (importOriginal) => ({
     mocks.crashLeftoverMarkers.push(marker)
   }
 }))
-vi.mock('../../../../src/main/codexRuntime', async (importOriginal) => ({
+vi.mock('../../../../src/agents/codex/main/codexRuntime', async (importOriginal) => ({
   resolveCodexRuntime: mocks.runtime,
   updateCodex: mocks.update
 }))
-vi.mock('../../../../src/main/codexTransport', async (importOriginal) => {
-  const real = (await importOriginal<typeof import('../../../../src/main/codexTransport')>())
-    .CodexRpc
+vi.mock('../../../../src/agents/codex/main/codexTransport', async (importOriginal) => {
+  const real = (
+    await importOriginal<typeof import('../../../../src/agents/codex/main/codexTransport')>()
+  ).CodexRpc
   return {
     createCodexTransport: mocks.create,
     CodexRpc: class {

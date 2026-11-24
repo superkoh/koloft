@@ -1,7 +1,7 @@
 import path from 'path'
 import type { CreateTabOptions, LaunchPermission } from '@shared/types'
 import { record } from '@core/unknownValue'
-import { playwrightMcpEnv } from './browserControlEnv'
+import { playwrightMcpEnv } from '../../../main/browserControlEnv'
 
 // CODEX§27 CODEX§30
 const codexHookGroup = ({ command, matcher, timeout }: KoloftHook): string =>

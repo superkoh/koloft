@@ -1,8 +1,8 @@
 import { execFile } from 'child_process'
 import { promisify } from 'util'
 import { codexEnvironment } from './codexTransport'
-import { resolveCliRuntime, type CliRuntime, type CliSpec } from './cliRuntime'
-import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './cliMinimums'
+import { resolveCliRuntime, type CliRuntime, type CliSpec } from '../../../main/cliRuntime'
+import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from '../../../main/cliMinimums'
 
 const exec = promisify(execFile)
 

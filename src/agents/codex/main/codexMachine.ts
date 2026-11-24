@@ -10,10 +10,15 @@ import {
   remoteAnswerCommand,
   remoteShCommand,
   sourceTabPass
-} from './install'
-import { assertSafeNames, skillsFromMachineLine, tabPushed, type MachinePackage } from './launch'
-import { REMOTE_HOME, REMOTE_HOOK_DIR, remoteMachineDir } from './paths'
-import { answerStreamOf, SSH_LINK_BROKE_EXIT } from './ssh'
+} from '../../../main/remote/install'
+import {
+  assertSafeNames,
+  skillsFromMachineLine,
+  tabPushed,
+  type MachinePackage
+} from '../../../main/remote/launch'
+import { REMOTE_HOME, REMOTE_HOOK_DIR, remoteMachineDir } from '../../../main/remote/paths'
+import { answerStreamOf, SSH_LINK_BROKE_EXIT } from '../../../main/remote/ssh'
 import {
   asError,
   KOLOFT_INITIALIZE,
@@ -21,9 +26,9 @@ import {
   type CodexFrame,
   type CodexUpstream,
   type ReadFrame
-} from '../codexTransport'
+} from './codexTransport'
 import { record } from '@core/unknownValue'
-import { hookStateHeader, trustedHashLine } from '../codexConfigTables.mjs'
+import { hookStateHeader, trustedHashLine } from './codexConfigTables.mjs'
 import {
   CODEX_REPLY_LANGUAGE_ENV,
   CODEX_SAID_ENV,
@@ -35,7 +40,7 @@ import {
   remoteSentWordsFile,
   SHELL_WROTE_SUFFIX
 } from '@plugins/sessions/main/hooks'
-import { OWNING_TAB_ENV } from '../owningTabEnv'
+import { OWNING_TAB_ENV } from '../../../main/owningTabEnv'
 
 export const ENSURE_CODEX_FILE = 'ensure-codex.sh'
 
