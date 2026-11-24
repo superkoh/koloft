@@ -19,7 +19,7 @@ import {
   claudeSettingsNameAnotherEffort,
   claudeStatusLineDrawnAgainAfterItsFolderIsRemoved
 } from './helpers/statusline'
-import { CODEX_ASKS_AND_WAITS } from '../../src/main/codexLaunchConfig'
+import { CODEX_ASKS_AND_WAITS } from '../../src/agents/codex/main/codexLaunchConfig'
 
 const COLD_BUNDLE_FIRST_RENDER_TIMEOUT_MS = 30_000
 const LAUNCH_WORKTREE_AND_TWO_COLD_RENDERS_MS = 180_000

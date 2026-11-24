@@ -6,7 +6,7 @@ import {
   acceptCodexHookTrust,
   acceptCodexTrust,
   codexTrustsFolder
-} from '../../src/main/codexTrust'
+} from '../../src/agents/codex/main/codexTrust'
 
 let dir: string
 let repo: string

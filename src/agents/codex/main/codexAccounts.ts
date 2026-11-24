@@ -8,9 +8,9 @@ import {
   liveSessionsPerAccount,
   soonest,
   type LaunchedSession
-} from './accountPicker'
-import { leximaxFinalists, weekUse } from './usageProbe'
-import { withSavedHomeUsage, type SavedHomeUsageOf } from './savedHomeUsage'
+} from '../../../main/accountPicker'
+import { leximaxFinalists, weekUse } from '../../../main/usageProbe'
+import { withSavedHomeUsage, type SavedHomeUsageOf } from '../../../main/savedHomeUsage'
 
 const CODEX_HOMES = 'codex-homes'
 

@@ -3,22 +3,10 @@
     "src/main/agyAccounts.ts": "agy",
     "src/main/agyApi.ts": "agy",
     "src/main/agyStore.ts": "agy",
-    "src/main/codexAccounts.ts": "codex",
-    "src/main/codexConfigTables.d.mts": "codex",
-    "src/main/codexConfigTables.mjs": "codex",
-    "src/main/codexLaunchConfig.ts": "codex",
-    "src/main/codexRuntime.ts": "codex",
-    "src/main/codexSideServers.ts": "codex",
-    "src/main/codexTransport.ts": "codex",
-    "src/main/codexTrust.ts": "codex",
     "src/main/remote/agyTab.ts": "agy",
-    "src/main/remote/codexMachine.ts": "codex",
     "src/plugins/sessions/main/agyHooks.ts": "agy",
     "src/plugins/sessions/main/agySessions.ts": "agy",
     "src/plugins/sessions/main/backends/agy.ts": "agy",
-    "src/plugins/sessions/main/backends/codex.ts": "codex",
-    "src/plugins/sessions/main/codexObservation.ts": "codex",
-    "src/plugins/sessions/main/codexSessions.ts": "codex",
     "src/shared/agyBrain.ts": "agy"
   },
   "allowed": [
@@ -49,6 +37,13 @@
     }
   ],
   "lines": {
+    "src/agents/codex/main/codexTransport.ts": [
+      "'CLAUDECODE',",
+      "'CLAUDE_EFFORT',",
+      "'GEMINI_API_KEY',",
+      "key.startsWith('ANTIGRAVITY_')",
+      "key.startsWith('CLAUDE_CODE_') ||"
+    ],
     "src/agents/kit/main/sessionStore.ts": [
       "(backend: 'codex' | 'agy', label: string) =>",
       "export const agySessionKey = sessionKeyOn('agy', 'Antigravity')",
@@ -57,7 +52,7 @@
     ],
     "src/agents/kit/main/stored.ts": [
       "import type { AgySessions } from '@plugins/sessions/main/agySessions'",
-      "import type { CodexSessions } from '@plugins/sessions/main/codexSessions'",
+      "import type { CodexSessions } from '@agents/codex/main/codexSessions'",
       "sessions: CodexSessions | AgySessions,"
     ],
     "src/agents/kit/main/storedSessions.ts": [
@@ -178,7 +173,7 @@
       "dir: (env) => path.join(path.dirname(codexConfigFile(env)), 'sessions'),",
       "export const HISTORY_STORES: Record<Exclude<BackendId, 'claude'>, HistoryStore> = {",
       "import { AGY_APP_DIR, ownersGeminiDir } from './agyStore'",
-      "import { codexConfigFile } from './codexTrust'",
+      "import { codexConfigFile } from '@agents/codex/main/codexTrust'",
       "readonly id: Exclude<BackendId, 'claude'>",
       "settleMs: AGY_LISTS_A_NEW_CONVERSATION_WITHIN_MS",
       "settleMs: CODEX_LISTS_A_NEW_ROLLOUT_WITHIN_MS"
@@ -187,7 +182,7 @@
       "'agy-home': (userData, name) => agyApiKeyRoute(agyHomeOf(userData, name))",
       "'codex-home': (userData, name) =>",
       "import { agyApiKeyRoute, agyHomeOf } from './agyAccounts'",
-      "import { codexHomeOf } from './codexAccounts'",
+      "import { codexHomeOf } from '@agents/codex/main/codexAccounts'",
       "readJson(path.join(codexHomeOf(userData, name), 'auth.json')).auth_mode === 'apikey',"
     ],
     "src/main/host/host.ts": [
@@ -335,6 +330,7 @@
       "CODEX_REPLY_LANGUAGE_SCRIPT,",
       "CodexResetOutcome,",
       "Date.now() - (agyProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS",
+      "ENSURE_CODEX_FILE,",
       "ENSURE_CODEX_SH,",
       "Exclude<BackendId, 'claude'>,",
       "ReturnType<Parameters<SessionsStarted['buildAgySessions']>[0]['pickHome']>",
@@ -431,6 +427,7 @@
       "codexHome: path.dirname(codexSharedConfig()),",
       "codexHomeOf,",
       "codexHomes,",
+      "codexMachineInstance,",
       "codexProbeRound = null",
       "codexProbeRound ??= Promise.all(",
       "codexServers,",
@@ -572,8 +569,7 @@
       "import { MACHINE_CLAUDE } from '@agents/claude/main/advisorOnFable'",
       "import { claudeAskLine, storedAskLine } from './rowActivity'",
       "import { claudeJsonPath, claudeProjectKey } from '@agents/claude/main/claudeTrust'",
-      "import { codexConfigFile } from './codexTrust'",
-      "import { codexMachineInstance, ENSURE_CODEX_FILE, replyLanguageFiles } from './remote/codexMachine'",
+      "import { codexConfigFile } from '@agents/codex/main/codexTrust'",
       "import { codexShowsAPanel } from './inputBox'",
       "import { probeAccount, shouldSkipFable } from './usageProbe'",
       "inFolders(AGY_PROJECT_MCP_FILE, 'toRepoTop'),",
@@ -688,10 +684,11 @@
       "void codexSessions",
       "void probeAgyAccounts()",
       "} from './agyAccounts'",
-      "} from './codexAccounts'",
       "} from './remote/agyTab'",
       "} from '@agents/claude/main/claudeSessionRegistry'",
-      "} from '@agents/claude/main/claudeWorktreeExit'"
+      "} from '@agents/claude/main/claudeWorktreeExit'",
+      "} from '@agents/codex/main/codexAccounts'",
+      "} from '@agents/codex/main/codexMachine'"
     ],
     "src/main/inputBox.ts": [
       ".findLast((line) => line.startsWith(CODEX_COMPOSER_MARK))",
@@ -866,7 +863,7 @@
       "geminiDir: mirrorAgyGemini(userData, host)",
       "import { AGY_APP_DIR } from '../agyStore'",
       "import { CODEX_ROLLOUT_FOLDERS, type UsageHome } from '../usageCache'",
-      "import { REMOTE_CODEX_HOME } from './codexMachine'",
+      "import { REMOTE_CODEX_HOME } from '@agents/codex/main/codexMachine'",
       "import { mirrorAgyGemini, mirrorCodexHome } from './paths'",
       "to: path.join(dirs.codexHome, folder),",
       "to: path.join(dirs.geminiDir, AGY_APP_DIR, 'conversations'),",
@@ -1249,7 +1246,7 @@
       "export { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from './agyHooks'",
       "export { agyBackend } from './backends/agy'",
       "export { claudeDialog, codexDialog, isAskedCall, questionsOf } from './dialog'",
-      "export { codexBackend, trustCodexFolder } from './backends/codex'",
+      "export { codexBackend, trustCodexFolder } from '@agents/codex/main/backend'",
       "export { machineHookSettings, pickMachineAccount } from '@agents/claude/main/backend'",
       "export { writeLineInTurn } from '@agents/claude/main/crossSessionMessage'"
     ],
@@ -1302,7 +1299,7 @@
       "fs.writeFileSync(codexReplyLanguage, CODEX_REPLY_LANGUAGE_SCRIPT)",
       "if (backend === 'claude') return id === undefined ? undefined : { id }",
       "if [ \"$SECONDS\" -ge \"\\${KOLOFT_ASK_GIVES_UP_AFTER_S:-${ASK_GIVES_UP_A_MINUTE_BEFORE_CLAUDE_ENDS_IT_S}}\" ]; then",
-      "import type { KoloftHook } from '../../../main/codexLaunchConfig'",
+      "import type { KoloftHook } from '@agents/codex/main/codexLaunchConfig'",
       "matcher: 'SendMessage',",
       "return backend === 'codex' ? { words: text } : undefined",
       "return { hookScript, codexReplyLanguage, settingsDir, regDir }",
@@ -1408,7 +1405,7 @@
       "const claudeBackend = new ClaudeBackend({ ...d.claude, tracker })",
       "import { AgySessions, type AgySessionDeps } from './agySessions'",
       "import { ClaudeBackend, type ClaudeBackendDeps } from '@agents/claude/main/backend'",
-      "import { CodexSessions, type CodexSessionDeps } from './codexSessions'",
+      "import { CodexSessions, type CodexSessionDeps } from '@agents/codex/main/codexSessions'",
       "sessionBackends.register(claudeBackend)",
       "subscribeTabSubsystems: BuildLater<Omit<TabSubsystems, 'attention' | 'claude' | 'tracker'>>"
     ],

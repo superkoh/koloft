@@ -2,7 +2,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { writePrivateAtomically } from '@core/privateFile'
-import { realpathSafe } from './projectInfo'
+import { realpathSafe } from '../../../main/projectInfo'
 import { record } from '@core/unknownValue'
 import type { KoloftHook } from './codexLaunchConfig'
 import {

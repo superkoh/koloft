@@ -3881,7 +3881,8 @@ and which `mermaidRender` waits on before its first diagram.
 
 Koloft dependents: `SESSION_PORTS_SH` in `src/main/sessionPorts.ts` (the Workbench `+`
 menu's listening ports); `OWNING_TAB_ENV` in `src/main/owningTabEnv.ts`, set by
-`ptyManager.ts` and `remote/launch.ts` (Workbench shells) and `remote/codexMachine.ts`.
+`ptyManager.ts` and `remote/launch.ts` (Workbench shells) and
+`src/agents/codex/main/codexMachine.ts`.
 
 ## §68 The text of a selection: `Selection.toString()` against `Range.toString()`
 

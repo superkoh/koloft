@@ -3,7 +3,7 @@ import { execFileSync, spawnSync } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { acceptCodexTrust, codexTrustsFolder } from '../../src/main/codexTrust'
+import { acceptCodexTrust, codexTrustsFolder } from '../../src/agents/codex/main/codexTrust'
 
 const script = path.resolve(__dirname, '../../scripts/trust-codex-hooks.mjs')
 

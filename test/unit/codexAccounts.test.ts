@@ -2,7 +2,11 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { describe, expect, it } from 'vitest'
-import { HomeAccountPicker, limitsFrom, prepareCodexHome } from '../../src/main/codexAccounts'
+import {
+  HomeAccountPicker,
+  limitsFrom,
+  prepareCodexHome
+} from '../../src/agents/codex/main/codexAccounts'
 import { allLimitedNotice } from '../../src/main/accountPicker'
 import { windowLabel } from '../../src/shared/accountUsage'
 import type { AccountView } from '../../src/shared/types'

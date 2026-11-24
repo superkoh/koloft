@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { BackendAvailability, BackendId } from '@shared/types'
 import { AGY_APP_DIR, ownersGeminiDir } from './agyStore'
-import { codexConfigFile } from './codexTrust'
+import { codexConfigFile } from '@agents/codex/main/codexTrust'
 
 export interface HistoryStore {
   dir(env: NodeJS.ProcessEnv): string

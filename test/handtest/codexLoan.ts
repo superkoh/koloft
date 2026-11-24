@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { codexHomeOf } from '../../src/main/codexAccounts'
+import { codexHomeOf } from '../../src/agents/codex/main/codexAccounts'
 
 // CODEX§15
 const CODEX_REFRESHES_THIS_CLOSE_TO_EXPIRY_MS = 5 * 60_000

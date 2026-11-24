@@ -19,9 +19,14 @@ import {
   type FileAcc
 } from '../../../main/touchedFiles'
 import { CODEX_OPEN_SENT } from '../../../main/openShimScript'
-import type { CodexFrameHead } from '../../../main/codexTransport'
+import type { CodexFrameHead } from './codexTransport'
 import { TurnLog, type SaidLine } from '@shared/turns'
-import { codexQuestionOf, type Asked, type CodexApproval, type CodexQuestion } from './dialog'
+import {
+  codexQuestionOf,
+  type Asked,
+  type CodexApproval,
+  type CodexQuestion
+} from '@plugins/sessions/main/dialog'
 
 export function jsonRecord(value: unknown): Record<string, unknown> {
   if (typeof value !== 'string') return record(value)

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { CodexSideServers, SIDE_SERVER_IDLE_MS } from '../../src/main/codexSideServers'
-import type { CodexRpc } from '../../src/main/codexTransport'
+import { CodexSideServers, SIDE_SERVER_IDLE_MS } from '../../src/agents/codex/main/codexSideServers'
+import type { CodexRpc } from '../../src/agents/codex/main/codexTransport'
 
 interface FakeRpc {
   home: string | undefined

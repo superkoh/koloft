@@ -17,7 +17,7 @@ vi.mock('electron', async () => {
 const codex = vi.hoisted(() => ({
   transports: [] as { sessionEnv?: Record<string, string>; configOverrides?: string[] }[]
 }))
-vi.mock('../../src/main/codexRuntime', () => ({
+vi.mock('../../src/agents/codex/main/codexRuntime', () => ({
   resolveCodexRuntime: async () => ({
     binary: '/fixture/codex',
     env: {},
@@ -26,7 +26,7 @@ vi.mock('../../src/main/codexRuntime', () => ({
   }),
   updateCodex: async () => {}
 }))
-vi.mock('../../src/main/codexTransport', () => ({
+vi.mock('../../src/agents/codex/main/codexTransport', () => ({
   createCodexTransport: async (options: (typeof codex.transports)[number]) => {
     codex.transports.push(options)
     return { url: 'unix:///test/rpc.sock', stop: async () => {}, request: async () => ({}) }
@@ -53,9 +53,9 @@ import type { CreateTabOptions } from '@shared/types'
 import { portOffset } from '@shared/worktreeName'
 import { ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE } from '../../src/main/agentLift'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/agents/claude/main/backend'
-import { trustCodexFolder } from '../../src/plugins/sessions/main/backends/codex'
+import { trustCodexFolder } from '../../src/agents/codex/main/backend'
 import { BackgroundFile } from '../../src/main/backgroundFile'
-import { CodexSessions, type CodexSessionDeps } from '../../src/plugins/sessions/main/codexSessions'
+import { CodexSessions, type CodexSessionDeps } from '../../src/agents/codex/main/codexSessions'
 import { GithubRepos } from '../../src/main/githubRepos'
 import type { ClaudeLaunch } from '../../src/main/host/host'
 import { Hosts } from '../../src/main/host/hosts'
