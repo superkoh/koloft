@@ -1,5 +1,6 @@
 // ADR-0054
 import type { CronEffort } from '@shared/efforts'
+import type { SettingKey } from '../settings'
 
 export interface AgentWords {
   anyCase: readonly string[]
@@ -27,10 +28,7 @@ export interface ModelPick {
   effort: CronEffort
 }
 
-export interface OwnSetting {
-  default: boolean
-  keptOnReset: boolean
-}
+export type OwnSetting = Pick<SettingKey<boolean>, 'default' | 'keptOnReset'>
 
 export interface AgentFlags {
   resumeCanWaitOnAQuestionBeforeAnySign: boolean

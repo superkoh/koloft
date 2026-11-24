@@ -6,9 +6,6 @@ import { NAMED_MODELS, effortsFor, namedModel, takenEffort } from './cronModels'
 import { isValidModelName } from './cronNames'
 import { isRecord } from './workbenchState'
 
-export { TASK_TIERS }
-export type { Pick, TaskTier }
-
 export const TIER_PICKS: Record<BackendId, Record<TaskTier, Pick>> = ofEachAgent(
   (id) => agentManifest(id).picksByTaskTier
 )
