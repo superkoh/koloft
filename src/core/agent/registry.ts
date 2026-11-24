@@ -12,6 +12,10 @@ export function agentManifest(id: AgentId): AgentManifest {
   return AGENT_MANIFESTS.find((agent) => agent.id === id)!
 }
 
+export function ofEachAgent<T>(value: (id: AgentId) => T): Record<AgentId, T> {
+  return Object.fromEntries(AGENT_IDS.map((id) => [id, value(id)])) as Record<AgentId, T>
+}
+
 export const AGENT_PICKED_ON_FIRST_OPEN: AgentId = PICKED_ON_FIRST_OPEN.id
 
 export const AGENT_OF_UNNAMED_OLD_DATA: AgentId = OWNER_OF_UNNAMED_OLD_DATA

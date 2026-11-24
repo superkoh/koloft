@@ -1,5 +1,6 @@
 import type { BackendId, McpServer, SessionInfo, SessionRow, WorkspaceRows } from '@shared/types'
 import { BACKEND_LABEL, SESSION_BACKENDS } from '@shared/sessionBackend'
+import { AGENT_MANIFESTS } from '@core/agent/registry'
 import { ageLabel } from '@shared/freshnessOps'
 import { basename } from '@shared/preview'
 import { isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
@@ -37,7 +38,9 @@ const NOTE_USAGE =
 const FILE_USAGE =
   'koloft todo file: give a workspace and one of the files koloft todo listed for it, like: koloft todo file koloft CLAUDE.md'
 
-const INSTRUCTION_FILES = ['CLAUDE.md', 'AGENTS.md', 'GEMINI.md']
+const INSTRUCTION_FILES = [
+  ...new Set(AGENT_MANIFESTS.flatMap((agent) => agent.instructionFileNames))
+]
 const TODO_FILE = /^todo\b/i
 const GIT_LOOKUPS_AT_ONCE = 4
 

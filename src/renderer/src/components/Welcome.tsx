@@ -17,6 +17,7 @@ import {
   SESSION_BACKENDS,
   backendAvailable
 } from '@shared/sessionBackend'
+import { agentManifest } from '@core/agent/registry'
 import { accountToSignInAgain, hasUsableAccount } from '@shared/accountUsage'
 import { basename } from '@shared/preview'
 import { foldersToPin } from '@shared/firstRun'
@@ -49,12 +50,6 @@ type Launch =
 interface Folder {
   path: string
   rows: SessionRow[]
-}
-
-const MAKER: Record<BackendId, string> = {
-  claude: 'Anthropic',
-  codex: 'OpenAI',
-  agy: 'Google'
 }
 
 const SIGN_IN_HOW: Record<BackendId, string> = {
@@ -479,7 +474,7 @@ export function Welcome({
                       <SessionBackendIcon backend={b} size={34} decorative />
                     </div>
                     <div className="wl-agent-name">{BACKEND_PRODUCT[b]}</div>
-                    <div className="wl-agent-maker">{MAKER[b]}</div>
+                    <div className="wl-agent-maker">{agentManifest(b).maker}</div>
                     <div className={'wl-agent-state' + (there ? ' ok' : '')}>
                       {installed === null ? (
                         <span className="wl-faint">Looking…</span>

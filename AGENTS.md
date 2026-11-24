@@ -138,7 +138,13 @@ Working principles:
   script fails on a new optional method on the run-time interfaces (`src/core/agent`
   but not `manifest.ts`, and `src/agents/kit/main`; a caller never picks an agent's way
   by whether a method is there) and on a new use of `messagingOf` outside the three
-  agents' own folders. The script's `RULES` table is the full wording. What exists today is in
+  agents' own folders. It fails too, with no baseline, on a flag in a manifest that is
+  not yes-or-no (a field of `flags`: `boolean`, or one `boolean` each for `local` and
+  `ssh`), and where common code or a plugin compares a text from a manifest, or from a
+  table built from one such as `BACKEND_LABEL`, with a text written in the code; and it
+  prints each flag's answer for the six kinds of tab (`scripts/agent-facts.mjs`). A
+  manifest field states the agent's own fact, never what Koloft does with it
+  (`ownLogFolderNames`, not `folderNamesNotWatched`). The script's `RULES` table is the full wording. What exists today is in
   `scripts/agent-imports-baseline.json`, each entry with the step of issue #2410 that
   removes it; the baseline only shrinks. An entry that truly must be added gets its
   reason in the PR body (`npm run check:agent-imports -- --accept-new <step>`); removed

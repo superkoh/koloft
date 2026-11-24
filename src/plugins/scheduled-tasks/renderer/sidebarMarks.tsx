@@ -5,7 +5,6 @@ import { forecastFor, type Forecast } from './cronForm'
 import { openScheduledJobs, useCron } from './state'
 import { slugOf } from '@shared/cronNames'
 import { describeWhen } from '@shared/schedule'
-import { capabilitiesFor } from '@shared/sessionBackend'
 import type { CronState, SessionRow } from '@shared/types'
 
 const CRON_BADGE_MS = 30_000
@@ -39,11 +38,10 @@ export function startedByAJob(
     worktreePrefixes.set(j.workspacePath, list)
   }
   return (wsPath, row, tabId) =>
-    capabilitiesFor(row.backendId, row.host).scheduledTasks === true &&
-    ((!!tabId && liveTabs.has(tabId)) ||
-      liveSessions.has(row.id) ||
-      (row.worktree !== 'main' &&
-        (worktreePrefixes.get(wsPath) ?? []).some((p) => row.worktree.startsWith(p))))
+    (!!tabId && liveTabs.has(tabId)) ||
+    liveSessions.has(row.id) ||
+    (row.worktree !== 'main' &&
+      (worktreePrefixes.get(wsPath) ?? []).some((p) => row.worktree.startsWith(p)))
 }
 
 export function useJobMarkOf(): MarkOf {

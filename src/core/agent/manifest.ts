@@ -11,9 +11,23 @@ export interface AtTopOfSessionFolder {
   foldersMadeEmptyAhead: readonly string[]
 }
 
+export interface AgentFlags {
+  resumeCanWaitOnAQuestionBeforeAnySign: boolean
+  conversationStartsAtFirstPrompt: boolean
+  pasteKeepsItsLastLineFeeds: boolean
+}
+
 export interface AgentManifest {
   id: string
+  name: string
+  productName: string
+  maker: string
   wordsThatNameMe: AgentWords
+  skillPrefix: string
+  questionToolName: string
+  instructionFileNames: readonly string[]
+  trustQuestion: string
   ownLogFolderNames: readonly string[]
   atTopOfSessionFolder: AtTopOfSessionFolder
+  flags: AgentFlags
 }

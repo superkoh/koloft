@@ -10,12 +10,11 @@ import type {
 } from '@shared/types'
 import { basename } from '@shared/preview'
 import { cronBackend, slugOf } from '@shared/cronNames'
-import { hostOf } from '@shared/remoteKey'
+import { agentManifest } from '@core/agent/registry'
 import {
   BACKEND_LABEL,
   BACKEND_PRODUCT,
   SKILL_PREFIX,
-  capabilitiesFor,
   effectiveBackend,
   SESSION_BACKENDS
 } from '@shared/sessionBackend'
@@ -96,15 +95,9 @@ const effortHint = (label: string): string =>
 const NEVER_ASK_HINT =
   '"Never ask" can change files anywhere on this Mac, not only in the run\'s folder.'
 const NO_GIT_NOTE = 'This folder is not a git repo, so the run works in the folder itself.'
-// CC§9 CODEX§14 AGY§5
-const TRUST_QUESTION: Record<BackendId, string> = {
-  claude: 'do you trust this project?',
-  codex: 'do you trust the contents of this directory?',
-  agy: 'Do you trust the contents of this project?'
-}
 const trustHint = (backend: BackendId): string =>
   `Koloft cannot see that ${BACKEND_LABEL[backend]} trusts this folder. Start one session here ` +
-  `first — a scheduled run would stall on ${BACKEND_LABEL[backend]}'s "${TRUST_QUESTION[backend]}" ` +
+  `first — a scheduled run would stall on ${BACKEND_LABEL[backend]}'s "${agentManifest(backend).trustQuestion}" ` +
   'question and be stopped at the deadline.'
 
 const MANY_RUN_FOLDERS = 10
@@ -136,11 +129,7 @@ export function CronJobsDialog({
     .slice()
     .sort((a, b) => a.createdAt - b.createdAt)
 
-  const backends = SESSION_BACKENDS.filter(
-    (b) =>
-      settings.sessionMethods.enabled[b] &&
-      capabilitiesFor(b, hostOf(wsPath)).scheduledTasks === true
-  )
+  const backends = SESSION_BACKENDS.filter((b) => settings.sessionMethods.enabled[b])
   const defaultBackend = effectiveBackend(settings.sessionMethods, new Set(backends))
   const mixed = mixesBackends(jobs.map((j) => ({ backendId: cronBackend(j) })))
 

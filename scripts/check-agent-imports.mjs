@@ -5,13 +5,22 @@ import * as prettier from 'prettier'
 import {
   AGENTS_DIR,
   ENTRY_EACH_LIST_OF_AGENTS_IMPORTS,
+  EVERY_NAME,
   LISTS_OF_AGENTS,
   importedPath,
   importedSpecifierOf,
+  nameOf,
   parseSource,
   sourceFilesUnder,
-  walk
+  walk,
+  withoutCasts
 } from './source-imports.mjs'
+import {
+  MANIFEST_TYPES,
+  factsComparedWithFixedText,
+  flagsByKindOfTab,
+  flagsThatAreNotYesOrNo
+} from './agent-facts.mjs'
 
 const ROOT = process.cwd()
 const BASELINE = 'scripts/agent-imports-baseline.json'
@@ -24,9 +33,7 @@ const LIST_NAMES = [...LISTS_OF_AGENTS].map((f) => path.basename(f)).join(', ')
 const LIST_ENTRIES = Object.entries(ENTRY_EACH_LIST_OF_AGENTS_IMPORTS)
   .map(([list, entry]) => `${path.basename(list)} its ${entry}`)
   .join(', ')
-const MANIFEST_TYPES = 'src/core/agent/manifest.ts'
 const MESSAGING = { file: 'src/shared/sessionBackend.ts', name: 'messagingOf' }
-const EVERY_NAME = '*'
 const CANNOT_RUN = 2
 const RULES = {
   'plugin-into-agent':
@@ -99,14 +106,9 @@ const isPluginCode = (zone) => zone.kind === 'plugin' || zone.kind === 'plugin-l
 const isForeignAgent = (zone, owner) =>
   zone.kind === 'agent' && zone.owner !== KIT && zone.owner !== owner
 
-function nameOf(node) {
-  return node.type === 'Identifier' ? node.name : node.value
-}
-
-function withoutCasts(node) {
-  let inner = node
-  while (inner && /^TS(As|Satisfies|NonNull)Expression$/.test(inner.type)) inner = inner.expression
-  return inner
+const isCommonCodeOrPlugin = (file) => {
+  const zone = zoneOf(file)
+  return !!zone && zone.kind !== 'list' && (zone.kind !== 'agent' || zone.owner === KIT)
 }
 
 function readModule(file, resolve) {
@@ -620,6 +622,33 @@ const MESSAGING_HELP = [
   '  agent. Step C2 of issue #2410 removes the uses that are left.',
   ...IF_IT_MUST_STAY
 ]
+const FLAG_HELP = [
+  `A flag (a field of \`flags\` in AgentManifest, ${MANIFEST_TYPES}) answers one yes-or-no`,
+  'question about an agent: `boolean`, or one `boolean` for each of `local` and `ssh` when the',
+  'answer differs on a remote machine. Each agent.ts writes its answer as `true` or `false`.',
+  'A flag with more answers lets the common code pick one agent’s way by its value, which is',
+  'asking "which agent are you" without its name (issue #2410, Section 3).',
+  'How to fix:',
+  '- Ask a yes-or-no question any agent could answer about itself, and name it after the',
+  '  agent’s own fact, not after what Koloft does with the answer.',
+  '- A name, a file name or a sentence is a fact, not a flag: put it beside `flags`.',
+  '- Work that differs between agents in more than two ways goes in each agent’s own code,',
+  '  src/agents/<id>/, behind a method of the interface in src/core/agent.'
+]
+const FACT_HELP = [
+  'Common code and plugins never compare a text an agent states about itself (a field of its',
+  'manifest outside `flags`, or a table built from one, such as BACKEND_LABEL) with a text',
+  'written in the code: that asks "which agent are you" without its name (issue #2410,',
+  'Section 3). Using a fact for what it means is fine: put it in a sentence, pass it on, look',
+  'it up, compare it with a value read at run time (a file name on disk, what was typed).',
+  'How to fix:',
+  '- If Koloft’s own steps really differ, add a yes-or-no flag to the manifests (`flags`),',
+  '  named after the agent’s own fact, and read that.',
+  '- If the work belongs to one agent, move it into src/agents/<id>/.',
+  'This check follows a fact through a local name, a destructuring, a callback over',
+  'AGENT_MANIFESTS and a table built from a fact; it does not follow one through a function',
+  'of your own or a namespace import. Code review asks the same question there.'
+]
 const GONE_HELP = [
   'These baseline entries are gone. Run `npm run check:agent-imports -- --prune` and commit',
   `${BASELINE}, so they cannot come back.`
@@ -685,8 +714,22 @@ if (result.moreReferences.length > 0)
     ),
     ...MESSAGING_HELP
   )
+const flagsNotYesOrNo = flagsThatAreNotYesOrNo(modules)
+if (flagsNotYesOrNo.length > 0)
+  out.push(
+    `check-agent-imports: ${flagsNotYesOrNo.length} flags in the agents’ manifests are not yes-or-no.`,
+    ...flagsNotYesOrNo.map((f) => `  ${f.file}:${f.line}  flags.${f.name}  (${f.why})`),
+    ...FLAG_HELP
+  )
+const factsCompared = factsComparedWithFixedText(ROOT, modules, declaredIn, isCommonCodeOrPlugin)
+if (factsCompared.length > 0)
+  out.push(
+    `check-agent-imports: ${factsCompared.length} places compare a fact from an agent’s manifest with a text written in the code.`,
+    ...factsCompared.map((c) => `  ${c.file}:${c.line}  ${c.text}`),
+    ...FACT_HELP
+  )
 if (out.length > 0) {
   console.error(out.join('\n'))
   process.exit(1)
 }
-console.log(summary(baseline))
+console.log([summary(baseline), ...flagsByKindOfTab(modules)].join('\n'))

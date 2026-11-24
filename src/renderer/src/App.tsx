@@ -3,7 +3,13 @@ import { SessionBackendIcon } from './components/SessionBackendIcon'
 import type { AgentChoice } from './agentChoice'
 import type { SessionLaunchOptions } from './components/SessionLaunchButtons'
 import { WelcomeLaunch } from './components/WelcomeLaunch'
-import { backendAvailable, BACKEND_LABEL, byBackend, launchMenus } from '@shared/sessionBackend'
+import {
+  backendAvailable,
+  BACKEND_LABEL,
+  byBackend,
+  launchMenus,
+  resumeScreenMayHideAQuestion
+} from '@shared/sessionBackend'
 import { hasWorkbench, isSessionKind, launchErrorMessage, type SessionBackend } from './agentUi'
 import {
   useCallback,
@@ -1774,10 +1780,9 @@ export default function App(): JSX.Element {
                           t.ghost && !t.wakeOverdue ? () => noteWakingOutput(t.id) : undefined
                         }
                       />
-                      {/* CODEX§9 AGY§5 */}
-                      {t.resuming && (t.kind === 'claude' || t.kind === 'agy') && (
-                        <ResumingMask title={t.title} />
-                      )}
+                      {t.resuming &&
+                        isSessionKind(t.kind) &&
+                        !resumeScreenMayHideAQuestion(t.kind) && <ResumingMask title={t.title} />}
                       {overTerminal?.(t.id === shown.id)}
                       {!overTerminal && instructionAsk && (
                         <InstructionsAskDialog

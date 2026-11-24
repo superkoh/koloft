@@ -16,6 +16,17 @@ export const ENTRY_EACH_LIST_OF_AGENTS_IMPORTS = {
   'src/agents/uis.ts': 'renderer/ui.tsx'
 }
 export const LISTS_OF_AGENTS = new Set(Object.keys(ENTRY_EACH_LIST_OF_AGENTS_IMPORTS))
+export const EVERY_NAME = '*'
+
+export function nameOf(node) {
+  return node.type === 'Identifier' ? node.name : node.value
+}
+
+export function withoutCasts(node) {
+  let inner = node
+  while (inner && /^TS(As|Satisfies|NonNull)Expression$/.test(inner.type)) inner = inner.expression
+  return inner
+}
 
 export function sourceFilesUnder(root, sourceFile) {
   const src = path.join(root, 'src')

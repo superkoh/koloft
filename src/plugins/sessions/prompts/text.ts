@@ -1,7 +1,8 @@
 import { eachAgent, type TextBlock } from '@core/plugin'
 import type { BackendId } from '@shared/types'
 import { tiersOf } from '@shared/sessionPicks'
-import { SESSION_BACKENDS, kindsOf } from '@shared/sessionBackend'
+import { SESSION_BACKENDS, byBackend, kindsOf } from '@shared/sessionBackend'
+import { agentManifest } from '@core/agent/registry'
 import { OWNER_QUOTE_MARKS } from '@core/ownerWords'
 
 export const EVERY_KIND = kindsOf(SESSION_BACKENDS, 'or')
@@ -58,12 +59,7 @@ const HELPER_RULES: Record<BackendId, string[]> = {
   ]
 }
 
-// AGY§13 AGY§14
-export const WAITING_QUESTION_TOOL: Record<BackendId, string> = {
-  claude: 'AskUserQuestion',
-  codex: 'request_user_input',
-  agy: 'ask_question'
-}
+export const WAITING_QUESTION_TOOL = byBackend((b) => agentManifest(b).questionToolName)
 
 function questionRule(askWith: string, after?: string): string {
   return `
