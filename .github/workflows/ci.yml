@@ -38,6 +38,8 @@ jobs:
 
       - run: npm run check:plugin-imports
 
+      - run: npm run check:agent-words
+
       - run: npm run typecheck
 
       - run: npm run test:unit

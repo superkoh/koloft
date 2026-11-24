@@ -1,3 +1,19 @@
 import type { AgentManifest } from '@core/agent/manifest'
 
-export const agent = { id: 'codex' } as const satisfies AgentManifest
+export const agent = {
+  id: 'codex',
+  wordsThatNameMe: {
+    anyCase: ['codex', 'openai', 'gpt'],
+    wholeWord: [
+      'request_user_input',
+      'spawn_agent',
+      '--skip-git-repo-check',
+      '--ephemeral',
+      '--ask-for-approval',
+      '--sandbox',
+      '--ignore-user-config',
+      '--ignore-rules'
+    ],
+    quoted: ['codex-home']
+  }
+} as const satisfies AgentManifest

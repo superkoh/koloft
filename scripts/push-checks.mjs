@@ -21,6 +21,11 @@ const CHECKS = [
     fix: 'remove or replace the comments it lists (see "Comments" in AGENTS.md), commit, and try again'
   },
   {
+    script: 'check:agent-words',
+    findsProblemsWith: [1],
+    fix: 'do what it says under "How to fix", commit, and try again'
+  },
+  {
     script: 'typecheck',
     findsProblemsWith: [1, 2],
     fix: 'fix the type errors it lists, commit, and try again'
