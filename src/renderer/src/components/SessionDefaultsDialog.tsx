@@ -2,7 +2,8 @@ import { useEffect, useLayoutEffect, useRef, useState, type JSX } from 'react'
 import { IconClose } from '../icons'
 import type { BackendId, CronEffort, OwnPick, SessionDefaultsDraft } from '@shared/types'
 import { basename } from '@shared/preview'
-import { BACKEND_LABEL, SESSION_BACKENDS, byBackend, kindsOf } from '@shared/sessionBackend'
+import { BACKEND_LABEL, SESSION_BACKENDS, kindsOf } from '@shared/sessionBackend'
+import { ofEachAgent } from '@core/agent/registry'
 import { effortsFor } from '@shared/cronModels'
 import { isValidModelName } from '@shared/cronNames'
 import { ownPickOf, tiersOf } from '@shared/sessionPicks'
@@ -72,7 +73,9 @@ export function SessionDefaultsDialog({
   const backends = SESSION_BACKENDS.filter((b) => enabled[b])
   const [familyEfforts, setFamilyEfforts] = useState<Record<string, CronEffort[]> | null>(null)
   const [error, setError] = useState('')
-  const [picks, setPicks] = useState<Record<BackendId, PickFields>>(() => byBackend(() => NOT_SET))
+  const [picks, setPicks] = useState<Record<BackendId, PickFields>>(() =>
+    ofEachAgent(() => NOT_SET)
+  )
   const [rules, setRules] = useState('')
   const [instructions, setInstructions] = useState('')
   const [leavesOut, setLeavesOut] = useState(false)
@@ -90,7 +93,7 @@ export function SessionDefaultsDialog({
       (r) => {
         if (!live) return
         if (!r.ok) return setError(r.error)
-        setPicks(byBackend((b) => fieldsOf(b, r.defaults.picks[b])))
+        setPicks(ofEachAgent((b) => fieldsOf(b, r.defaults.picks[b])))
         const text = textInUse(r.defaults.instructions)
         setRules(r.defaults.rules ?? '')
         setInstructions(text)

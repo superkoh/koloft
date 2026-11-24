@@ -850,6 +850,15 @@ describe('the butler', () => {
     expect(toasts).toEqual(['Alfred did not start.'])
   })
 
+  it.each(['claude', 'codex'] as const)(
+    'on %s, which has its conversation before any prompt, one started with nothing to say waits for no first words',
+    async (backend) => {
+      choice = { backend }
+      const c = make()
+      expect(c.firstWordsComing(await opened(c))).toBe(false)
+    }
+  )
+
   // AGY§5 AGY§8
   it('on Antigravity, one stuck on a setup screen at launch is closed at the deadline as not started, with no words sent', async () => {
     vi.useFakeTimers()

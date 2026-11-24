@@ -1546,8 +1546,8 @@ function hostOfTab(tabId: string): HostId {
   return machineOfTab(tabId) ? 'ssh' : 'local'
 }
 
-function agentToolsFor(backend: BackendId, host: HostId): boolean {
-  return loadSettings().agentTools && capabilitiesFor(backend, host).agentTools === true
+function agentToolsOn(): boolean {
+  return loadSettings().agentTools
 }
 
 // CC§2
@@ -2276,7 +2276,7 @@ const agentRequests = new AgentRequests({
   session: sessionOfTab,
   enabled: (tabId) => {
     const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
-    return !!backend && agentToolsFor(backend, hostOfTab(tabId))
+    return !!backend && agentToolsOn()
   },
   alive: pidAlive
 })
@@ -3598,7 +3598,7 @@ app.whenReady().then(() => {
         return docs && pluginSkills(docs)
       },
       agent: {
-        enabled: (host) => agentToolsFor('codex', host),
+        enabled: agentToolsOn,
         answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw),
         skillsFolder: () => claudeAgentPlugin && pluginSkills(claudeAgentPlugin)
       },
@@ -3642,7 +3642,7 @@ app.whenReady().then(() => {
       fallbackBin,
       gitBin: gitFirstBin,
       agent: {
-        enabled: (remote) => agentToolsFor('agy', remote ? 'ssh' : 'local'),
+        enabled: agentToolsOn,
         answer: (tabId, dir, name, raw) => void agentRequests.answerFor(tabId, dir, name, raw)
       },
       gitAccounts: {
@@ -5495,7 +5495,7 @@ const githubOptions: GithubReposOptions = {
 const hosts = new Hosts(
   localHost(new GithubRepos(githubOptions), {
     hookRegDir: () => hookRegDir ?? '',
-    agentPlugin: () => (agentToolsFor('claude', 'local') ? claudeAgentPlugin : undefined),
+    agentPlugin: () => (agentToolsOn() ? claudeAgentPlugin : undefined),
     docsPlugin: docsPluginWhileOn,
     assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
     agentHomes: () => ({
@@ -5544,7 +5544,7 @@ const hosts = new Hosts(
         pickAccount: (launchKey, resumeSessionId) =>
           pickMachineAccount(() => pickForLaunch(launchKey, resumeSessionId)),
         noAccountMessage: () => noAccountNow('claude'),
-        agentTools: () => agentToolsFor('claude', 'ssh'),
+        agentTools: agentToolsOn,
         hookSettings: (tabId, dir, allowKoloft) =>
           machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft),
         loginPath: () => gitAccounts?.machineLoginPath(machine) ?? Promise.resolve('')

@@ -12,11 +12,11 @@ import { IconChevronDown, IconLoading } from '../icons'
 import {
   BACKEND_LABEL,
   backendAvailable,
-  byBackend,
   checkedOnThisMac,
   effectiveBackend,
   listedBackends
 } from '@shared/sessionBackend'
+import { ofEachAgent } from '@core/agent/registry'
 import { ACCOUNTS_PANE, noAccountLine, noUsableAccountLead } from '@shared/accountUsage'
 import type { BackendId, CreateTabOptions, HostId } from '@shared/types'
 import { firstHot, type AgentChoice } from '../agentChoice'
@@ -338,7 +338,7 @@ export function AgentSelect({
 
 function useNoAccountLeads(): Record<BackendId, string> {
   const accounts = useStore((s) => s.accounts)
-  return byBackend((b) => (accounts ? noUsableAccountLead(accounts, b) : ''))
+  return ofEachAgent((b) => (accounts ? noUsableAccountLead(accounts, b) : ''))
 }
 
 export function useAccountIssue(): (backend: BackendId) => string {

@@ -1,7 +1,6 @@
 // ADR-0051
 import type { BackendId } from '@shared/types'
-import { byBackend } from '@shared/sessionBackend'
-import { AGENT_PICKED_ON_FIRST_OPEN } from './agent/registry'
+import { AGENT_PICKED_ON_FIRST_OPEN, ofEachAgent } from './agent/registry'
 import type { ModelAndEffort } from './assistModels'
 
 export const PLUGIN_FORMAT_VERSION = 1
@@ -17,7 +16,7 @@ export interface TextBlock {
 export const eachAgent = (slot: string, textOf: (agent: BackendId) => string): TextBlock => ({
   slot,
   text: textOf(AGENT_PICKED_ON_FIRST_OPEN),
-  byAgent: byBackend(textOf)
+  byAgent: ofEachAgent(textOf)
 })
 
 export interface PluginCommand {

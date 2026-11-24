@@ -9,6 +9,7 @@ import type {
 } from './types'
 import { SIGN_IN_FOLDER_KINDS, SIGN_IN_FOLDER_OF } from './types'
 import { BACKEND_LABEL } from './sessionBackend'
+import { ofEachAgent } from '@core/agent/registry'
 import { ageLabel } from './freshnessOps'
 
 export const ACCOUNT_KINDS_OF: Record<BackendId, AccountKind[]> = {
@@ -66,13 +67,10 @@ export const SHIM_FOUND_NO_ACCOUNT_EXIT = 78
 export const SHIM_FOUND_NO_ACCOUNT_NOTICE =
   'Claude did not start: Koloft could not use an account for it. Check Settings ▸ Accounts, then try again.'
 
-export const NO_USABLE_ACCOUNT: Record<BackendId, string> = {
-  claude:
-    'No Claude account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.',
-  codex:
-    'No Codex account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.',
-  agy: 'No Antigravity account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.'
-}
+export const NO_USABLE_ACCOUNT = ofEachAgent(
+  (b) =>
+    `No ${BACKEND_LABEL[b]} account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.`
+)
 
 export function noAccountLine(accounts: readonly AccountMeta[], backend: BackendId): string {
   const lead = noUsableAccountLead(accounts, backend)

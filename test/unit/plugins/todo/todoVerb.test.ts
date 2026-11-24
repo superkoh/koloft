@@ -463,14 +463,22 @@ describe('koloft todo', () => {
       sessions: [],
       repos: { [SHOP]: 'octo/shop' },
       notes: { 'octo/shop': 'Issues assigned to alice.' },
-      files: { [NOTES_WS]: { 'AGENTS.md': '', 'TODO.md': '', 'README.md': '' } }
+      files: {
+        [NOTES_WS]: {
+          'AGENTS.md': '',
+          'CLAUDE.md': '',
+          'GEMINI.md': '',
+          'TODO.md': '',
+          'README.md': ''
+        }
+      }
     })
     const workspaces = section((await run([])).text, 'WORKSPACES')
     expect(workspaces).toContain(
       'shop · /work/shop · GitHub octo/shop · last used 1 day ago · to-do note (for every workspace of octo/shop): "Issues assigned to alice."'
     )
     expect(workspaces).toContain(
-      'notes · /work/notes · no GitHub repository · no sessions yet · no to-do note yet · files: AGENTS.md, TODO.md'
+      'notes · /work/notes · no GitHub repository · no sessions yet · no to-do note yet · files: AGENTS.md, CLAUDE.md, GEMINI.md, TODO.md'
     )
   })
 

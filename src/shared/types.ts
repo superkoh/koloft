@@ -2,7 +2,12 @@ import type { SessionRoute } from './sessionRoute'
 import type { TokenCounts } from './pricing'
 import type { PluginSettingValues } from '@plugins/settings'
 import type { InstructionsVersion } from '@core/ownerInstructions'
-import { AGENT_PICKED_ON_FIRST_OPEN, type AgentId } from '@core/agent/registry'
+import {
+  AGENT_PICKED_ON_FIRST_OPEN,
+  agentManifest,
+  ofEachAgent,
+  type AgentId
+} from '@core/agent/registry'
 
 export interface ProjectInfo {
   root: string
@@ -447,7 +452,7 @@ export const SIDEBAR_MIN = 240
 export const APP_DEFAULT_SETTINGS: AppSettings = {
   sessionMethods: {
     defaultBackend: AGENT_PICKED_ON_FIRST_OPEN,
-    enabled: { claude: true, codex: true, agy: true }
+    enabled: ofEachAgent(() => true)
   },
   fontFamily:
     '"JetBrainsMono Nerd Font", "MesloLGS NF", "FiraCode Nerd Font", Menlo, Monaco, monospace',
@@ -764,13 +769,9 @@ export interface SessionUsage {
   ctxPct?: number
 }
 
-export const PLACEHOLDER_SESSION_TITLE = 'Claude session'
+export const PLACEHOLDER_TITLES = ofEachAgent((id) => `${agentManifest(id).name} session`)
 
-export const PLACEHOLDER_TITLES: Record<BackendId, string> = {
-  claude: PLACEHOLDER_SESSION_TITLE,
-  codex: 'Codex session',
-  agy: 'Antigravity session'
-}
+export const PLACEHOLDER_SESSION_TITLE = PLACEHOLDER_TITLES.claude
 
 const PLACEHOLDER_TITLE_SET = new Set<string>(Object.values(PLACEHOLDER_TITLES))
 

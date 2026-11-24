@@ -14,6 +14,7 @@ import {
 } from '@shared/sessionBackend'
 import type { BackendId, BackendSessionInfo, BackendSessionRow, HostId } from '@shared/types'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
+import { coversTerminalWhileResuming } from '../../../../src/renderer/src/agentUi'
 
 function stubBackend(
   id: BackendId,
@@ -249,13 +250,6 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     expect(Object.values(capabilitiesFor('claude', 'local')).every((c) => c === true)).toBe(true)
   })
 
-  it('gives a remote Claude session a Workbench, scheduled tasks and the koloft command', () => {
-    const remote = capabilitiesFor('claude', 'ssh')
-    expect(remote.workbench).toBe(true)
-    expect(remote.scheduledTasks).toBe(true)
-    expect(remote.agentTools).toBe(true)
-  })
-
   const ROWS_ONLY_SOME_TABS_HAVE: [string, keyof Capabilities, string[]][] = [
     [
       "Koloft's ask hook holds a question until Discord answers it only in a Claude Code tab on this Mac; on a machine the hook only records it and a Discord button presses the key, and other agents have no such hook",
@@ -278,23 +272,12 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
       ['claude/local', 'claude/ssh', 'codex/local', 'agy/local']
     ]
   ]
-  const sharedRowsOf = (backend: BackendId, host: HostId): Partial<Capabilities> =>
-    Object.fromEntries(
-      Object.entries(capabilitiesFor(backend, host)).filter(
-        ([row]) => !ROWS_ONLY_SOME_TABS_HAVE.some(([, only]) => only === row)
-      )
-    )
   const HOSTS: HostId[] = ['local', 'ssh']
 
-  it('gives a Codex or Antigravity session on this Mac a Workbench, scheduled tasks, the koloft command and browser control', () => {
-    for (const backend of SESSION_BACKENDS)
-      expect(sharedRowsOf(backend, 'local')).toEqual(sharedRowsOf('claude', 'local'))
-  })
-
-  // CODEX§16
-  it('gives a remote Codex or Antigravity tab what a remote Claude tab has', () => {
-    for (const backend of SESSION_BACKENDS)
-      expect(sharedRowsOf(backend, 'ssh')).toEqual(sharedRowsOf('claude', 'ssh'))
+  it('holds no row that every kind of tab has: each row is listed above with the reason some tabs lack it', () => {
+    expect(Object.keys(capabilitiesFor('claude', 'local')).sort()).toEqual(
+      ROWS_ONLY_SOME_TABS_HAVE.map(([, row]) => row).sort()
+    )
   })
 
   // CC§4 CC§11 CC§14
@@ -305,6 +288,14 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
       )
     )
     expect(tabsWithIt).toEqual(on)
+  })
+})
+
+describe('coversTerminalWhileResuming (which resuming tabs get the "Resuming" cover over their terminal)', () => {
+  // CODEX§9 AGY§5
+  it('covers a Claude Code or Antigravity tab, and never a Codex one, whose question before it binds the cover would hide, nor a plain terminal', () => {
+    const kinds = [...SESSION_BACKENDS, 'shell'] as const
+    expect(kinds.filter(coversTerminalWhileResuming)).toEqual(['claude', 'agy'])
   })
 })
 

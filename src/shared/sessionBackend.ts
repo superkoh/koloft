@@ -11,23 +11,17 @@ import { settingsPaneName } from './settingsPanes'
 import {
   AGENT_IDS,
   AGENT_OF_UNNAMED_OLD_DATA,
-  AGENT_PICKED_ON_FIRST_OPEN
+  AGENT_PICKED_ON_FIRST_OPEN,
+  agentManifest,
+  ofEachAgent
 } from '@core/agent/registry'
-
-export const BACKEND_LABEL: Record<BackendId, string> = {
-  claude: 'Claude',
-  codex: 'Codex',
-  agy: 'Antigravity'
-}
-
-export const BACKEND_PRODUCT: Record<BackendId, string> = {
-  claude: 'Claude Code',
-  codex: 'Codex',
-  agy: 'Antigravity CLI'
-}
 
 // ADR-0054
 export const SESSION_BACKENDS: BackendId[] = [...AGENT_IDS]
+
+export const BACKEND_LABEL = ofEachAgent((b) => agentManifest(b).name)
+
+export const BACKEND_PRODUCT = ofEachAgent((b) => agentManifest(b).productName)
 
 export const kindsOf = (backends: BackendId[], joiner: 'or' | 'and'): string => {
   const labels = backends.map((b) => BACKEND_LABEL[b])
@@ -36,12 +30,7 @@ export const kindsOf = (backends: BackendId[], joiner: 'or' | 'and'): string => 
     : `${labels.slice(0, -1).join(', ')} ${joiner} ${labels[labels.length - 1]}`
 }
 
-// CC§9 CODEX§17 AGY§31
-export const SKILL_PREFIX: Record<BackendId, string> = {
-  claude: '/',
-  codex: '$',
-  agy: '/'
-}
+export const SKILL_PREFIX = ofEachAgent((b) => agentManifest(b).skillPrefix)
 
 export function turnedOffLead(backend: BackendId): string {
   return `${BACKEND_LABEL[backend]} is turned off in `
@@ -49,10 +38,6 @@ export function turnedOffLead(backend: BackendId): string {
 
 export function turnedOffLine(backend: BackendId): string {
   return turnedOffLead(backend) + settingsPaneName('sessions')
-}
-
-export function byBackend<T>(value: (backend: BackendId) => T): Record<BackendId, T> {
-  return Object.fromEntries(SESSION_BACKENDS.map((b) => [b, value(b)])) as Record<BackendId, T>
 }
 
 export function backendsFrom(preferred: BackendId): BackendId[] {
@@ -76,7 +61,7 @@ export function backendIdOf(value: unknown): BackendId | undefined {
 
 export function normalizeSessionMethods(raw: unknown): SessionMethods {
   const value = raw && typeof raw === 'object' ? (raw as Partial<SessionMethods>) : {}
-  const enabled = byBackend((b) => value.enabled?.[b] !== false)
+  const enabled = ofEachAgent((b) => value.enabled?.[b] !== false)
   if (!SESSION_BACKENDS.some((b) => enabled[b])) enabled[AGENT_PICKED_ON_FIRST_OPEN] = true
   const picked = backendIdOf(value.defaultBackend)
   return {
@@ -138,26 +123,12 @@ export const PEER_TRAITS: Record<BackendId, PeerTraits> = {
   }
 }
 
-const CONVERSATION_AT_FIRST_PROMPT: Record<BackendId, boolean> = {
-  claude: false,
-  codex: false,
-  // AGY§8
-  agy: true
-}
-
 export function conversationAtFirstPrompt(backend: BackendId): boolean {
-  return CONVERSATION_AT_FIRST_PROMPT[backend]
-}
-
-const PASTE_KEEPS_ITS_LAST_LINE_FEEDS: Record<BackendId, boolean> = {
-  claude: true,
-  codex: true,
-  // AGY§15
-  agy: false
+  return agentManifest(backend).flags.conversationStartsAtFirstPrompt
 }
 
 export function pasteKeepsItsLastLineFeeds(backend: BackendId): boolean {
-  return PASTE_KEEPS_ITS_LAST_LINE_FEEDS[backend]
+  return agentManifest(backend).flags.pasteKeepsItsLastLineFeeds
 }
 
 // AGY§16
@@ -172,9 +143,6 @@ export function sourceOf(backendId: BackendId, workspacePath: string): SessionSo
 export type Capability = true | { pending: true }
 
 export interface Capabilities {
-  workbench: Capability
-  scheduledTasks: Capability
-  agentTools: Capability
   browserControl: Capability
   askHookWaitsForDiscord: Capability
   panelSeen: Capability
@@ -184,9 +152,6 @@ export interface Capabilities {
 const PENDING = { pending: true } as const
 
 const EVERYTHING: Capabilities = {
-  workbench: true,
-  scheduledTasks: true,
-  agentTools: true,
   browserControl: true,
   askHookWaitsForDiscord: true,
   panelSeen: true,

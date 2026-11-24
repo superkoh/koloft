@@ -1,5 +1,5 @@
-import { backendIdOf, capabilitiesFor } from '@shared/sessionBackend'
-import { hostOf } from '@shared/remoteKey'
+import { backendIdOf } from '@shared/sessionBackend'
+import { agentManifest } from '@core/agent/registry'
 import type { BackendId, SessionResumeResult, TabKind } from '@shared/types'
 
 export type SessionBackend = BackendId
@@ -24,11 +24,10 @@ export function resumeFailureMessage(res: Extract<SessionResumeResult, { ok: fal
   return res.code === 'cwd-missing' ? 'Folder is gone — cannot resume here' : 'Resume failed'
 }
 
-// ADR-0025
-export function hasWorkbench(tab?: { kind: TabKind; cwd: string }): boolean {
-  return (
-    !!tab &&
-    isSessionKind(tab.kind) &&
-    capabilitiesFor(tab.kind, hostOf(tab.cwd)).workbench === true
-  )
+export function hasWorkbench(tab?: { kind: TabKind }): boolean {
+  return !!tab && isSessionKind(tab.kind)
+}
+
+export function coversTerminalWhileResuming(kind: TabKind): boolean {
+  return isSessionKind(kind) && !agentManifest(kind).flags.resumeCanWaitOnAQuestionBeforeAnySign
 }
