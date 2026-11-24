@@ -49,6 +49,22 @@
     }
   ],
   "lines": {
+    "src/agents/kit/main/sessionStore.ts": [
+      "(backend: 'codex' | 'agy', label: string) =>",
+      "export const agySessionKey = sessionKeyOn('agy', 'Antigravity')",
+      "export const codexSessionKey = sessionKeyOn('codex', 'Codex')",
+      "private keyOf: KeyOf = codexSessionKey"
+    ],
+    "src/agents/kit/main/stored.ts": [
+      "import type { AgySessions } from '@plugins/sessions/main/agySessions'",
+      "import type { CodexSessions } from '@plugins/sessions/main/codexSessions'",
+      "sessions: CodexSessions | AgySessions,"
+    ],
+    "src/agents/kit/main/storedSessions.ts": [
+      "import type { CodexApproval, CodexQuestion, SentAnswer } from '@plugins/sessions/main/dialog'",
+      "openApproval(tabId: string): CodexApproval | undefined",
+      "openQuestion(tabId: string): CodexQuestion | undefined"
+    ],
     "src/core/assistModels.ts": [
       "agy: { model: 'gemini-3.8-flash', effort: 'low' }",
       "agy: {}",
@@ -1234,12 +1250,8 @@
       "export { agyBackend } from './backends/agy'",
       "export { claudeDialog, codexDialog, isAskedCall, questionsOf } from './dialog'",
       "export { codexBackend, trustCodexFolder } from './backends/codex'",
-      "export { machineHookSettings, pickMachineAccount } from '@agents/claude/main/backend'"
-    ],
-    "src/plugins/sessions/main/backends/stored.ts": [
-      "import type { AgySessions } from '../agySessions'",
-      "import type { CodexSessions } from '../codexSessions'",
-      "sessions: CodexSessions | AgySessions,"
+      "export { machineHookSettings, pickMachineAccount } from '@agents/claude/main/backend'",
+      "export { writeLineInTurn } from '@agents/claude/main/crossSessionMessage'"
     ],
     "src/plugins/sessions/main/dialog.ts": [
       "agy: {",
@@ -1267,6 +1279,7 @@
       "ticks: agyTicks,",
       "ticks: codexAsksNoQuestionTakingSeveralPicks,"
     ],
+    "src/plugins/sessions/main/handOver.ts": ["} from '@agents/claude/main/crossSessionMessage'"],
     "src/plugins/sessions/main/handoverPreamble.ts": [
       "const OLDER_SEND_MESSAGE_ENDING = 'with your SendMessage tool.'"
     ],
@@ -1335,12 +1348,6 @@
       "type CodexApproval,",
       "type CodexQuestion,"
     ],
-    "src/plugins/sessions/main/sessionStore.ts": [
-      "(backend: 'codex' | 'agy', label: string) =>",
-      "export const agySessionKey = sessionKeyOn('agy', 'Antigravity')",
-      "export const codexSessionKey = sessionKeyOn('codex', 'Codex')",
-      "private keyOf: KeyOf = codexSessionKey"
-    ],
     "src/plugins/sessions/main/sessionTracker.ts": [
       "(machine && path.join(machine.tmpRoot, `claude-${machine.uid}`))",
       "const PEER_MESSAGE = /^Another Claude session sent a message:\\n([\\s\\S]*?)\\n\\nThis came from another/",
@@ -1355,7 +1362,6 @@
       "import { REMOTE_CLAUDE_PROJECTS } from '../../../main/remote/paths'",
       "import { claudeToolDid } from '../../../main/rowActivity'",
       "import { claudeWroteIt, commandOutputOf } from '@agents/claude/main/claudeCommandOutput'",
-      "import { nonEmptyString, record } from './codexObservation'",
       "onMachine: path.posix.join('~', REMOTE_CLAUDE_PROJECTS, inProjects)",
       "return raw !== null && raw.startsWith('/') && claudeWroteIt(obj)",
       "t.info.lastAction = claudeToolDid(call.name, call.input) ?? t.info.lastAction",
@@ -1367,7 +1373,8 @@
       "'a Claude session talks to another Claude session on the same machine with its SendMessage tool; ListAgents shows their names. This command reaches Codex and Antigravity sessions, Claude sessions on another machine, and the session or Assist that started you.'",
       "? `Started session \"${name}\" in a new tab. Talk to it with SendMessage to \"${name}\".`",
       "? fail(CLAUDE_USES_SEND_MESSAGE)",
-      "const CLAUDE_USES_SEND_MESSAGE ="
+      "const CLAUDE_USES_SEND_MESSAGE =",
+      "import { crossSessionLine, fitsACrossSessionMessage } from '@agents/claude/main/crossSessionMessage'"
     ],
     "src/plugins/sessions/main/slashCommands.ts": [
       "`Nothing came back within ${NOTHING_CAME_BACK_MS / 1000} seconds, so Koloft pressed Esc to close any menu it had opened. A command that asks you to pick something needs its choice written after it, like /model haiku.`",
@@ -1404,11 +1411,6 @@
       "import { CodexSessions, type CodexSessionDeps } from './codexSessions'",
       "sessionBackends.register(claudeBackend)",
       "subscribeTabSubsystems: BuildLater<Omit<TabSubsystems, 'attention' | 'claude' | 'tracker'>>"
-    ],
-    "src/plugins/sessions/main/storedSessions.ts": [
-      "import type { CodexApproval, CodexQuestion, SentAnswer } from './dialog'",
-      "openApproval(tabId: string): CodexApproval | undefined",
-      "openQuestion(tabId: string): CodexQuestion | undefined"
     ],
     "src/plugins/sessions/main/tabLifecycle.ts": [
       "claude: Pick<ClaudeBackend, 'onPtyExit'>",

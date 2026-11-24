@@ -19,7 +19,7 @@ import type {
 import { CHANNELS, type InstructionsSaveResult } from '../shared/ipc'
 import type { InstructionAskView } from '../shared/instructionAsks'
 import type { InstructionAsks } from './instructionAsks'
-import type { SessionsWithStore } from './storedSessions'
+import type { SessionsWithStore } from '@agents/kit/main/storedSessions'
 
 interface SessionBackend {
   id: BackendId

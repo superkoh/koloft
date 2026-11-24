@@ -11,7 +11,7 @@ import {
 import type { AttentionTracker } from './attention'
 import type { ClaudeBackend } from '@agents/claude/main/backend'
 import type { SessionTracker } from './sessionTracker'
-import type { SessionsWithStore } from './storedSessions'
+import type { SessionsWithStore } from '@agents/kit/main/storedSessions'
 import type { WorkspaceManager } from './workspaces'
 
 export class TabLifecycle extends EventEmitter<{

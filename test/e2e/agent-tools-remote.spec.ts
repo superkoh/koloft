@@ -44,11 +44,8 @@ import {
   remoteDir,
   remoteKey
 } from './helpers/remote'
-import {
-  crossSessionLine,
-  FROM_KOLOFT,
-  writeLine
-} from '../../src/plugins/sessions/main/crossSessionMessage'
+import { crossSessionLine, writeLine } from '../../src/agents/claude/main/crossSessionMessage'
+import { FROM_KOLOFT } from '../../src/plugins/sessions/main/messageOpenings'
 import { NOT_FROM_THE_RELAY, NOT_SENT_BY_KOLOFT } from '../../src/plugins/sessions/main/hooks'
 import { BUTLER_SAYS_OPENING } from '../../src/shared/agentGuide'
 

@@ -1,7 +1,7 @@
 import http from 'http'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { nonEmptyString, record } from '@plugins/sessions/main/codexObservation'
+import { nonEmptyString, record } from '@core/unknownValue'
 import type { QuestionAnswer } from '@plugins/sessions/main/dialog'
 
 const exec = promisify(execFile)

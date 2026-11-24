@@ -1,10 +1,10 @@
 import { hasUsableAccount } from '@shared/accountUsage'
 import { listAccounts } from '../../../../main/accounts'
-import type { SessionBackend } from '../sessionBackends'
+import type { SessionBackend } from '@core/agent/sessionBackends'
 import type { CodexSessions } from '../codexSessions'
 import { acceptCodexTrust, codexConfigFile } from '../../../../main/codexTrust'
 import type { ResumeProbes } from '../../../../main/resumePlan'
-import { storedBackend } from './stored'
+import { storedBackend } from '@agents/kit/main/stored'
 
 export function trustCodexFolder(root: string, env: NodeJS.ProcessEnv | undefined): void {
   try {

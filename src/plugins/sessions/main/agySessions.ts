@@ -19,7 +19,7 @@ import { resolveCliRuntime, type CliRuntime, type CliSpec } from '../../../main/
 import { AGY_UPDATE_TIMEOUT_MS, MIN_AGY_VERSION, TESTED_AGY_LINE } from '../../../main/cliMinimums'
 import { startToolShim } from '../../../main/toolShim'
 import { browserControlEnv } from '../../../main/browserControlEnv'
-import { BACKGROUND_LABEL_CHARS, scheduleLabel } from './scheduleLabel'
+import { BACKGROUND_LABEL_CHARS, scheduleLabel } from '@core/scheduleLabel'
 import {
   PROGRAM_STATUS_REPLY,
   ProgramStatusParser,
@@ -103,7 +103,7 @@ import { NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from './hooks'
 import { formatRemoteKey, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { AGY_ARTIFACT_SIDECAR } from '@shared/agyBrain'
 import { noteWrite, shellWrittenFiles, wroteEvent, type FileAcc } from '../../../main/touchedFiles'
-import { agySessionKey } from './sessionStore'
+import { agySessionKey } from '@agents/kit/main/sessionStore'
 import {
   codexKeyFor,
   labelsOf,
@@ -114,7 +114,7 @@ import {
   type SentAnswer
 } from './dialog'
 import { pathWithDirFirst } from '../../../main/toolInstall'
-import { record } from './codexObservation'
+import { record } from '@core/unknownValue'
 import { agyToolDid } from '../../../main/rowActivity'
 import {
   REMOTE_EXIT_WAIT_MS,
@@ -126,7 +126,7 @@ import {
   type StartContext,
   type StoredRun,
   type StoredSessionDeps
-} from './storedSessions'
+} from '@agents/kit/main/storedSessions'
 import { promptParts, type LaunchIdentity } from '../../../main/launchPrompt'
 
 const exec = promisify(execFile)

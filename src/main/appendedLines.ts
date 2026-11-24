@@ -1,5 +1,5 @@
 import fs from 'fs'
-import { envMs } from '@plugins/sessions/main/sessionRuntime'
+import { envMs } from '@core/agent/sessionRuntime'
 
 const APPEND_READ_CHUNK_BYTES = envMs('KOLOFT_APPEND_READ_CHUNK_BYTES', 256 * 1024)
 

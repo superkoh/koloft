@@ -62,7 +62,7 @@ import { Hosts } from '../../src/main/host/hosts'
 import { localHost } from '../../src/main/host/localHost'
 import type { LaunchIdentity } from '../../src/main/launchPrompt'
 import { SshHost } from '../../src/main/host/sshHost'
-import { SessionRuntime } from '../../src/plugins/sessions/main/sessionRuntime'
+import { SessionRuntime } from '../../src/core/agent/sessionRuntime'
 import type { TreeIo } from '../../src/main/sessionWorktrees'
 
 const execFileAsync = promisify(execFile)

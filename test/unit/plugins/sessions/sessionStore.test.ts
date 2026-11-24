@@ -9,7 +9,7 @@ import {
   codexSessionKey,
   type StoredMember,
   type WorktreeResource
-} from '../../../../src/plugins/sessions/main/sessionStore'
+} from '../../../../src/agents/kit/main/sessionStore'
 
 let directory: string
 let filename: string

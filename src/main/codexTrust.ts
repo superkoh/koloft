@@ -3,7 +3,7 @@ import os from 'os'
 import path from 'path'
 import { writePrivateAtomically } from '@core/privateFile'
 import { realpathSafe } from './projectInfo'
-import { record } from '@plugins/sessions/main/codexObservation'
+import { record } from '@core/unknownValue'
 import type { KoloftHook } from './codexLaunchConfig'
 import {
   appendTable,

@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import {
-  SessionBackends,
-  type SessionBackend
-} from '../../../../src/plugins/sessions/main/sessionBackends'
+import { SessionBackends, type SessionBackend } from '../../../../src/core/agent/sessionBackends'
 import { sessionEventFromHook } from '../../../../src/plugins/sessions/main/sessionTracker'
 import {
   capabilitiesFor,

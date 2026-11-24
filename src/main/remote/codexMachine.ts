@@ -22,7 +22,7 @@ import {
   type CodexUpstream,
   type ReadFrame
 } from '../codexTransport'
-import { record } from '@plugins/sessions/main/codexObservation'
+import { record } from '@core/unknownValue'
 import { hookStateHeader, trustedHashLine } from '../codexConfigTables.mjs'
 import {
   CODEX_REPLY_LANGUAGE_ENV,

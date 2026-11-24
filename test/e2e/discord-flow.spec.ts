@@ -65,11 +65,8 @@ import { openPluginPage } from './helpers/extensions'
 import type { BackendId, DiscordSettings, SessionInfo } from '../../src/shared/types'
 import { identityOf, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import { ownerSays } from '../../src/shared/agentGuide'
-import {
-  crossSessionLine,
-  FROM_KOLOFT,
-  writeLine
-} from '../../src/plugins/sessions/main/crossSessionMessage'
+import { crossSessionLine, writeLine } from '../../src/agents/claude/main/crossSessionMessage'
+import { FROM_KOLOFT } from '../../src/plugins/sessions/main/messageOpenings'
 import { NOT_SENT_BY_KOLOFT } from '../../src/plugins/sessions/main/hooks'
 import {
   A_TAKEN_ANSWER_SHOWS_WITHIN_MS,

@@ -18,8 +18,9 @@ import type { Turn } from '@shared/turns'
 import { identityOf, sourceOf, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { hostOf } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
-import type { ModeClass } from './crossSessionMessage'
-import type { TranscriptPlaces } from '@core/transcriptPlaces'
+import type { TranscriptPlaces } from '../transcriptPlaces'
+
+export type ModeClass = 'bypass' | 'prompting'
 
 export interface SessionBackend {
   id: BackendId

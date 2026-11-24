@@ -1,7 +1,8 @@
 import { PLAN_READY, type BackgroundItem } from '@shared/types'
 import { codexEditTarget, codexItemDid, codexTaskName } from '../../../main/rowActivity'
 import type { SessionEvent } from '@shared/sessionEvent'
-import type { Turn } from './sessionRuntime'
+import type { Turn } from '@core/agent/sessionRuntime'
+import { nonEmptyString, record } from '@core/unknownValue'
 import path from 'path'
 import { schemeOf } from '@shared/browserRoute'
 import {
@@ -21,16 +22,6 @@ import { CODEX_OPEN_SENT } from '../../../main/openShimScript'
 import type { CodexFrameHead } from '../../../main/codexTransport'
 import { TurnLog, type SaidLine } from '@shared/turns'
 import { codexQuestionOf, type Asked, type CodexApproval, type CodexQuestion } from './dialog'
-
-export function record(value: unknown): Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {}
-}
-
-export function nonEmptyString(value: unknown): string | undefined {
-  return typeof value === 'string' && value ? value : undefined
-}
 
 export function jsonRecord(value: unknown): Record<string, unknown> {
   if (typeof value !== 'string') return record(value)

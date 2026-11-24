@@ -2,7 +2,8 @@ export { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from './agyHooks'
 export { agyBackend } from './backends/agy'
 export { machineHookSettings, pickMachineAccount } from '@agents/claude/main/backend'
 export { codexBackend, trustCodexFolder } from './backends/codex'
-export { A_HELPER_HAS_IT, writeLineInTurn } from './crossSessionMessage'
+export { A_HELPER_HAS_IT } from './messageOpenings'
+export { writeLineInTurn } from '@agents/claude/main/crossSessionMessage'
 export { claudeDialog, codexDialog, isAskedCall, questionsOf } from './dialog'
 export {
   everyWorkspaceBlock,
@@ -33,7 +34,7 @@ export {
   tidyTree,
   whatIsLeft
 } from './sessionClose'
-export { envMs } from './sessionRuntime'
+export { envMs } from '@core/agent/sessionRuntime'
 export { worktreeNameForTask } from './sessionTitle'
 export { A_REMOVAL_UNDER_WAY_IS_WAITED_FOR_MS, findSessionRow } from './sessionVerbs'
 export { toCaller } from './slashCommands'
