@@ -43,13 +43,14 @@ function theAgentReading(agent: BackendId | undefined, what: string): BackendId 
   return agent
 }
 
+const pickedFor = (block: TextBlock, agent: BackendId | undefined): boolean =>
+  !block.whenAgentFlag ||
+  agentManifest(theAgentReading(agent, `A block of slot ${block.slot}`)).flags[block.whenAgentFlag]
+
 const holdsIn = (state: PromptState, { block, plugin }: ListedBlock, agent?: BackendId): boolean =>
+  pickedFor(block, agent) &&
   isOnIn(state, plugin) &&
-  (!block.when || state.facts.includes(block.when)) &&
-  (!block.whenAgentFlag ||
-    agentManifest(theAgentReading(agent, `A block of slot ${block.slot}`)).flags[
-      block.whenAgentFlag
-    ])
+  (!block.when || state.facts.includes(block.when))
 
 export function composePrompt(slot: string, context: PromptContext = {}): string {
   const now: PromptState = { on: {}, facts: context.facts ?? [] }

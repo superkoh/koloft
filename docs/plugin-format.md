@@ -350,7 +350,9 @@ fills:
 - `text`: the text.
 - `byAgent`: optional; text to use instead for some agents, keyed by agent id: `claude`,
   `codex` or `agy` (Antigravity). `eachAgent(slot, textOf)` in `src/core/plugin.ts`
-  builds a block that has its own text for every agent.
+  builds a block that has its own text for every agent. No built-in plugin uses either now:
+  words about one agent's own tools go in a slot each agent fills (below), so the plugin
+  names no agent.
 - `byModel`: optional; text to use instead for some models, keyed by model id. Nothing reads
   it yet, and nothing checks the key against a list of models.
 - `when`: optional; the name of a fact. The block is used only when the caller says that
@@ -358,7 +360,7 @@ fills:
 - `whenAgentFlag`: optional; the name of a yes-or-no flag in the agents' manifests
   (`AgentFlags` in `src/core/agent/manifest.ts`). The block is used only for an agent whose
   manifest answers yes. The caller must say which agent reads the text; with none, putting
-  the text together throws.
+  the text together throws, whether the plugin is on or off.
 
 Inside a text, `{{name}}` (lowercase letters and hyphens) marks a place for more text.
 
@@ -374,10 +376,11 @@ in its text. Each agent gives its words for that name in `slotFills` of its mani
   `test/unit/slotsEachAgentFills.test.ts` holds both.
 - An agent's words may hold `{{…}}` places of their own: a slot the plugin fills for every
   agent to quote (such as `helper-rule-watched-session`), or a value the caller gives.
-- When the plugin is off, its blocks are dropped, so the slot is not in the text and the
-  agent's words for it are not either.
+- Only the plugin that lists the slot writes `{{name}}`, in its own blocks, and no text
+  block fills the same name. So when the plugin is off and its blocks are dropped, the slot
+  is not in the text and the agent's words for it are not either.
 - The caller must say which agent reads the text; with none, putting the text together
-  throws.
+  throws, whether the plugin is on or off.
 
 These are two of the Todo plugin's blocks, from its `prompts/text.ts` (the file also has a
 longer one about `koloft todo` itself, and exports the notice an old butler conversation gets,
