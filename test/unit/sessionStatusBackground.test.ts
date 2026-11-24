@@ -15,6 +15,7 @@ const PROCS_SCAN_MS = 100
 const IDLE_MS = 2000
 const IDLE_CLOSE_MS = 400
 const ACK_AGE_PAST_THE_TRUNCATION_TICK_YET_INSIDE_ITS_SILENCE_CAP_MS = SILENCE_MS - 400
+const EMIT_THROTTLE_PASSED_MS = 700
 
 let SessionTracker: typeof import('../../src/plugins/sessions/main/sessionTracker').SessionTracker
 let encodeCwd: typeof import('../../src/plugins/sessions/main/sessionTracker').encodeCwd
@@ -2017,5 +2018,34 @@ describe('a compaction the owner asked for', () => {
     tracker.receive('tabK3', hook('compacting'))
     tracker.receive('tabK3', hook('compacted'))
     expect(status(tracker, 'tabK3')).toBe('working')
+  })
+})
+
+describe('what the rest of the app is told about a run state', () => {
+  it('whoever hears a status change finds the new status already on the session’s row', async () => {
+    const cwd = makeWorkspace()
+    const tracker = newTracker()
+    await bindCaughtUp(tracker, 'tabT1', cwd, initialLines(cwd))
+    const onTheRowWhenHeard: (string | undefined)[] = []
+    tracker.on('status', (e: { tabId: string }) => {
+      if (e.tabId === 'tabT1') onTheRowWhenHeard.push(status(tracker, 'tabT1'))
+    })
+    tracker.setStatus('tabT1', 'working')
+    tracker.setStatus('tabT1', 'waiting')
+    expect(onTheRowWhenHeard).toEqual(['working', 'waiting'])
+  })
+
+  it('the rows are sent again when a tab of another agent ends its turn with background work running, though its status stays working', async () => {
+    const tracker = newTracker()
+    let rowsSent = 0
+    tracker.on('update', () => rowsSent++)
+    tracker.recordTurn('tabOfAnotherAgent', 'working')
+    await sleep(EMIT_THROTTLE_PASSED_MS)
+    expect(rowsSent).toBe(0)
+    tracker.recordTurn('tabOfAnotherAgent', 'ended', true)
+    expect(tracker.statusOf('tabOfAnotherAgent')).toBe('working')
+    await sleep(EMIT_THROTTLE_PASSED_MS)
+    expect(rowsSent).toBe(1)
+    tracker.forget('tabOfAnotherAgent')
   })
 })
