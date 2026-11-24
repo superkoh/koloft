@@ -3,9 +3,11 @@ import { SessionBackends, type SessionBackend } from '../../../../src/core/agent
 import { sessionEventFromHook } from '../../../../src/plugins/sessions/main/sessionTracker'
 import {
   capabilitiesFor,
+  conversationAtFirstPrompt,
   effectiveBackend,
   identityOf,
   launchMenus,
+  resumeScreenMayHideAQuestion,
   SESSION_BACKENDS,
   sessionKey,
   shownAsInstalled,
@@ -293,6 +295,21 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
       )
     )
     expect(tabsWithIt).toEqual(on)
+  })
+})
+
+describe('what Koloft does with an agent’s yes-or-no answers about itself', () => {
+  // CODEX§9 AGY§5
+  it('covers the terminal of a resuming Claude Code or Antigravity tab, and never a Codex one, whose question before it binds the cover would hide', () => {
+    expect(SESSION_BACKENDS.filter((b) => !resumeScreenMayHideAQuestion(b))).toEqual([
+      'claude',
+      'agy'
+    ])
+  })
+
+  // AGY§8
+  it('counts only an Antigravity tab as having no conversation until its first prompt', () => {
+    expect(SESSION_BACKENDS.filter(conversationAtFirstPrompt)).toEqual(['agy'])
   })
 })
 
