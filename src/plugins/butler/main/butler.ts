@@ -330,15 +330,16 @@ export class Butler {
     const changed = Object.fromEntries(
       Object.entries(now.on).filter(([id, isOn]) => (was.on[id] ?? isOn) !== isOn)
     )
+    const { name } = this.d.butler()
     const factsGained = now.facts.filter((fact) => !was.facts.includes(fact))
     const factsDropped = was.facts.filter(
-      (fact) => !now.facts.includes(fact) && !factGivesLinesWhile(fact, now.on)
+      (fact) => !now.facts.includes(fact) && !factGivesLinesWhile(name, fact, now.on)
     )
     const untoldNews = this.d.news.filter(
       ({ knownBy, on }) => on() && !this.session[knownBy]?.includes(key)
     )
     const newsTexts = untoldNews.map(({ text }) => text())
-    const lines = butlerLinesGained(was, now).filter(
+    const lines = butlerLinesGained(name, was, now).filter(
       (line) => !newsTexts.some((text) => text.includes(line.trim()))
     )
     const parts = [

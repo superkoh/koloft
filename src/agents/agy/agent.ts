@@ -43,6 +43,12 @@ export const agent = {
   },
   slotFills: SLOT_FILLS,
   slotAdditions: SLOT_ADDITIONS,
+  // AGY§21
+  smallJobModels: {
+    smallAndQuick: { model: 'gemini-3.8-flash', effort: 'low' },
+    judgesAReply: { model: 'gemini-4-argon', effort: 'medium' },
+    picksFromAList: { model: 'gemini-3.8-flash', effort: 'low' }
+  },
   flags: {
     // AGY§5
     resumeCanWaitOnAQuestionBeforeAnySign: false,

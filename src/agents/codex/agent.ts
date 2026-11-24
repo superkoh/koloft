@@ -31,6 +31,12 @@ export const agent = {
   atTopOfSessionFolder: { internalNames: [], internalNameEndings: [], foldersMadeEmptyAhead: [] },
   slotFills: SLOT_FILLS,
   slotAdditions: SLOT_ADDITIONS,
+  // CODEX§15
+  smallJobModels: {
+    smallAndQuick: { model: 'gpt-6-luna', effort: 'low' },
+    judgesAReply: { model: 'gpt-6.1-sol', effort: 'medium' },
+    picksFromAList: { model: 'gpt-6.1-sol', effort: 'low' }
+  },
   flags: {
     // CODEX§9
     resumeCanWaitOnAQuestionBeforeAnySign: true,

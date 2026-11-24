@@ -584,9 +584,9 @@ const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
     if (subject.sessionId) sessionsEndedThisRun.add(subject.sessionId)
     attention.onExited(tabId, subject)
   },
-  asked: (tabId, ask) => {
+  asked: (tabId, ask, id) => {
     claudeAsks.set(tabId, ask)
-    announceNow(QUESTION_ASKED, { tabId, ask })
+    announceNow(QUESTION_ASKED, { tabId, id })
   },
   clearAttention: (tabId) => attention.clear(tabId),
   open: (tabId, target) => {
@@ -6110,7 +6110,8 @@ const startedPlugins: PluginsStarted = startPlugins(
       attention: attentionDeps,
       session: sessionDeps,
       eachTurn: {
-        askBeforeAsksAreMade: showAskOnItsRow
+        askBeforeAsksAreMade: showAskOnItsRow,
+        askAsItsAgentGaveIt: (tabId) => claudeAsks.get(tabId)
       },
       commands: sessionsCommands,
       eachState: {

@@ -1,4 +1,6 @@
 // ADR-0054
+import type { ModelAndEffort } from '../assistModels'
+
 export interface AgentWords {
   anyCase: readonly string[]
   wholeWord: readonly string[]
@@ -21,6 +23,8 @@ export interface AgentFlags {
   questionToolTakesNoOptionDescriptions: boolean
 }
 
+export type SmallJobKind = 'smallAndQuick' | 'judgesAReply' | 'picksFromAList'
+
 export interface AgentManifest {
   id: string
   name: string
@@ -35,5 +39,6 @@ export interface AgentManifest {
   atTopOfSessionFolder: AtTopOfSessionFolder
   slotFills: Readonly<Record<string, string>>
   slotAdditions: Readonly<Record<string, string>>
+  smallJobModels: Readonly<Record<SmallJobKind, ModelAndEffort>>
   flags: AgentFlags
 }

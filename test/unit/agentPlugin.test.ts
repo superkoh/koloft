@@ -2,8 +2,14 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { keepSkillsIn, writeDocsPlugin } from '../../src/main/agentPlugin'
+import {
+  agentPluginFiles,
+  docsPluginFiles,
+  keepSkillsIn,
+  writeDocsPlugin
+} from '../../src/main/agentPlugin'
 import { knowPluginStates } from '../../src/core/switches'
+import { PLUGINS } from '../../src/plugins/list'
 
 const roots: string[] = []
 afterEach(() => {
@@ -25,6 +31,19 @@ describe('the koloft-docs plugin Koloft writes for Claude Code', () => {
     expect(writeDocsPlugin(userData)).toBe(dir)
     expect(fs.existsSync(leftOver)).toBe(false)
     expect(read('skills/koloft-docs/references/core.md')).not.toBe('')
+  })
+})
+
+describe('the skills the plugins list in their manifests', () => {
+  it('are the skills Koloft writes for an agent: each in a folder of its name, inside a package named by its group', () => {
+    const listed = PLUGINS.flatMap((p) => p.skills ?? [])
+    const packages = [agentPluginFiles(), docsPluginFiles()]
+    expect(listed).toHaveLength(packages.length)
+    for (const { name, group } of listed) {
+      const itsPackage = packages.find((files) => `skills/${name}/SKILL.md` in files)
+      expect(itsPackage, name).toBeDefined()
+      expect(JSON.parse(itsPackage!['.claude-plugin/plugin.json']).name, name).toBe(group)
+    }
   })
 })
 

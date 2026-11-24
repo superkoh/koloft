@@ -22,10 +22,3 @@ export const EVERY_ACCOUNT_TAKES: Record<BackendId, ModelAndEffort> = {
   codex: { model: 'gpt-6-luna' },
   agy: {}
 }
-
-// CC§9 CODEX§15 AGY§21
-export const SMALL_AND_QUICK: Record<BackendId, ModelAndEffort> = {
-  claude: EVERY_ACCOUNT_TAKES.claude,
-  codex: { ...EVERY_ACCOUNT_TAKES.codex, effort: 'low' },
-  agy: { model: 'gemini-3.8-flash', effort: 'low' }
-}

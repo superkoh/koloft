@@ -1,6 +1,6 @@
 # Koloft plugin format
 
-Format version 1. Only plugins built into Koloft exist.
+Format version 2. Only plugins built into Koloft exist.
 
 This page says what a Koloft plugin is, what its manifest (the plain-data file that says what
 the plugin is and what it owns) contains, and how a plugin's code plugs into Koloft. It is
@@ -20,8 +20,11 @@ it is done.
   that takes it, which throws an error, or by a unit test.
 - An optional plugin has a switch in Settings ▸ Plugins. Turning it off takes its text,
   commands, moments, UI and running parts away ([Switches](#switches)).
+- A manifest names no agent: where a plugin's text or a small job differs by agent, the
+  agent's own manifest (`src/agents/<id>/agent.ts`) holds that part
+  ([Text blocks](#text-blocks), [Assist jobs](#assist-jobs)).
 - The shape of the manifest and of what a plugin registers through is pinned for format
-  version 1. Changing it fails Koloft's typecheck until the change is pinned or the version
+  version 2. Changing it fails Koloft's typecheck until the change is pinned or the version
   goes up ([Format version](#format-version)).
 - A change that adds a registration (a moment, a slot, a UI entry, a command, a setting) or
   changes a pinned shape updates this page, and the pin in `test/unit/pluginFormat.test.ts`,
@@ -165,7 +168,7 @@ the types a plugin registers with.
 
 | Path | What it holds |
 |---|---|
-| `src/core/plugin.ts` | the manifest type `PluginManifest`, `PLUGIN_FORMAT_VERSION` and `eachAgent` |
+| `src/core/plugin.ts` | the manifest type `PluginManifest` and `PLUGIN_FORMAT_VERSION` |
 | `src/core/prompt.ts` | `composePrompt` and `fillSlots`, which put text blocks together ([Text blocks](#text-blocks)) |
 | `src/core/commands.ts` | `Commands`: the registry of `koloft` commands ([Commands](#commands)) |
 | `src/core/command.ts` | what a `koloft` command answers with: `answered`, `refused`, `EXIT_USAGE`, `NOT_PINNED`, `splitAtDashes`, `fail`, `cutForATurn` and their types; `AGENT_SHIM_WAITS_MS`, how long a `koloft` command waits for Koloft's answer |
@@ -177,7 +180,7 @@ the types a plugin registers with.
 | `src/core/pluginStart.ts` | `PluginCore`, what a start function is handed; `PluginStart`, the type of a start function; and `startPlugins`, which calls them ([Starting](#starting)) |
 | `src/core/switches.ts` | `pluginStates`, `pluginStateOf` and `turnedOffLine`: which plugins are on ([Switches](#switches)) |
 | `src/core/hints.ts` | `HINT_IDS`, `hintOn` and `tipNumber`: the app's tips and the plugins' ([Tips](#tips)) |
-| `src/core/assistModels.ts` | the `ModelAndEffort` type, the model tables Assist jobs share (such as `SMALL_AND_QUICK`), and the `AssistJob` and `Assist` types, so a plugin can take Assist as a function |
+| `src/core/assistModels.ts` | the `ModelAndEffort` type, the model and thinking every account of an agent takes (`EVERY_ACCOUNT_TAKES`), and the `AssistJob` and `Assist` types, so a plugin can take Assist as a function |
 | `src/core/presence.ts` | `OwnerPresence`: where the owner is. `where()` answers `at-the-mac`, `away` or `asleep`, and `listenToSleep` tells a plugin when the night starts and ends. A plugin asks it and never works this out itself |
 | `src/core/ownerWaits.ts` | `OwnerWaits`: a plugin marks a session as waiting on the owner, and clears that mark, with no other way to reach the attention marks |
 | `src/core/ownerInstructions.ts` | the versions of the owner's Instructions, the edits an agent may propose to them, and the one way a list of versions is saved under a byte limit, by the owner or by an agent the owner agreed with |
@@ -251,7 +254,7 @@ export const plugin: PluginManifest = {
 
 | Field | Type | Meaning |
 |---|---|---|
-| `formatVersion` | the number `1` | the format version this manifest is written for |
+| `formatVersion` | the number `2` | the format version this manifest is written for |
 | `id` | string | the plugin's id; equal to its folder name |
 | `name` | string | the name a person sees, such as `Passwords and sign-in` |
 | `does` | string | one line a person reads in Settings ▸ Plugins and at the top of the plugin's page; `{{butler-name}}` stands for the butler's name |
@@ -286,8 +289,8 @@ what reads the field today.
 | `settings` | `{ page?: { label, words }, keys }` | the setting keys it owns, and its settings page if it has one ([Settings](#settings)) | `registerSettings`, `settingsPages` |
 | `ui` | list of entries | its UI entries ([UI entries and slots](#ui-entries-and-slots)) | `placeUi`, `settingsPages`, `PALETTE_FEATURES` |
 | `hints` | list of strings | the ids of its tips ([Tips](#tips)) | `HINT_IDS`, `hintOn` |
-| `assistJobs` | list of `{ id, name, does, defaults }` | its Assist jobs ([Assist jobs](#assist-jobs)) | `ASSIST_JOBS` |
-| `skills` | list of strings | names of whole skills the plugin owns, such as `koloft-docs` (Koloft's skill for writing documents) | nothing yet; no manifest fills it |
+| `assistJobs` | list of `{ id, name, does, kind }` | its Assist jobs ([Assist jobs](#assist-jobs)) | `ASSIST_JOBS` |
+| `skills` | list of `{ name, group }` | the whole skills the plugin owns. `name` is the skill's own name and the name of its folder. `group` is the name of the package the skill is handed to an agent in; an agent that lists skills by package shows the skill as `group:name`. Sessions core lists `koloft` in the group `koloft` (the skill that holds the `koloft` guide), Docs writing lists `koloft-docs` in the group `koloft-docs` (Koloft's skill for writing documents) | no code yet: `src/main/agentPlugin.ts` still writes both skills from names of its own, and the unit test `test/unit/agentPlugin.test.ts` holds that they are the names listed here |
 | `mcpServers` | list of `{ name, command, args }` | MCP servers the plugin adds to sessions; a place kept for later, which no step plans to fill yet | nothing; no manifest fills it |
 
 ## How a plugin plugs in
@@ -348,14 +351,10 @@ fills:
 
 - `slot`: the name of the place the text goes into. A block names only its slot, never who
   reads it, so core never names a plugin.
-- `text`: the text.
-- `byAgent`: optional; text to use instead for some agents, keyed by agent id: `claude`,
-  `codex` or `agy` (Antigravity). `eachAgent(slot, textOf)` in `src/core/plugin.ts`
-  builds a block that has its own text for every agent. No built-in plugin uses either now:
-  words about one agent's own tools go in a slot each agent fills (below), so the plugin
-  names no agent.
-- `byModel`: optional; text to use instead for some models, keyed by model id. Nothing reads
-  it yet, and nothing checks the key against a list of models.
+- `text`: the text. It is the same for every agent: a block has no text of its own for one
+  agent or one model. Words about one agent's own tools go in a slot each agent fills, and a
+  sentence that holds for some agents is picked by a flag (both below), so the plugin names
+  no agent.
 - `when`: optional; the name of a fact. The block is used only when the caller says that
   fact holds.
 - `whenAgentFlag`: optional; the name of a yes-or-no flag in the agents' manifests
@@ -364,6 +363,24 @@ fills:
   the text together throws, whether the plugin is on or off.
 
 Inside a text, `{{name}}` (lowercase letters and hyphens) marks a place for more text.
+
+A text is put together for one of three kinds of reader. The caller says which by giving
+`agent` or leaving it out; nothing else in the format names a reader.
+
+| Reader | Examples | What the text may take |
+|---|---|---|
+| one agent the caller knows (`agent` given) | the prompt every session gets (`koloftPrompt`) | all of the below, and what belongs to that agent: its words for a slot each agent fills, a block picked by its flag, and the values its caller gives (`question-tool`, `session-model-tiers`) |
+| an agent the caller does not know (no `agent`) | the butler's role and the sentences it is told later (`fillsGained`); the butler runs on any agent, and its text is put together without asking which | what is the same for every agent, and what is gathered from the whole list of agents: a slot any agent adds to, names picked by a flag. Taking what belongs to the agent reading it throws |
+| every agent alike (no `agent`) | the guide `koloft help` prints, the `koloft` skill, the method `koloft todo` prints | the same as the row above |
+
+A place left empty on purpose is written out, never left to a missing entry: an agent with
+nothing to say for a slot each agent fills gives it the text `''` (Claude Code's
+`session-questions`), and a caller that wants a slot empty gives it the value `''` (the
+prompt of the butler's helper gives `owners-ai-itself-koloft` so). The unit test
+`test/unit/slotsEachAgentFills.test.ts` holds that a text for no agent, the butler's role
+included, throws when it takes what belongs to the agent reading it;
+`test/unit/promptText.test.ts` holds the guide, put together for no agent, to its pinned
+text.
 
 A plugin can leave a slot for each agent to fill, for a part of its text that is about the
 agent's own tools. It lists the slot's name in `slotsEachAgentFills` and writes `{{name}}`
@@ -444,7 +461,7 @@ fact names that hold) and `values` (a map from a name to a text). It works in th
 2. It drops each block of a plugin that is off, each block whose `when` names a fact not
    in `facts`, and each block whose `whenAgentFlag` names a flag that `agent`'s manifest
    answers no to.
-3. For each block left, it takes `byAgent[agent]` when there is one, else `text`.
+3. It takes the `text` of each block left.
 4. It joins the texts with nothing between them, so a block starts with its own space or
    line break. A slot whose name ends in `-or-list` is joined as the end of a list instead:
    its blocks are items with no leading comma, joined as `, a, b, or c` (one item: `, or a`),
@@ -464,17 +481,18 @@ fact names that hold) and `values` (a map from a name to a text). It works in th
 slot of its own. Todo's `koloft todo` method uses it: Discord fills its
 `{{todo-method-phone}}`.
 
-`fillsGained(slots, was, now)` gives the filled text of each block in those slots that is
-kept in state `now` but was dropped in state `was`, slot by slot in the order given, one
-text per block. A state names which plugins are on (`on`, a map from plugin id; a plugin it
-leaves out counts as it is now) and which facts hold (`facts`). Only the blocks are weighed
-against the two states: a `{{…}}` inside a block is filled from the switches as they are now,
-with the facts of `now`, so `now` should be the state the prompt is put together in today.
-It does not join an `-or-list` slot's items, takes each block's `text` (never `byAgent`), and
-gives no agent and no values, so it suits slots whose blocks need no agent and no value: a
-block there with `whenAgentFlag`, or a slot each agent fills, makes it throw. The butler uses it to tell a conversation that
-is already running the sentences a plugin turned on, or a fact that came to hold, adds to its
-prompt.
+`fillsGained(slots, was, now, values)` gives the filled text of each block in those slots
+that is kept in state `now` but was dropped in state `was`, slot by slot in the order given,
+one text per block. A state names which plugins are on (`on`, a map from plugin id; a plugin
+it leaves out counts as it is now) and which facts hold (`facts`). `values` are the values
+the caller gives when it puts the whole text together, so a block gets the same facts and
+the same values both ways. Only the blocks are weighed against the two states: a `{{…}}`
+inside a block is filled from the switches as they are now, with the facts of `now`, so `now`
+should be the state the prompt is put together in today. It does not join an `-or-list`
+slot's items, and gives no agent, so it suits slots whose blocks need no agent: a block
+there with `whenAgentFlag`, or a slot each agent fills, makes it throw. The butler uses it,
+with its name as the one value, to tell a conversation that is already running the sentences
+a plugin turned on, or a fact that came to hold, adds to its prompt.
 
 For example, the slot `owners-ai-koloft` is filled by Sessions core, GitHub, Discord and
 Todo, in that order. Discord's block there has `when: 'discord-bound'`, so its sentences are
@@ -772,9 +790,21 @@ An Assist job is a small AI task Koloft runs on its own. A plugin lists its jobs
   butler's own row.
 - `name`: the job's row title on its plugin's page in Settings ▸ Plugins.
 - `does`: the line under that title, saying what the job does.
-- `defaults`: for each agent (`claude`, `codex`, `agy`), the model and thinking
-  (`{ model?, effort? }`) the job runs with while the owner has not picked one. An empty
-  `{}` means that agent's own model and thinking.
+- `kind`: which kind of small job this is. A plugin names no agent and no model: it picks one
+  of the kinds below, and each agent's manifest says, in `smallJobModels`, the model and
+  thinking (`{ model?, effort? }`) it does that kind of job with. A job runs with those while
+  the owner has not picked a model for it. A model left out means that agent's own model, and
+  a thinking left out its own thinking.
+
+The kinds are named after the job, not after a model, and each was tuned for the jobs that
+use it; they are not a ladder from low to high. A job that fits none gets a new kind, which
+every agent then fills.
+
+| Kind | What kind of job | Jobs today |
+|---|---|---|
+| `smallAndQuick` | a job that is small and has to come back quickly | `title`, `handover`, `docs` |
+| `judgesAReply` | a job that reads a whole reply and judges it | `turn` |
+| `picksFromAList` | a job that picks the right one from a list of names | `route` |
 
 This is the Butler plugin's one job, in `src/plugins/butler/shared/assistJobs.ts`:
 
@@ -786,11 +816,7 @@ export const ASSIST_JOBS = [
     id: 'route',
     name: 'Route what you type in ⌘P',
     does: 'Finds the workspace, session or feature your words are for.',
-    defaults: {
-      claude: { model: 'sonnet', effort: 'low' },
-      codex: { model: 'gpt-6.1-sol', effort: 'low' },
-      agy: { model: 'gemini-3.8-flash', effort: 'low' }
-    }
+    kind: 'picksFromAList'
   }
 ] as const satisfies readonly PluginAssistJob[]
 
@@ -800,14 +826,13 @@ export type ButlerAssistJobId = (typeof ASSIST_JOBS)[number]['id']
 `ASSIST_JOBS` in `src/core/assistJobs.ts` takes every plugin's jobs in the order of
 `src/plugins/list.ts`, and within one plugin in the order of its list. A job is changed on its
 plugin's page in Settings ▸ Plugins, under "Small jobs"; Settings ▸ Assist shows an overview
-row per job in the same order, naming its plugin. `SMALL_AND_QUICK` in
-`src/core/assistModels.ts` is a `defaults` table for a job that wants the smallest, quickest
-model of each agent.
+row per job in the same order, naming its plugin. `assistJobDefaults(job, agent)` there gives
+what a job runs with on an agent: that agent's `smallJobModels` entry for the job's `kind`.
 
 The manifest says only what a job is. The code that runs a job takes Assist typed to its
 plugin's ids (`Assist<ButlerAssistJobId>`) and asks it with the job's `id`, so a misspelled or
 renamed id fails the typecheck. Assist runs the job with the owner's pick for that id, or else
-the job's `defaults`.
+with what the agent's manifest says for the job's `kind`.
 
 These are the jobs today:
 
@@ -871,7 +896,7 @@ Sessions core announces every moment but `file-opened`, which Workbench announce
 | `tab-forgotten` | a tab id | a sleeping tab was closed for good | Butler |
 | `turn-started` | a tab id | a prompt started a turn | Sessions core, Butler |
 | `turn-ended` | `TurnEnded` | a turn ended | Sessions core, Workbench, Butler, Inbox, Discord |
-| `question-asked` | `QuestionAsked` | a session asked the owner a question | Sessions core, Inbox |
+| `question-asked` | `QuestionAsked`: the tab and an id of this one question | a session asked the owner a question. It carries no part of the question: who needs its words asks for them. The id is the question's own in this run of Koloft, so two questions of one tab never share one. Today only a Claude Code session's question is announced, and not one its hook is holding for an answer from elsewhere; no listener reads the id yet | Sessions core, Inbox |
 | `session-bound` | `SessionBound` | a session took its tab (start, resume, `/clear`) | Sessions core, Butler, Inbox, Scheduled tasks, Discord |
 | `state-changed` | `StateChanged` | the run state of a tab changed | Sessions core, Butler, Scheduled tasks, Discord |
 | `tool-done` | `ToolDone` | a tool call finished | Sessions core, Discord |
@@ -1139,7 +1164,10 @@ either:
 
 ## Format version
 
-`PLUGIN_FORMAT_VERSION` in `src/core/plugin.ts` is `1`. A built-in manifest writes
+`PLUGIN_FORMAT_VERSION` in `src/core/plugin.ts` is `2`. Version 2 took out everything a
+manifest wrote by an agent's name: a text block's own text for one agent or one model, and a
+job's model for each agent. It also changed what `question-asked` carries and what a
+manifest's `skills` holds. A built-in manifest writes
 `formatVersion: PLUGIN_FORMAT_VERSION`, so a bump moves every built-in manifest to the new
 version at once. The field's type is the number itself, so a manifest that names any other
 version fails Koloft's type check. The version is there for manifests written outside Koloft
@@ -1154,24 +1182,26 @@ version, would no longer mean the same thing:
   differently; a moment that carries a different shape: old code would no longer be valid,
   or would mean something else. Bump.
 
-`test/unit/pluginFormat.test.ts` holds this rule. It pins, for each format version, the
-shape of the manifest and its parts and of `eachAgent`; of `Commands.register`, a command
+`test/unit/pluginFormat.test.ts` holds this rule. It pins, for the current format version,
+the shape of the manifest and its parts; of `Commands.register`, a command
 handler, `answered` and `refused`; of `MainIpc` and `PreloadIpc`; of `setting`, a setting key
 and `SettingKeys`; of `PluginUi`, `slot` and `fill`; of `Moments.listen` and `announce`, and
-of what each moment carries; of `composePrompt`, `fillSlots` and `pluginStateOf`; of a start
-function and the `PluginCore` it is handed; and the
+of what each moment carries; of `composePrompt`, `fillSlots`, `fillsGained` and
+`pluginStateOf`; of a start function and the `PluginCore` it is handed; and the
 name of every moment and whether a plugin that is off hears it. The pin holds its own copy of
-each shape these use, such as the agent ids and what a turn holds, so a change made elsewhere
-in the app trips it too. Only four types are pinned by name: the session a command's caller
-carries (`SessionInfo`), Electron's `IpcMainEvent`, React's `ComponentType`, and the names of
-the agents' flags (`AgentFlags`, which a block's `whenAgentFlag` picks from), so an agent's
-new flag does not trip the pin. A change to
+each shape these use, such as the kinds of small job and what a turn holds, so a change made
+elsewhere in the app trips it too. Only five types are pinned by name: the session a
+command's caller carries (`SessionInfo`), Electron's `IpcMainEvent`, React's `ComponentType`,
+the agent ids (`BackendId`, which a caller gives as the `agent` reading a text) and the names
+of the agents' flags (`AgentFlags`, which a block's `whenAgentFlag` picks from), so a new
+agent or an agent's new flag does not trip the pin. A change to
 any of them fails Koloft's typecheck (`npm run typecheck`), or the unit test for the moments'
 names, until whoever made it does one of two things:
 
-- for a change the rule above lets through without a bump, adds it to the pin of the current
-  version;
-- for any other change, raises `PLUGIN_FORMAT_VERSION` and adds a pin for the new version.
+- for a change the rule above lets through without a bump, adds it to the pin;
+- for any other change, raises `PLUGIN_FORMAT_VERSION` and changes the pin to the new
+  version's shape. The pin of the version before is not kept: no manifest written for it
+  exists outside Koloft.
 
 The same test fails when a built-in plugin uses a manifest field, command, setting key, UI
 entry or place, Assist job, tip, moment, text slot, slot for each agent, slot any agent adds
@@ -1243,7 +1273,9 @@ These are not decided:
 - Whether a plugin may import `src/shared/` directly. `src/shared/` holds code Koloft's main
   process and window share today, and core itself imports from it.
 - What Koloft does with a manifest written for an older version after a bump, and what an
-  older Koloft does with a manifest that uses a field or value added later.
+  older Koloft does with a manifest that uses a field or value added later. At the bump to
+  version 2 every manifest was built in, so all moved at once and nothing reads a version 1
+  manifest.
 
 The owner decided that the format is built so that people outside the repository can write
 plugins later. That is why the manifest carries a format version and this page exists.

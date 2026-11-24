@@ -39,6 +39,12 @@ export const agent = {
   },
   slotFills: SLOT_FILLS,
   slotAdditions: SLOT_ADDITIONS,
+  // CC§9
+  smallJobModels: {
+    smallAndQuick: { model: 'haiku' },
+    judgesAReply: { model: 'haiku' },
+    picksFromAList: { model: 'sonnet', effort: 'low' }
+  },
   flags: {
     resumeCanWaitOnAQuestionBeforeAnySign: false,
     conversationStartsAtFirstPrompt: false,

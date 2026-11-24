@@ -584,16 +584,18 @@ describe('the butler', () => {
     const off = { on: { github: false }, facts: [] }
     const on = { on: { github: true }, facts: [] }
     await expect(
-      pluginsChangedNews([{ name: 'GitHub', on: true }], butlerLinesGained(off, on))
+      pluginsChangedNews([{ name: 'GitHub', on: true }], butlerLinesGained(name, off, on))
     ).toMatchFileSnapshot('../../prompt-text/butler/plugins-changed-with-lines.txt')
     await expect(
-      linesCameNews(butlerLinesGained({ on: {}, facts: [] }, { on: {}, facts: [DISCORD_BOUND] }))
+      linesCameNews(
+        butlerLinesGained(name, { on: {}, facts: [] }, { on: {}, facts: [DISCORD_BOUND] })
+      )
     ).toMatchFileSnapshot('../../prompt-text/butler/lines-came.txt')
   })
 
   it('the sentences told for a plugin come from every slot plugins fill in the butler’s role: those only for the butler, those for its folder, and those about the koloft command, in the role’s order', () =>
     expect(
-      butlerLinesGained({ on: { sessions: false }, facts: [] }, { on: {}, facts: [] })
+      butlerLinesGained(name, { on: { sessions: false }, facts: [] }, { on: {}, facts: [] })
     ).toEqual([
       expect.stringContaining('koloft session list, with no options, gives you every session'),
       expect.stringContaining("What you send a project's session"),
@@ -612,7 +614,11 @@ describe('the butler', () => {
     expect(notices[0]).toBe(
       `${FROM_KOLOFT}${pluginsChangedNews(
         [{ name: 'Todo', on: true }],
-        butlerLinesGained({ on: { todo: false }, facts: [] }, { on: { todo: true }, facts: [] })
+        butlerLinesGained(
+          name,
+          { on: { todo: false }, facts: [] },
+          { on: { todo: true }, facts: [] }
+        )
       )}`
     )
 
@@ -647,7 +653,7 @@ describe('the butler', () => {
     if (!back.ok) throw new Error(back.error)
     expect(notices).toHaveLength(2)
     expect(notices[1]).toBe(
-      `${FROM_KOLOFT}${linesCameNews(butlerLinesGained({ on: {}, facts: [] }, { on: {}, facts: [DISCORD_BOUND] }))}`
+      `${FROM_KOLOFT}${linesCameNews(butlerLinesGained(name, { on: {}, facts: [] }, { on: {}, facts: [DISCORD_BOUND] }))}`
     )
 
     c.onBound(back.tabId, CLAUDE_KEY)

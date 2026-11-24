@@ -1,6 +1,5 @@
 // ADR-0051
 import type { ArtifactView, AttentionEvent, SessionStatus, TerminalExit } from '@shared/types'
-import type { AskPayload } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import type { PluginManifest } from './plugin'
 import { errorText } from './errorText'
@@ -47,7 +46,7 @@ export interface TurnEnded {
 
 export interface QuestionAsked {
   tabId: string
-  ask: AskPayload
+  id: string
 }
 
 export interface SessionBound {

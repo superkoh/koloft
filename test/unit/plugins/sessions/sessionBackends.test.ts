@@ -243,8 +243,20 @@ describe('session lifecycle tap (one place turns a bind or an exit into attentio
     const registry = new SessionBackends(sink)
     const ask = { tool_name: 'Bash', tool_input: { command: 'make' } }
     registry.observe('tab', sessionEventFromHook('ask', undefined, undefined, ask)!)
-    expect(sink.asked).toHaveBeenCalledWith('tab', ask)
+    expect(sink.asked).toHaveBeenCalledWith('tab', ask, expect.any(String))
     expect(sessionEventFromHook('ask', undefined, undefined, undefined)).toBeNull()
+  })
+
+  it('every question gets an id of its own: two asked one after the other in one tab differ, the same words included, and so do the questions of two tabs', () => {
+    const sink = lifecycle()
+    const registry = new SessionBackends(sink)
+    const ask = { tool_name: 'Bash', tool_input: { command: 'make' } }
+    for (const tab of ['tab', 'tab', 'other', 'tab'])
+      registry.observe(tab, { type: 'asked', ask: { ...ask } })
+    const ids = sink.asked.mock.calls.map((call): unknown => call[2])
+    expect(ids).toHaveLength(4)
+    expect(new Set(ids).size).toBe(4)
+    expect(ids.every((id) => typeof id === 'string' && id.length > 0)).toBe(true)
   })
 })
 
