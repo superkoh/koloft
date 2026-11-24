@@ -18,5 +18,12 @@ export const agent = {
       '--fallback-model'
     ],
     quoted: ['oauth', 'custom']
+  },
+  ownLogFolderNames: [],
+  // CC§2
+  atTopOfSessionFolder: {
+    internalNames: ['tasks'],
+    internalNameEndings: [],
+    foldersMadeEmptyAhead: []
   }
 } as const satisfies AgentManifest

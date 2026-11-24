@@ -21,7 +21,6 @@ import type {
 } from '@shared/types'
 import { HIDDEN_BY_DEFAULT_NAMES } from '@shared/types'
 import { basename } from '@shared/preview'
-import { AGY_SCRATCH_FOLDER } from '@shared/agyBrain'
 import { installSlideOnHover } from './filesSide'
 import {
   DIR_PAGE_ROWS,
@@ -45,6 +44,7 @@ import {
   persistableExpansion,
   sameEntries,
   scratchpadEntries,
+  scratchpadFoldersHiddenWhileEmpty,
   sessionIndex,
   truncationNotice,
   type SynNode
@@ -382,23 +382,24 @@ export function BrowseView({
 
   // CC§2
   const scratchTimerRef = useRef<{ dir: string; t: ReturnType<typeof setTimeout> } | null>(null)
-  const agyScratch =
-    backendId === 'agy' && scratchpadDir ? `${scratchpadDir}/${AGY_SCRATCH_FOLDER}` : undefined
+  const hiddenWhileEmpty = useMemo(
+    () => scratchpadFoldersHiddenWhileEmpty(scratchpadDir, backendId),
+    [scratchpadDir, backendId]
+  )
   useEffect(() => {
     if (!active || !scratchpadDir) return
     const pending = scratchTimerRef.current
     if (pending?.dir === scratchpadDir) return
     if (pending) clearTimeout(pending.t)
     const relistScratchpadWithoutRelistingEveryExpandedDir = (): void => {
-      relist(scratchpadDir)
-      if (agyScratch) relist(agyScratch)
+      for (const d of [scratchpadDir, ...hiddenWhileEmpty]) relist(d)
     }
     const t = setTimeout(() => {
       scratchTimerRef.current = null
       relistScratchpadWithoutRelistingEveryExpandedDir()
     }, SCRATCHPAD_RELIST_THROTTLE_MS)
     scratchTimerRef.current = { dir: scratchpadDir, t }
-  }, [active, scratchpadDir, agyScratch, session?.updatedAt, relist])
+  }, [active, scratchpadDir, hiddenWhileEmpty, session?.updatedAt, relist])
   useEffect(
     () => () => {
       if (scratchTimerRef.current) clearTimeout(scratchTimerRef.current.t)
@@ -412,7 +413,7 @@ export function BrowseView({
     const dir = scratchpadDir
     if (!active || !dir) return
     const relistWithScratch = (alreadyRelisted: readonly string[] = []): void => {
-      for (const d of [dir, agyScratch]) if (d && !alreadyRelisted.includes(d)) relist(d)
+      for (const d of [dir, ...hiddenWhileEmpty]) if (!alreadyRelisted.includes(d)) relist(d)
     }
     const everythingUnderTheScratchpad = { listsChanged: [], replacedTrees: [dir] }
     relistWithScratch(relistChanged(everythingUnderTheScratchpad))
@@ -424,7 +425,7 @@ export function BrowseView({
       off()
       window.api.fs.unwatchDir(dir)
     }
-  }, [active, scratchpadDir, agyScratch, scratchLive, root, relist, relistChanged])
+  }, [active, scratchpadDir, hiddenWhileEmpty, scratchLive, root, relist, relistChanged])
 
   const idx = useMemo(() => sessionIndex(session, root), [session, root])
   const changedDirs = useMemo(() => changedDirsOf(git, root), [git, root])

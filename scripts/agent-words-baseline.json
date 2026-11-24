@@ -1,5 +1,5 @@
 {
-  "awaitingMove": { "src/shared/agyBrain.ts": "agy" },
+  "awaitingMove": {},
   "allowed": [
     {
       "file": "src/main/gitCredentialManager.ts",
@@ -159,10 +159,6 @@
       "update: `if command -v timeout >/dev/null 2>&1; then timeout ${AGY_UPDATE_TIMEOUT_MS / 1000} \"$1\" update; else \"$1\" update; fi`,"
     ],
     "src/main/cliRuntime.ts": ["command: Exclude<AgentCommand, 'claude'>"],
-    "src/main/fileWatch.ts": [
-      "import { AGY_LOGS_FOLDER } from '@shared/agyBrain'",
-      "return !passesHeavy(rel) || rel.split(path.sep).includes(AGY_LOGS_FOLDER)"
-    ],
     "src/main/gitStatus.ts": ["const SESSION_WORKTREES_DIR = '.claude/worktrees/'"],
     "src/main/gitSteps.ts": ["const dir = `${top.stdout.trim()}/.claude/worktrees/pr-${pr}`"],
     "src/main/historyWatch.ts": [
@@ -1475,19 +1471,6 @@
       "{t.resuming && (t.kind === 'claude' || t.kind === 'agy') && ("
     ],
     "src/renderer/src/accounts.css": [".acct-badge.nofable {"],
-    "src/renderer/src/browseModel.ts": [
-      "AGY_ARTIFACT_SIDECAR,",
-      "AGY_LOGS_FOLDER,",
-      "AGY_SCRATCH_FOLDER,",
-      "AGY_UPLOADS_FOLDER",
-      "const AGY_OWN_FOLDERS = new Set([AGY_LOGS_FOLDER, AGY_UPLOADS_FOLDER])",
-      "function isAgyBookkeeping(e: DirEntry, dir: string | undefined, listed: Listed): boolean {",
-      "if (backend === 'agy') return entries.filter((e) => !isAgyBookkeeping(e, scratchpadDir, listed))",
-      "if (backend === 'claude') return entries.filter((e) => !isTasksPath(e.path, scratchpadDir))",
-      "if (e.name === AGY_SCRATCH_FOLDER && e.isDir) return !listed[e.path]?.length",
-      "return AGY_OWN_FOLDERS.has(e.name) || e.name.endsWith(AGY_ARTIFACT_SIDECAR)",
-      "} from '@shared/agyBrain'"
-    ],
     "src/renderer/src/closeSession.ts": [
       "if (backend === 'claude' && !exit.signal && exit.exitCode === SHIM_FOUND_NO_ACCOUNT_EXIT)"
     ],
@@ -1500,15 +1483,6 @@
       "if (!claudeLoginRunning) beginLogin(again)",
       "if (login && !claudeLoginRunning) clearLogin()",
       "} else if (b === 'claude') openClaudeSignIn(again)"
-    ],
-    "src/renderer/src/components/BrowseView.tsx": [
-      "backendId === 'agy' && scratchpadDir ? `${scratchpadDir}/${AGY_SCRATCH_FOLDER}` : undefined",
-      "const agyScratch =",
-      "for (const d of [dir, agyScratch]) if (d && !alreadyRelisted.includes(d)) relist(d)",
-      "if (agyScratch) relist(agyScratch)",
-      "import { AGY_SCRATCH_FOLDER } from '@shared/agyBrain'",
-      "}, [active, scratchpadDir, agyScratch, scratchLive, root, relist, relistChanged])",
-      "}, [active, scratchpadDir, agyScratch, session?.updatedAt, relist])"
     ],
     "src/renderer/src/components/SessionBackendIcon.tsx": [
       "agy: AntigravityMark",
