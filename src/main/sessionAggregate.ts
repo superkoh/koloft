@@ -5,13 +5,13 @@ import {
   type BackendSessionRow,
   type WorktreeStateMeta
 } from '@shared/types'
+import { encodeCwd } from '@shared/cwdKey'
 import {
   classifyUserPrompt,
   compactionSummary,
-  encodeCwd,
   INTERRUPT_TEXTS,
   whoTyped
-} from '@plugins/sessions/main/sessionTracker'
+} from '@agents/claude/main/sessionTracker'
 import { parseRecord, type TextBlock, type TranscriptRecord } from './transcriptRecord'
 
 export interface Bucket {

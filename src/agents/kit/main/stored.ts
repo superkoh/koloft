@@ -50,6 +50,7 @@ export function storedBackend(
     transcriptPlaces: (key) => sessions.transcriptPlaces(key),
     observe: (tabId, event) => sessions.observe(tabId, event),
     occupantOf: (dir) => sessions.occupantOf(dir),
+    workStillRunning: async () => false,
     // ADR-0028
     permissionClass: (tabId) => (sessions.launchedBypassingChecks(tabId) ? 'bypass' : 'prompting'),
     ...own

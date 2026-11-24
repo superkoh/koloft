@@ -10,7 +10,7 @@ import {
 } from '@core/moment'
 import type { AttentionTracker } from './attention'
 import type { ClaudeBackend } from '@agents/claude/main/backend'
-import type { SessionTracker } from './sessionTracker'
+import type { SessionTracker } from '@agents/claude/main/sessionTracker'
 import type { SessionsWithStore } from '@agents/kit/main/storedSessions'
 import type { WorkspaceManager } from './workspaces'
 

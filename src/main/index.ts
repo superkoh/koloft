@@ -542,6 +542,7 @@ const terminalOutput = new TerminalOutput({
   rendererUp: () => rendererReady,
   now: () => performance.now()
 })
+const runtimeDeps: PluginStartDeps['sessions']['runtime'] = {}
 const trackerDeps: PluginStartDeps['sessions']['tracker'] = {}
 const claudeAsks = new Map<string, AskPayload>()
 let codexSessions: ReturnType<typeof buildCodexSessions> | null = null
@@ -596,9 +597,9 @@ const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
 }
 const backendHooks: PluginStartDeps['sessions']['backendHooks'] = {}
 backendHooks.isOverseerSession = (id) => !!butler?.isButlerSession(id)
-backendHooks.turnOver = (tabId) => tracker.turnOver(tabId)
+backendHooks.turnOver = (tabId) => runtime.turnOver(tabId)
 backendHooks.askingOf = (tabId) => {
-  if (tracker.statusOf(tabId) !== 'approval') return undefined
+  if (runtime.statusOf(tabId) !== 'approval') return undefined
   const owner = storedOwnerOf(tabId)
   const stored = owner?.openApproval(tabId) ?? owner?.openQuestion(tabId)
   if (stored) return storedAskLine(stored)
@@ -606,7 +607,7 @@ backendHooks.askingOf = (tabId) => {
   return ask && claudeAskLine(ask)
 }
 function showAskOnItsRow(tabId: string): void {
-  if (tracker.statusOf(tabId) === 'approval') pushToSessions.sessions(onSessionsChanged())
+  if (runtime.statusOf(tabId) === 'approval') pushToSessions.sessions(onSessionsChanged())
 }
 backendHooks.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
 const noAccountNow = (backend: BackendId): string => noAccountMessage(listAccounts(), backend)
@@ -625,7 +626,7 @@ const newsJudgeDeps: PluginStartDeps['sessions']['newsJudge'] = {
 
 // CC§14
 function asksTheOwner(tabId: string): boolean {
-  return tracker.statusOf(tabId) === 'approval' || !!sessionAsks?.dialogOpen(tabId)
+  return runtime.statusOf(tabId) === 'approval' || !!sessionAsks?.dialogOpen(tabId)
 }
 
 type PanelOpen = (
@@ -657,7 +658,7 @@ const panelOpenOn: Record<BackendId, PanelOpen> = {
 const slashDeps: PluginStartDeps['sessions']['slash'] = {
   backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
   keyOf: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
-  turnOver: (tabId) => tracker.turnOver(tabId),
+  turnOver: (tabId) => runtime.turnOver(tabId),
   asking: asksTheOwner,
   takesTyping: (tabId) => !!sessionAsks?.takesCommand(tabId),
   panelOpen: async (tabId, screen) => {
@@ -683,8 +684,8 @@ const slashDeps: PluginStartDeps['sessions']['slash'] = {
 }
 trackerDeps.pidOf = (tabId) => ptyMgr.pidOf(tabId)
 const dirtyTabIds = new Set<string>()
-trackerDeps.activeTabId = () => uiActiveTabId
-trackerDeps.heldTabs = () => {
+runtimeDeps.activeTabId = () => uiActiveTabId
+runtimeDeps.heldTabs = () => {
   const held = new Set(dirtyTabIds)
   for (const h of ptyMgr.list()) if (h.util && h.alive && h.ownerTabId) held.add(h.ownerTabId)
   for (const s of allSessions())
@@ -697,7 +698,7 @@ trackerDeps.heldTabs = () => {
       held.add(s.tabId)
   return held
 }
-trackerDeps.needsUser = (id) => attention.waitsOnApproval(id)
+runtimeDeps.needsUser = (id) => attention.waitsOnApproval(id)
 let leftovers: Record<string, LeftoverProcess[]> = {}
 trackerDeps.leftBehind = (sessionId) => !!leftovers[sessionId]?.length
 const LEFTOVER_SCAN_MS = 30_000
@@ -982,7 +983,7 @@ const ownerAsleepDeps: PluginStartDeps['butler']['ownerAsleep'] = {
     }
     const claude =
       sessionAsks?.heldAsk(tabId) ??
-      (tracker.statusOf(tabId) === 'approval' ? sessionAsks?.askOf(tabId) : undefined)
+      (runtime.statusOf(tabId) === 'approval' ? sessionAsks?.askOf(tabId) : undefined)
     if (!claude) return undefined
     const questions = questionsOf(claude).length
     return { question: questions > 0, questions, text: claudeDialog(claude).text }
@@ -1073,7 +1074,7 @@ function activateTabFromNotification(tabId: string): void {
   const win = mainWindow
   if (win && !win.isDestroyed()) {
     uiActiveTabId = tabId
-    tracker.noteActivity(tabId)
+    runtime.noteActivity(tabId)
     showMainWindow(win)
     win.focus()
     app.focus({ steal: true })
@@ -1431,7 +1432,7 @@ async function pendingAskOf(tabId: string): Promise<CodexAsk | undefined> {
     const owner = storedOwnerOf(tabId)
     const ask = owner?.openApproval(tabId) ?? owner?.openQuestion(tabId)
     if (ask || !polls || !owner) return ask
-    if (tracker.statusOf(tabId) !== 'approval' && !tracker.awaitsInput(tabId)) return undefined
+    if (runtime.statusOf(tabId) !== 'approval' && !runtime.awaitsInput(tabId)) return undefined
     await sleep(CODEX_REQUEST_POLL_MS)
   }
 }
@@ -2124,7 +2125,7 @@ const claudeDialogs = new ClaudeDialogWatch({
     return backendIdOf(pty?.kind) === 'claude' ? pty : undefined
   },
   reply: (tabId, text) => ptyMgr.write(tabId, text),
-  dialogShown: (tabId, onScreen) => tracker.showDialog(tabId, onScreen),
+  dialogShown: (tabId, onScreen) => runtime.showDialog(tabId, onScreen),
   closed: (tabId, stateAfter) => {
     claudeAskEnded(tabId)
     announceNow(DIALOG_CLOSED, tabId)
@@ -3505,7 +3506,7 @@ app.whenReady().then(() => {
   tracker.on('relocated', (e: { tabId: string; dir: string }) => {
     pushToSessions.relocated(e)
   })
-  tracker.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
+  runtime.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
   tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) => {
     const ask = claudeAsks.get(tabId)
     const endsTheAsk = !!ask && isAskedCall(ask, call)
@@ -3515,14 +3516,14 @@ app.whenReady().then(() => {
   tracker.on('command-output', ({ tabId, ...output }: CommandOutput & { tabId: string }) =>
     slash.output(tabId, output)
   )
-  tracker.on('turn-over', ({ tabId, over }: TurnOver) => {
+  runtime.on('turn-over', ({ tabId, over }: TurnOver) => {
     ptyMgr.wakeReady(tabId)
     announceNow(TURN_OVER, { tabId, over })
     if (!over) return
     const workspace = pinnedWorkspaceOfTab(tabId)
     if (workspace) freshness?.fetchSoon(workspace)
   })
-  tracker.on('status', (t: StateChanged) => {
+  runtime.on('status', (t: StateChanged) => {
     if (t.prev === 'approval') claudeAskEnded(t.tabId)
     ptyMgr.wakeReady(t.tabId)
     announceNow(STATE_CHANGED, t)
@@ -3536,7 +3537,7 @@ app.whenReady().then(() => {
   sessionAccounts = new SessionAccounts(path.join(userData, 'session-accounts.json'))
   const storedDeps = {
     pty: ptyMgr,
-    runtime: tracker,
+    runtime,
     projectInfo: projectInfoOnHost,
     projectRules: rulesOf,
     workspaceInstructions: instructionsOf,
@@ -3839,8 +3840,8 @@ app.whenReady().then(() => {
   const tabState = {
     backendOf: (tabId: string) => backendIdOf(ptyMgr.get(tabId)?.kind),
     boundKey: (tabId: string) => sessionOfTab(tabId)?.sessionId || undefined,
-    status: (tabId: string) => tracker.statusOf(tabId),
-    awaitsInput: (tabId: string) => tracker.awaitsInput(tabId),
+    status: (tabId: string) => runtime.statusOf(tabId),
+    awaitsInput: (tabId: string) => runtime.awaitsInput(tabId),
     type: (tabId: string, keys: string[], stillWanted?: () => boolean) =>
       ptyMgr.type(tabId, keys, stillWanted),
     pendingApproval: (tabId: string) => storedOwnerOf(tabId)?.openApproval(tabId),
@@ -3848,7 +3849,7 @@ app.whenReady().then(() => {
   }
   const asks = buildSessionAsks({
     ...tabState,
-    turnOver: (tabId) => tracker.turnOver(tabId),
+    turnOver: (tabId) => runtime.turnOver(tabId),
     showsPromptBeforeBind,
     queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,
     touchedSinceAsked: (tabId) => {
@@ -3867,7 +3868,7 @@ app.whenReady().then(() => {
   })
   sessionAsks = asks
   const waitsBesidesInstructions = (tabId: string): boolean =>
-    tracker.statusOf(tabId) === 'approval' || !!secretAsks?.views().some((a) => a.tabId === tabId)
+    runtime.statusOf(tabId) === 'approval' || !!secretAsks?.views().some((a) => a.tabId === tabId)
   const ownerWaits = {
     waitsOnTheOwner: (tabId: string) => attention.waitsOnTheOwner(tabId, attentionSubjectOf(tabId)),
     ownerAnswered: (tabId: string) => {
@@ -3920,7 +3921,7 @@ app.whenReady().then(() => {
       discordRelay?.reaches(tabId) && !discordRelay.quietTurn(tabId)
         ? bindingNow.channelOfTab(tabId)
         : undefined,
-    status: (tabId) => tracker.statusOf(tabId),
+    status: (tabId) => runtime.statusOf(tabId),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive
   })
   const dialogOf = async (tabId: string): Promise<DialogView | undefined> => {
@@ -4201,7 +4202,7 @@ app.whenReady().then(() => {
         : 'undelivered'
     },
     turnUnderWay: (tabId) => {
-      const status = tracker.statusOf(tabId)
+      const status = runtime.statusOf(tabId)
       return status === 'working' || status === 'approval'
     },
     toast: (text) => sendToRenderer(CH.toast.show, text),
@@ -4973,7 +4974,7 @@ async function whatClosingTheRunWouldLose(
 }
 
 async function runOrASessionItStartedStillWorks(tabId: string): Promise<boolean> {
-  if (await tracker.stillWorking(tabId)) return true
+  if (await runtime.stillWorking(tabId)) return true
   const runSession = sessionOfTab(tabId)
   if (!runSession?.sessionId) return false
   const started = allSessions().filter(
@@ -4983,7 +4984,7 @@ async function runOrASessionItStartedStillWorks(tabId: string): Promise<boolean>
       !asksTheOwner(s.tabId) &&
       startedSessions.startedBy(s, runSession)
   )
-  const working = await Promise.all(started.map((s) => tracker.stillWorking(s.tabId)))
+  const working = await Promise.all(started.map((s) => runtime.stillWorking(s.tabId)))
   return working.some(Boolean)
 }
 
@@ -5167,8 +5168,8 @@ function showsPromptBeforeBind(tabId: string): boolean {
 function boundAndSettled(tabId: string, turnEnded: boolean): boolean {
   return (
     !!sessionOfTab(tabId)?.sessionId &&
-    tracker.statusOf(tabId) !== undefined &&
-    (!turnEnded || tracker.turnOver(tabId))
+    runtime.statusOf(tabId) !== undefined &&
+    (!turnEnded || runtime.turnOver(tabId))
   )
 }
 
@@ -5267,7 +5268,7 @@ function askUnreadablySoon(tabId: string): void {
   if (!roomOfTab(tabId)) return
   if (storedOwnerOf(tabId)) return discordRelay?.asksUnreadably(tabId)
   setTimeout(() => {
-    if (tracker.statusOf(tabId) === 'approval') discordRelay?.asksUnreadably(tabId)
+    if (runtime.statusOf(tabId) === 'approval') discordRelay?.asksUnreadably(tabId)
   }, AN_ASK_KOLOFT_READS_SHOWS_WITHIN_MS)
 }
 
@@ -6098,6 +6099,7 @@ const startedPlugins: PluginsStarted = startPlugins(
   { commands, moments, ipc: pluginIpc },
   {
     sessions: {
+      runtime: runtimeDeps,
       tracker: trackerDeps,
       backendLifecycle,
       backendHooks,
@@ -6120,7 +6122,7 @@ const startedPlugins: PluginsStarted = startPlugins(
         }
       },
       channels: {
-        noteActivity: (tabId) => tracker.noteActivity(tabId),
+        noteActivity: (tabId) => runtime.noteActivity(tabId),
         installed: installedBackends,
         installTool,
         list: allSessions,
@@ -6163,7 +6165,7 @@ const startedPlugins: PluginsStarted = startPlugins(
           uiActiveTabId = tabId
           lastTabTheOwnerLookedAt = tabId ?? lastTabTheOwnerLookedAt
           guard?.lookedAtChanged()
-          if (tabId) tracker.noteActivity(tabId)
+          if (tabId) runtime.noteActivity(tabId)
           if (tabId && windowFocused()) ownerSees(tabId)
           rememberOpenTabs()
         },
@@ -6327,7 +6329,7 @@ const startedPlugins: PluginsStarted = startPlugins(
       backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
       nameOf: (tabId, backend) => sessionOfTab(tabId)?.title || `${BACKEND_LABEL[backend]} session`,
       turns: (key, n) => sessionBackends.turns(key, n),
-      status: (tabId) => tracker.statusOf(tabId),
+      status: (tabId) => runtime.statusOf(tabId),
       asksTheOwner
     },
     todo: todoCommand,
@@ -6371,6 +6373,7 @@ const {
   writeRelayEnv
 } = startedPlugins['browser-control']
 const {
+  runtime,
   tracker,
   sessionBackends,
   claudeBackend,

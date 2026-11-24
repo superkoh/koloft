@@ -18,7 +18,6 @@ import type { DiffResult, GitDiffResult } from '../gitStatus'
 import type { GithubRepos } from '../githubRepos'
 import type { GitRunResult } from '../gitSteps'
 import type { GitOut } from '@core/worktree'
-import type { RemoteTab } from '@plugins/sessions/main/sessionTracker'
 
 export interface ShowIgnored {
   showIgnored?: boolean
@@ -50,6 +49,12 @@ export interface ClaudeLaunch {
   trustFolder?: boolean
   projectRules?: string
   workspaceParts?: string[]
+}
+
+export interface RemoteTab {
+  host: string
+  projectsRoot: string
+  tmuxName: string
 }
 
 export interface MachineTab {

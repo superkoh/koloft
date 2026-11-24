@@ -1,6 +1,5 @@
 import type { MadeLater } from '@core/moment'
 import type { BuildLater, PluginStart } from '@core/pluginStart'
-import type { Turn } from '@shared/turns'
 import { AgySessions, type AgySessionDeps } from '@agents/agy/main/agySessions'
 import * as appHelpers from './appHelpers'
 import { AttentionTracker, type SavedMark } from './attention'
@@ -11,9 +10,11 @@ import { HandOver, type HandOverDeps } from './handOver'
 import { InstructionAsks, type InstructionAskDeps } from './instructionAsks'
 import { SessionAsks, type SessionAskDeps } from './sessionAsks'
 import { SessionBackends, type SessionLifecycle } from '@core/agent/sessionBackends'
+import { SessionRuntime } from '@core/agent/sessionRuntime'
+import { wireRunState } from './runState'
 import { followEachState, followEachTurn, forgetAsksOfEndedTabs } from './sessionHooks'
 import { SessionSync, type SessionSyncDeps } from './sessionSync'
-import { SessionTracker } from './sessionTracker'
+import { SessionTracker } from '@agents/claude/main/sessionTracker'
 import { registerSessionCommands, sessionVerb, type SessionVerbDeps } from './sessionVerbs'
 import { SlashCommands, type SlashDeps } from './slashCommands'
 import { SleepingTabs, type SleepingTabsDeps } from './sleepingTabs'
@@ -24,16 +25,11 @@ import { WorkspaceManager, type WorkspaceManagerDeps } from './workspaces'
 
 type ChannelDeps = Parameters<typeof registerChannels>[1]
 
+type RuntimeDeps = Pick<SessionRuntime, 'activeTabId' | 'heldTabs' | 'needsUser'>
+
 type TrackerDeps = Pick<
   SessionTracker,
-  | 'pidOf'
-  | 'activeTabId'
-  | 'heldTabs'
-  | 'needsUser'
-  | 'leftBehind'
-  | 'machineTmp'
-  | 'realFilesOn'
-  | 'dialogJustClosed'
+  'pidOf' | 'leftBehind' | 'machineTmp' | 'realFilesOn' | 'dialogJustClosed'
 >
 
 type BackendHooks = Partial<
@@ -57,6 +53,7 @@ type AttentionDeps = Pick<
 }
 
 export interface SessionsStartDeps {
+  runtime: RuntimeDeps
   tracker: TrackerDeps
   backendLifecycle: SessionLifecycle
   backendHooks: BackendHooks
@@ -80,6 +77,7 @@ export const start: PluginStart<
     typeof appHelpers & {
       sessionCommand: ReturnType<typeof sessionVerb>
       pushToSessions: ReturnType<typeof pushes>
+      runtime: SessionRuntime
       tracker: SessionTracker
       sessionBackends: SessionBackends
       claudeBackend: ClaudeBackend
@@ -99,9 +97,11 @@ export const start: PluginStart<
       buildAgySessions: BuildLater<AgySessionDeps & { file: string }, AgySessions>
     }
 > = ({ commands, moments, ipc }, d) => {
-  const tracker = new SessionTracker()
+  const runtime = Object.assign(new SessionRuntime(), d.runtime)
+  const tracker = new SessionTracker(runtime)
   const sessionBackends = Object.assign(new SessionBackends(d.backendLifecycle), d.backendHooks)
-  tracker.on('turn-ended', ({ tabId, turn }: { tabId: string; turn: Turn }) =>
+  wireRunState(runtime, sessionBackends, tracker)
+  tracker.on('turn-ended', ({ tabId, turn }) =>
     sessionBackends.observe(tabId, { type: 'turn-ended', turn })
   )
   Object.assign(tracker, d.tracker)
@@ -148,6 +148,7 @@ export const start: PluginStart<
     ...appHelpers,
     sessionCommand,
     pushToSessions: pushes(ipc),
+    runtime,
     tracker,
     sessionBackends,
     claudeBackend,
