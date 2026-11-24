@@ -26,6 +26,11 @@ const CHECKS = [
     fix: 'run `npm run check:agent-words` to see all it lists, do what it says, commit, and try again'
   },
   {
+    script: 'check:agent-imports',
+    findsProblemsWith: [1, 2],
+    fix: 'run `npm run check:agent-imports` to see all it lists, do what it says, commit, and try again'
+  },
+  {
     script: 'typecheck',
     findsProblemsWith: [1, 2],
     fix: 'fix the type errors it lists, commit, and try again'

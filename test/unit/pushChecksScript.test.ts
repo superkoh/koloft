@@ -82,6 +82,7 @@ const callsIn = (file: string): string[] =>
   fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').sort() : []
 
 const ALL_CHECKS = [
+  'npm run --silent check:agent-imports',
   'npm run --silent check:agent-words',
   'npm run --silent check:comments',
   'npm run --silent format:check',
@@ -99,7 +100,7 @@ describe('push-checks PreToolUse hook', () => {
     'gh pr new --fill',
     'koloft gh pr create --title t'
   ])(
-    'runs format:check, check:comments, check:agent-words and typecheck before `%s`',
+    'runs format:check, check:comments, check:agent-words, check:agent-imports and typecheck before `%s`',
     (command) => {
       const root = repo()
       const { bin, calls } = fakeNpm()
@@ -133,11 +134,15 @@ describe('push-checks PreToolUse hook', () => {
     expect(r.stderr).toContain('[warn] src/a.ts')
   })
 
-  it('stops the push when check:comments, check:agent-words or typecheck finds problems, a missing import included', () => {
+  it('stops the push when check:comments, check:agent-words, check:agent-imports or typecheck finds problems, a missing import included', () => {
     const root = repo()
     const { bin } = fakeNpm({
       'check:comments': { exit: 1 },
       'check:agent-words': { exit: 1, says: 'check-agent-words: 1 new lines name an agent.' },
+      'check:agent-imports': {
+        exit: 1,
+        says: 'check-agent-imports: 1 new imports cross a boundary around src/agents.'
+      },
       typecheck: {
         exit: 2,
         says: "src/a.ts(1,1): error TS2307: Cannot find module './gone' or its corresponding type declarations."
@@ -148,6 +153,8 @@ describe('push-checks PreToolUse hook', () => {
     expect(r.stderr).toContain('`npm run check:comments` failed')
     expect(r.stderr).toContain('`npm run check:agent-words` failed')
     expect(r.stderr).toContain('1 new lines name an agent')
+    expect(r.stderr).toContain('`npm run check:agent-imports` failed')
+    expect(r.stderr).toContain('1 new imports cross a boundary')
     expect(r.stderr).toContain('`npm run typecheck` failed')
   })
 

@@ -40,6 +40,8 @@ jobs:
 
       - run: npm run check:agent-words
 
+      - run: npm run check:agent-imports
+
       - run: npm run typecheck
 
       - run: npm run test:unit
