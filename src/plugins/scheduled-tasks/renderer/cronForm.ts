@@ -8,6 +8,7 @@ import type {
   Schedule,
   SkillSuggestion
 } from '@shared/types'
+import { AGENT_PICKED_ON_FIRST_OPEN } from '@core/agent/registry'
 import { CRON_SAVE_MESSAGES as M } from '@shared/cronMessages'
 import { hasWordChar, isValidModelName, NEW_JOB_PERMISSION } from '@shared/cronNames'
 import { nextDue } from '@shared/cronHistory'
@@ -43,7 +44,10 @@ export interface JobFields {
   autoClose: boolean
 }
 
-export function emptyFields(backend: BackendId = 'claude', now = new Date()): JobFields {
+export function emptyFields(
+  backend: BackendId = AGENT_PICKED_ON_FIRST_OPEN,
+  now = new Date()
+): JobFields {
   return {
     backend,
     name: '',

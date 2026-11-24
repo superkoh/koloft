@@ -232,7 +232,7 @@ export function mergeEdit(job: CronJob, patch: CronPatch): CronSaveInput {
 }
 
 export function effortRefusal(input: CronSaveInput, patch: CronPatch): string | null {
-  return effortNotTaken(input.backend ?? 'claude', input.model, patch.effort)
+  return effortNotTaken(cronBackend(input), input.model, patch.effort)
 }
 
 export function findJob(jobs: CronJob[], ref: string): Parsed<CronJob> {

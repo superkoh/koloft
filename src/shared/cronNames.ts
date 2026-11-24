@@ -1,4 +1,5 @@
 import type { BackendId, CronPermission } from './types'
+import { AGENT_OF_UNNAMED_OLD_DATA } from '@core/agent/registry'
 
 export const CRON_PERMISSIONS: CronPermission[] = ['same', 'acceptEdits', 'skipAll']
 
@@ -40,5 +41,5 @@ export function isRunFolderOf(slug: string, name: string): boolean {
 }
 
 export function cronBackend(job: { backend?: BackendId }): BackendId {
-  return job.backend ?? 'claude'
+  return job.backend ?? AGENT_OF_UNNAMED_OLD_DATA
 }

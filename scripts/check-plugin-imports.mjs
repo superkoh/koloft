@@ -19,6 +19,7 @@ const ALIASES = {
   '@shared': 'src/shared',
   '@core': 'src/core',
   '@plugins': 'src/plugins',
+  '@agents': 'src/agents',
   '@renderer': 'src/renderer/src'
 }
 const PUBLIC_SURFACES = new Set(['api', 'windowApi'])

@@ -72,7 +72,7 @@ describe('check-plugin-imports', () => {
     expect(check(dir)).toEqual({ code: 0, reported: [] })
   })
 
-  it('reports each import that breaks the rule, static, re-exported, dynamic or through a .. in an alias, and a windowApi.ts that loads its own main/ or prompts/, and still exits 0', () => {
+  it('reports each import that breaks the rule, static, re-exported, dynamic or through a .. in an alias, a list of agents, and a windowApi.ts that loads its own main/ or prompts/, and still exits 0', () => {
     const dir = fixtureRepo({
       'src/plugins/c/main/bad.ts': lines(
         "import { inner } from '@plugins/a/main/inner'",
@@ -84,7 +84,8 @@ describe('check-plugin-imports', () => {
         "import { sneak } from '@core/../plugins/b/main/inner'",
         "type Inner = typeof import('@plugins/a/main/inner')",
         "import { pluginBridges } from '../../bridges'",
-        "import { titleA } from '@plugins/a/windowApi'"
+        "import { titleA } from '@plugins/a/windowApi'",
+        "import { AGENTS } from '@agents/list'"
       ),
       'src/plugins/bridges.ts': "import { start } from './a/main/start'\n",
       'src/plugins/uis.ts': "import { bridge } from './a/preload/bridge'\n",
@@ -119,6 +120,7 @@ describe('check-plugin-imports', () => {
         'src/plugins/c/main/bad.ts:8 @plugins/a/main/inner',
         'src/plugins/c/main/bad.ts:9 ../../bridges',
         'src/plugins/c/main/bad.ts:10 @plugins/a/windowApi',
+        'src/plugins/c/main/bad.ts:11 @agents/list',
         'src/plugins/list.ts:4 ./a/main/start',
         'src/plugins/settings.ts:1 ./a/renderer/ui',
         'src/plugins/uis.ts:1 ./a/preload/bridge',

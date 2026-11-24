@@ -17,9 +17,21 @@
       "@shared/*": ["./src/shared/*"],
       "@core/*": ["./src/core/*"],
       "@plugins/*": ["./src/plugins/*"],
+      "@agents/*": ["./src/agents/*"],
       "@renderer/*": ["./src/renderer/src/*"]
     }
   },
-  "include": ["src/renderer/**/*", "src/shared/**/*", "src/core/**/*", "src/plugins/**/*"],
-  "exclude": ["src/plugins/*/main/**", "src/plugins/starts.ts"]
+  "include": [
+    "src/renderer/**/*",
+    "src/shared/**/*",
+    "src/core/**/*",
+    "src/plugins/**/*",
+    "src/agents/**/*"
+  ],
+  "exclude": [
+    "src/plugins/*/main/**",
+    "src/plugins/starts.ts",
+    "src/agents/*/main/**",
+    "src/agents/starts.ts"
+  ]
 }

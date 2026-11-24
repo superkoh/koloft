@@ -8,6 +8,11 @@ import type {
 } from './types'
 import { hostOf } from './remoteKey'
 import { settingsPaneName } from './settingsPanes'
+import {
+  AGENT_IDS,
+  AGENT_OF_UNNAMED_OLD_DATA,
+  AGENT_PICKED_ON_FIRST_OPEN
+} from '@core/agent/registry'
 
 export const BACKEND_LABEL: Record<BackendId, string> = {
   claude: 'Claude',
@@ -21,7 +26,8 @@ export const BACKEND_PRODUCT: Record<BackendId, string> = {
   agy: 'Antigravity CLI'
 }
 
-export const SESSION_BACKENDS = Object.keys(BACKEND_LABEL) as BackendId[]
+// ADR-0054
+export const SESSION_BACKENDS: BackendId[] = [...AGENT_IDS]
 
 export const kindsOf = (backends: BackendId[], joiner: 'or' | 'and'): string => {
   const labels = backends.map((b) => BACKEND_LABEL[b])
@@ -36,8 +42,6 @@ export const SKILL_PREFIX: Record<BackendId, string> = {
   codex: '$',
   agy: '/'
 }
-
-export const BACKEND_WHEN_NONE_IS_KNOWN: BackendId = 'claude'
 
 export function turnedOffLead(backend: BackendId): string {
   return `${BACKEND_LABEL[backend]} is turned off in `
@@ -73,7 +77,7 @@ export function backendIdOf(value: unknown): BackendId | undefined {
 export function normalizeSessionMethods(raw: unknown): SessionMethods {
   const value = raw && typeof raw === 'object' ? (raw as Partial<SessionMethods>) : {}
   const enabled = byBackend((b) => value.enabled?.[b] !== false)
-  if (!SESSION_BACKENDS.some((b) => enabled[b])) enabled[BACKEND_WHEN_NONE_IS_KNOWN] = true
+  if (!SESSION_BACKENDS.some((b) => enabled[b])) enabled[AGENT_PICKED_ON_FIRST_OPEN] = true
   const picked = backendIdOf(value.defaultBackend)
   return {
     enabled,
@@ -90,7 +94,7 @@ export function backendAvailable(list: BackendAvailability[], id: BackendId): bo
 }
 
 export function shownAsInstalled(list: BackendAvailability[] | null, id: BackendId): boolean {
-  return list ? backendAvailable(list, id) : id === BACKEND_WHEN_NONE_IS_KNOWN
+  return list ? backendAvailable(list, id) : id === AGENT_PICKED_ON_FIRST_OPEN
 }
 
 export type Messaging = 'queue' | 'peerLine' | 'typed'
@@ -242,7 +246,7 @@ export function identityOf(key: string): SessionIdentity {
       nativeSessionId: decodeURIComponent(parts[2])
     }
   }
-  return { backendId: 'claude', sourceId: 'local', nativeSessionId: key }
+  return { backendId: AGENT_OF_UNNAMED_OLD_DATA, sourceId: 'local', nativeSessionId: key }
 }
 
 // CC§10 CODEX§16

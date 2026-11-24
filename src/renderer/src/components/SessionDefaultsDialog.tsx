@@ -7,6 +7,7 @@ import { effortsFor } from '@shared/cronModels'
 import { isValidModelName } from '@shared/cronNames'
 import { ownPickOf, tiersOf } from '@shared/sessionPicks'
 import { ownPickModels } from '@shared/sessionDefaults'
+import { AGENT_PICKED_ON_FIRST_OPEN } from '@core/agent/registry'
 import { bytesLeft, cleanInstructions, textInUse } from '@core/ownerInstructions'
 import {
   WORKSPACE_TEXT_MAX_BYTES,
@@ -80,7 +81,7 @@ export function SessionDefaultsDialog({
   const changedView = useRef<HTMLDivElement>(null)
   useEffect(() => changedView.current?.scrollIntoView({ block: 'nearest' }), [changed])
   const butler = useStore((s) => s.settings.butler.name)
-  const [shown, setShown] = useState<BackendId>(backends[0] ?? 'claude')
+  const [shown, setShown] = useState<BackendId>(backends[0] ?? AGENT_PICKED_ON_FIRST_OPEN)
   const { inputCls, focusProps } = useFieldFocus()
 
   useEffect(() => {

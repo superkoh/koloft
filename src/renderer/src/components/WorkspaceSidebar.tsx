@@ -112,7 +112,7 @@ function removeConfirmText(running: number, lost: number): string {
   const [loss] = fillsOf(WORKSPACE_REMOVAL_LOSS)
   const s = `${running} running session${running === 1 ? '' : 's'} will be closed`
   const kept =
-    'Sessions are kept by Claude or Codex — re-adding the folder brings them back as resumable.'
+    'Each agent keeps its own sessions — re-adding the folder brings them back as resumable.'
   if (lost === 0 || !loss) return `${s}. ${kept}`
   if (running === 0) return removalLossNote(lost, loss)
   return `${s}, and ${loss.willGo(lost)}. ${kept} ${loss.goneForGood}`

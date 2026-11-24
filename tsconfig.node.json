@@ -13,7 +13,8 @@
     "paths": {
       "@shared/*": ["./src/shared/*"],
       "@core/*": ["./src/core/*"],
-      "@plugins/*": ["./src/plugins/*"]
+      "@plugins/*": ["./src/plugins/*"],
+      "@agents/*": ["./src/agents/*"]
     }
   },
   "include": [
@@ -22,7 +23,13 @@
     "src/preload/**/*",
     "src/shared/**/*",
     "src/core/**/*",
-    "src/plugins/**/*"
+    "src/plugins/**/*",
+    "src/agents/**/*"
   ],
-  "exclude": ["src/plugins/*/renderer/**", "src/plugins/uis.ts"]
+  "exclude": [
+    "src/plugins/*/renderer/**",
+    "src/plugins/uis.ts",
+    "src/agents/*/renderer/**",
+    "src/agents/uis.ts"
+  ]
 }

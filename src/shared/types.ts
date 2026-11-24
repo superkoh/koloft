@@ -2,6 +2,7 @@ import type { SessionRoute } from './sessionRoute'
 import type { TokenCounts } from './pricing'
 import type { PluginSettingValues } from '@plugins/settings'
 import type { InstructionsVersion } from '@core/ownerInstructions'
+import { AGENT_PICKED_ON_FIRST_OPEN, type AgentId } from '@core/agent/registry'
 
 export interface ProjectInfo {
   root: string
@@ -445,7 +446,7 @@ export const SIDEBAR_MIN = 240
 
 export const APP_DEFAULT_SETTINGS: AppSettings = {
   sessionMethods: {
-    defaultBackend: 'claude',
+    defaultBackend: AGENT_PICKED_ON_FIRST_OPEN,
     enabled: { claude: true, codex: true, agy: true }
   },
   fontFamily:
@@ -488,7 +489,7 @@ export const APP_DEFAULT_SETTINGS: AppSettings = {
   everyWorkspaceInstructions: []
 }
 
-export type BackendId = 'claude' | 'codex' | 'agy'
+export type BackendId = AgentId
 export type HostId = 'local' | 'ssh'
 
 export interface UsageRecord extends TokenCounts {

@@ -231,7 +231,7 @@ function activeTabIsWeb(): boolean {
 
 function ResumingMask({
   title,
-  label = 'Resuming Claude session…',
+  label = 'Resuming session…',
   late = false
 }: {
   title: string

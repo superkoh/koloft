@@ -12,6 +12,7 @@ import {
   WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT
 } from '@shared/workbenchState'
 import { identityOf } from '@shared/sessionBackend'
+import { AGENT_OF_UNNAMED_OLD_DATA } from '@core/agent/registry'
 
 export interface MigrateDeps {
   dirExists(p: string): boolean
@@ -162,7 +163,9 @@ function claudeKeysBecomeMembers(v4: LayoutV4): LayoutV5 {
   return {
     ...v4,
     version: 5,
-    members: Object.keys(v4.sessions).filter((id) => identityOf(id).backendId === 'claude')
+    members: Object.keys(v4.sessions).filter(
+      (id) => identityOf(id).backendId === AGENT_OF_UNNAMED_OLD_DATA
+    )
   }
 }
 
