@@ -15,5 +15,7 @@ export const agent = {
       '--ignore-rules'
     ],
     quoted: []
-  }
+  },
+  ownLogFolderNames: [],
+  atTopOfSessionFolder: { internalNames: [], internalNameEndings: [], foldersMadeEmptyAhead: [] }
 } as const satisfies AgentManifest
