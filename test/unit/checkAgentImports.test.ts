@@ -109,11 +109,8 @@ describe('check-agent-imports: who may import whom around src/agents', () => {
         "import { openTerminal } from '../../../main/terminal'",
         'export const store = openTerminal'
       ),
-      'src/main/terminal.ts': lines(
-        "import { key } from '@shared/keys'",
-        "import { PLUGINS } from '@plugins/list'",
-        'export const openTerminal = [key, PLUGINS]'
-      ),
+      'src/main/terminal.ts':
+        "import { key } from '@shared/keys'\nexport const openTerminal = [key]\n",
       'src/main/index.ts': lines(
         "import { S } from '@agents/starts'",
         "import { FIRST } from '@core/agent/registry'"
@@ -138,6 +135,8 @@ describe('check-agent-imports: who may import whom around src/agents', () => {
       'src/preload/p.ts': "import '@agents/alpha/agent'\n",
       'src/plugins/uis.ts': "import { ui } from '@agents/beta/renderer/ui'\n",
       'src/main/k.ts': "import { store } from '@agents/kit/main/store'\n",
+      'src/plugins/p/main/l.ts': "import { AGENTS } from '@agents/list'\n",
+      'src/agents/uis.ts': "import { y } from './beta/main/y'\n",
       'src/plugins/p/main/k.ts': "import { store } from '@agents/kit/main/store'\n",
       'src/agents/alpha/main/x.ts': lines(
         "import { api } from '@plugins/p/api'",
@@ -180,11 +179,13 @@ describe('check-agent-imports: who may import whom around src/agents', () => {
       'src/agents/kit/main/store.ts [agent-into-agent] src/agents/alpha/main/x.ts',
       'src/agents/kit/main/store.ts [agent-into-list] src/agents/starts.ts',
       'src/agents/kit/main/store.ts [agent-into-plugin] src/plugins/list.ts',
+      'src/agents/uis.ts [list-past-entry] src/agents/beta/main/y.ts',
       'src/core/c.ts [common-into-agent] src/agents/beta/shared/b.ts',
       'src/main/k.ts [outside-into-kit] src/agents/kit/main/store.ts',
       'src/main/m.ts [common-into-agent] src/agents/alpha/main/x.ts',
       'src/plugins/p/main/a.ts [plugin-into-agent] src/agents/alpha/main/x.ts',
       'src/plugins/p/main/k.ts [outside-into-kit] src/agents/kit/main/store.ts',
+      'src/plugins/p/main/l.ts [plugin-into-list] src/agents/list.ts',
       'src/plugins/uis.ts [plugin-into-agent] src/agents/beta/renderer/ui.tsx',
       'src/preload/p.ts [common-into-agent] src/agents/alpha/agent.ts',
       'src/renderer/src/r.tsx [common-into-agent] src/agents/beta/shared/b.ts',
@@ -228,7 +229,7 @@ describe('check-agent-imports: who may import whom around src/agents', () => {
     )
   })
 
-  it('fails when an agent’s main imports a main-process module that names an agent, is an agent’s file not moved yet, or leads through src/main to a plugin’s folder or to another agent’s folder, and says which', () => {
+  it('fails when an agent’s main imports a main-process module that names an agent, is an agent’s file not moved yet, or leads through src/main to plugin code, a list of agents or another agent’s folder, and says which; shared code that imports a plugin does not count', () => {
     const dir = fixtureRepo(
       {
         'src/agents/alpha/main/x.ts': lines(
@@ -237,19 +238,21 @@ describe('check-agent-imports: who may import whom around src/agents', () => {
           "import { toPlugin } from '../../../main/toPlugin'",
           "import { toBeta } from '../../../main/toBeta'",
           "import { old } from '../../../main/betaOld'",
+          "import { everyPlugin } from '../../../main/toPluginList'",
+          "import { everyAgent } from '../../../main/toAgentList'",
           'export const x = 1'
         ),
+        'src/main/toPluginList.ts':
+          "import { PLUGINS } from '@plugins/list'\nexport const everyPlugin = [PLUGINS]\n",
+        'src/main/toAgentList.ts':
+          "import { AGENTS } from '@agents/list'\nexport const everyAgent = [AGENTS]\n",
         'src/main/betaOld.ts': 'export const old = 1\n',
         'src/agents/beta/main/b.ts':
           "import { toBeta } from '../../../main/toBeta'\nexport const b = 1\n",
         'src/agents/kit/main/store.ts':
           "import { toBeta } from '../../../main/toBeta'\nexport const s = 1\n",
         'src/main/named.ts': 'export const named = 1\n',
-        'src/main/neutral.ts': lines(
-          "import { key } from '@shared/keys'",
-          "import { PLUGINS } from '@plugins/list'",
-          'export const neutral = [key, PLUGINS]'
-        ),
+        'src/main/neutral.ts': "import { key } from '@shared/keys'\nexport const neutral = [key]\n",
         'src/main/toPlugin.ts': "import { deep } from './deep'\nexport const toPlugin = [deep]\n",
         'src/main/deep.ts': "import { api } from '@plugins/p/api'\nexport const deep = [api]\n",
         'src/main/toBeta.ts':
@@ -273,8 +276,10 @@ describe('check-agent-imports: who may import whom around src/agents', () => {
     expect(r.crossings).toEqual([
       'src/agents/alpha/main/x.ts [agent-main-into-mixed-main] src/main/betaOld.ts',
       'src/agents/alpha/main/x.ts [agent-main-into-mixed-main] src/main/named.ts',
+      'src/agents/alpha/main/x.ts [agent-main-into-mixed-main] src/main/toAgentList.ts',
       'src/agents/alpha/main/x.ts [agent-main-into-mixed-main] src/main/toBeta.ts',
       'src/agents/alpha/main/x.ts [agent-main-into-mixed-main] src/main/toPlugin.ts',
+      'src/agents/alpha/main/x.ts [agent-main-into-mixed-main] src/main/toPluginList.ts',
       'src/agents/kit/main/store.ts [agent-main-into-mixed-main] src/main/toBeta.ts'
     ])
     expect(r.out).toContain('it names an agent on 1 lines')
@@ -425,12 +430,15 @@ describe('check-agent-imports: the baseline only shrinks', () => {
 describe('check-agent-imports: no optional method on the run-time interfaces', () => {
   const interfaces = {
     'src/core/agent/sessions.ts': lines(
+      'type Handler = () => void',
       'export interface Sessions {',
       '  list(): string[]',
       '  recovers?: true',
       '  answer?(tabId: string): void',
       '  deliver?: (tabId: string) => boolean',
       '  onExit?: ((code: number) => void) | undefined',
+      '  viaItsName?: Handler',
+      '  hooks: { onBind?(): void; label?: string }',
       '}',
       'export type Accounts = {',
       '  probe?(): void',
@@ -454,6 +462,8 @@ describe('check-agent-imports: no optional method on the run-time interfaces', (
         'Sessions.answer': 'C1',
         'Sessions.deliver': 'C2',
         'Sessions.onExit': 'C1',
+        'Sessions.viaItsName': 'C3',
+        'Sessions.hooks.onBind': 'C9',
         'Accounts.probe': 'C4',
         'Remote.stopAll': 'C10'
       },
@@ -461,14 +471,16 @@ describe('check-agent-imports: no optional method on the run-time interfaces', (
     }
   }
 
-  it('fails on an optional method of an interface or object type in src/core/agent and src/agents/kit/main, written as a method, as a function-typed field, with `| undefined`, or inside an intersection, and lets optional data fields, class fields, the manifest type and other folders through', () => {
+  it('fails on an optional method of an interface or object type in src/core/agent and src/agents/kit/main, written as a method, as a function-typed field, with `| undefined`, through a function type named in the same file, inside an intersection or inside a field’s object type, and lets optional data fields, class fields, the manifest type and other folders through', () => {
     const r = check(fixtureRepo(interfaces, {}))
     expect(r.code).toBe(1)
-    expect([...r.out.matchAll(/^ {2}(src\/\S+):\d+ {2}(\w+\.\w+)$/gm)].map((m) => m[2])).toEqual([
+    expect([...r.out.matchAll(/^ {2}(src\/\S+):\d+ {2}(\w[\w.]+)$/gm)].map((m) => m[2])).toEqual([
       'Stored.follow',
       'Sessions.answer',
       'Sessions.deliver',
       'Sessions.onExit',
+      'Sessions.viaItsName',
+      'Sessions.hooks.onBind',
       'Accounts.probe',
       'Remote.stopAll'
     ])
@@ -477,7 +489,7 @@ describe('check-agent-imports: no optional method on the run-time interfaces', (
 
   it('passes when each one is in the baseline with its step, and fails on one more', () => {
     expect(check(fixtureRepo(interfaces, recorded)).out).toContain(
-      'optional methods on the run-time interfaces: 6 (B3 1, C1 2, C2 1, C4 1, C10 1)'
+      'optional methods on the run-time interfaces: 8 (B3 1, C1 2, C2 1, C3 1, C4 1, C9 1, C10 1)'
     )
     const more = check(
       fixtureRepo(

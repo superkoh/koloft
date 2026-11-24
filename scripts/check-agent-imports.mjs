@@ -4,6 +4,7 @@ import path from 'node:path'
 import * as prettier from 'prettier'
 import {
   AGENTS_DIR,
+  ENTRY_EACH_LIST_OF_AGENTS_IMPORTS,
   LISTS_OF_AGENTS,
   importedPath,
   importedSpecifierOf,
@@ -20,6 +21,9 @@ const SOURCE_FILE = /\.(?:[cm]?[jt]s|[jt]sx)$/
 const ENDINGS_TRIED = ['', '.ts', '.tsx', '/index.ts', '/index.tsx']
 const KIT = 'kit'
 const LIST_NAMES = [...LISTS_OF_AGENTS].map((f) => path.basename(f)).join(', ')
+const LIST_ENTRIES = Object.entries(ENTRY_EACH_LIST_OF_AGENTS_IMPORTS)
+  .map(([list, entry]) => `${path.basename(list)} its ${entry}`)
+  .join(', ')
 const MANIFEST_TYPES = 'src/core/agent/manifest.ts'
 const MESSAGING = { file: 'src/shared/sessionBackend.ts', name: 'messagingOf' }
 const EVERY_NAME = '*'
@@ -28,6 +32,12 @@ const RULES = {
   'plugin-into-agent':
     'Nothing under src/plugins imports an agent’s folder. A plugin calls the interface in ' +
     'src/core/agent.',
+  'plugin-into-list':
+    `Nothing under src/plugins imports a list of agents (${LIST_NAMES}). A plugin reads ` +
+    'agents through src/core/agent/registry.ts.',
+  'list-past-entry':
+    `A list of agents imports only each agent’s entry: ${LIST_ENTRIES}. Nothing else of an ` +
+    'agent is handed out through a list.',
   'common-into-agent':
     'Outside src/agents nothing imports an agent’s folder; only the lists in src/agents do ' +
     `(${LIST_NAMES}). Read agents through src/core/agent/registry.ts.`,
@@ -41,16 +51,16 @@ const RULES = {
     'What several agents share goes in src/agents/kit or src/core.',
   'agent-into-window': 'An agent’s folder (kit too) never imports src/renderer or src/preload.',
   'outside-main-into-main':
-    'In an agent’s folder (and in kit) only main/ imports main-process code (src/main, or a ' +
-    'main/ folder). Its agent.ts, shared/, renderer/ and anything else there never do: the ' +
-    'window loads them too.',
+    'In an agent’s folder (and in kit) only main/ imports main-process code (src/main, or the ' +
+    'main/ of an agent or of kit). Its agent.ts, shared/, renderer/ and anything else there ' +
+    'never do: the window loads them too.',
   'manifest-loads-list':
     'A manifest (agent.ts) never loads, at run time, a file that loads the list of agents: ' +
     'the list imports the manifest, so the two would wait on each other. Use `import type`.',
   'agent-main-into-mixed-main':
     'An agent’s main/ (kit’s too) imports a src/main module only when that module names no ' +
     `agent (no line of its own in ${WORDS_BASELINE}) and no chain of src/main modules from ` +
-    'it imports a plugin’s folder or another agent’s folder.'
+    'it imports anything under src/plugins, a list of agents, or another agent’s folder.'
 }
 
 const byCodeUnit = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
@@ -264,15 +274,15 @@ function boundaryChecker(modules) {
     if (Object.hasOwn(words.awaitingMove, file)) return 'it is an agent’s own file, not moved yet'
     const named = words.lines[file]?.length ?? 0
     if (named > 0) return `it names an agent on ${named} lines`
-    const isAPluginOrAnotherAgent = (to) => {
+    const isPluginsOrOtherAgents = (to) => {
       const zone = zoneOf(to)
-      return !!zone && (zone.kind === 'plugin' || isForeignAgent(zone, owner))
+      return !!zone && (isPluginCode(zone) || zone.kind === 'list' || isForeignAgent(zone, owner))
     }
     const chain = chainTo(
       modules,
       file,
-      isAPluginOrAnotherAgent,
-      (e) => zoneOf(e.to)?.kind === 'main' || isAPluginOrAnotherAgent(e.to)
+      isPluginsOrOtherAgents,
+      (e) => zoneOf(e.to)?.kind === 'main' || isPluginsOrOtherAgents(e.to)
     )
     return chain && `it leads to ${chain.join(' → ')}`
   }
@@ -285,8 +295,13 @@ function boundaryChecker(modules) {
   return (fromFile, toFile) => {
     const from = zoneOf(fromFile)
     const to = zoneOf(toFile)
-    if (!from || !to || from.kind === 'list') return undefined
+    if (!from || !to) return undefined
+    if (from.kind === 'list') {
+      const entry = `${AGENTS_DIR}${to.owner}/${ENTRY_EACH_LIST_OF_AGENTS_IMPORTS[fromFile]}`
+      return to.kind !== 'agent' || toFile === entry ? undefined : { rule: 'list-past-entry' }
+    }
     if (from.kind !== 'agent') {
+      if (to.kind === 'list' && isPluginCode(from)) return { rule: 'plugin-into-list' }
       if (to.kind !== 'agent') return undefined
       if (to.owner === KIT) return { rule: 'outside-into-kit' }
       return { rule: isPluginCode(from) ? 'plugin-into-agent' : 'common-into-agent' }
@@ -318,7 +333,8 @@ function crossings(modules) {
         e.names.flatMap((n) => declaredIn(modules, e.to, n)).map((d) => d.file)
       )
       for (const origin of declaredAt) {
-        const passed = origin !== e.to && origin !== file && breach(file, origin)
+        const declaredElsewhere = origin !== e.to && origin !== file && !LISTS_OF_AGENTS.has(origin)
+        const passed = declaredElsewhere && breach(file, origin)
         if (passed)
           add(
             passed.rule,
@@ -354,33 +370,49 @@ function objectTypesIn(type) {
   return /^TS(Union|Intersection)Type$/.test(type.type) ? type.types.flatMap(objectTypesIn) : []
 }
 
-function isAFunctionType(type) {
-  if (type.type === 'TSParenthesizedType') return isAFunctionType(type.typeAnnotation)
-  if (type.type === 'TSUnionType') return type.types.some(isAFunctionType)
-  return type.type === 'TSFunctionType'
+function isAFunctionType(type, typesOfThisFile, seen = new Set()) {
+  if (type.type === 'TSParenthesizedType')
+    return isAFunctionType(type.typeAnnotation, typesOfThisFile, seen)
+  if (type.type === 'TSUnionType')
+    return type.types.some((t) => isAFunctionType(t, typesOfThisFile, seen))
+  if (type.type !== 'TSTypeReference') return type.type === 'TSFunctionType'
+  const named = type.typeName.type === 'Identifier' && type.typeName.name
+  if (!typesOfThisFile.has(named) || seen.has(named)) return false
+  return isAFunctionType(typesOfThisFile.get(named), typesOfThisFile, seen.add(named))
 }
 
 function optionalMethods(modules) {
   const found = new Map()
   for (const [file, mod] of modules) {
     if (!holdsRuntimeInterfaces(file)) continue
+    const typesOfThisFile = new Map()
     walk(mod.program, (node) => {
-      const members =
-        node.type === 'TSInterfaceDeclaration'
-          ? node.body.body
-          : node.type === 'TSTypeAliasDeclaration'
-            ? objectTypesIn(node.typeAnnotation).flatMap((o) => o.members)
-            : []
+      if (node.type === 'TSTypeAliasDeclaration')
+        typesOfThisFile.set(node.id.name, node.typeAnnotation)
+    })
+    const collect = (owner, members) => {
       for (const m of members) {
+        if (!m.key || m.computed) continue
+        const name = `${owner}.${nameOf(m.key)}`
+        const type = m.type === 'TSPropertySignature' && m.typeAnnotation?.typeAnnotation
         const isMethod =
-          m.type === 'TSMethodSignature' ||
-          (m.type === 'TSPropertySignature' &&
-            !!m.typeAnnotation &&
-            isAFunctionType(m.typeAnnotation.typeAnnotation))
-        if (!m.optional || !isMethod || m.computed) continue
-        const method = { file, name: `${node.id.name}.${nameOf(m.key)}`, line: m.loc.start.line }
-        found.set(methodKey(method), method)
+          m.type === 'TSMethodSignature' || (!!type && isAFunctionType(type, typesOfThisFile))
+        if (isMethod && m.optional)
+          found.set(methodKey({ file, name }), { file, name, line: m.loc.start.line })
+        else if (type)
+          collect(
+            name,
+            objectTypesIn(type).flatMap((o) => o.members)
+          )
       }
+    }
+    walk(mod.program, (node) => {
+      if (node.type === 'TSInterfaceDeclaration') collect(node.id.name, node.body.body)
+      if (node.type === 'TSTypeAliasDeclaration')
+        collect(
+          node.id.name,
+          objectTypesIn(node.typeAnnotation).flatMap((o) => o.members)
+        )
     })
   }
   return found
@@ -566,8 +598,9 @@ const IMPORT_HELP = [
   'How to fix:',
   '- Do not add the import. Code about one agent goes in src/agents/<id>/; what every agent',
   '  fills or uses goes in src/core; parts only agents share go in src/agents/kit.',
-  '- An import counts where the name is really declared, so passing it on through another',
-  '  file, another name, `import type` or `import()` changes nothing.',
+  '- An import counts at the file it names and at the file the name is really declared in, so',
+  '  passing it on through another file, another name, `import type` or `import()` changes',
+  '  nothing.',
   ...IF_IT_MUST_STAY
 ]
 const METHOD_HELP = [

@@ -116,16 +116,21 @@ Working principles:
 
   ```
   src/plugins, src/main, src/renderer,  ✗→ an agent's folder, src/agents/kit
-  src/shared, src/core, src/preload         (only src/agents/list.ts, starts.ts, uis.ts
-                                             import an agent's folder)
-  an agent's folder, and kit            ✗→ a plugin, a list of agents, another agent's
-                                            folder, src/renderer, src/preload
-  there, anything outside main/         ✗→ main-process code (src/main, any main/)
-  (agent.ts, shared/, renderer/ …)
+  src/shared, src/core, src/preload
+  src/plugins                           ✗→ a list of agents (read the registry in core)
+  a list of agents                      ✓→ only each agent's entry: list.ts its agent.ts,
+                                            starts.ts its main/start.ts, uis.ts its
+                                            renderer/ui.tsx
+  an agent's folder, and kit            ✗→ anything under src/plugins, a list of agents,
+                                            another agent's folder, src/renderer,
+                                            src/preload
+  there, anything outside main/         ✗→ main-process code (src/main, the main/ of an
+  (agent.ts, shared/, renderer/ …)          agent or of kit)
   its agent.ts, at run time             ✗→ a file that loads the list (use `import type`)
   its main/                             ✓→ a src/main module that names no agent, when
                                             no chain of src/main modules from it imports
-                                            a plugin's folder or another agent's folder
+                                            anything under src/plugins, a list of agents
+                                            or another agent's folder
   ```
 
   An import counts both at the file it names and where the name is really declared, so
