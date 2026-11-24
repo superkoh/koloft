@@ -2,11 +2,13 @@ import type { SessionRoute } from './sessionRoute'
 import type { TokenCounts } from './pricing'
 import type { PluginSettingValues } from '@plugins/settings'
 import type { InstructionsVersion } from '@core/ownerInstructions'
+import type { CronEffort } from './efforts'
 import {
   AGENT_PICKED_ON_FIRST_OPEN,
   agentManifest,
   ofEachAgent,
-  type AgentId
+  type AgentId,
+  type AgentSettingValues
 } from '@core/agent/registry'
 
 export interface ProjectInfo {
@@ -347,7 +349,6 @@ export interface AppSettings {
   sidebarHidden: boolean
   skipPermissions: boolean
   skipPermissionsAgreed: boolean
-  fablePriority: boolean
   accounts: AccountMeta[]
   notifyTurnDone: boolean
   notifyApproval: boolean
@@ -377,7 +378,7 @@ export interface AppSettings {
   everyWorkspaceInstructions: InstructionsVersion[]
 }
 
-export type Settings = AppSettings & PluginSettingValues
+export type Settings = AppSettings & AgentSettingValues & PluginSettingValues
 
 export interface OwnPick {
   model?: string
@@ -465,7 +466,6 @@ export const APP_DEFAULT_SETTINGS: AppSettings = {
   sidebarHidden: false,
   skipPermissions: true,
   skipPermissionsAgreed: false,
-  fablePriority: true,
   accounts: [],
   notifyTurnDone: true,
   notifyApproval: true,
@@ -1310,12 +1310,7 @@ export type Schedule =
   | { kind: 'after'; n: number; unit: 'minutes' | 'hours' }
 
 export type CronPermission = 'same' | 'acceptEdits' | 'skipAll'
-// CC§9
-export const CRON_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
-export type CronEffort = (typeof CRON_EFFORTS)[number]
-export function isCronEffort(v: unknown): v is CronEffort {
-  return (CRON_EFFORTS as readonly unknown[]).includes(v)
-}
+export { CRON_EFFORTS, isCronEffort, type CronEffort } from './efforts'
 
 export interface CronJob {
   id: string

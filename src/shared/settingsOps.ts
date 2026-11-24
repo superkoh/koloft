@@ -11,6 +11,7 @@ import { backendIdOf, normalizeSessionMethods } from './sessionBackend'
 import { sanitizeSessionDefaults } from './sessionDefaults'
 import { stringsIn, textsIn } from './workbenchState'
 import { registerSettings } from '@core/settings'
+import { AGENT_SETTING_DEFAULTS, AGENT_SETTINGS_KEPT_ON_RESET } from '@core/agent/registry'
 import { cleanVersions } from '@core/ownerInstructions'
 import { cleanSwitches } from '@core/switches'
 import { HINT_IDS } from '@core/hints'
@@ -21,6 +22,7 @@ const PLUGIN_KEYS = registerSettings(PLUGINS, PLUGIN_SETTINGS)
 
 export const DEFAULT_SETTINGS: Settings = {
   ...APP_DEFAULT_SETTINGS,
+  ...AGENT_SETTING_DEFAULTS,
   ...(PLUGIN_KEYS.defaults as PluginSettingValues)
 }
 
@@ -28,7 +30,6 @@ const APP_KEPT_ON_RESET: readonly (keyof AppSettings)[] = [
   'accounts',
   'skipPermissions',
   'skipPermissionsAgreed',
-  'fablePriority',
   'sessionMethods',
   'assist',
   'newProjectFolders',
@@ -50,7 +51,11 @@ const APP_WRITTEN_BY_MAIN_ONLY: readonly (keyof AppSettings)[] = [
   'everyWorkspaceInstructions'
 ]
 
-const KEPT_ON_RESET = [...APP_KEPT_ON_RESET, ...PLUGIN_KEYS.keptOnReset]
+const KEPT_ON_RESET = [
+  ...APP_KEPT_ON_RESET,
+  ...AGENT_SETTINGS_KEPT_ON_RESET,
+  ...PLUGIN_KEYS.keptOnReset
+]
 const WRITTEN_BY_MAIN_ONLY = [...APP_WRITTEN_BY_MAIN_ONLY, ...PLUGIN_KEYS.writtenByMainOnly]
 const RETIRED_KEYS = ['lastSeenVersion', 'showUsage', ...PLUGIN_KEYS.retired]
 

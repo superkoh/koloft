@@ -1,4 +1,5 @@
 import type { AgentManifest } from '@core/agent/manifest'
+import { CRON_EFFORTS } from '@shared/efforts'
 import { SLOT_ADDITIONS, SLOT_FILLS } from './prompts/text'
 
 export const agent = {
@@ -37,6 +38,19 @@ export const agent = {
     internalNameEndings: [],
     foldersMadeEmptyAhead: []
   },
+  // CC§9
+  modelEveryAccountTakes: 'haiku',
+  namedModels: [
+    { id: 'fable', label: 'Fable' },
+    { id: 'opus', label: 'Opus' },
+    { id: 'sonnet', label: 'Sonnet' }
+  ],
+  picksByTaskTier: {
+    'very simple': { model: 'sonnet', effort: 'low' },
+    normal: { model: 'opus', effort: 'medium' },
+    'very hard': { model: 'fable', effort: 'high' }
+  },
+  ownSettings: { fablePriority: { default: true, keptOnReset: true } },
   slotFills: SLOT_FILLS,
   slotAdditions: SLOT_ADDITIONS,
   flags: {
@@ -51,5 +65,6 @@ export const agent = {
     runsCommandsInASandboxWhereSudoCannotStart: false,
     // CC§14
     questionToolTakesNoOptionDescriptions: false
-  }
+  },
+  pureFunctions: { effortsAModelTakes: () => CRON_EFFORTS }
 } as const satisfies AgentManifest

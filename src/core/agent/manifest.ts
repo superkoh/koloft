@@ -1,4 +1,7 @@
 // ADR-0054
+import type { CronEffort } from '@shared/efforts'
+import type { SettingKey } from '../settings'
+
 export interface AgentWords {
   anyCase: readonly string[]
   wholeWord: readonly string[]
@@ -11,6 +14,22 @@ export interface AtTopOfSessionFolder {
   foldersMadeEmptyAhead: readonly string[]
 }
 
+export interface NamedModel {
+  id: string
+  label: string
+  notOnEveryAccount?: true
+}
+
+export const TASK_TIERS = ['very simple', 'normal', 'very hard'] as const
+export type TaskTier = (typeof TASK_TIERS)[number]
+
+export interface ModelPick {
+  model: string
+  effort: CronEffort
+}
+
+export type OwnSetting = Pick<SettingKey<boolean>, 'default' | 'keptOnReset'>
+
 export interface AgentFlags {
   resumeCanWaitOnAQuestionBeforeAnySign: boolean
   conversationStartsAtFirstPrompt: boolean
@@ -19,6 +38,10 @@ export interface AgentFlags {
   commandsItRunsCanHaveATerminalOfTheirOwn: boolean
   runsCommandsInASandboxWhereSudoCannotStart: boolean
   questionToolTakesNoOptionDescriptions: boolean
+}
+
+export interface AgentPureFunctions {
+  effortsAModelTakes(model: string | undefined): readonly CronEffort[]
 }
 
 export interface AgentManifest {
@@ -33,7 +56,13 @@ export interface AgentManifest {
   trustQuestion: string
   ownLogFolderNames: readonly string[]
   atTopOfSessionFolder: AtTopOfSessionFolder
+  modelEveryAccountTakes?: string
+  normalTaskFamilyEveryAccountHas?: string
+  namedModels: readonly NamedModel[]
+  picksByTaskTier: Readonly<Record<TaskTier, ModelPick>>
+  ownSettings: Readonly<Record<string, OwnSetting>>
   slotFills: Readonly<Record<string, string>>
   slotAdditions: Readonly<Record<string, string>>
   flags: AgentFlags
+  pureFunctions: AgentPureFunctions
 }
