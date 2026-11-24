@@ -41,13 +41,13 @@ const ALWAYS_THERE: Record<string, string> = {
 function fixtureRepo(
   files: Record<string, string>,
   baseline?: Baseline,
-  wordLines?: Record<string, string[]>
+  words?: { lines: Record<string, string[]>; awaitingMove: Record<string, string> }
 ): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-agent-imports-'))
   createdDirs.push(dir)
   const all: Record<string, string> = { ...ALWAYS_THERE, ...files }
   if (baseline) all[BASELINE] = JSON.stringify(baseline)
-  if (wordLines) all[WORDS_BASELINE] = JSON.stringify({ lines: wordLines })
+  if (words) all[WORDS_BASELINE] = JSON.stringify(words)
   for (const [rel, text] of Object.entries(all)) {
     fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true })
     fs.writeFileSync(path.join(dir, rel), text)
@@ -72,6 +72,14 @@ function check(
 
 const readBaseline = (dir: string): Required<Baseline> =>
   JSON.parse(fs.readFileSync(path.join(dir, BASELINE), 'utf8'))
+
+const A_PLUGIN_BEHIND_THE_LIST_AND_SHARED_CODE_THAT_IMPORTS_IT = {
+  'src/plugins/list.ts': "import { plugin } from './p/plugin'\nexport const PLUGINS = [plugin]\n",
+  'src/plugins/p/plugin.ts':
+    "import { FIRST } from '@core/agent/registry'\nexport const plugin = [FIRST]\n",
+  'src/plugins/p/shared/types.ts': 'export type T = 1\n',
+  'src/shared/keys.ts': "import type { T } from '@plugins/p/shared/types'\nexport const key = 1\n"
+}
 
 describe('check-agent-imports: who may import whom around src/agents', () => {
   it('lets the lists import the agents, an agent import core, shared, kit, its own folder and a main-process module that names no agent, and common code import the lists', () => {
@@ -111,13 +119,7 @@ describe('check-agent-imports: who may import whom around src/agents', () => {
         "import { FIRST } from '@core/agent/registry'"
       ),
       'src/renderer/src/App.tsx': "import { U } from '@agents/uis'\n",
-      'src/plugins/list.ts':
-        "import { plugin } from './p/plugin'\nexport const PLUGINS = [plugin]\n",
-      'src/plugins/p/plugin.ts':
-        "import { FIRST } from '@core/agent/registry'\nexport const plugin = FIRST\n",
-      'src/plugins/p/shared/types.ts': 'export type T = 1\n',
-      'src/shared/keys.ts':
-        "import type { T } from '@plugins/p/shared/types'\nexport const key = 1\n",
+      ...A_PLUGIN_BEHIND_THE_LIST_AND_SHARED_CODE_THAT_IMPORTS_IT,
       'src/core/ui.ts': 'export const Row = 1\n',
       'src/core/agent/manifest.ts': 'export interface Manifest {\n  id: string\n}\n'
     })
@@ -157,6 +159,7 @@ describe('check-agent-imports: who may import whom around src/agents', () => {
       'src/agents/beta/renderer/ui.tsx':
         "import { store } from '@agents/kit/main/store'\nexport const ui = [store]\n",
       'src/agents/beta/main/y.ts': 'export const y = 1\n',
+      'src/agents/beta/prompts/text.ts': "import { t } from '../../../main/terminal'\n",
       'src/agents/starts.ts': 'export const S = []\n',
       'src/main/terminal.ts': 'export const t = 1\n',
       'src/renderer/src/components/Row.tsx': 'export const Row = 1\n',
@@ -170,9 +173,10 @@ describe('check-agent-imports: who may import whom around src/agents', () => {
       'src/agents/alpha/main/x.ts [agent-into-list] src/agents/list.ts',
       'src/agents/alpha/main/x.ts [agent-into-plugin] src/plugins/p/api.ts',
       'src/agents/alpha/main/x.ts [agent-into-window] src/renderer/src/components/Row.tsx',
-      'src/agents/beta/agent.ts [window-safe-into-main] src/agents/beta/main/y.ts',
-      'src/agents/beta/renderer/ui.tsx [window-safe-into-main] src/agents/kit/main/store.ts',
-      'src/agents/beta/shared/b.ts [window-safe-into-main] src/main/terminal.ts',
+      'src/agents/beta/agent.ts [outside-main-into-main] src/agents/beta/main/y.ts',
+      'src/agents/beta/prompts/text.ts [outside-main-into-main] src/main/terminal.ts',
+      'src/agents/beta/renderer/ui.tsx [outside-main-into-main] src/agents/kit/main/store.ts',
+      'src/agents/beta/shared/b.ts [outside-main-into-main] src/main/terminal.ts',
       'src/agents/kit/main/store.ts [agent-into-agent] src/agents/alpha/main/x.ts',
       'src/agents/kit/main/store.ts [agent-into-list] src/agents/starts.ts',
       'src/agents/kit/main/store.ts [agent-into-plugin] src/plugins/list.ts',
@@ -181,17 +185,17 @@ describe('check-agent-imports: who may import whom around src/agents', () => {
       'src/main/m.ts [common-into-agent] src/agents/alpha/main/x.ts',
       'src/plugins/p/main/a.ts [plugin-into-agent] src/agents/alpha/main/x.ts',
       'src/plugins/p/main/k.ts [outside-into-kit] src/agents/kit/main/store.ts',
-      'src/plugins/uis.ts [common-into-agent] src/agents/beta/renderer/ui.tsx',
+      'src/plugins/uis.ts [plugin-into-agent] src/agents/beta/renderer/ui.tsx',
       'src/preload/p.ts [common-into-agent] src/agents/alpha/agent.ts',
       'src/renderer/src/r.tsx [common-into-agent] src/agents/beta/shared/b.ts',
       'src/shared/s.ts [common-into-agent] src/agents/alpha/main/x.ts'
     ])
-    expect(r.out).toContain('[plugin-into-agent] A plugin never imports an agent’s folder')
+    expect(r.out).toContain('[plugin-into-agent] Nothing under src/plugins imports an agent’s')
     expect(r.out).toContain('src/agents/<id>/')
     expect(r.out).toContain('npm run check:agent-imports -- --accept-new <step>')
   })
 
-  it('fails when a manifest loads, at run time, a file that loads the list of agents, straight or through its own shared file, and lets a type-only import through', () => {
+  it('fails when a manifest loads, at run time, a file that loads the list of agents, straight or through its own shared file, and lets a type-only import or re-export through', () => {
     const dir = fixtureRepo({
       'src/agents/alpha/agent.ts': lines(
         "import type { Kind } from '@shared/types'",
@@ -208,8 +212,11 @@ describe('check-agent-imports: who may import whom around src/agents', () => {
       ),
       'src/agents/alpha/shared/label.ts':
         "import { DEFAULT } from '@shared/types'\nexport const label = DEFAULT\n",
-      'src/agents/alpha/shared/own.ts':
-        "import type { Kind } from '@shared/types'\nexport const own = 1\n"
+      'src/agents/alpha/shared/own.ts': lines(
+        "import type { Kind } from '@shared/types'",
+        "export { type Other } from '@shared/types'",
+        'export const own = 1'
+      )
     })
     const r = check(dir)
     expect(r.crossings).toEqual([
@@ -221,7 +228,7 @@ describe('check-agent-imports: who may import whom around src/agents', () => {
     )
   })
 
-  it('fails when an agent’s main imports a main-process module that names an agent, or whose imports lead to a plugin or to another agent’s folder, and says which', () => {
+  it('fails when an agent’s main imports a main-process module that names an agent, is an agent’s file not moved yet, or leads through src/main to a plugin’s folder or to another agent’s folder, and says which', () => {
     const dir = fixtureRepo(
       {
         'src/agents/alpha/main/x.ts': lines(
@@ -229,8 +236,10 @@ describe('check-agent-imports: who may import whom around src/agents', () => {
           "import { neutral } from '../../../main/neutral'",
           "import { toPlugin } from '../../../main/toPlugin'",
           "import { toBeta } from '../../../main/toBeta'",
+          "import { old } from '../../../main/betaOld'",
           'export const x = 1'
         ),
+        'src/main/betaOld.ts': 'export const old = 1\n',
         'src/agents/beta/main/b.ts':
           "import { toBeta } from '../../../main/toBeta'\nexport const b = 1\n",
         'src/agents/kit/main/store.ts':
@@ -247,29 +256,29 @@ describe('check-agent-imports: who may import whom around src/agents', () => {
           "import { usesBeta } from './usesBeta'\nexport const toBeta = [usesBeta]\n",
         'src/main/usesBeta.ts':
           "import { b } from '@agents/beta/main/b'\nexport const usesBeta = [b]\n",
-        'src/plugins/list.ts':
-          "import { plugin } from './p/plugin'\nexport const PLUGINS = [plugin]\n",
-        'src/plugins/p/plugin.ts': 'export const plugin = 1\n',
-        'src/plugins/p/api.ts': 'export const api = 1\n',
-        'src/plugins/p/shared/types.ts': 'export type T = 1\n',
-        'src/shared/keys.ts':
-          "import type { T } from '@plugins/p/shared/types'\nexport const key = 1\n"
+        ...A_PLUGIN_BEHIND_THE_LIST_AND_SHARED_CODE_THAT_IMPORTS_IT,
+        'src/plugins/p/api.ts': 'export const api = 1\n'
       },
       {
         imports: {
           'common-into-agent': { 'src/main/usesBeta.ts': { 'src/agents/beta/main/b.ts': 'C1' } }
         }
       },
-      { 'src/main/named.ts': ['const alphaHome = 1'] }
+      {
+        lines: { 'src/main/named.ts': ['const alphaHome = 1'] },
+        awaitingMove: { 'src/main/betaOld.ts': 'beta' }
+      }
     )
     const r = check(dir)
     expect(r.crossings).toEqual([
+      'src/agents/alpha/main/x.ts [agent-main-into-mixed-main] src/main/betaOld.ts',
       'src/agents/alpha/main/x.ts [agent-main-into-mixed-main] src/main/named.ts',
       'src/agents/alpha/main/x.ts [agent-main-into-mixed-main] src/main/toBeta.ts',
       'src/agents/alpha/main/x.ts [agent-main-into-mixed-main] src/main/toPlugin.ts',
       'src/agents/kit/main/store.ts [agent-main-into-mixed-main] src/main/toBeta.ts'
     ])
     expect(r.out).toContain('it names an agent on 1 lines')
+    expect(r.out).toContain('it is an agent’s own file, not moved yet')
     expect(r.out).toContain(
       'it leads to src/main/toPlugin.ts → src/main/deep.ts → src/plugins/p/api.ts'
     )
@@ -278,7 +287,7 @@ describe('check-agent-imports: who may import whom around src/agents', () => {
     )
   })
 
-  it('counts an import where the name is really declared: passed on under another name, by a re-export, a re-exported import, a constant, `export *`, or taken whole', () => {
+  it('counts an import where the name is really declared: passed on under another name, by a re-export, a re-exported import, a constant, a local name, `export default`, `export *`, or taken whole; and not a name the passing file declares itself', () => {
     const dir = fixtureRepo(
       {
         'src/agents/alpha/main/x.ts': 'export const x = 1\nexport const other = 2\n',
@@ -286,18 +295,26 @@ describe('check-agent-imports: who may import whom around src/agents', () => {
           "export { x as renamed } from '@agents/alpha/main/x'",
           "import { other } from '@agents/alpha/main/x'",
           'export const alias = other',
+          'export const cast = other as number',
+          'const local = other',
+          'export { local as viaLocal }',
           'export { other as again }',
+          'export default other',
           'export const mine = 1'
         ),
-        'src/core/star.ts': "export * from './pass'\n",
+        'src/core/star.ts': "export * from './pass'\nexport const own = 1\n",
         'src/plugins/p/main/named.ts': "import { renamed as r } from '@core/pass'\n",
         'src/plugins/p/main/alias.ts': "import { alias } from '@core/pass'\n",
+        'src/plugins/p/main/cast.ts': "import { cast } from '@core/pass'\n",
+        'src/plugins/p/main/viaLocal.ts': "import { viaLocal } from '@core/pass'\n",
+        'src/plugins/p/main/byDefault.ts': "import other from '@core/pass'\n",
         'src/plugins/p/main/again.ts': "import { again } from '@core/star'\n",
         'src/plugins/p/main/whole.ts': "import * as all from '@core/pass'\n",
         'src/plugins/p/main/lazy.ts': "const all = import('@core/pass')\n",
         'src/plugins/p/main/typed.ts': "type R = import('@core/pass').renamed\n",
         'src/plugins/p/main/mine.ts': "import { mine } from '@core/pass'\n",
         'src/plugins/p/main/starMine.ts': "import { mine } from '@core/star'\n",
+        'src/plugins/p/main/starOwn.ts': "import { own } from '@core/star'\n",
         'src/main/first.ts': "import { FIRST } from '@core/agent/registry'\n"
       },
       {
@@ -311,10 +328,25 @@ describe('check-agent-imports: who may import whom around src/agents', () => {
       `src/plugins/p/main/${file}.ts [plugin-into-agent] src/agents/alpha/main/x.ts`
     expect(r.crossings).toEqual([
       'src/core/star.ts [common-into-agent] src/agents/alpha/main/x.ts',
-      ...['again', 'alias', 'lazy', 'named', 'typed', 'whole'].map(through)
+      ...['again', 'alias', 'byDefault', 'cast', 'lazy', 'named', 'typed', 'viaLocal', 'whole'].map(
+        through
+      )
     ])
     expect(r.out).toContain('passed on by src/core/pass.ts')
     expect(r.out).toContain('passed on by src/core/star.ts')
+  })
+
+  it('counts both the file an import names and the file the name is declared in, even under the same rule', () => {
+    const dir = fixtureRepo({
+      'src/agents/alpha/main/relay.ts': "export { b } from '../../beta/main/b'\n",
+      'src/agents/beta/main/b.ts': 'export const b = 1\n',
+      'src/plugins/p/main/two.ts': "import { b } from '@agents/alpha/main/relay'\n"
+    })
+    expect(check(dir).crossings).toEqual([
+      'src/agents/alpha/main/relay.ts [agent-into-agent] src/agents/beta/main/b.ts',
+      'src/plugins/p/main/two.ts [plugin-into-agent] src/agents/alpha/main/relay.ts',
+      'src/plugins/p/main/two.ts [plugin-into-agent] src/agents/beta/main/b.ts'
+    ])
   })
 })
 
@@ -337,12 +369,14 @@ describe('check-agent-imports: the baseline only shrinks', () => {
     expect(r.out).toContain('by the step that removes them: C4 1')
   })
 
+  const movedToAnotherFile = {
+    ...crossing,
+    'src/main/a.ts': '',
+    'src/main/b.ts': crossing['src/main/a.ts']
+  }
+
   it('fails when one crossing is removed and another added: one cannot pay for the other', () => {
-    const dir = fixtureRepo(
-      { ...crossing, 'src/main/a.ts': '', 'src/main/b.ts': crossing['src/main/a.ts'] },
-      recorded
-    )
-    const r = check(dir)
+    const r = check(fixtureRepo(movedToAnotherFile, recorded))
     expect(r.code).toBe(1)
     expect(r.crossings).toEqual(['src/main/b.ts [common-into-agent] src/agents/alpha/main/x.ts'])
     expect(r.out).toContain(
@@ -351,10 +385,7 @@ describe('check-agent-imports: the baseline only shrinks', () => {
   })
 
   it('fails on a baseline entry the code no longer has, and --prune drops it without taking in new ones', () => {
-    const dir = fixtureRepo(
-      { ...crossing, 'src/main/a.ts': '', 'src/main/b.ts': crossing['src/main/a.ts'] },
-      recorded
-    )
+    const dir = fixtureRepo(movedToAnotherFile, recorded)
     const pruned = check(dir, '--prune')
     expect(pruned.code).toBe(1)
     expect(pruned.crossings).toHaveLength(1)
@@ -399,11 +430,13 @@ describe('check-agent-imports: no optional method on the run-time interfaces', (
       '  recovers?: true',
       '  answer?(tabId: string): void',
       '  deliver?: (tabId: string) => boolean',
+      '  onExit?: ((code: number) => void) | undefined',
       '}',
       'export type Accounts = {',
       '  probe?(): void',
       '  name?: string',
       '}',
+      'export type Remote = Accounts & { stopAll?(): void }',
       'export class Runtime {',
       '  activeTab?: () => string',
       '}'
@@ -420,27 +453,31 @@ describe('check-agent-imports: no optional method on the run-time interfaces', (
       'src/core/agent/sessions.ts': {
         'Sessions.answer': 'C1',
         'Sessions.deliver': 'C2',
-        'Accounts.probe': 'C4'
+        'Sessions.onExit': 'C1',
+        'Accounts.probe': 'C4',
+        'Remote.stopAll': 'C10'
       },
       'src/agents/kit/main/stored.ts': { 'Stored.follow': 'B3' }
     }
   }
 
-  it('fails on an optional method of an interface or object type in src/core/agent and src/agents/kit/main, written as a method or as a function-typed field, and lets optional data fields, the manifest type and other folders through', () => {
+  it('fails on an optional method of an interface or object type in src/core/agent and src/agents/kit/main, written as a method, as a function-typed field, with `| undefined`, or inside an intersection, and lets optional data fields, class fields, the manifest type and other folders through', () => {
     const r = check(fixtureRepo(interfaces, {}))
     expect(r.code).toBe(1)
     expect([...r.out.matchAll(/^ {2}(src\/\S+):\d+ {2}(\w+\.\w+)$/gm)].map((m) => m[2])).toEqual([
       'Stored.follow',
       'Sessions.answer',
       'Sessions.deliver',
-      'Accounts.probe'
+      'Sessions.onExit',
+      'Accounts.probe',
+      'Remote.stopAll'
     ])
     expect(r.out).toContain('is never optional')
   })
 
   it('passes when each one is in the baseline with its step, and fails on one more', () => {
     expect(check(fixtureRepo(interfaces, recorded)).out).toContain(
-      'optional methods on the run-time interfaces: 4 (B3 1, C1 1, C2 1, C4 1)'
+      'optional methods on the run-time interfaces: 6 (B3 1, C1 2, C2 1, C4 1, C10 1)'
     )
     const more = check(
       fixtureRepo(
@@ -495,10 +532,20 @@ describe('check-agent-imports: no new use of messagingOf outside the agents’ f
     expect(readBaseline(dir).messagingOf).toEqual({})
   })
 
-  it('knows it under another name, passed on by another file, and as a member of a whole-module import', () => {
+  it('knows it under another name, behind a local name, passed on by another file, and as a member of a whole-module import, and counts kit as common code', () => {
     const r = check(
       fixtureRepo(
         {
+          'src/agents/kit/main/send.ts': lines(
+            "import { messagingOf } from '@shared/sessionBackend'",
+            'export const route = messagingOf()'
+          ),
+          'src/main/local.ts': lines(
+            "import { messagingOf } from '@shared/sessionBackend'",
+            'const how = messagingOf',
+            'how()',
+            'how()'
+          ),
           'src/main/renamed.ts': lines(
             "import { messagingOf as howItSends } from '@shared/sessionBackend'",
             'howItSends()'
@@ -525,7 +572,9 @@ describe('check-agent-imports: no new use of messagingOf outside the agents’ f
     expect(
       [...r.out.matchAll(/^ {2}(src\/\S+) {2}(\d+) now/gm)].map((m) => `${m[1]} ${m[2]}`)
     ).toEqual([
+      'src/agents/kit/main/send.ts 1',
       'src/core/pass.ts 2',
+      'src/main/local.ts 3',
       'src/main/passed.ts 2',
       'src/main/renamed.ts 1',
       'src/renderer/src/whole.ts 1'

@@ -3,6 +3,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import * as prettier from 'prettier'
 import {
+  AGENTS_DIR,
+  LISTS_OF_AGENTS,
   importedPath,
   importedSpecifierOf,
   parseSource,
@@ -13,48 +15,49 @@ import {
 const ROOT = process.cwd()
 const BASELINE = 'scripts/agent-imports-baseline.json'
 const WORDS_BASELINE = 'scripts/agent-words-baseline.json'
+const EMPTY_BASELINE = { imports: {}, optionalMethods: {}, messagingOf: {} }
 const SOURCE_FILE = /\.(?:[cm]?[jt]s|[jt]sx)$/
 const ENDINGS_TRIED = ['', '.ts', '.tsx', '/index.ts', '/index.tsx']
-const AGENTS_DIR = 'src/agents/'
 const KIT = 'kit'
-const LISTS_OF_AGENTS = new Set(['src/agents/list.ts', 'src/agents/starts.ts', 'src/agents/uis.ts'])
+const LIST_NAMES = [...LISTS_OF_AGENTS].map((f) => path.basename(f)).join(', ')
 const MANIFEST_TYPES = 'src/core/agent/manifest.ts'
 const MESSAGING = { file: 'src/shared/sessionBackend.ts', name: 'messagingOf' }
 const EVERY_NAME = '*'
 const CANNOT_RUN = 2
 const RULES = {
   'plugin-into-agent':
-    'A plugin never imports an agent’s folder. It calls the interface in src/core/agent.',
+    'Nothing under src/plugins imports an agent’s folder. A plugin calls the interface in ' +
+    'src/core/agent.',
   'common-into-agent':
     'Outside src/agents nothing imports an agent’s folder; only the lists in src/agents do ' +
-    '(list.ts, starts.ts, uis.ts). Read agents through src/core/agent/registry.ts.',
+    `(${LIST_NAMES}). Read agents through src/core/agent/registry.ts.`,
   'outside-into-kit':
     'src/agents/kit holds parts that agents share. Common code and plugins never import it.',
   'agent-into-plugin':
     'An agent’s folder (kit too) never imports a plugin. It uses what Koloft hands it.',
-  'agent-into-list':
-    'An agent’s folder (kit too) never imports a list of agents (list.ts, starts.ts, uis.ts).',
+  'agent-into-list': `An agent’s folder (kit too) never imports a list of agents (${LIST_NAMES}).`,
   'agent-into-agent':
     'An agent’s folder never imports another agent’s folder, and kit imports no agent’s. ' +
     'What several agents share goes in src/agents/kit or src/core.',
   'agent-into-window': 'An agent’s folder (kit too) never imports src/renderer or src/preload.',
-  'window-safe-into-main':
-    'A manifest (agent.ts), a shared/ file and a renderer/ file run in the window too: they ' +
-    'never import main-process code (src/main, or the main/ of an agent or of kit).',
+  'outside-main-into-main':
+    'In an agent’s folder (and in kit) only main/ imports main-process code (src/main, or a ' +
+    'main/ folder). Its agent.ts, shared/, renderer/ and anything else there never do: the ' +
+    'window loads them too.',
   'manifest-loads-list':
     'A manifest (agent.ts) never loads, at run time, a file that loads the list of agents: ' +
     'the list imports the manifest, so the two would wait on each other. Use `import type`.',
   'agent-main-into-mixed-main':
     'An agent’s main/ (kit’s too) imports a src/main module only when that module names no ' +
-    `agent (no line of its own in ${WORDS_BASELINE}) and its imports lead to no plugin and ` +
-    'to no other agent’s folder.'
+    `agent (no line of its own in ${WORDS_BASELINE}) and no chain of src/main modules from ` +
+    'it imports a plugin’s folder or another agent’s folder.'
 }
 
 const byCodeUnit = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
 const flag = (name) => process.argv.includes(name)
 const PRUNE = flag('--prune')
 const ACCEPT_NEW = flag('--accept-new')
-const STEP_FOR_NEW = process.argv[process.argv.indexOf('--accept-new') + 1]
+const STEP_FOR_NEW = ACCEPT_NEW ? process.argv[process.argv.indexOf('--accept-new') + 1] : undefined
 
 const importKey = (c) => [c.rule, c.from, c.to].join('\n')
 const methodKey = (m) => [m.file, m.name].join('\n')
@@ -90,26 +93,50 @@ function nameOf(node) {
   return node.type === 'Identifier' ? node.name : node.value
 }
 
+function withoutCasts(node) {
+  let inner = node
+  while (inner && /^TS(As|Satisfies|NonNull)Expression$/.test(inner.type)) inner = inner.expression
+  return inner
+}
+
 function readModule(file, resolve) {
   const program = parseSource(ROOT, file)
   const edges = []
   const bound = new Map()
+  const sameAs = new Map()
   const passedOn = new Map()
   const everythingFrom = []
   const exportedLocals = []
+  const ownNames = new Set(['default'])
   const edge = (node, spec, names, typeOnly) => {
     const to = resolve(file, spec)
     if (to && to !== file) edges.push({ to, line: node.loc.start.line, names, typeOnly })
     return to
   }
+  const everyOneIsAType = (specifiers, kind) =>
+    specifiers.length > 0 && specifiers.every((s) => s[kind] === 'type')
+  for (const statement of program.body) {
+    const declaration =
+      statement.type === 'ExportNamedDeclaration' ? statement.declaration : statement
+    for (const d of declaration?.declarations ?? []) {
+      const init = withoutCasts(d.init)
+      if (d.id.type === 'Identifier' && init?.type === 'Identifier')
+        sameAs.set(d.id.name, init.name)
+    }
+  }
   walk(program, (node) => {
+    if (node.type === 'ExportDefaultDeclaration') {
+      const exported = withoutCasts(node.declaration)
+      if (exported.type === 'Identifier')
+        exportedLocals.push({ local: exported.name, exported: 'default' })
+    }
     const spec = importedSpecifierOf(node)
     if (node.type === 'ExportNamedDeclaration' && spec === undefined) {
       for (const s of node.specifiers)
         exportedLocals.push({ local: nameOf(s.local), exported: nameOf(s.exported) })
-      for (const d of node.declaration?.declarations ?? [])
-        if (d.id.type === 'Identifier' && d.init?.type === 'Identifier')
-          exportedLocals.push({ local: d.init.name, exported: d.id.name })
+      const declared = node.declaration?.declarations?.map((d) => d.id) ?? [node.declaration?.id]
+      for (const id of declared)
+        if (id?.type === 'Identifier') exportedLocals.push({ local: id.name, exported: id.name })
       return
     }
     if (spec === undefined) return
@@ -121,16 +148,15 @@ function readModule(file, resolve) {
             ? 'default'
             : EVERY_NAME
       )
-      const typeOnly =
-        node.importKind === 'type' ||
-        (node.specifiers.length > 0 && node.specifiers.every((s) => s.importKind === 'type'))
+      const typeOnly = node.importKind === 'type' || everyOneIsAType(node.specifiers, 'importKind')
       const to = edge(node, spec, names, typeOnly)
       if (to) node.specifiers.forEach((s, i) => bound.set(s.local.name, { to, name: names[i] }))
     } else if (node.type === 'ExportNamedDeclaration') {
       const names = node.specifiers.map((s) =>
         s.type === 'ExportSpecifier' ? nameOf(s.local) : EVERY_NAME
       )
-      const to = edge(node, spec, names, node.exportKind === 'type')
+      const typeOnly = node.exportKind === 'type' || everyOneIsAType(node.specifiers, 'exportKind')
+      const to = edge(node, spec, names, typeOnly)
       if (to)
         node.specifiers.forEach((s, i) => passedOn.set(nameOf(s.exported), { to, name: names[i] }))
     } else if (node.type === 'ExportAllDeclaration') {
@@ -147,9 +173,22 @@ function readModule(file, resolve) {
       edge(node, spec, [EVERY_NAME], false)
     }
   })
-  for (const { local, exported } of exportedLocals)
-    if (bound.has(local)) passedOn.set(exported, bound.get(local))
-  return { program, edges, bound, passedOn, everythingFrom }
+  const importBehind = (local, seen = new Set()) => {
+    if (bound.has(local)) return bound.get(local)
+    if (seen.has(local) || !sameAs.has(local)) return undefined
+    return importBehind(sameAs.get(local), seen.add(local))
+  }
+  for (const { local, exported } of exportedLocals) {
+    const from = importBehind(local)
+    if (from) passedOn.set(exported, from)
+    else ownNames.add(exported)
+  }
+  const namesBoundToImports = new Map(
+    [...bound.keys(), ...sameAs.keys()]
+      .map((local) => [local, importBehind(local)])
+      .filter(([, from]) => from)
+  )
+  return { program, edges, namesBoundToImports, passedOn, everythingFrom, ownNames }
 }
 
 function loadModules(files) {
@@ -177,18 +216,19 @@ function declaredIn(modules, file, name, seen = new Set()) {
   seen.add(key)
   const mod = modules.get(file)
   if (!mod || LISTS_OF_AGENTS.has(file)) return [{ file, name }]
+  const throughStars = () => mod.everythingFrom.flatMap((f) => declaredIn(modules, f, name, seen))
   if (name === EVERY_NAME)
     return [
       { file, name },
       ...[...mod.passedOn.values()].flatMap((p) => declaredIn(modules, p.to, p.name, seen)),
-      ...mod.everythingFrom.flatMap((f) => declaredIn(modules, f, EVERY_NAME, seen))
+      ...throughStars()
     ]
   const passed = mod.passedOn.get(name)
   if (passed) return declaredIn(modules, passed.to, passed.name, seen)
-  return [{ file, name }, ...mod.everythingFrom.flatMap((f) => declaredIn(modules, f, name, seen))]
+  return mod.ownNames.has(name) ? [{ file, name }] : [{ file, name }, ...throughStars()]
 }
 
-function chainTo(modules, start, isGoal, follows, goesOnThrough = () => true) {
+function chainTo(modules, start, isGoal, follows) {
   const cameFrom = new Map([[start, undefined]])
   const queue = [start]
   while (queue.length > 0) {
@@ -201,47 +241,45 @@ function chainTo(modules, start, isGoal, follows, goesOnThrough = () => true) {
         for (let at = e.to; at !== undefined; at = cameFrom.get(at)) chain.unshift(at)
         return chain
       }
-      if (goesOnThrough(e.to)) queue.push(e.to)
+      queue.push(e.to)
     }
   }
   return undefined
 }
 
-function wordLinesByFile() {
+function wordsBaseline() {
   const file = path.join(ROOT, WORDS_BASELINE)
-  if (!fs.existsSync(file)) return {}
+  const empty = { lines: {}, awaitingMove: {} }
+  if (!fs.existsSync(file)) return empty
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8')).lines ?? {}
+    return { ...empty, ...JSON.parse(fs.readFileSync(file, 'utf8')) }
   } catch (e) {
     return cannotRun(`cannot read ${WORDS_BASELINE} (${e.message}); fix the file, then run again.`)
   }
 }
 
 function boundaryChecker(modules) {
-  const wordLines = wordLinesByFile()
+  const words = wordsBaseline()
+  const reasonMixed = (file, owner) => {
+    if (Object.hasOwn(words.awaitingMove, file)) return 'it is an agent’s own file, not moved yet'
+    const named = words.lines[file]?.length ?? 0
+    if (named > 0) return `it names an agent on ${named} lines`
+    const isAPluginOrAnotherAgent = (to) => {
+      const zone = zoneOf(to)
+      return !!zone && (zone.kind === 'plugin' || isForeignAgent(zone, owner))
+    }
+    const chain = chainTo(
+      modules,
+      file,
+      isAPluginOrAnotherAgent,
+      (e) => zoneOf(e.to)?.kind === 'main' || isAPluginOrAnotherAgent(e.to)
+    )
+    return chain && `it leads to ${chain.join(' → ')}`
+  }
   const mixed = new Map()
   const whyMixed = (file, owner) => {
     const key = `${file}\n${owner}`
-    if (!mixed.has(key)) {
-      const named = wordLines[file]?.length ?? 0
-      const chain =
-        named === 0 &&
-        chainTo(
-          modules,
-          file,
-          (to) => zoneOf(to).kind === 'plugin' || isForeignAgent(zoneOf(to), owner),
-          (e) => ['main', 'plugin', 'agent'].includes(zoneOf(e.to)?.kind),
-          (through) => zoneOf(through).kind === 'main'
-        )
-      mixed.set(
-        key,
-        named > 0
-          ? `it names an agent on ${named} lines`
-          : chain
-            ? `it leads to ${chain.join(' → ')}`
-            : undefined
-      )
-    }
+    if (!mixed.has(key)) mixed.set(key, reasonMixed(file, owner))
     return mixed.get(key)
   }
   return (fromFile, toFile) => {
@@ -251,14 +289,14 @@ function boundaryChecker(modules) {
     if (from.kind !== 'agent') {
       if (to.kind !== 'agent') return undefined
       if (to.owner === KIT) return { rule: 'outside-into-kit' }
-      return { rule: from.kind === 'plugin' ? 'plugin-into-agent' : 'common-into-agent' }
+      return { rule: isPluginCode(from) ? 'plugin-into-agent' : 'common-into-agent' }
     }
     if (isPluginCode(to)) return { rule: 'agent-into-plugin' }
     if (to.kind === 'list') return { rule: 'agent-into-list' }
     if (isForeignAgent(to, from.owner)) return { rule: 'agent-into-agent' }
     if (to.kind === 'window') return { rule: 'agent-into-window' }
     const intoMain = to.kind === 'main' || (to.kind === 'agent' && to.part === 'main')
-    if (intoMain && from.part !== 'main') return { rule: 'window-safe-into-main' }
+    if (intoMain && from.part !== 'main') return { rule: 'outside-main-into-main' }
     if (to.kind !== 'main') return undefined
     const why = whyMixed(toFile, from.owner)
     return why && { rule: 'agent-main-into-mixed-main', why }
@@ -281,7 +319,7 @@ function crossings(modules) {
       )
       for (const origin of declaredAt) {
         const passed = origin !== e.to && origin !== file && breach(file, origin)
-        if (passed && passed.rule !== direct?.rule)
+        if (passed)
           add(
             passed.rule,
             file,
@@ -310,6 +348,18 @@ const holdsRuntimeInterfaces = (file) =>
   (file.startsWith('src/core/agent/') && file !== MANIFEST_TYPES) ||
   file.startsWith(`${AGENTS_DIR}${KIT}/main/`)
 
+function objectTypesIn(type) {
+  if (type.type === 'TSTypeLiteral') return [type]
+  if (type.type === 'TSParenthesizedType') return objectTypesIn(type.typeAnnotation)
+  return /^TS(Union|Intersection)Type$/.test(type.type) ? type.types.flatMap(objectTypesIn) : []
+}
+
+function isAFunctionType(type) {
+  if (type.type === 'TSParenthesizedType') return isAFunctionType(type.typeAnnotation)
+  if (type.type === 'TSUnionType') return type.types.some(isAFunctionType)
+  return type.type === 'TSFunctionType'
+}
+
 function optionalMethods(modules) {
   const found = new Map()
   for (const [file, mod] of modules) {
@@ -318,14 +368,15 @@ function optionalMethods(modules) {
       const members =
         node.type === 'TSInterfaceDeclaration'
           ? node.body.body
-          : node.type === 'TSTypeAliasDeclaration' && node.typeAnnotation.type === 'TSTypeLiteral'
-            ? node.typeAnnotation.members
+          : node.type === 'TSTypeAliasDeclaration'
+            ? objectTypesIn(node.typeAnnotation).flatMap((o) => o.members)
             : []
       for (const m of members) {
         const isMethod =
           m.type === 'TSMethodSignature' ||
           (m.type === 'TSPropertySignature' &&
-            m.typeAnnotation?.typeAnnotation.type === 'TSFunctionType')
+            !!m.typeAnnotation &&
+            isAFunctionType(m.typeAnnotation.typeAnnotation))
         if (!m.optional || !isMethod || m.computed) continue
         const method = { file, name: `${node.id.name}.${nameOf(m.key)}`, line: m.loc.start.line }
         found.set(methodKey(method), method)
@@ -343,16 +394,19 @@ const isMessaging = (modules, file, name) =>
 function messagingReferences(modules) {
   const found = new Map()
   for (const [file, mod] of modules) {
-    if (zoneOf(file)?.kind === 'agent' || file === MESSAGING.file) continue
+    const zone = zoneOf(file)
+    if ((zone?.kind === 'agent' && zone.owner !== KIT) || file === MESSAGING.file) continue
     const names = new Set()
     const namespaces = new Map()
-    for (const [local, from] of mod.bound) {
+    for (const [local, from] of mod.namesBoundToImports) {
       if (from.name === EVERY_NAME) namespaces.set(local, from.to)
       else if (isMessaging(modules, from.to, from.name)) names.add(local)
     }
+    if (names.size === 0 && namespaces.size === 0 && mod.passedOn.size === 0) continue
     const notAUse = new Set()
     const lines = []
     walk(mod.program, (node) => {
+      if (node.type === 'VariableDeclarator') notAUse.add(node.id)
       if (node.type === 'ImportDeclaration')
         for (const s of node.specifiers) notAUse.add(s.local).add(s.imported)
       if (node.type === 'ExportSpecifier') notAUse.add(node.exported)
@@ -372,17 +426,16 @@ function messagingReferences(modules) {
       if (node.type === 'Identifier' && names.has(node.name) && !notAUse.has(node))
         lines.push(node.loc.start.line)
     })
-    if (lines.length > 0) found.set(file, { file, lines })
+    if (lines.length > 0) found.set(file, lines)
   }
   return found
 }
 
 function readBaseline() {
   const file = path.join(ROOT, BASELINE)
-  const empty = { imports: {}, optionalMethods: {}, messagingOf: {} }
-  if (!fs.existsSync(file)) return empty
+  if (!fs.existsSync(file)) return EMPTY_BASELINE
   try {
-    return { ...empty, ...JSON.parse(fs.readFileSync(file, 'utf8')) }
+    return { ...EMPTY_BASELINE, ...JSON.parse(fs.readFileSync(file, 'utf8')) }
   } catch (e) {
     return cannotRun(`cannot read ${BASELINE} (${e.message}); fix the file, then run again.`)
   }
@@ -393,7 +446,6 @@ function sortedDeep(value) {
   return Object.fromEntries(
     Object.entries(value)
       .map(([k, v]) => [k, sortedDeep(v)])
-      .filter(([, v]) => typeof v !== 'object' || Object.keys(v).length > 0)
       .sort(([a], [b]) => byCodeUnit(a, b))
   )
 }
@@ -401,8 +453,7 @@ function sortedDeep(value) {
 async function writeBaseline(baseline) {
   const file = path.join(ROOT, BASELINE)
   const options = (await prettier.resolveConfig(file)) ?? {}
-  const whole = { imports: {}, optionalMethods: {}, messagingOf: {}, ...sortedDeep(baseline) }
-  fs.mkdirSync(path.dirname(file), { recursive: true })
+  const whole = { ...EMPTY_BASELINE, ...sortedDeep(baseline) }
   fs.writeFileSync(
     file,
     await prettier.format(JSON.stringify(whole), { ...options, filepath: file })
@@ -432,15 +483,11 @@ function compare(baseline, now) {
   const recordedMethods = baselineMethods(baseline)
   const importKeys = new Set(recordedImports.map(importKey))
   const methodKeys = new Set(recordedMethods.map(methodKey))
-  const moreReferences = [...now.references.values()]
-    .map((r) => ({ ...r, allowed: baseline.messagingOf[r.file] ?? 0 }))
+  const moreReferences = [...now.references]
+    .map(([file, lines]) => ({ file, lines, allowed: baseline.messagingOf[file] ?? 0 }))
     .filter((r) => r.lines.length > r.allowed)
   const fewerReferences = Object.entries(baseline.messagingOf)
-    .map(([file, allowed]) => ({
-      file,
-      allowed,
-      left: now.references.get(file)?.lines.length ?? 0
-    }))
+    .map(([file, allowed]) => ({ file, allowed, left: now.references.get(file)?.length ?? 0 }))
     .filter((r) => r.left < r.allowed)
   return {
     newImports: [...now.imports].filter(([key]) => !importKeys.has(key)).map(([, c]) => c),
@@ -467,19 +514,19 @@ function rewritten(baseline, now, takeNewWithStep) {
     const step = stepOfImport.get(key) ?? takeNewWithStep
     if (step !== undefined) ((imports[c.rule] ??= {})[c.from] ??= {})[c.to] = step
   }
-  const optional = {}
+  const optionalMethods = {}
   const stepOfMethod = new Map(baselineMethods(baseline).map((b) => [methodKey(b), b.step]))
   for (const [key, m] of now.methods) {
     const step = stepOfMethod.get(key) ?? takeNewWithStep
-    if (step !== undefined) (optional[m.file] ??= {})[m.name] = step
+    if (step !== undefined) (optionalMethods[m.file] ??= {})[m.name] = step
   }
   const messagingOf = {}
-  for (const r of now.references.values()) {
-    const allowed = baseline.messagingOf[r.file] ?? 0
-    const count = takeNewWithStep !== undefined ? r.lines.length : Math.min(allowed, r.lines.length)
-    if (count > 0) messagingOf[r.file] = count
+  for (const [file, lines] of now.references) {
+    const allowed = baseline.messagingOf[file] ?? 0
+    const count = takeNewWithStep !== undefined ? lines.length : Math.min(allowed, lines.length)
+    if (count > 0) messagingOf[file] = count
   }
-  return { imports, optionalMethods: optional, messagingOf }
+  return { imports, optionalMethods, messagingOf }
 }
 
 function tally(values) {
@@ -524,8 +571,9 @@ const IMPORT_HELP = [
   ...IF_IT_MUST_STAY
 ]
 const METHOD_HELP = [
-  'A method of the run-time interfaces (src/core/agent, src/agents/kit/main) is never optional:',
-  'a caller must not pick one agent’s way by whether a method is there (issue #2410, Section 3).',
+  'A method of the run-time interfaces (src/core/agent but not manifest.ts, and',
+  'src/agents/kit/main) is never optional: a caller must not pick one agent’s way by whether a',
+  'method is there (issue #2410, Section 3).',
   'How to fix:',
   '- Make it required and let every agent answer it; an agent that cannot do it answers with a',
   '  reason code. Delete a method nobody fills. A field that is not a function may be optional.',
@@ -560,7 +608,7 @@ const now = {
 }
 let baseline = readBaseline()
 if (PRUNE || ACCEPT_NEW) {
-  await writeBaseline(rewritten(baseline, now, ACCEPT_NEW ? STEP_FOR_NEW : undefined))
+  await writeBaseline(rewritten(baseline, now, STEP_FOR_NEW))
   baseline = readBaseline()
 }
 const result = compare(baseline, now)
@@ -579,7 +627,7 @@ if (result.stepless.length > 0)
     ...STEPLESS_HELP
   )
 if (result.newImports.length > 0) {
-  const rules = [...new Set(result.newImports.map((c) => c.rule))].sort(byCodeUnit)
+  const rules = [...new Set(result.newImports.map((c) => c.rule))].sort()
   out.push(
     `check-agent-imports: ${result.newImports.length} new imports cross a boundary around src/agents (ADR-0054, issue #2410).`,
     ...result.newImports.map(

@@ -3,19 +3,13 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createJiti } from 'jiti'
 import * as prettier from 'prettier'
-import { ALIASES, sourceFilesUnder } from './source-imports.mjs'
+import { AGENTS_DIR, ALIASES, LISTS_OF_AGENTS, sourceFilesUnder } from './source-imports.mjs'
 
 const ROOT = process.cwd()
 const BASELINE = 'scripts/agent-words-baseline.json'
 const CHECKED_FILE = /\.([cm]?[jt]sx?|css)$/
 const STYLE_FILE = /\.css$/
-const AGENTS_DIR = 'src/agents/'
 const AGENT_LIST = 'src/agents/list.ts'
-const LISTS_THAT_MAY_NAME_AGENTS = new Set([
-  AGENT_LIST,
-  'src/agents/starts.ts',
-  'src/agents/uis.ts'
-])
 const MARKER = String.raw`(?:ADR-\d{4}|AGY§\d+|CC§\d+|CODEX§\d+|PLATFORM§\d+)`
 const MARKER_COMMENT = new RegExp(
   String.raw`\{?\s*\/\*\s*${MARKER}(?:\s+${MARKER})*\s*\*\/\s*\}?|\/\/\s*${MARKER}(?:\s+${MARKER})*\s*$`,
@@ -137,7 +131,7 @@ function compare(baseline, files, agents) {
   const current = {}
   const allowedUsed = new Set()
   for (const file of files) {
-    if (LISTS_THAT_MAY_NAME_AGENTS.has(file) || Object.hasOwn(baseline.awaitingMove, file)) continue
+    if (LISTS_OF_AGENTS.has(file) || Object.hasOwn(baseline.awaitingMove, file)) continue
     const text = fs.readFileSync(path.join(ROOT, file), 'utf8')
     const hits = hitsIn(file, text, agents, folderOf(file)).filter((h) => {
       const allow = baseline.allowed.find(

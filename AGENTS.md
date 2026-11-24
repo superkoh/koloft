@@ -115,23 +115,25 @@ Working principles:
   `npm run check:agent-imports` (CI and the before-push hook).
 
   ```
-  plugins, src/main, src/renderer,      ✗→ an agent's folder, src/agents/kit
+  src/plugins, src/main, src/renderer,  ✗→ an agent's folder, src/agents/kit
   src/shared, src/core, src/preload         (only src/agents/list.ts, starts.ts, uis.ts
                                              import an agent's folder)
   an agent's folder, and kit            ✗→ a plugin, a list of agents, another agent's
                                             folder, src/renderer, src/preload
-  its agent.ts, shared/, renderer/      ✗→ main-process code (src/main, any main/)
+  there, anything outside main/         ✗→ main-process code (src/main, any main/)
+  (agent.ts, shared/, renderer/ …)
   its agent.ts, at run time             ✗→ a file that loads the list (use `import type`)
-  its main/                             ✓→ a src/main module that names no agent and
-                                            whose imports lead to no plugin and to no
-                                            other agent's folder
+  its main/                             ✓→ a src/main module that names no agent, when
+                                            no chain of src/main modules from it imports
+                                            a plugin's folder or another agent's folder
   ```
 
-  An import counts where the name is really declared, so a re-export, another name,
-  `import type` or `import()` changes nothing. The same script fails on a new optional
-  method on the run-time interfaces (`src/core/agent`, `src/agents/kit/main`; a caller
-  never picks an agent's way by whether a method is there) and on a new use of
-  `messagingOf` outside the agents' folders. What exists today is in
+  An import counts both at the file it names and where the name is really declared, so
+  a re-export, another name, `import type` or `import()` changes nothing. The same
+  script fails on a new optional method on the run-time interfaces (`src/core/agent`
+  but not `manifest.ts`, and `src/agents/kit/main`; a caller never picks an agent's way
+  by whether a method is there) and on a new use of `messagingOf` outside the three
+  agents' own folders. The script's `RULES` table is the full wording. What exists today is in
   `scripts/agent-imports-baseline.json`, each entry with the step of issue #2410 that
   removes it; the baseline only shrinks. An entry that truly must be added gets its
   reason in the PR body (`npm run check:agent-imports -- --accept-new <step>`); removed

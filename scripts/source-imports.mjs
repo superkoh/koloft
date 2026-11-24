@@ -9,6 +9,12 @@ export const ALIASES = {
   '@agents': 'src/agents',
   '@renderer': 'src/renderer/src'
 }
+export const AGENTS_DIR = 'src/agents/'
+export const LISTS_OF_AGENTS = new Set([
+  'src/agents/list.ts',
+  'src/agents/starts.ts',
+  'src/agents/uis.ts'
+])
 
 export function sourceFilesUnder(root, sourceFile) {
   const src = path.join(root, 'src')
