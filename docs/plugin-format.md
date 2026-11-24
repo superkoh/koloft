@@ -977,7 +977,8 @@ export const start: PluginStart<
   calls. Sessions core's gives back `tookTheTurn`, which the butler's and the Inbox's deps read
   when a turn ends. It gives back four parts it builds first, as the app loads, because
   they hold each other: the `SessionRuntime` (the run state of every agent's tabs), the
-  `SessionTracker`, the `SessionBackends` and the `ClaudeBackend`.
+  `SessionBackends`, and two parts of Claude Code's that live in `src/agents/claude/main`,
+  its `SessionTracker` and its `ClaudeBackend`.
   The deps hand in the backends' `backendLifecycle` and the Claude backend's deps
   (`claude`, all but the tracker), and the functions set on the run state (`runtime`), on
   the tracker (`tracker`) and on
@@ -1089,8 +1090,9 @@ A plugin's main-process code is a set of parts. A part is a class or function in
 that holds its own state. It takes what it needs from the rest of the app as a small `deps`
 object, which `src/main/index.ts` builds and hands in. A part built by the plugin's start
 function gets its deps through the start's `deps`, as Workbench's web-page parts,
-Browser control's `CdpOps`, Sessions core's `SessionRuntime`, `SessionTracker`, `SessionBackends`,
-`ClaudeBackend`, `AttentionTracker`, `StartedSessions`,
+Browser control's `CdpOps`, Sessions core's `SessionRuntime`, `SessionBackends` (and Claude
+Code's `SessionTracker` and `ClaudeBackend`, which its start builds),
+`AttentionTracker`, `StartedSessions`,
 `NewsJudge`, `SlashCommands`, `SleepingTabs` and `SessionSync` (its `TabLifecycle` takes
 no deps), the Inbox's `Inbox` and
 `KoloftInbox`, the Butler's
