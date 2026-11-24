@@ -3,7 +3,7 @@
 **Constraint**: the repo is worked on by Claude Code, Codex and Antigravity sessions, and
 each must meet the same three checks: a fresh worktree installs its node_modules, an
 edited code file is checked for comments, and a push or a new pull request waits for
-`format:check`, `check:comments`, `check:agent-words` and `typecheck`. The owner decided these run inside the
+`format:check`, `check:comments`, `check:agent-words`, `check:agent-imports` and `typecheck`. The owner decided these run inside the
 agent's own session, through the hooks each agent reads from the repo, and not through
 git.
 **Decision**: Claude Code keeps `.claude/settings.json`, which calls the three scripts

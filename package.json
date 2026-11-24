@@ -37,6 +37,7 @@
     "check:comments": "node scripts/check-comments.mjs",
     "check:plugin-imports": "node scripts/check-plugin-imports.mjs",
     "check:agent-words": "node scripts/check-agent-words.mjs",
+    "check:agent-imports": "node scripts/check-agent-imports.mjs",
     "test:unit": "vitest run",
     "test:unit:changed": "vitest run --changed=main",
     "test:unit:watch": "vitest",

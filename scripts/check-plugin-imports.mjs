@@ -1,8 +1,14 @@
 // ADR-0051
-import fs from 'node:fs'
 import path from 'node:path'
-import { parse } from '@babel/parser'
 import { createJiti } from 'jiti'
+import {
+  ALIASES,
+  importedPath,
+  importedSpecifierOf,
+  parseSource,
+  sourceFilesUnder,
+  walk
+} from './source-imports.mjs'
 
 const ROOT = process.cwd()
 const SOURCE_FILE = /\.tsx?$/
@@ -15,13 +21,6 @@ const LIST_ENTRY = {
   'src/plugins/settings': 'shared/settings',
   'src/plugins/starts': 'main/start'
 }
-const ALIASES = {
-  '@shared': 'src/shared',
-  '@core': 'src/core',
-  '@plugins': 'src/plugins',
-  '@agents': 'src/agents',
-  '@renderer': 'src/renderer/src'
-}
 const PUBLIC_SURFACES = new Set(['api', 'windowApi'])
 const WINDOW_UNSAFE = /^(main|prompts)\//
 const RULE =
@@ -31,14 +30,6 @@ const RULE =
   'src/plugins/settings.ts its shared/settings.ts, src/plugins/starts.ts its main/start.ts (ADR-0051).'
 
 const withoutExtension = (p) => p.replace(SOURCE_FILE, '')
-
-function sourceFiles() {
-  return fs
-    .readdirSync(path.join(ROOT, 'src'), { recursive: true, withFileTypes: true })
-    .filter((d) => d.isFile() && SOURCE_FILE.test(d.name))
-    .map((d) => path.relative(ROOT, path.join(d.parentPath, d.name)))
-    .sort()
-}
 
 async function needsById(problems) {
   const alias = Object.fromEntries(
@@ -55,40 +46,17 @@ async function needsById(problems) {
   }
 }
 
-function walk(node, visit) {
-  visit(node)
-  for (const value of Object.values(node))
-    for (const child of Array.isArray(value) ? value : [value])
-      if (child && typeof child.type === 'string') walk(child, visit)
-}
-
 function importedSpecifiers(rel) {
-  const ast = parse(fs.readFileSync(path.join(ROOT, rel), 'utf8'), {
-    sourceType: 'module',
-    plugins: rel.endsWith('.tsx') ? ['typescript', 'jsx'] : ['typescript']
-  })
   const found = []
-  walk(ast.program, (node) => {
-    const source =
-      node.type === 'CallExpression' && node.callee.type === 'Import'
-        ? node.arguments[0]
-        : node.type === 'TSImportType'
-          ? node.argument
-          : /^(Import|ExportAll|ExportNamed)Declaration$/.test(node.type)
-            ? node.source
-            : undefined
-    if (source?.type === 'StringLiteral')
-      found.push({ spec: source.value, line: node.loc.start.line })
+  walk(parseSource(ROOT, rel), (node) => {
+    const spec = importedSpecifierOf(node)
+    if (spec !== undefined) found.push({ spec, line: node.loc.start.line })
   })
   return found
 }
 
 function target(fromRel, spec) {
-  const bare = spec.split('?')[0]
-  const [first, ...rest] = bare.split('/')
-  const joined = bare.startsWith('.')
-    ? path.posix.join(path.posix.dirname(fromRel), bare)
-    : Object.hasOwn(ALIASES, first) && path.posix.join(ALIASES[first], ...rest)
+  const joined = importedPath(fromRel, spec)
   return joined && withoutExtension(joined)
 }
 
@@ -128,7 +96,7 @@ function breach(fromRel, to, needs) {
 
 const problems = []
 const needs = await needsById(problems)
-const files = sourceFiles()
+const files = sourceFilesUnder(ROOT, SOURCE_FILE)
 for (const rel of files) {
   let specs
   try {

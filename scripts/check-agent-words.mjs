@@ -3,25 +3,13 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createJiti } from 'jiti'
 import * as prettier from 'prettier'
+import { AGENTS_DIR, ALIASES, LISTS_OF_AGENTS, sourceFilesUnder } from './source-imports.mjs'
 
 const ROOT = process.cwd()
 const BASELINE = 'scripts/agent-words-baseline.json'
 const CHECKED_FILE = /\.([cm]?[jt]sx?|css)$/
 const STYLE_FILE = /\.css$/
-const AGENTS_DIR = 'src/agents/'
 const AGENT_LIST = 'src/agents/list.ts'
-const LISTS_THAT_MAY_NAME_AGENTS = new Set([
-  AGENT_LIST,
-  'src/agents/starts.ts',
-  'src/agents/uis.ts'
-])
-const ALIASES = {
-  '@shared': 'src/shared',
-  '@core': 'src/core',
-  '@plugins': 'src/plugins',
-  '@agents': 'src/agents',
-  '@renderer': 'src/renderer/src'
-}
 const MARKER = String.raw`(?:ADR-\d{4}|AGY§\d+|CC§\d+|CODEX§\d+|PLATFORM§\d+)`
 const MARKER_COMMENT = new RegExp(
   String.raw`\{?\s*\/\*\s*${MARKER}(?:\s+${MARKER})*\s*\*\/\s*\}?|\/\/\s*${MARKER}(?:\s+${MARKER})*\s*$`,
@@ -45,16 +33,6 @@ const byCodeUnit = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
 function cannotRun(why) {
   console.error(`check-agent-words: ${why}`)
   process.exit(CANNOT_RUN)
-}
-
-function sourceFiles() {
-  const src = path.join(ROOT, 'src')
-  if (!fs.existsSync(src)) return []
-  return fs
-    .readdirSync(src, { recursive: true, withFileTypes: true })
-    .filter((d) => d.isFile() && CHECKED_FILE.test(d.name))
-    .map((d) => path.relative(ROOT, path.join(d.parentPath, d.name)).split(path.sep).join('/'))
-    .sort(byCodeUnit)
 }
 
 async function agentMatchers() {
@@ -153,7 +131,7 @@ function compare(baseline, files, agents) {
   const current = {}
   const allowedUsed = new Set()
   for (const file of files) {
-    if (LISTS_THAT_MAY_NAME_AGENTS.has(file) || Object.hasOwn(baseline.awaitingMove, file)) continue
+    if (LISTS_OF_AGENTS.has(file) || Object.hasOwn(baseline.awaitingMove, file)) continue
     const text = fs.readFileSync(path.join(ROOT, file), 'utf8')
     const hits = hitsIn(file, text, agents, folderOf(file)).filter((h) => {
       const allow = baseline.allowed.find(
@@ -236,7 +214,7 @@ try {
 } catch (e) {
   cannotRun(`cannot load ${AGENT_LIST} (${e.message})`)
 }
-const files = sourceFiles()
+const files = sourceFilesUnder(ROOT, CHECKED_FILE)
 let baseline = readBaseline()
 let result = compare(baseline, files, agents)
 
