@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { WorktreeRemovalWatch } from '../../src/main/claudeWorktreeExit'
+import { WorktreeRemovalWatch } from '../../src/agents/claude/main/claudeWorktreeExit'
 
 const CLAUDE_STARTS_REMOVING = '\x1b[?25h\x1b7\x1b[r\x1b8\x1b]0;\x07Removing worktree…\r\n'
 

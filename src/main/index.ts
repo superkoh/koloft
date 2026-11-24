@@ -20,7 +20,7 @@ import { anotherLiveInstanceOwns, PtyManager, type PtyHandle } from './ptyManage
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { TerminalOutput } from './flowControl'
-import type { CommandOutput } from './claudeCommandOutput'
+import type { CommandOutput } from '@agents/claude/main/claudeCommandOutput'
 import { codexShowsAPanel } from './inputBox'
 import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from './remote/statusRelay'
 import type { TreeIo } from './sessionWorktrees'
@@ -114,7 +114,7 @@ import {
 import { BrowserTunnels } from './remote/browserTunnel'
 import { anyFreeMacPort, macPortFree, PageForwards } from './remote/portForward'
 import { MACHINE_PLAYWRIGHT_CLI } from './remote/playwrightCli'
-import { MACHINE_CLAUDE } from './advisorOnFable'
+import { MACHINE_CLAUDE } from '@agents/claude/main/advisorOnFable'
 import {
   ENSURE_CODEX_SH,
   ENSURE_SH,
@@ -382,7 +382,7 @@ import { within } from '@core/within'
 import { clicksTheMouse, pressesAKey, typeKeys } from '@core/typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import { sleep } from '@core/sleep'
-import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
+import { claudeJsonPath, claudeProjectKey } from '@agents/claude/main/claudeTrust'
 import {
   AGY_PROJECT_MCP_FILE,
   PROJECT_MCP_FILE,
@@ -402,7 +402,7 @@ import {
   claudeShowsAPanelOnMachine,
   whenMessagingSocket,
   whenMessagingSocketOnMachine
-} from './claudeSessionRegistry'
+} from '@agents/claude/main/claudeSessionRegistry'
 import { GLOBAL_SCOPE, scopeName } from '@shared/scope'
 import { Commands } from '@core/commands'
 import { PLUGINS } from '@plugins/list'
@@ -429,7 +429,7 @@ import {
   type TurnOver
 } from '@core/moment'
 import type { MainIpc } from '@core/ipc'
-import { ClaudeDialogWatch } from './claudeDialogWatch'
+import { ClaudeDialogWatch } from '@agents/claude/main/claudeDialogWatch'
 import { docsWritingOn } from '@plugins/docs-writing/api'
 import type { SessionsWithStore } from '@plugins/sessions/api'
 import { localFile } from './realFiles'
@@ -438,7 +438,10 @@ import { koloftAssist, type AssistTarget } from './assist'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
 import { TreeRemovals } from './treeRemovals'
-import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
+import {
+  finishAfterKoloftQuits,
+  WorktreeRemovalWatch
+} from '@agents/claude/main/claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import {
   agentPluginFiles,

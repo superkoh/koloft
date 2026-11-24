@@ -9,7 +9,7 @@ import {
   type TabEnded
 } from '@core/moment'
 import type { AttentionTracker } from './attention'
-import type { ClaudeBackend } from './backends/claude'
+import type { ClaudeBackend } from '@agents/claude/main/backend'
 import type { SessionTracker } from './sessionTracker'
 import type { SessionsWithStore } from './storedSessions'
 import type { WorkspaceManager } from './workspaces'

@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { rootsWithClaude as rootsIn } from '../../src/main/claudeLiveness'
+import { rootsWithClaude as rootsIn } from '../../src/agents/claude/main/claudeLiveness'
 import { processTables } from '../../src/main/processTable'
 
 const rootsWithClaude = async (rootPids: number[]): Promise<Set<number> | null> =>

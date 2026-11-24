@@ -23,7 +23,7 @@ import {
   type TabSpec
 } from '../../src/main/remote/launch'
 import { TMUX_CONF, heartbeatCmd } from '../../src/main/remote/install'
-import { MACHINE_CLAUDE } from '../../src/main/advisorOnFable'
+import { MACHINE_CLAUDE } from '../../src/agents/claude/main/advisorOnFable'
 import { utilTerminalGuard } from '../../src/main/shim'
 import { passOf } from '../../src/main/tabPass'
 import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from '../../src/main/remote/statusRelay'

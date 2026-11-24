@@ -24,7 +24,7 @@ import { AGENT_PROMPT_FILE, KOLOFT_DOCS_SKILL, KOLOFT_SKILL, pluginSkillDir } fr
 import { docsWritingOn } from '@plugins/docs-writing/api'
 import { saidFile, seedHandedOverOwnerWords, STATUS_LOG_SUFFIX } from '@plugins/sessions/main/hooks'
 import { STATUS_RELAY_FILE } from './statusRelay'
-import { TRUST_CWD_JS } from './claudeTrustJs'
+import { TRUST_CWD_JS } from '@agents/claude/main/claudeTrustJs'
 
 export const CLAUDE_AUTH_ENV_VARS = [
   'CLAUDE_CODE_OAUTH_TOKEN',

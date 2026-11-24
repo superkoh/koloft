@@ -11,7 +11,7 @@ import {
   tabSocketOnMachine,
   runningClaudePid,
   whenMessagingSocket
-} from '../../src/main/claudeSessionRegistry'
+} from '../../src/agents/claude/main/claudeSessionRegistry'
 
 const SID = '1425a153-9a1b-45b1-a727-b05f5a9c490e'
 const START = 'Wed Sep 23 20:29:08 2026'

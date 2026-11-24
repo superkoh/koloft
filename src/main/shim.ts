@@ -11,7 +11,7 @@ import {
 } from '@plugins/passwords/main/sudoShim'
 import { ghWrapperScript, gitCredentialHelperScript } from './gitCredentialScripts'
 import { ENSURE_CLAUDE_MINIMUM_FN } from './cliMinimums'
-import { ADVISOR_OFF_ON_FABLE_FN } from './advisorOnFable'
+import { ADVISOR_OFF_ON_FABLE_FN } from '@agents/claude/main/advisorOnFable'
 import { CLAUDE_AUTH_ENV_VARS } from './remote/launch'
 import { NO_USABLE_ACCOUNT, SHIM_FOUND_NO_ACCOUNT_EXIT } from '@shared/accountUsage'
 import { PLAYWRIGHT_CLI_SESSION_PREFIX, PLAYWRIGHT_OUTPUT_FOLDER } from '@shared/browserTabEnv'

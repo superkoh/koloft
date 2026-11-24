@@ -15,7 +15,7 @@ import {
   ClaudeBackend,
   rebuildWorktree,
   type ClaudeBackendDeps
-} from '../../../../src/plugins/sessions/main/backends/claude'
+} from '../../../../src/agents/claude/main/backend'
 import { GIT_CALL_TIMEOUT_MS, localHost } from '../../../../src/main/host/localHost'
 import { GithubRepos } from '../../../../src/main/githubRepos'
 import { gitOnPath, realGit, restorePath, seedRepo } from '../../helpers/gitShim'

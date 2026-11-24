@@ -1,6 +1,6 @@
 import type { AskPayload } from '@shared/sessionEvent'
 import { basename } from '@shared/preview'
-import { toolFilePath, WRITE_TOOLS } from './claudeTouchedFiles'
+import { toolFilePath, WRITE_TOOLS } from '@agents/claude/main/claudeTouchedFiles'
 import {
   planOf,
   questionsOf,

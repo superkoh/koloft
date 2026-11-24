@@ -2,7 +2,7 @@ import { execFile } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 import { descendants, type ProcessTable } from './processTable'
-import { looksLikeClaude } from './claudeLiveness'
+import { looksLikeClaude } from '@agents/claude/main/claudeLiveness'
 
 export interface ShellProc {
   pid: number

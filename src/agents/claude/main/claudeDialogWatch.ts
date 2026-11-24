@@ -1,4 +1,4 @@
-import { PROGRAM_STATUS_REPLY, ProgramStatusParser } from './programStatus'
+import { PROGRAM_STATUS_REPLY, ProgramStatusParser } from '../../../main/programStatus'
 
 export interface ClaudeDialogWatchDeps {
   watchedProcess(tabId: string): object | undefined

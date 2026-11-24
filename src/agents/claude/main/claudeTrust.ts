@@ -1,7 +1,7 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { realpathSafe } from './projectInfo'
+import { realpathSafe } from '../../../main/projectInfo'
 import { writePrivateAtomically } from '@core/privateFile'
 
 export function claudeJsonPath(): string {

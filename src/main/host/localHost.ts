@@ -20,13 +20,13 @@ import { coalesce } from '@core/coalesce'
 import { resolveSpawnCwd } from '../projectInfo'
 import { leaveForOS, osOpenFallback } from '../osOpen'
 import { aboveItsTools } from '../agentLift'
-import { claudeArgv } from '../claudeArgs'
+import { claudeArgv } from '@agents/claude/main/claudeArgs'
 import {
   acceptClaudeTrust,
   claudeJsonPath,
   claudeTrustsFolder,
   markClaudeOnboarded
-} from '../claudeTrust'
+} from '@agents/claude/main/claudeTrust'
 import { dirExistsSync, worktreeNameAround } from '../resumePlan'
 import { portOffset } from '@shared/worktreeName'
 import { pictureFolderIn } from '@shared/pastedPictures'
