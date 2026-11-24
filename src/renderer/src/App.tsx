@@ -3,14 +3,15 @@ import { SessionBackendIcon } from './components/SessionBackendIcon'
 import type { AgentChoice } from './agentChoice'
 import type { SessionLaunchOptions } from './components/SessionLaunchButtons'
 import { WelcomeLaunch } from './components/WelcomeLaunch'
+import { backendAvailable, BACKEND_LABEL, launchMenus } from '@shared/sessionBackend'
+import { ofEachAgent } from '@core/agent/registry'
 import {
-  backendAvailable,
-  BACKEND_LABEL,
-  byBackend,
-  launchMenus,
-  resumeScreenMayHideAQuestion
-} from '@shared/sessionBackend'
-import { hasWorkbench, isSessionKind, launchErrorMessage, type SessionBackend } from './agentUi'
+  coversTerminalWhileResuming,
+  hasWorkbench,
+  isSessionKind,
+  launchErrorMessage,
+  type SessionBackend
+} from './agentUi'
 import {
   useCallback,
   useEffect,
@@ -396,10 +397,10 @@ export default function App(): JSX.Element {
     let alive = true
     void window.api.sessions.backends().then(
       (list) => {
-        if (alive) setProbed(byBackend((b) => backendAvailable(list, b)))
+        if (alive) setProbed(ofEachAgent((b) => backendAvailable(list, b)))
       },
       () => {
-        if (alive) setProbed(byBackend(() => false))
+        if (alive) setProbed(ofEachAgent(() => false))
       }
     )
     return () => {
@@ -1780,9 +1781,9 @@ export default function App(): JSX.Element {
                           t.ghost && !t.wakeOverdue ? () => noteWakingOutput(t.id) : undefined
                         }
                       />
-                      {t.resuming &&
-                        isSessionKind(t.kind) &&
-                        !resumeScreenMayHideAQuestion(t.kind) && <ResumingMask title={t.title} />}
+                      {t.resuming && coversTerminalWhileResuming(t.kind) && (
+                        <ResumingMask title={t.title} />
+                      )}
                       {overTerminal?.(t.id === shown.id)}
                       {!overTerminal && instructionAsk && (
                         <InstructionsAskDialog

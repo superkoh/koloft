@@ -640,9 +640,7 @@ describe('check-agent-imports: a flag in an agent’s manifest is yes-or-no', ()
   it('prints, as a report that never fails, each flag’s answer for every agent on this Mac and on a remote machine, and marks a flag that is yes for one agent only', () => {
     const r = check(fixtureRepo(AGENTS_WITH_MANIFESTS, {}))
     expect(r.code).toBe(0)
-    expect(r.out).toMatch(
-      /^ +alpha on this Mac {2}alpha remote {2}beta on this Mac {2}beta remote$/m
-    )
+    expect(r.out).toMatch(/^ +alpha on this Mac +alpha remote +beta on this Mac +beta remote$/m)
     expect(r.out).toMatch(/^ +keepsLineFeeds +yes +yes +no +no +<- yes for one agent only$/m)
     expect(r.out).toMatch(/^ +takesAName +yes +no +yes +yes$/m)
   })
@@ -683,10 +681,31 @@ describe('check-agent-imports: a flag in an agent’s manifest is yes-or-no', ()
     expect(r.out).toContain('answers one yes-or-no')
     expect(r.out).toContain('A name, a file name or a sentence is a fact, not a flag')
   })
+
+  it('fails, rather than passing with nothing checked, when the flags’ type is not written out in the manifest type file or an agent does not write its flags out', () => {
+    const r = check(
+      fixtureRepo(
+        {
+          ...AGENTS_WITH_MANIFESTS,
+          [MANIFEST_TYPES]: manifestTypes('keepsLineFeeds: boolean').replace(
+            'flags: AgentFlags',
+            'flags: Partial<AgentFlags>'
+          ),
+          'src/agents/alpha/agent.ts': manifestOf('alpha', 'Alpha', 'SOME_FLAGS')
+        },
+        {}
+      )
+    )
+    expect(r.code).toBe(1)
+    expect([...r.out.matchAll(/^ {2}(src\/\S+):\d+ {2}flags {2}\(/gm)].map((m) => m[1])).toEqual([
+      MANIFEST_TYPES,
+      'src/agents/alpha/agent.ts'
+    ])
+  })
 })
 
 describe('check-agent-imports: a text from a manifest is never compared with a text written in the code', () => {
-  it('fails in common code, a plugin and kit, whether the fact comes straight from agentManifest, through a local name, a destructuring, a callback or a loop over AGENT_MANIFESTS, or a table built from a fact and imported under another name, and whether it is compared with ===, !==, ==, a switch case or a list of texts', () => {
+  it('fails in common code, a plugin and kit, whether the fact comes straight from agentManifest, through a local name, a destructuring, a callback or a loop over AGENT_MANIFESTS (filtered first, or one found in it), or a table built from a fact and imported under another name, and whether it is compared with ===, !==, ==, a switch case or a list of texts', () => {
     const r = check(
       fixtureRepo(
         {
@@ -713,7 +732,11 @@ describe('check-agent-imports: a text from a manifest is never compared with a t
             '  switch (agent.name) {',
             "    case 'Alpha':",
             '      break',
-            '  }'
+            '  }',
+            "export const h = AGENT_MANIFESTS.find((agent) => agent.flags.keepsLineFeeds)!.name === 'Alpha'",
+            'export const i = AGENT_MANIFESTS.filter((agent) => agent.flags.keepsLineFeeds).map(',
+            "  (agent) => agent.name !== 'Alpha'",
+            ')'
           ),
           'src/renderer/src/table.ts': lines(
             "import { LABEL as NAME_OF } from '@shared/tables'",
@@ -736,6 +759,8 @@ describe('check-agent-imports: a text from a manifest is never compared with a t
       'src/plugins/p/main/each.ts:2',
       'src/plugins/p/main/each.ts:3',
       'src/plugins/p/main/each.ts:5',
+      'src/plugins/p/main/each.ts:9',
+      'src/plugins/p/main/each.ts:11',
       'src/renderer/src/table.ts:2'
     ])
     expect(r.out).toContain("src/main/direct.ts:2  agentManifest('x').name === 'Alpha'")
@@ -743,7 +768,7 @@ describe('check-agent-imports: a text from a manifest is never compared with a t
     expect(r.out).toContain('add a yes-or-no flag to the manifests')
   })
 
-  it('lets a fact be put in a sentence, compared with a value read at run time and looked up in a list; lets a flag and a field of another object be compared; and does not check an agent’s own folder', () => {
+  it('lets a fact be put in a sentence, compared with a value read at run time and looked up in a list; lets a flag, a field of another object and another function’s variable of the same name be compared; and does not check an agent’s own folder', () => {
     const r = check(
       fixtureRepo(
         {
@@ -754,9 +779,12 @@ describe('check-agent-imports: a text from a manifest is never compared with a t
             "export const same = (typed: string): boolean => agentManifest('x').name === typed",
             'export const listed = (file: string): boolean =>',
             '  AGENT_MANIFESTS.some((agent) => agent.fileNames.includes(file))',
-            "export const flag = String(agentManifest('x').flags.keepsLineFeeds) === 'true'",
+            "export const flag = agentManifest('x').flags.keepsLineFeeds === 'true'",
+            "export const flagInBrackets = agentManifest('x')['flags'].keepsLineFeeds === 'true'",
             "const other = { name: 'Alpha' }",
-            "export const unrelated = other.name === 'Alpha'"
+            "export const unrelated = other.name === 'Alpha'",
+            'export const names = AGENT_MANIFESTS.map((agent) => agent.name)',
+            "export const sameNameElsewhere = (agent: { name: string }): boolean => agent.name === 'Alpha'"
           ),
           'src/agents/alpha/main/own.ts': lines(
             "import { agentManifest } from '@core/agent/registry'",

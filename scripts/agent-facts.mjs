@@ -1,9 +1,17 @@
 // ADR-0054
 import fs from 'node:fs'
 import path from 'node:path'
-import { AGENTS_DIR, EVERY_NAME, nameOf, walk, withoutCasts } from './source-imports.mjs'
+import {
+  AGENTS_DIR,
+  EVERY_NAME,
+  MANIFEST_TYPES,
+  isMember,
+  keyOf,
+  nameOf,
+  walk,
+  withoutCasts
+} from './source-imports.mjs'
 
-export const MANIFEST_TYPES = 'src/core/agent/manifest.ts'
 const REGISTRY = 'src/core/agent/registry.ts'
 const LIST_OF_MANIFESTS = `${AGENTS_DIR}list.ts`
 const ONE_MANIFEST = 'agentManifest'
@@ -13,25 +21,29 @@ const MANIFEST_TYPE = 'AgentManifest'
 const FLAGS = 'flags'
 const HOSTS = ['local', 'ssh']
 const HOST_LABEL = { local: 'on this Mac', ssh: 'remote' }
+const GIVES_ONE_ELEMENT = new Set(['find', 'findLast'])
 const CALLED_WITH_EACH_ELEMENT = new Set([
+  ...GIVES_ONE_ELEMENT,
   'map',
   'filter',
-  'find',
-  'findLast',
   'some',
   'every',
   'flatMap',
   'forEach'
 ])
 const COMPARISONS = new Set(['===', '!==', '==', '!='])
-const ROUNDS_UNTIL_NAMES_SETTLE = 3
+const OPENS_A_SCOPE =
+  /^(Program|BlockStatement|For(Of|In)?Statement|(Arrow)?FunctionExpression|FunctionDeclaration|ObjectMethod|ClassMethod)$/
 
-const keyOf = (file, name) => `${file}\n${name}`
 const isFunction = (node) => /^(Arrow)?FunctionExpression$/.test(node?.type ?? '')
-const isMember = (node) => /^(Optional)?MemberExpression$/.test(node?.type ?? '')
 const isFixedText = (node) =>
   node?.type === 'StringLiteral' ||
   (node?.type === 'TemplateLiteral' && node.expressions.length === 0)
+const initOf = (node) => node.type === 'VariableDeclarator' && withoutCasts(node.init)
+const methodCalled = (node) =>
+  node?.type === 'CallExpression' && isMember(node.callee) && !node.callee.computed
+    ? nameOf(node.callee.property)
+    : undefined
 
 function objectTypesOf(program) {
   const types = new Map()
@@ -57,7 +69,17 @@ function flagTypesThatAreNotYesOrNo(modules) {
         : undefined
   const isYesOrNo = (member) => !member.optional && typeOf(member)?.type === 'TSBooleanKeyword'
   const flags = types.get(MANIFEST_TYPE)?.find((m) => m.key && nameOf(m.key) === FLAGS)
-  const members = (flags && membersOf(typeOf(flags))) ?? []
+  if (!flags) return []
+  const members = membersOf(typeOf(flags))
+  if (!members)
+    return [
+      {
+        file: MANIFEST_TYPES,
+        line: flags.loc.start.line,
+        what: FLAGS,
+        why: 'its type is not an interface or an object type written in this file, so no flag can be checked'
+      }
+    ]
   return members
     .filter((m) => {
       const answers = membersOf(typeOf(m)) ?? []
@@ -66,7 +88,7 @@ function flagTypesThatAreNotYesOrNo(modules) {
     .map((m) => ({
       file: MANIFEST_TYPES,
       line: m.loc.start.line,
-      name: m.key ? nameOf(m.key) : '(not a plain field)',
+      what: `${FLAGS}.${m.key ? nameOf(m.key) : '(not a plain field)'}`,
       why: 'its type is not `boolean`, nor one `boolean` for each kind of machine'
     }))
 }
@@ -74,7 +96,7 @@ function flagTypesThatAreNotYesOrNo(modules) {
 function declaredObject(mod, name) {
   let found
   walk(mod.program, (node) => {
-    const init = node.type === 'VariableDeclarator' && withoutCasts(node.init)
+    const init = initOf(node)
     if (init && node.id.type === 'Identifier' && node.id.name === name)
       found = init.type === 'ObjectExpression' ? init : undefined
   })
@@ -91,13 +113,13 @@ function manifestsInListOrder(modules) {
   if (!list) return []
   let agents = []
   walk(list.program, (node) => {
-    const init = node.type === 'VariableDeclarator' && withoutCasts(node.init)
+    const init = initOf(node)
     if (init?.type === 'ArrayExpression' && node.id.name === LISTED_MANIFESTS)
       agents = init.elements.flatMap((e) => {
         const from = e?.type === 'Identifier' && list.namesBoundToImports.get(e.name)
         const object =
           from && modules.has(from.to) && declaredObject(modules.get(from.to), from.name)
-        const id = withoutCasts(fieldOf(object, 'id')?.value)
+        const id = fieldOf(object, 'id')?.value
         return object && id?.type === 'StringLiteral'
           ? [{ id: id.value, file: from.to, object }]
           : []
@@ -106,11 +128,10 @@ function manifestsInListOrder(modules) {
   return agents
 }
 
-function answerOf(value) {
-  const node = withoutCasts(value)
-  if (node?.type === 'BooleanLiteral') return Object.fromEntries(HOSTS.map((h) => [h, node.value]))
-  if (node?.type !== 'ObjectExpression') return undefined
-  const perHost = HOSTS.map((h) => withoutCasts(fieldOf(node, h)?.value))
+function answerOf(node) {
+  if (node.type === 'BooleanLiteral') return Object.fromEntries(HOSTS.map((h) => [h, node.value]))
+  if (node.type !== 'ObjectExpression') return undefined
+  const perHost = HOSTS.map((h) => fieldOf(node, h)?.value)
   const complete =
     node.properties.length === HOSTS.length && perHost.every((v) => v?.type === 'BooleanLiteral')
   return complete ? Object.fromEntries(HOSTS.map((h, i) => [h, perHost[i].value])) : undefined
@@ -119,9 +140,16 @@ function answerOf(value) {
 function flagAnswers(modules) {
   const problems = []
   const agents = manifestsInListOrder(modules).map(({ id, file, object }) => {
-    const flags = withoutCasts(fieldOf(object, FLAGS)?.value)
     const answers = new Map()
-    for (const p of flags?.type === 'ObjectExpression' ? flags.properties : []) {
+    const flags = fieldOf(object, FLAGS)
+    if (flags && flags.value.type !== 'ObjectExpression')
+      problems.push({
+        file,
+        line: flags.loc.start.line,
+        what: FLAGS,
+        why: 'it is not written out here as { … }, so no answer can be checked'
+      })
+    for (const p of flags?.value.type === 'ObjectExpression' ? flags.value.properties : []) {
       const name = p.type === 'ObjectProperty' && !p.computed ? nameOf(p.key) : undefined
       const answer = name && answerOf(p.value)
       if (answer) answers.set(name, answer)
@@ -129,7 +157,7 @@ function flagAnswers(modules) {
         problems.push({
           file,
           line: p.loc.start.line,
-          name: name ?? '(not a plain field)',
+          what: `${FLAGS}.${name ?? '(not a plain field)'}`,
           why: `it is not written as \`true\` or \`false\`, nor as { ${HOSTS.map((h) => `${h}: true or false`).join(', ')} }`
         })
     }
@@ -172,19 +200,16 @@ export function flagsByKindOfTab(modules) {
   ]
 }
 
-const isEveryManifestAt = (d) =>
-  (d.file === REGISTRY && d.name === EVERY_MANIFEST) ||
-  (d.file === LIST_OF_MANIFESTS && d.name === LISTED_MANIFESTS)
-
-function readersOf(modules, file, mod, declaredIn, tables) {
+function readersOf(modules, file, declaredIn, tables) {
   const one = new Set()
   const every = new Set()
   const table = new Set()
-  for (const [local, from] of mod.namesBoundToImports) {
+  for (const [local, from] of modules.get(file).namesBoundToImports) {
     if (from.name === EVERY_NAME) continue
     const origins = declaredIn(modules, from.to, from.name)
     if (origins.some((d) => d.file === REGISTRY && d.name === ONE_MANIFEST)) one.add(local)
-    if (origins.some(isEveryManifestAt)) every.add(local)
+    if (origins.some((d) => d.file === LIST_OF_MANIFESTS && d.name === LISTED_MANIFESTS))
+      every.add(local)
     if (origins.some((d) => tables.has(keyOf(d.file, d.name)))) table.add(local)
   }
   if (file === REGISTRY) {
@@ -198,85 +223,81 @@ function readersOf(modules, file, mod, declaredIn, tables) {
   return { one, every, table }
 }
 
-function factsIn(mod, { one, every, table }) {
-  const manifests = new Set()
-  const facts = new Set()
+function walkInScopes(node, visit, scope = node) {
+  const inner = OPENS_A_SCOPE.test(node.type) ? node : scope
+  visit(node, inner)
+  for (const value of Object.values(node))
+    for (const child of Array.isArray(value) ? value : [value])
+      if (child && typeof child.type === 'string') walkInScopes(child, visit, inner)
+}
+
+function factsIn(program, { one, every, table }) {
+  const bound = []
   const named = (node, names) => node?.type === 'Identifier' && names.has(node.name)
+  const boundAt = (id) =>
+    bound
+      .filter((b) => b.name === id.name && b.scope.start <= id.start && id.end <= b.scope.end)
+      .reduce((best, b) => (!best || b.scope.start >= best.scope.start ? b : best), undefined)
   const isEveryManifest = (node) =>
-    named(node, every) ||
-    (node?.type === 'CallExpression' &&
-      isMember(node.callee) &&
-      !node.callee.computed &&
-      nameOf(node.callee.property) === 'filter' &&
-      isEveryManifest(node.callee.object))
+    named(node, every) || (methodCalled(node) === 'filter' && isEveryManifest(node.callee.object))
   const isManifest = (raw) => {
     const node = withoutCasts(raw)
-    if (node?.type === 'Identifier') return manifests.has(node.name)
-    if (node?.type === 'CallExpression') return named(node.callee, one)
-    return isMember(node) && node.computed && isEveryManifest(node.object)
+    if (node?.type === 'Identifier') return boundAt(node)?.isAManifest === true
+    if (node?.type !== 'CallExpression') return false
+    return (
+      named(node.callee, one) ||
+      (GIVES_ONE_ELEMENT.has(methodCalled(node)) && isEveryManifest(node.callee.object))
+    )
   }
   const isFact = (raw) => {
     const node = withoutCasts(raw)
-    if (node?.type === 'Identifier') return facts.has(node.name)
+    if (node?.type === 'Identifier') return boundAt(node)?.isAManifest === false
     if (!isMember(node)) return false
     if (named(node.object, table)) return true
-    if (isManifest(node.object)) return node.computed || nameOf(node.property) !== FLAGS
-    return isFact(node.object)
+    return isManifest(node.object) ? nameOf(node.property) !== FLAGS : isFact(node.object)
   }
-  const bind = (pattern, isAManifest) => {
+  const bind = (pattern, isAManifest, scope) => {
     const target = pattern?.type === 'AssignmentPattern' ? pattern.left : pattern
-    if (target?.type === 'Identifier') (isAManifest ? manifests : facts).add(target.name)
+    if (target?.type === 'Identifier') bound.push({ name: target.name, isAManifest, scope })
     if (target?.type !== 'ObjectPattern' || !isAManifest) return
     for (const p of target.properties)
       if (p.type === 'ObjectProperty' && !p.computed && nameOf(p.key) !== FLAGS)
-        bind(p.value, false)
+        bind(p.value, false, scope)
   }
-  for (let round = 0; round < ROUNDS_UNTIL_NAMES_SETTLE; round++)
-    walk(mod.program, (node) => {
-      if (node.type === 'VariableDeclarator') {
-        if (isManifest(node.init)) bind(node.id, true)
-        else if (isFact(node.init)) bind(node.id, false)
-      }
-      if (node.type === 'ForOfStatement' && isEveryManifest(node.right))
-        bind(
-          node.left.type === 'VariableDeclaration' ? node.left.declarations[0].id : node.left,
-          true
-        )
-      if (
-        node.type === 'CallExpression' &&
-        isMember(node.callee) &&
-        !node.callee.computed &&
-        CALLED_WITH_EACH_ELEMENT.has(nameOf(node.callee.property)) &&
-        isEveryManifest(node.callee.object) &&
-        isFunction(node.arguments[0])
+  walkInScopes(program, (node, scope) => {
+    if (node.type === 'VariableDeclarator') {
+      if (isManifest(node.init)) bind(node.id, true, scope)
+      else if (isFact(node.init)) bind(node.id, false, scope)
+    }
+    if (node.type === 'ForOfStatement' && isEveryManifest(node.right))
+      bind(
+        node.left.type === 'VariableDeclaration' ? node.left.declarations[0].id : node.left,
+        true,
+        node
       )
-        bind(node.arguments[0].params[0], true)
-    })
-  return isFact
-}
-
-function returnsAFact(fn, isFact) {
-  if (fn.body.type !== 'BlockStatement') return isFact(fn.body)
-  let does = false
-  walk(fn.body, (node) => {
-    if (node.type === 'ReturnStatement' && isFact(node.argument)) does = true
+    if (
+      CALLED_WITH_EACH_ELEMENT.has(methodCalled(node)) &&
+      isEveryManifest(node.callee.object) &&
+      isFunction(node.arguments[0])
+    )
+      bind(node.arguments[0].params[0], true, node.arguments[0])
   })
-  return does
+  return isFact
 }
 
 function tablesBuiltFromFacts(modules, declaredIn) {
   const tables = new Set()
   const none = new Set()
   for (const [file, mod] of modules) {
-    const readers = readersOf(modules, file, mod, declaredIn, none)
+    const readers = readersOf(modules, file, declaredIn, none)
     if (readers.one.size + readers.every.size === 0) continue
-    const isFact = factsIn(mod, readers)
+    const isFact = factsIn(mod.program, readers)
     walk(mod.program, (node) => {
-      const init = node.type === 'VariableDeclarator' && withoutCasts(node.init)
+      const init = initOf(node)
       if (
         init?.type === 'CallExpression' &&
         node.id.type === 'Identifier' &&
-        init.arguments.some((a) => isFunction(a) && returnsAFact(a, isFact))
+        init.arguments.some((a) => isFunction(a) && isFact(a.body))
       )
         tables.add(keyOf(file, node.id.name))
     })
@@ -289,9 +310,9 @@ export function factsComparedWithFixedText(root, modules, declaredIn, isCommonCo
   const found = []
   for (const [file, mod] of modules) {
     if (!isCommonCodeOrPlugin(file)) continue
-    const readers = readersOf(modules, file, mod, declaredIn, tables)
+    const readers = readersOf(modules, file, declaredIn, tables)
     if (readers.one.size + readers.every.size + readers.table.size === 0) continue
-    const isFact = factsIn(mod, readers)
+    const isFact = factsIn(mod.program, readers)
     const hits = []
     walk(mod.program, (node) => {
       const compares =
@@ -302,10 +323,7 @@ export function factsComparedWithFixedText(root, modules, declaredIn, isCommonCo
         (node.type === 'SwitchStatement' &&
           isFact(node.discriminant) &&
           node.cases.some((c) => isFixedText(c.test))) ||
-        (node.type === 'CallExpression' &&
-          isMember(node.callee) &&
-          !node.callee.computed &&
-          nameOf(node.callee.property) === 'includes' &&
+        (methodCalled(node) === 'includes' &&
           node.callee.object.type === 'ArrayExpression' &&
           node.callee.object.elements.some(isFixedText) &&
           isFact(node.arguments[0]))

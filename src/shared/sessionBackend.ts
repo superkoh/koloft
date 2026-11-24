@@ -19,11 +19,9 @@ import {
 // ADR-0054
 export const SESSION_BACKENDS: BackendId[] = [...AGENT_IDS]
 
-export const byBackend = ofEachAgent
+export const BACKEND_LABEL = ofEachAgent((b) => agentManifest(b).name)
 
-export const BACKEND_LABEL = byBackend((b) => agentManifest(b).name)
-
-export const BACKEND_PRODUCT = byBackend((b) => agentManifest(b).productName)
+export const BACKEND_PRODUCT = ofEachAgent((b) => agentManifest(b).productName)
 
 export const kindsOf = (backends: BackendId[], joiner: 'or' | 'and'): string => {
   const labels = backends.map((b) => BACKEND_LABEL[b])
@@ -32,7 +30,7 @@ export const kindsOf = (backends: BackendId[], joiner: 'or' | 'and'): string => 
     : `${labels.slice(0, -1).join(', ')} ${joiner} ${labels[labels.length - 1]}`
 }
 
-export const SKILL_PREFIX = byBackend((b) => agentManifest(b).skillPrefix)
+export const SKILL_PREFIX = ofEachAgent((b) => agentManifest(b).skillPrefix)
 
 export function turnedOffLead(backend: BackendId): string {
   return `${BACKEND_LABEL[backend]} is turned off in `
@@ -63,7 +61,7 @@ export function backendIdOf(value: unknown): BackendId | undefined {
 
 export function normalizeSessionMethods(raw: unknown): SessionMethods {
   const value = raw && typeof raw === 'object' ? (raw as Partial<SessionMethods>) : {}
-  const enabled = byBackend((b) => value.enabled?.[b] !== false)
+  const enabled = ofEachAgent((b) => value.enabled?.[b] !== false)
   if (!SESSION_BACKENDS.some((b) => enabled[b])) enabled[AGENT_PICKED_ON_FIRST_OPEN] = true
   const picked = backendIdOf(value.defaultBackend)
   return {
@@ -131,10 +129,6 @@ export function conversationAtFirstPrompt(backend: BackendId): boolean {
 
 export function pasteKeepsItsLastLineFeeds(backend: BackendId): boolean {
   return agentManifest(backend).flags.pasteKeepsItsLastLineFeeds
-}
-
-export function resumeScreenMayHideAQuestion(backend: BackendId): boolean {
-  return agentManifest(backend).flags.resumeCanWaitOnAQuestionBeforeAnySign
 }
 
 // AGY§16

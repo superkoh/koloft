@@ -145,7 +145,7 @@ export interface AgySessionDeps extends StoredSessionDeps {
   skipPermissions(): boolean
   assistOf(cwd: string, resumeKey?: string): LaunchIdentity | undefined
   agent: {
-    enabled(remote: boolean): boolean
+    enabled(): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
   }
   gitAccounts: StoredSessionDeps['gitAccounts'] & { ghWrapper: string }
@@ -865,7 +865,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const permission = this.permissionOf(opts)
     const tabId = opts.tabId ?? this.deps.pty.nextId()
     const endpoint = this.deps.browserEndpoint(tabId)
-    const agent = this.deps.agent.enabled(false) ? this.deps.agent : undefined
+    const agent = this.deps.agent.enabled() ? this.deps.agent : undefined
     const instructions = promptParts(
       !!agent && !conductor && koloftPrompt('agy', rules),
       role,
@@ -1022,7 +1022,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const resumeInFolderAnAccountTrusts =
       !!resumeId && trustsIn(where.path, ...config.accountsSettings)
     const m = remote.machineName()
-    const agentTools = this.deps.agent.enabled(true)
+    const agentTools = this.deps.agent.enabled()
     const settings = mergedAgySettings(config.ownSettings, config.ownersSettings, {
       trust: trusted ? trust : resumeInFolderAnAccountTrusts ? [where.path] : [],
       titleCommand: runMachineScript(m, AGY_TITLE_FILE),

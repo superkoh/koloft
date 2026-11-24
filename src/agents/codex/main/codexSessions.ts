@@ -299,7 +299,7 @@ export interface CodexSessionDeps extends StoredSessionDeps {
   playwrightBin: string
   docsSkillsFolder(): string | undefined
   agent: {
-    enabled(host: HostId): boolean
+    enabled(): boolean
     answer(tabId: string | undefined, dir: string, name: string, raw: unknown): void
     skillsFolder(): string | undefined
   }
@@ -910,7 +910,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         event.change
       )
     }
-    const agent = this.deps.agent.enabled(machine ? 'ssh' : 'local') ? this.deps.agent : undefined
+    const agent = this.deps.agent.enabled() ? this.deps.agent : undefined
     const openShim = machine
       ? undefined
       : this.startOpenShim(

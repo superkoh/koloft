@@ -7,8 +7,11 @@ import {
   ENTRY_EACH_LIST_OF_AGENTS_IMPORTS,
   EVERY_NAME,
   LISTS_OF_AGENTS,
+  MANIFEST_TYPES,
   importedPath,
   importedSpecifierOf,
+  isMember,
+  keyOf,
   nameOf,
   parseSource,
   sourceFilesUnder,
@@ -16,7 +19,6 @@ import {
   withoutCasts
 } from './source-imports.mjs'
 import {
-  MANIFEST_TYPES,
   factsComparedWithFixedText,
   flagsByKindOfTab,
   flagsThatAreNotYesOrNo
@@ -77,7 +79,7 @@ const ACCEPT_NEW = flag('--accept-new')
 const STEP_FOR_NEW = ACCEPT_NEW ? process.argv[process.argv.indexOf('--accept-new') + 1] : undefined
 
 const importKey = (c) => [c.rule, c.from, c.to].join('\n')
-const methodKey = (m) => [m.file, m.name].join('\n')
+const methodKey = (m) => keyOf(m.file, m.name)
 
 function cannotRun(why) {
   console.error(`check-agent-imports: ${why}`)
@@ -223,7 +225,7 @@ function loadModules(files) {
 }
 
 function declaredIn(modules, file, name, seen = new Set()) {
-  const key = `${file}\n${name}`
+  const key = keyOf(file, name)
   if (seen.has(key)) return []
   seen.add(key)
   const mod = modules.get(file)
@@ -290,7 +292,7 @@ function boundaryChecker(modules) {
   }
   const mixed = new Map()
   const whyMixed = (file, owner) => {
-    const key = `${file}\n${owner}`
+    const key = keyOf(file, owner)
     if (!mixed.has(key)) mixed.set(key, reasonMixed(file, owner))
     return mixed.get(key)
   }
@@ -450,7 +452,7 @@ function messagingReferences(modules) {
           const to = mod.passedOn.get(nameOf(s.exported))
           if (to && isMessaging(modules, to.to, to.name)) lines.push(s.loc.start.line)
         }
-      if (/^(Optional)?MemberExpression$/.test(node.type) && !node.computed) {
+      if (isMember(node) && !node.computed) {
         notAUse.add(node.property)
         const from = node.object.type === 'Identifier' && namespaces.get(node.object.name)
         if (from && isMessaging(modules, from, nameOf(node.property)))
@@ -645,9 +647,11 @@ const FACT_HELP = [
   '- If Koloft’s own steps really differ, add a yes-or-no flag to the manifests (`flags`),',
   '  named after the agent’s own fact, and read that.',
   '- If the work belongs to one agent, move it into src/agents/<id>/.',
-  'This check follows a fact through a local name, a destructuring, a callback over',
-  'AGENT_MANIFESTS and a table built from a fact; it does not follow one through a function',
-  'of your own or a namespace import. Code review asks the same question there.'
+  'This check follows a fact through a local name, a destructuring, a callback or a loop over',
+  'AGENT_MANIFESTS, and a table built straight from a fact. It sees ===, !==, a `switch` case',
+  'and [texts].includes(fact). It does not follow a fact through a function of your own, a',
+  'namespace import or a table built from another table, and it does not see other tests of a',
+  'text (startsWith, a list kept under a name). Code review asks the same question there.'
 ]
 const GONE_HELP = [
   'These baseline entries are gone. Run `npm run check:agent-imports -- --prune` and commit',
@@ -718,7 +722,7 @@ const flagsNotYesOrNo = flagsThatAreNotYesOrNo(modules)
 if (flagsNotYesOrNo.length > 0)
   out.push(
     `check-agent-imports: ${flagsNotYesOrNo.length} flags in the agents’ manifests are not yes-or-no.`,
-    ...flagsNotYesOrNo.map((f) => `  ${f.file}:${f.line}  flags.${f.name}  (${f.why})`),
+    ...flagsNotYesOrNo.map((f) => `  ${f.file}:${f.line}  ${f.what}  (${f.why})`),
     ...FLAG_HELP
   )
 const factsCompared = factsComparedWithFixedText(ROOT, modules, declaredIn, isCommonCodeOrPlugin)

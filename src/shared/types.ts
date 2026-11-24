@@ -769,9 +769,9 @@ export interface SessionUsage {
   ctxPct?: number
 }
 
-export const PLACEHOLDER_SESSION_TITLE = 'Claude session'
-
 export const PLACEHOLDER_TITLES = ofEachAgent((id) => `${agentManifest(id).name} session`)
+
+export const PLACEHOLDER_SESSION_TITLE = PLACEHOLDER_TITLES.claude
 
 const PLACEHOLDER_TITLE_SET = new Set<string>(Object.values(PLACEHOLDER_TITLES))
 

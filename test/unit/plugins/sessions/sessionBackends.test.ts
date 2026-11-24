@@ -3,11 +3,9 @@ import { SessionBackends, type SessionBackend } from '../../../../src/core/agent
 import { sessionEventFromHook } from '../../../../src/plugins/sessions/main/sessionTracker'
 import {
   capabilitiesFor,
-  conversationAtFirstPrompt,
   effectiveBackend,
   identityOf,
   launchMenus,
-  resumeScreenMayHideAQuestion,
   SESSION_BACKENDS,
   sessionKey,
   shownAsInstalled,
@@ -16,6 +14,7 @@ import {
 } from '@shared/sessionBackend'
 import type { BackendId, BackendSessionInfo, BackendSessionRow, HostId } from '@shared/types'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
+import { coversTerminalWhileResuming } from '../../../../src/renderer/src/agentUi'
 
 function stubBackend(
   id: BackendId,
@@ -273,18 +272,12 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
       ['claude/local', 'claude/ssh', 'codex/local', 'agy/local']
     ]
   ]
-  const sharedRowsOf = (backend: BackendId, host: HostId): Partial<Capabilities> =>
-    Object.fromEntries(
-      Object.entries(capabilitiesFor(backend, host)).filter(
-        ([row]) => !ROWS_ONLY_SOME_TABS_HAVE.some(([, only]) => only === row)
-      )
-    )
   const HOSTS: HostId[] = ['local', 'ssh']
 
-  it('gives every kind of tab the same answer in every row that is not listed above with its reason', () => {
-    for (const backend of SESSION_BACKENDS)
-      for (const host of HOSTS)
-        expect(sharedRowsOf(backend, host)).toEqual(sharedRowsOf('claude', 'local'))
+  it('holds no row that every kind of tab has: each row is listed above with the reason some tabs lack it', () => {
+    expect(Object.keys(capabilitiesFor('claude', 'local')).sort()).toEqual(
+      ROWS_ONLY_SOME_TABS_HAVE.map(([, row]) => row).sort()
+    )
   })
 
   // CC§4 CC§11 CC§14
@@ -298,18 +291,11 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
   })
 })
 
-describe('what Koloft does with an agent’s yes-or-no answers about itself', () => {
+describe('coversTerminalWhileResuming (which resuming tabs get the "Resuming" cover over their terminal)', () => {
   // CODEX§9 AGY§5
-  it('covers the terminal of a resuming Claude Code or Antigravity tab, and never a Codex one, whose question before it binds the cover would hide', () => {
-    expect(SESSION_BACKENDS.filter((b) => !resumeScreenMayHideAQuestion(b))).toEqual([
-      'claude',
-      'agy'
-    ])
-  })
-
-  // AGY§8
-  it('counts only an Antigravity tab as having no conversation until its first prompt', () => {
-    expect(SESSION_BACKENDS.filter(conversationAtFirstPrompt)).toEqual(['agy'])
+  it('covers a Claude Code or Antigravity tab, and never a Codex one, whose question before it binds the cover would hide, nor a plain terminal', () => {
+    const kinds = [...SESSION_BACKENDS, 'shell'] as const
+    expect(kinds.filter(coversTerminalWhileResuming)).toEqual(['claude', 'agy'])
   })
 })
 
