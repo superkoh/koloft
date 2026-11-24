@@ -1,38 +1,17 @@
+import { TASK_TIERS, type ModelPick as Pick, type TaskTier } from '@core/agent/manifest'
+import { agentManifest, ofEachAgent } from '@core/agent/registry'
 import { CRON_EFFORTS, isCronEffort, type BackendId, type CronEffort, type OwnPick } from './types'
 import { BACKEND_LABEL } from './sessionBackend'
 import { NAMED_MODELS, effortsFor, namedModel, takenEffort } from './cronModels'
 import { isValidModelName } from './cronNames'
 import { isRecord } from './workbenchState'
 
-export interface Pick {
-  model: string
-  effort: CronEffort
-}
+export { TASK_TIERS }
+export type { Pick, TaskTier }
 
-export const TASK_TIERS = ['very simple', 'normal', 'very hard'] as const
-export type TaskTier = (typeof TASK_TIERS)[number]
-
-// CODEX§14 AGY§21
-export const TIER_PICKS: Record<BackendId, Record<TaskTier, Pick>> = {
-  claude: {
-    'very simple': { model: 'sonnet', effort: 'low' },
-    normal: { model: 'opus', effort: 'medium' },
-    'very hard': { model: 'fable', effort: 'high' }
-  },
-  codex: {
-    'very simple': { model: 'luna', effort: 'low' },
-    normal: { model: 'sol', effort: 'medium' },
-    'very hard': { model: 'astra', effort: 'high' }
-  },
-  agy: {
-    'very simple': { model: 'flash', effort: 'low' },
-    normal: { model: 'neon', effort: 'medium' },
-    'very hard': { model: 'carbon', effort: 'high' }
-  }
-}
-
-// AGY§21
-const NORMAL_ON_EVERY_ACCOUNT: Partial<Record<BackendId, string>> = { agy: 'argon' }
+export const TIER_PICKS: Record<BackendId, Record<TaskTier, Pick>> = ofEachAgent(
+  (id) => agentManifest(id).picksByTaskTier
+)
 
 const WITHOUT_FABLE: Pick = { model: 'opus', effort: 'xhigh' }
 
@@ -42,7 +21,7 @@ export const familyNamesOf = (backend: BackendId): string[] => [
   ...new Set(
     TASK_TIERS.flatMap((tier) => [
       TIER_PICKS[backend][tier].model,
-      tier === 'normal' ? NORMAL_ON_EVERY_ACCOUNT[backend] : undefined
+      tier === 'normal' ? agentManifest(backend).normalTaskFamilyEveryAccountHas : undefined
     ]).filter((family): family is string => !!family)
   )
 ]
@@ -138,7 +117,11 @@ function runsOn(
   const stand = TIER_PICKS[backend].normal.model
   const hard = TIER_PICKS[backend]['very hard'].model
   const instead =
-    wanted === hard ? stand : wanted === stand ? NORMAL_ON_EVERY_ACCOUNT[backend] : undefined
+    wanted === hard
+      ? stand
+      : wanted === stand
+        ? agentManifest(backend).normalTaskFamilyEveryAccountHas
+        : undefined
   return { model: instead ? runsOn(backend, instead, listed).model : undefined, fellBack: true }
 }
 

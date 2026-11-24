@@ -1,4 +1,5 @@
 import type { AssistRowId, BackendId, CronEffort } from '@shared/types'
+import { agentManifest, ofEachAgent } from './agent/registry'
 
 export interface ModelAndEffort {
   model?: string
@@ -16,12 +17,10 @@ export type Assist<Id extends AssistRowId = AssistRowId> = (
   job: AssistJob<Id>
 ) => Promise<string | null>
 
-// CC§9 CODEX§15
-export const EVERY_ACCOUNT_TAKES: Record<BackendId, ModelAndEffort> = {
-  claude: { model: 'haiku' },
-  codex: { model: 'gpt-6-luna' },
-  agy: {}
-}
+export const EVERY_ACCOUNT_TAKES: Record<BackendId, ModelAndEffort> = ofEachAgent((id) => {
+  const model = agentManifest(id).modelEveryAccountTakes
+  return model ? { model } : {}
+})
 
 // CC§9 CODEX§15 AGY§21
 export const SMALL_AND_QUICK: Record<BackendId, ModelAndEffort> = {

@@ -3,6 +3,7 @@ import fs from 'fs'
 import path from 'path'
 import { PLUGIN_FORMAT_VERSION, type PluginManifest, type SettingsPage } from '@core/plugin'
 import { registerSettings, setting, settingsPages, type SettingKeys } from '@core/settings'
+import { AGENT_SETTING_DEFAULTS } from '@core/agent/registry'
 import { PLUGINS } from '@plugins/list'
 import { PLUGIN_SETTINGS } from '@plugins/settings'
 import { APP_DEFAULT_SETTINGS } from '@shared/types'
@@ -99,13 +100,14 @@ describe('setting keys a plugin registers', () => {
     expect(keys.retired).toEqual(['oldOne'])
   })
 
-  it('the list of settings holds the shared/settings.ts of every plugin folder that has one, keyed by its id; the app registers them; no plugin key is one of the app’s own keys, and no key a plugin retires is still in use', () => {
+  it('the list of settings holds the shared/settings.ts of every plugin folder that has one, keyed by its id; the app registers them; no plugin key is one of the app’s own keys or of an agent’s own settings, and no key a plugin retires is still in use', () => {
     const withSettings = fs
       .readdirSync(PLUGIN_FOLDERS)
       .filter((id) => fs.existsSync(path.join(PLUGIN_FOLDERS, id, 'shared', 'settings.ts')))
     expect(Object.keys(PLUGIN_SETTINGS).sort()).toEqual(withSettings.sort())
     const keys = registerSettings(PLUGINS, PLUGIN_SETTINGS)
-    const appKeys = Object.keys(APP_DEFAULT_SETTINGS)
+    const appKeys = [...Object.keys(APP_DEFAULT_SETTINGS), ...Object.keys(AGENT_SETTING_DEFAULTS)]
+    expect(appKeys).toContain('fablePriority')
     const pluginKeys = Object.keys(keys.defaults)
     expect(pluginKeys.filter((k) => appKeys.includes(k))).toEqual([])
     expect(keys.retired.filter((k) => [...appKeys, ...pluginKeys].includes(k))).toEqual([])

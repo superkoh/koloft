@@ -63,11 +63,8 @@
     ],
     "src/core/assistModels.ts": [
       "agy: { model: 'gemini-3.8-flash', effort: 'low' }",
-      "agy: {}",
       "claude: EVERY_ACCOUNT_TAKES.claude,",
-      "claude: { model: 'haiku' },",
-      "codex: { ...EVERY_ACCOUNT_TAKES.codex, effort: 'low' },",
-      "codex: { model: 'gpt-6-luna' },"
+      "codex: { ...EVERY_ACCOUNT_TAKES.codex, effort: 'low' },"
     ],
     "src/core/typeKeys.ts": [
       "const CHARS_PER_WRITE_CLAUDE_STILL_TAKES_AS_TYPING = 128",
@@ -1777,33 +1774,6 @@
     "src/shared/butlerStart.ts": [
       "if (backend !== 'claude' && !backendAvailable(inputs.installed, backend))"
     ],
-    "src/shared/cronModels.ts": [
-      "['gemini-3.1-pro', AGY_EFFORTS_EVERY_MODEL_TAKES]",
-      "['gemini-3.6-flash', LOW_MEDIUM_HIGH],",
-      "['gemini-3.7-flash', LOW_MEDIUM_HIGH],",
-      "['gemini-3.8-flash', LOW_MEDIUM_HIGH],",
-      "['gemini-4-argon', LOW_MEDIUM_HIGH],",
-      "['gemini-4-carbon', LOW_MEDIUM_HIGH],",
-      "['gemini-4-neon', LOW_TO_XHIGH],",
-      "agy: [",
-      "claude: [",
-      "codex: [",
-      "const AGY_EFFORTS_EVERY_MODEL_TAKES: readonly CronEffort[] = ['low', 'high']",
-      "const AGY_EFFORTS_OF: ReadonlyMap<string, readonly CronEffort[]> = new Map([",
-      "if (backend !== 'agy') return CRON_EFFORTS",
-      "return (model && AGY_EFFORTS_OF.get(model)) || AGY_EFFORTS_EVERY_MODEL_TAKES",
-      "{ id: 'fable', label: 'Fable' },",
-      "{ id: 'gemini-3.1-pro', label: 'Gemini 3.1 Pro' }",
-      "{ id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },",
-      "{ id: 'gemini-4-argon', label: 'Gemini 4 Argon' },",
-      "{ id: 'gemini-4-carbon', label: 'Gemini 4 Carbon', notOnEveryAccount: true },",
-      "{ id: 'gemini-4-neon', label: 'Gemini 4 Neon', notOnEveryAccount: true },",
-      "{ id: 'gpt-6-astra', label: 'GPT-6-Astra' },",
-      "{ id: 'gpt-6-luna', label: 'GPT-6-Luna' }",
-      "{ id: 'gpt-6.1-sol', label: 'GPT-6.1-Sol' },",
-      "{ id: 'opus', label: 'Opus' },",
-      "{ id: 'sonnet', label: 'Sonnet' }"
-    ],
     "src/shared/cronNames.ts": ["return `${root}/.claude/worktrees`"],
     "src/shared/ipcChannels.ts": ["codexUseReset: 'accounts:codex-use-reset',"],
     "src/shared/preview.ts": [
@@ -1890,24 +1860,16 @@
     ],
     "src/shared/sessionDefaults.ts": ["if (backend === 'claude') return NAMED_MODELS.claude"],
     "src/shared/sessionPicks.ts": [
-      "'very hard': { model: 'fable', effort: 'high' }",
-      "'very simple': { model: 'sonnet', effort: 'low' },",
-      "agy: {",
-      "claude: {",
-      "codex: {",
-      "const NORMAL_ON_EVERY_ACCOUNT: Partial<Record<BackendId, string>> = { agy: 'argon' }",
       "const WITHOUT_FABLE: Pick = { model: 'opus', effort: 'xhigh' }",
       "export const listsModels = (backend: BackendId): boolean => backend === 'codex' || backend === 'agy'",
       "export function agyListedModels(stdout: string): ListedModel[] {",
       "export function codexListedModels(reply: unknown): ListedModel[] {",
       "fableLeft: boolean",
       "if (backend === 'claude')",
-      "normal: { model: 'opus', effort: 'medium' },",
       "note: `No Claude account has ${hard.model} allowance left, so it runs on ${pickFlags(WITHOUT_FABLE)}.`",
       "pick: WITHOUT_FABLE,",
       "return asked.model === hard.model && !facts.fableLeft"
     ],
-    "src/shared/settingsOps.ts": ["'fablePriority',"],
     "src/shared/types.ts": [
       "'agy-home'",
       "'codex-home',",
@@ -1932,8 +1894,6 @@
       "fable: FableCapability",
       "fable: a.fable === 'yes' || a.fable === 'no' ? a.fable : 'unknown',",
       "fableCheckedAt?: number",
-      "fablePriority: boolean",
-      "fablePriority: true,",
       "if (a.kind === 'custom' && !isHttpUrl(a.baseUrl)) continue",
       "if (kind === 'oauth') return '-claude-oauth'",
       "limits?: CodexLimits",

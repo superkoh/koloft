@@ -322,6 +322,15 @@ describe('sanitizeLoadedSettings and keys Koloft no longer has', () => {
   })
 })
 
+describe('sanitizeLoadedSettings and a setting that is one agent’s own', () => {
+  it('"prefer accounts with fable allowance" loads on from a file that never saved it, and as saved from one that did', () => {
+    expect(sanitizeLoadedSettings({}).fablePriority).toBe(true)
+    expect(sanitizeLoadedSettings({ fontSize: 13 }).fablePriority).toBe(true)
+    expect(sanitizeLoadedSettings({ fablePriority: false }).fablePriority).toBe(false)
+    expect(sanitizeLoadedSettings({ fablePriority: true }).fablePriority).toBe(true)
+  })
+})
+
 describe('sanitizeLoadedSettings and the account list', () => {
   it('merges accounts that differ only in letter case within one kind, keeping the first, and keeps the same name under another kind', () => {
     const base = { enabled: true, fable: 'unknown', status: 'ok', addedAt: 1 }

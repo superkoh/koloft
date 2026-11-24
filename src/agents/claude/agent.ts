@@ -1,4 +1,5 @@
 import type { AgentManifest } from '@core/agent/manifest'
+import { CRON_EFFORTS } from '@shared/efforts'
 
 export const agent = {
   id: 'claude',
@@ -36,9 +37,23 @@ export const agent = {
     internalNameEndings: [],
     foldersMadeEmptyAhead: []
   },
+  // CC§9
+  modelEveryAccountTakes: 'haiku',
+  namedModels: [
+    { id: 'fable', label: 'Fable' },
+    { id: 'opus', label: 'Opus' },
+    { id: 'sonnet', label: 'Sonnet' }
+  ],
+  picksByTaskTier: {
+    'very simple': { model: 'sonnet', effort: 'low' },
+    normal: { model: 'opus', effort: 'medium' },
+    'very hard': { model: 'fable', effort: 'high' }
+  },
+  ownSettings: { fablePriority: { default: true, keptOnReset: true } },
   flags: {
     resumeCanWaitOnAQuestionBeforeAnySign: false,
     conversationStartsAtFirstPrompt: false,
     pasteKeepsItsLastLineFeeds: true
-  }
+  },
+  pureFunctions: { effortsAModelTakes: () => CRON_EFFORTS }
 } as const satisfies AgentManifest
