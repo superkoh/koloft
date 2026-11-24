@@ -8,6 +8,7 @@ import {
   EVERY_NAME,
   LISTS_OF_AGENTS,
   MANIFEST_TYPES,
+  byCodeUnit,
   importedPath,
   importedSpecifierOf,
   isMember,
@@ -72,7 +73,6 @@ const RULES = {
     'it imports anything under src/plugins, a list of agents, or another agent’s folder.'
 }
 
-const byCodeUnit = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
 const flag = (name) => process.argv.includes(name)
 const PRUNE = flag('--prune')
 const ACCEPT_NEW = flag('--accept-new')

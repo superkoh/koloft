@@ -1,15 +1,20 @@
 // ADR-0054
 import fs from 'node:fs'
 import path from 'node:path'
-import { createJiti } from 'jiti'
 import * as prettier from 'prettier'
-import { AGENTS_DIR, ALIASES, LISTS_OF_AGENTS, sourceFilesUnder } from './source-imports.mjs'
+import {
+  AGENT_LIST,
+  LISTS_OF_AGENTS,
+  agentFolderOf,
+  byCodeUnit,
+  importAgentList,
+  sourceFilesUnder
+} from './source-imports.mjs'
 
 const ROOT = process.cwd()
 const BASELINE = 'scripts/agent-words-baseline.json'
 const CHECKED_FILE = /\.([cm]?[jt]sx?|css)$/
 const STYLE_FILE = /\.css$/
-const AGENT_LIST = 'src/agents/list.ts'
 const MARKER = String.raw`(?:ADR-\d{4}|AGY§\d+|CC§\d+|CODEX§\d+|PLATFORM§\d+)`
 const MARKER_COMMENT = new RegExp(
   String.raw`\{?\s*\/\*\s*${MARKER}(?:\s+${MARKER})*\s*\*\/\s*\}?|\/\/\s*${MARKER}(?:\s+${MARKER})*\s*$`,
@@ -28,7 +33,6 @@ const ACCEPT_NEW = process.argv.includes('--accept-new')
 
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const lineKey = (text) => text.replace(MARKER_COMMENT, '').trim().replace(/\s+/g, ' ')
-const byCodeUnit = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
 
 function cannotRun(why) {
   console.error(`check-agent-words: ${why}`)
@@ -36,12 +40,7 @@ function cannotRun(why) {
 }
 
 async function agentMatchers() {
-  const alias = Object.fromEntries(
-    Object.entries(ALIASES).map(([name, dir]) => [name, path.join(ROOT, dir)])
-  )
-  const { AGENTS } = await createJiti(import.meta.url, { alias }).import(
-    path.join(ROOT, AGENT_LIST)
-  )
+  const { AGENTS } = await importAgentList(ROOT)
   return AGENTS.map(({ id, wordsThatNameMe: w }) => ({
     id,
     words: [
@@ -56,10 +55,6 @@ async function agentMatchers() {
       }))
     ]
   }))
-}
-
-function folderOf(file) {
-  return file.startsWith(AGENTS_DIR) ? file.slice(AGENTS_DIR.length).split('/')[0] : undefined
 }
 
 function hitsIn(file, text, agents, owner) {
@@ -133,7 +128,7 @@ function compare(baseline, files, agents) {
   for (const file of files) {
     if (LISTS_OF_AGENTS.has(file) || Object.hasOwn(baseline.awaitingMove, file)) continue
     const text = fs.readFileSync(path.join(ROOT, file), 'utf8')
-    const hits = hitsIn(file, text, agents, folderOf(file)).filter((h) => {
+    const hits = hitsIn(file, text, agents, agentFolderOf(file)).filter((h) => {
       const allow = baseline.allowed.find(
         (a) => !allowedUsed.has(a) && a.file === file && a.text === h.key
       )
