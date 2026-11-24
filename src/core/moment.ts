@@ -62,9 +62,14 @@ export interface StateChanged {
   next: SessionStatus
 }
 
+export interface ToolCall {
+  name: string
+  input: Record<string, unknown>
+}
+
 export interface ToolDone {
   tabId: string
-  call: { name: string; input: Record<string, unknown> }
+  call: ToolCall
   endsTheAsk: boolean
 }
 

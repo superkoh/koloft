@@ -1,3 +1,4 @@
+import { EventEmitter } from 'events'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
@@ -10,7 +11,8 @@ import { projectInfoFor, realpathSafe } from '../../../main/projectInfo'
 import { worktreeHomeRoot } from '../../../main/resumePlan'
 import { inspectTaskProcs, type TaskProcs } from '../../../main/taskProcs'
 import { sharedProcessTable } from '../../../main/processTable'
-import { SessionRuntime, envMs, turnOf, type Turn } from '@core/agent/sessionRuntime'
+import { envMs, turnOf, type SessionRuntime, type Turn } from '@core/agent/sessionRuntime'
+import type { ToolCall } from '@core/moment'
 import { readAppendedLines, type AppendCursor } from '../../../main/appendedLines'
 import { capTouched, shellWrittenFiles, touchedItem } from '../../../main/touchedFiles'
 import {
@@ -19,7 +21,7 @@ import {
   realFilesHere,
   type RealFilesOnMachine
 } from '../../../main/realFiles'
-import { ClaudeTouchedFiles, toolFilePath } from '@agents/claude/main/claudeTouchedFiles'
+import { ClaudeTouchedFiles, toolFilePath } from './claudeTouchedFiles'
 import { claudeToolDid } from '../../../main/rowActivity'
 import { TitleSources } from '../../../main/titleSources'
 import { UsageMeter } from '../../../main/usageMeter'
@@ -29,10 +31,11 @@ import { BackgroundLedger, isBackgroundSpawnAck } from '../../../main/background
 import type { LaunchedSession } from '../../../main/accountPicker'
 import type { MachineTmp } from '../../../main/remote/install'
 import { REMOTE_CLAUDE_PROJECTS } from '../../../main/remote/paths'
+import type { RemoteTab } from '../../../main/host/host'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
-import { claudeWroteIt, commandOutputOf } from '@agents/claude/main/claudeCommandOutput'
-import { withoutHandover } from './handoverPreamble'
-import { messageText } from './messageText'
+import { claudeWroteIt, commandOutputOf, type CommandOutput } from './claudeCommandOutput'
+import { withoutHandover } from '@plugins/sessions/main/handoverPreamble'
+import { messageText } from '@plugins/sessions/main/messageText'
 import {
   parseRecord,
   type TextBlock,
@@ -64,8 +67,6 @@ const RELOCATE_SETTLE_MS = envMs('KOLOFT_RELOCATE_SETTLE_MS', 1200)
 // CC§2
 const TURN_TEXT_WAIT_MS = envMs('KOLOFT_TURN_TEXT_WAIT_MS', 5000)
 const A_STOP_WAITS_FOR_ITS_LINES_AT_MOST_MS = 60_000
-
-export { encodeCwd }
 
 // PLATFORM§3
 function cpuSpentSince(seen: Map<number, number>, cpuMsByPid: Map<number, number>): number {
@@ -210,11 +211,6 @@ function turnedDown(result: ToolResultBlock): boolean {
     typeof result.content === 'string' &&
     result.content.startsWith(TURNED_DOWN)
   )
-}
-
-export interface ToolCall {
-  name: string
-  input: Record<string, unknown>
 }
 
 const THIS_MAC_TMP: MachineTmp = { tmpRoot: TMP_ROOT, uid: process.getuid?.() ?? 0 }
@@ -435,12 +431,6 @@ export function findTranscript(projectsRoot: string, sessionId: string): string 
     .reduce((a, b) => (b.size > a.size ? b : a)).file
 }
 
-export interface RemoteTab {
-  host: string
-  projectsRoot: string
-  tmuxName: string
-}
-
 interface Tracked {
   info: SessionInfo
   compactingFrom?: Turn
@@ -504,11 +494,23 @@ interface Tracked {
   subagentTimer?: ReturnType<typeof setInterval>
 }
 
-export class SessionTracker extends SessionRuntime {
+export class SessionTracker extends EventEmitter<{
+  update: [SessionInfo[]]
+  relocated: [{ tabId: string; dir: string }]
+  'tool-done': [ToolCall & { tabId: string }]
+  'command-output': [CommandOutput & { tabId: string }]
+  'turn-ended': [{ tabId: string; turn: TalkTurn }]
+}> {
   private tracked = new Map<string, Tracked>()
   private pendingPicked = new Map<string, string>()
   private emitTimer?: ReturnType<typeof setTimeout>
   private lastEmitMs = 0
+
+  constructor(private runtime: SessionRuntime) {
+    super()
+    runtime.on('status', ({ tabId, next }) => this.statusChanged(tabId, next))
+  }
+
   pidOf?: (tabId: string) => number | undefined
   inspect = async (
     rootPid: number,
@@ -601,7 +603,7 @@ export class SessionTracker extends SessionRuntime {
       remote
     }
     this.tracked.set(tabId, t)
-    this.emitUpdate()
+    this.updateSoon()
     // ADR-0025
     if (!remote) this.resolveWorktree(t)
   }
@@ -613,7 +615,7 @@ export class SessionTracker extends SessionRuntime {
       if (!alive) this.stopFollowing(t)
       t.info.alive = alive
       t.info.updatedAt = Date.now()
-      this.emitUpdate()
+      this.updateSoon()
     }
   }
 
@@ -653,15 +655,15 @@ export class SessionTracker extends SessionRuntime {
   ): void {
     const tabId = t.info.tabId
     if (event.type === 'compacting') {
-      t.idleCompaction = event.trigger === 'auto' && this.turnOver(tabId)
+      t.idleCompaction = event.trigger === 'auto' && this.runtime.turnOver(tabId)
       if (t.idleCompaction) return
-      t.compactingFrom = this.turnNow(tabId) ?? 'ended'
+      t.compactingFrom = this.runtime.turn(tabId) ?? 'ended'
       this.recordHookTurn(tabId, 'working')
       return
     }
     const from = t.compactingFrom
     t.compactingFrom = undefined
-    if (from && this.turnNow(tabId) === 'working') this.recordHookTurn(tabId, from)
+    if (from && this.runtime.turn(tabId) === 'working') this.recordHookTurn(tabId, from)
   }
 
   takeIdleCompaction(tabId: string): boolean {
@@ -673,13 +675,13 @@ export class SessionTracker extends SessionRuntime {
 
   // CC§14
   dialogAnswered(tabId: string): void {
-    if (this.turnNow(tabId) !== 'working') this.recordHookTurn(tabId, 'working')
+    if (this.runtime.turn(tabId) !== 'working') this.recordHookTurn(tabId, 'working')
   }
 
   // CC§8
   setSessionCrons(tabId: string, crons: unknown[]): void {
     const wakeups = wakeupItems(crons)
-    this.setWakeupPending(tabId, crons.length > 0)
+    this.runtime.setWakeupPending(tabId, crons.length > 0)
     const t = this.tracked.get(tabId)
     if (!t) return
     const before = new Set(t.wakeups.map((w) => w.id))
@@ -701,22 +703,18 @@ export class SessionTracker extends SessionRuntime {
 
   private applyStatus(t: Tracked, turn: Turn, heldByBackground = false): void {
     if (this.tracked.get(t.info.tabId) !== t) return
-    this.recordTurn(t.info.tabId, turn, heldByBackground)
+    this.runtime.recordTurn(t.info.tabId, turn, heldByBackground)
   }
 
-  protected override statusChanged(tabId: string, status: SessionStatus): void {
+  private statusChanged(tabId: string, status: SessionStatus): void {
     const t = this.tracked.get(tabId)
     if (!t) return
     t.info.status = status
     t.info.updatedAt = Date.now()
-    this.emitUpdate()
+    this.updateSoon()
   }
 
-  protected override turnOverChanged(): void {
-    this.emitUpdate()
-  }
-
-  protected override async workStillRunning(tabId: string): Promise<boolean> {
+  async workStillRunning(tabId: string): Promise<boolean> {
     const t = this.tracked.get(tabId)
     if (!t) return false
     if (this.leftBehind?.(t.info.sessionId)) return true
@@ -861,10 +859,11 @@ export class SessionTracker extends SessionRuntime {
   }
 
   private setBackgroundItems(t: Tracked, items: BackgroundItem[]): void {
-    if (this.tracked.get(t.info.tabId) !== t || !this.setBackground(t.info.tabId, items)) return
+    if (this.tracked.get(t.info.tabId) !== t || !this.runtime.setBackground(t.info.tabId, items))
+      return
     t.info.background = items.length ? items : undefined
     t.info.updatedAt = Date.now()
-    this.emitUpdate()
+    this.updateSoon()
   }
 
   private async refreshProcs(t: Tracked, force = false): Promise<void> {
@@ -922,7 +921,7 @@ export class SessionTracker extends SessionRuntime {
   private quietMs(t: Tracked): number {
     return (
       Date.now() -
-      Math.max(t.lastMainActivityTs, t.lastBgActivityTs, this.statusSince(t.info.tabId))
+      Math.max(t.lastMainActivityTs, t.lastBgActivityTs, this.runtime.statusSince(t.info.tabId))
     )
   }
 
@@ -940,14 +939,14 @@ export class SessionTracker extends SessionRuntime {
     if (account && t.info.account !== account) {
       t.info.account = account
       t.info.updatedAt = Date.now()
-      this.emitUpdate()
+      this.updateSoon()
     }
     if (cwd) {
       if (source !== 'compact') this.setTreeRoot(t, cwd)
       if (cwd !== t.info.cwd) {
         t.info.cwd = cwd
         t.info.updatedAt = Date.now()
-        this.emitUpdate()
+        this.updateSoon()
       }
     } else if (source !== 'compact') {
       t.rootPinAwaitingCatchup = true
@@ -978,7 +977,7 @@ export class SessionTracker extends SessionRuntime {
     if (t.info.pickedAccount !== account) {
       t.info.pickedAccount = account
       t.info.updatedAt = Date.now()
-      this.emitUpdate()
+      this.updateSoon()
     }
   }
 
@@ -1005,7 +1004,7 @@ export class SessionTracker extends SessionRuntime {
     const t = this.tracked.get(tabId)
     if (t) this.cleanup(t)
     this.tracked.delete(tabId)
-    this.emitUpdate()
+    this.updateSoon()
   }
 
   // CC§8
@@ -1084,7 +1083,7 @@ export class SessionTracker extends SessionRuntime {
   }
 
   private cleanup(t: Tracked): void {
-    this.forget(t.info.tabId)
+    this.runtime.forget(t.info.tabId)
     this.stopFollowing(t)
   }
 
@@ -1118,17 +1117,17 @@ export class SessionTracker extends SessionRuntime {
     t.info.treeRoot = root
     t.info.updatedAt = Date.now()
     this.resolveWorktree(t)
-    this.emitUpdate()
+    this.updateSoon()
   }
 
   private applyWorktree(t: Tracked, name: string | undefined): void {
     if (t.info.worktree === name) return
     t.info.worktree = name
     t.info.updatedAt = Date.now()
-    this.emitUpdate()
+    this.updateSoon()
   }
 
-  private emitUpdate(): void {
+  updateSoon(): void {
     if (this.emitTimer) return
     const wait = Math.max(0, EMIT_THROTTLE_MS - (Date.now() - this.lastEmitMs))
     this.emitTimer = setTimeout(() => {
@@ -1331,7 +1330,7 @@ export class SessionTracker extends SessionRuntime {
   private adoptRelocated(t: Tracked, file: string): void {
     this.watchTranscript(t, file)
     t.info.updatedAt = Date.now()
-    this.emitUpdate()
+    this.updateSoon()
     if (t.landTimer) clearTimeout(t.landTimer)
     t.landTimer = setTimeout(() => {
       t.landTimer = undefined
@@ -1363,7 +1362,7 @@ export class SessionTracker extends SessionRuntime {
     }
     const subChanged = await this.tailSubagents(t)
     const s = t.info.status
-    if (this.isHeldByBackground(t.info.tabId) || (s !== 'working' && s !== 'approval'))
+    if (this.runtime.isHeldByBackground(t.info.tabId) || (s !== 'working' && s !== 'approval'))
       await this.refreshProcs(t)
     if (mainChanged || subChanged) this.recompute(t)
     this.reconcileBackground(t)
@@ -1374,12 +1373,12 @@ export class SessionTracker extends SessionRuntime {
     if (
       (s === 'waiting' || s === 'idle') &&
       t.caughtUp &&
-      t.lastBgActivityTs > this.statusSince(t.info.tabId) + RESUME_AFTER_STOP_MS
+      t.lastBgActivityTs > this.runtime.statusSince(t.info.tabId) + RESUME_AFTER_STOP_MS
     ) {
       this.applyStatus(t, 'ended', true)
       return
     }
-    if (!this.isHeldByBackground(t.info.tabId)) {
+    if (!this.runtime.isHeldByBackground(t.info.tabId)) {
       if (s !== 'working' && s !== 'approval') this.judgeReported(t, false)
       return
     }
@@ -1432,9 +1431,9 @@ export class SessionTracker extends SessionRuntime {
     const s = t.info.status
     if (s !== 'working' && s !== 'approval') return
     const tabId = t.info.tabId
-    if (this.statusSince(tabId) > t.lastInterruptTs) return
+    if (this.runtime.statusSince(tabId) > t.lastInterruptTs) return
     await this.refreshProcs(t, true)
-    if (this.tracked.get(tabId) !== t || this.statusSince(tabId) > t.lastInterruptTs) return
+    if (this.tracked.get(tabId) !== t || this.runtime.statusSince(tabId) > t.lastInterruptTs) return
     this.applyStatus(t, 'ended', this.judgeReported(t))
   }
 
@@ -1514,7 +1513,7 @@ export class SessionTracker extends SessionRuntime {
       this.applyStatus(t, 'working')
     } else if (
       s === 'waiting' &&
-      Date.now() - this.statusSince(t.info.tabId) > RESUME_AFTER_STOP_MS
+      Date.now() - this.runtime.statusSince(t.info.tabId) > RESUME_AFTER_STOP_MS
     ) {
       // CC§2
       this.applyStatus(t, 'working')
@@ -1639,7 +1638,7 @@ export class SessionTracker extends SessionRuntime {
         activity = 'user'
         if (
           (t.caughtUp || (isFinite(recTs) && recTs >= t.resetMs)) &&
-          this.isHeldByBackground(t.info.tabId)
+          this.runtime.isHeldByBackground(t.info.tabId)
         ) {
           this.applyStatus(t, 'working')
         }
@@ -1692,6 +1691,6 @@ export class SessionTracker extends SessionRuntime {
     if (t.liveWrites && !t.real.findingAWrite(touched)) t.info.liveWrites = t.liveWrites
     t.info.usage = t.meter.usage()
     t.info.updatedAt = Date.now()
-    this.emitUpdate()
+    this.updateSoon()
   }
 }

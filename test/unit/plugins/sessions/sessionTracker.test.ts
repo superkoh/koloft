@@ -2,15 +2,24 @@ import { describe, it, expect, beforeAll, afterAll, afterEach, onTestFinished, v
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import type { EventEmitter } from 'events'
 import type { ClaudeSessionInfo as SessionInfo } from '@shared/types'
+import { encodeCwd } from '@shared/cwdKey'
 
-let SessionTracker: typeof import('../../../../src/plugins/sessions/main/sessionTracker').SessionTracker
-let encodeCwd: typeof import('../../../../src/plugins/sessions/main/sessionTracker').encodeCwd
-let scratchpadDirFor: typeof import('../../../../src/plugins/sessions/main/sessionTracker').scratchpadDirFor
-let classifyUserPrompt: typeof import('../../../../src/plugins/sessions/main/sessionTracker').classifyUserPrompt
-let transcriptTurns: typeof import('../../../../src/plugins/sessions/main/sessionTracker').transcriptTurns
-let lastTurnsOfLines: typeof import('../../../../src/plugins/sessions/main/sessionTracker').lastTurnsOfLines
+vi.mock('electron', async () => {
+  const nfs = await import('node:fs')
+  const nos = await import('node:os')
+  const npath = await import('node:path')
+  const base = nfs.mkdtempSync(npath.join(nos.tmpdir(), 'koloft-run-state-'))
+  return { app: { getPath: () => base, getName: () => 'koloft-dev', isPackaged: false } }
+})
+
+type SessionTracker = import('../../../../src/agents/claude/main/sessionTracker').SessionTracker
+let trackerWiredAsTheAppWiresIt: typeof import('../../helpers/claudeRunState').trackerWiredAsTheAppWiresIt
+let runtimeOf: typeof import('../../helpers/claudeRunState').runtimeOf
+let scratchpadDirFor: typeof import('../../../../src/agents/claude/main/sessionTracker').scratchpadDirFor
+let classifyUserPrompt: typeof import('../../../../src/agents/claude/main/sessionTracker').classifyUserPrompt
+let transcriptTurns: typeof import('../../../../src/agents/claude/main/sessionTracker').transcriptTurns
+let lastTurnsOfLines: typeof import('../../../../src/agents/claude/main/sessionTracker').lastTurnsOfLines
 let TRANSCRIPT_TAIL_FIRST_READ_BYTES: number
 let home: string
 let projectsRoot: string
@@ -26,28 +35,27 @@ beforeAll(async () => {
   process.env.KOLOFT_APPEND_READ_CHUNK_BYTES = READ_PIECE_SMALLER_THAN_ONE_RECORD_BYTES
   projectsRoot = path.join(home, '.claude', 'projects')
   ;({
-    SessionTracker,
-    encodeCwd,
     scratchpadDirFor,
     classifyUserPrompt,
     transcriptTurns,
     lastTurnsOfLines,
     TRANSCRIPT_TAIL_FIRST_READ_BYTES
-  } = await import('../../../../src/plugins/sessions/main/sessionTracker'))
+  } = await import('../../../../src/agents/claude/main/sessionTracker'))
+  ;({ trackerWiredAsTheAppWiresIt, runtimeOf } = await import('../../helpers/claudeRunState'))
 })
 
 afterAll(() => {
   fs.rmSync(home, { recursive: true, force: true })
 })
 
-const trackers: InstanceType<typeof SessionTracker>[] = []
+const trackers: SessionTracker[] = []
 afterEach(() => {
   for (const t of trackers) for (const s of t.list()) t.untrack(s.tabId)
   trackers.length = 0
 })
 
-function newTracker(): InstanceType<typeof SessionTracker> {
-  const t = new SessionTracker()
+function newTracker(): SessionTracker {
+  const t = trackerWiredAsTheAppWiresIt()
   trackers.push(t)
   return t
 }
@@ -86,7 +94,7 @@ function writeSubagentJsonl(
 const HANG_NOT_LATENCY_BUDGET_FOR_A_LOADED_CI_MS = 15000
 
 function waitFor(
-  tracker: EventEmitter,
+  tracker: SessionTracker,
   pred: (s: SessionInfo) => boolean,
   timeoutMs = HANG_NOT_LATENCY_BUDGET_FOR_A_LOADED_CI_MS
 ): Promise<SessionInfo> {
@@ -875,7 +883,9 @@ describe('SessionTracker — run-state', () => {
     tracker.track('tabT', cwd)
     const file = writeJsonl(cwd, SID, [{ type: 'user', message: { content: 'go' }, cwd }])
     const transitions: { tabId: string; prev?: string; next: string }[] = []
-    tracker.on('status', (t: { tabId: string; prev?: string; next: string }) => transitions.push(t))
+    runtimeOf(tracker).on('status', (t: { tabId: string; prev?: string; next: string }) =>
+      transitions.push(t)
+    )
     tracker.bindSession('tabT', file, SID, cwd)
     await waitFor(tracker, (x) => x.tabId === 'tabT' && x.status === 'waiting')
 
@@ -930,14 +940,14 @@ describe('SessionTracker — run-state', () => {
     tracker.bindSession('tabD', file, SID, cwd)
     await waitFor(tracker, (x) => x.tabId === 'tabD' && x.status === 'waiting' && !!x.title)
 
-    tracker.showDialog('tabD', true)
-    expect(tracker.statusOf('tabD')).toBe('approval')
-    tracker.showDialog('tabD', false)
-    expect(tracker.statusOf('tabD')).toBe('waiting')
+    runtimeOf(tracker).showDialog('tabD', true)
+    expect(runtimeOf(tracker).statusOf('tabD')).toBe('approval')
+    runtimeOf(tracker).showDialog('tabD', false)
+    expect(runtimeOf(tracker).statusOf('tabD')).toBe('waiting')
 
     tracker.receive('tabD', { type: 'prompt' })
-    tracker.showDialog('tabD', true)
-    expect(tracker.statusOf('tabD')).toBe('approval')
+    runtimeOf(tracker).showDialog('tabD', true)
+    expect(runtimeOf(tracker).statusOf('tabD')).toBe('approval')
     tracker.receive('tabD', { type: 'prompt' })
     fs.appendFileSync(
       file,
@@ -956,25 +966,25 @@ describe('SessionTracker — run-state', () => {
       }) + '\n'
     )
     await waitFor(tracker, (x) => x.tabId === 'tabD' && !!x.usage)
-    expect(tracker.statusOf('tabD')).toBe('approval')
+    expect(runtimeOf(tracker).statusOf('tabD')).toBe('approval')
 
     tracker.receive('tabD', { type: 'notify', need: 'approval' })
     justClosed = true
-    tracker.showDialog('tabD', false)
-    expect(tracker.statusOf('tabD')).toBe('approval')
+    runtimeOf(tracker).showDialog('tabD', false)
+    expect(runtimeOf(tracker).statusOf('tabD')).toBe('approval')
     tracker.dialogAnswered('tabD')
-    expect(tracker.statusOf('tabD')).toBe('working')
+    expect(runtimeOf(tracker).statusOf('tabD')).toBe('working')
     tracker.receive('tabD', { type: 'notify', need: 'approval' })
-    expect(tracker.statusOf('tabD')).toBe('working')
+    expect(runtimeOf(tracker).statusOf('tabD')).toBe('working')
 
     justClosed = false
     tracker.receive('tabD', { type: 'notify', need: 'approval' })
-    expect(tracker.statusOf('tabD')).toBe('approval')
+    expect(runtimeOf(tracker).statusOf('tabD')).toBe('approval')
 
     await tracker.reportTurnEnd('tabD')
-    expect(tracker.statusOf('tabD')).toBe('waiting')
+    expect(runtimeOf(tracker).statusOf('tabD')).toBe('waiting')
     tracker.dialogAnswered('tabD')
-    expect(tracker.statusOf('tabD')).toBe('working')
+    expect(runtimeOf(tracker).statusOf('tabD')).toBe('working')
   })
 
   // CC§2
@@ -1453,7 +1463,7 @@ describe('SessionTracker — compact SessionStart (auto-compaction fires mid-tur
     await waitFor(tracker, (x) => x.tabId === 'tabCP' && x.status === 'working')
 
     const transitions: { prev?: string; next: string }[] = []
-    tracker.on('status', (t: { prev?: string; next: string }) => transitions.push(t))
+    runtimeOf(tracker).on('status', (t: { prev?: string; next: string }) => transitions.push(t))
     tracker.bindSession('tabCP', file, SID, cwd, '', 'compact')
     expect(tracker.list().find((s) => s.tabId === 'tabCP')!.status).toBe('working')
     expect(transitions).toEqual([])
@@ -1674,7 +1684,7 @@ describe("a tab whose claude runs on another machine: its transcript lives in a 
     return path.join(home, 'remote', 'devbox', 'projects')
   }
 
-  function remoteTracker(): InstanceType<typeof SessionTracker> {
+  function remoteTracker(): SessionTracker {
     const tracker = newTracker()
     tracker.track('tabR', RCWD, {
       host: 'devbox',
@@ -2042,7 +2052,7 @@ describe('SessionTracker — what each turn said: the owner, another session, an
     const ended: { turn: { said: { text: string }[]; reply: string } }[] = []
     let file = ''
 
-    async function remoteTurnTab(sid: string): Promise<InstanceType<typeof SessionTracker>> {
+    async function remoteTurnTab(sid: string): Promise<SessionTracker> {
       ended.length = 0
       const mirror = path.join(home, 'remote', sid, 'projects')
       file = path.join(mirror, encodeCwd(RCWD), sid + '.jsonl')
@@ -2069,7 +2079,7 @@ describe('SessionTracker — what each turn said: the owner, another session, an
       )
     const replies = (): string[] => ended.map((e) => e.turn.reply)
 
-    async function stopBeforeAnyLine(tracker: InstanceType<typeof SessionTracker>): Promise<void> {
+    async function stopBeforeAnyLine(tracker: SessionTracker): Promise<void> {
       tracker.receive('tabRT', { type: 'prompt' })
       await waitFor(tracker, (x) => x.tabId === 'tabRT' && x.status === 'working')
       tracker.receive('tabRT', { type: 'stop' })
@@ -2157,9 +2167,7 @@ describe('SessionTracker — what each turn said: the owner, another session, an
         .toEqual(['Picked: Green', 'Picked: Small'])
     })
 
-    function bindAsItsPromptedTurnReachesTheMirror(
-      sid: string
-    ): InstanceType<typeof SessionTracker> {
+    function bindAsItsPromptedTurnReachesTheMirror(sid: string): SessionTracker {
       ended.length = 0
       const mirror = path.join(home, 'remote', sid, 'projects')
       file = path.join(mirror, encodeCwd(RCWD), sid + '.jsonl')

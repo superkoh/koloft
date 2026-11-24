@@ -19,8 +19,11 @@
       "src/agents/agy/main/agyTab.ts": { "src/plugins/sessions/main/hooks.ts": "C9" },
       "src/agents/claude/main/backend.ts": {
         "src/plugins/sessions/main/hooks.ts": "C9",
-        "src/plugins/sessions/main/sessionTracker.ts": "B1",
         "src/plugins/sessions/main/workspaces.ts": "B2"
+      },
+      "src/agents/claude/main/sessionTracker.ts": {
+        "src/plugins/sessions/main/handoverPreamble.ts": "C2",
+        "src/plugins/sessions/main/messageText.ts": "C6"
       },
       "src/agents/codex/main/codexMachine.ts": { "src/plugins/sessions/main/hooks.ts": "C9" },
       "src/agents/codex/main/codexObservation.ts": { "src/plugins/sessions/main/dialog.ts": "C1" },
@@ -67,6 +70,15 @@
       },
       "src/agents/claude/main/claudeProbe.ts": { "src/main/loginShell.ts": "C8" },
       "src/agents/claude/main/claudeWorktreeExit.ts": { "src/main/resumePlan.ts": "C9" },
+      "src/agents/claude/main/sessionTracker.ts": {
+        "src/main/accountPicker.ts": "C4",
+        "src/main/host/host.ts": "B4",
+        "src/main/remote/install.ts": "C10",
+        "src/main/remote/paths.ts": "C10",
+        "src/main/resumePlan.ts": "C9",
+        "src/main/rowActivity.ts": "C3",
+        "src/main/taskProcs.ts": "C9"
+      },
       "src/agents/codex/main/backend.ts": {
         "src/main/accounts.ts": "C4",
         "src/main/resumePlan.ts": "C9"
@@ -149,6 +161,7 @@
         "src/agents/codex/main/codexMachine.ts": "C10"
       },
       "src/main/rowActivity.ts": { "src/agents/claude/main/claudeTouchedFiles.ts": "C3" },
+      "src/main/sessionAggregate.ts": { "src/agents/claude/main/sessionTracker.ts": "B2" },
       "src/main/shim.ts": {
         "src/agents/agy/main/agyAccounts.ts": "C8",
         "src/agents/claude/main/advisorOnFable.ts": "C8"
@@ -177,10 +190,6 @@
         "src/agents/claude/main/crossSessionMessage.ts": "C2"
       },
       "src/plugins/sessions/main/hooks.ts": { "src/agents/codex/main/codexLaunchConfig.ts": "C9" },
-      "src/plugins/sessions/main/sessionTracker.ts": {
-        "src/agents/claude/main/claudeCommandOutput.ts": "B1",
-        "src/agents/claude/main/claudeTouchedFiles.ts": "B1"
-      },
       "src/plugins/sessions/main/sessionVerbs.ts": {
         "src/agents/claude/main/crossSessionMessage.ts": "C2"
       },
@@ -193,10 +202,14 @@
         "src/agents/agy/main/backend.ts": "D1",
         "src/agents/claude/main/backend.ts": "D1",
         "src/agents/claude/main/crossSessionMessage.ts": "C2",
+        "src/agents/claude/main/sessionTracker.ts": "D1",
         "src/agents/codex/main/backend.ts": "D1",
         "src/agents/codex/main/codexSessions.ts": "D1"
       },
-      "src/plugins/sessions/main/tabLifecycle.ts": { "src/agents/claude/main/backend.ts": "B3" }
+      "src/plugins/sessions/main/tabLifecycle.ts": {
+        "src/agents/claude/main/backend.ts": "B3",
+        "src/agents/claude/main/sessionTracker.ts": "B3"
+      }
     }
   },
   "optionalMethods": {

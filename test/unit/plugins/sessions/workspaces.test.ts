@@ -10,7 +10,7 @@ import {
   type LiveSession
 } from '../../../../src/plugins/sessions/main/workspaces'
 import { projectInfoFor } from '../../../../src/main/projectInfo'
-import { encodeCwd } from '../../../../src/plugins/sessions/main/sessionTracker'
+import { encodeCwd } from '@shared/cwdKey'
 import {
   PENDING_SESSION_TITLE,
   type LayoutV6,
