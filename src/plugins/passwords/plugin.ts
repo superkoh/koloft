@@ -12,6 +12,7 @@ export const plugin: PluginManifest = {
   needs: ['sessions', 'workbench'],
   commands: [{ verb: 'secret' }, { verb: 'page' }],
   text: TEXT,
+  slotsAnyAgentAddsTo: ['koloft-help-secret-url-like', 'koloft-help-secret-url-examples'],
   channels: Object.values(CHANNELS),
   moments: { listens: [TAB_EXITED.name] }
 }

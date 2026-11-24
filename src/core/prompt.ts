@@ -1,7 +1,7 @@
 // ADR-0051
 import type { BackendId } from '@shared/types'
 import type { TextBlock } from './plugin'
-import { agentManifest } from './agent/registry'
+import { AGENT_MANIFESTS, agentManifest } from './agent/registry'
 import { pluginStateOf } from './switches'
 import { PLUGINS } from '@plugins/list'
 
@@ -20,6 +20,11 @@ const BLOCKS_IN_LIST_ORDER = PLUGINS.flatMap((p) =>
 const DECLARED_SLOTS = new Set(BLOCKS_IN_LIST_ORDER.map(({ block }) => block.slot))
 
 const SLOTS_EACH_AGENT_FILLS = new Set(PLUGINS.flatMap((p) => p.slotsEachAgentFills ?? []))
+
+const SLOTS_ANY_AGENT_ADDS_TO = new Set(PLUGINS.flatMap((p) => p.slotsAnyAgentAddsTo ?? []))
+
+const whatAgentsAddTo = (slot: string): string =>
+  AGENT_MANIFESTS.map((agent) => agent.slotAdditions[slot] ?? '').join('')
 
 const textFor = (block: TextBlock, agent: BackendId | undefined): string =>
   (agent ? block.byAgent?.[agent] : undefined) ?? block.text
@@ -81,6 +86,7 @@ export function fillSlots(text: string, context: PromptContext = {}): string {
       if (words === undefined) throw new Error(`The agent ${agent} fills no {{${name}}}`)
       return fillSlots(words, context)
     }
+    if (SLOTS_ANY_AGENT_ADDS_TO.has(name)) return whatAgentsAddTo(name)
     if (!DECLARED_SLOTS.has(name))
       throw new Error(`No text block fills {{${name}}} and no value was given for it`)
     return composePrompt(name, context)

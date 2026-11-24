@@ -83,6 +83,7 @@ export interface PluginManifest {
   offUntilSetUp?: string
   text?: readonly TextBlock[]
   slotsEachAgentFills?: readonly string[]
+  slotsAnyAgentAddsTo?: readonly string[]
   skills?: readonly string[]
   commands?: readonly PluginCommand[]
   channels?: readonly string[]

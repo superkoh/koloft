@@ -5,7 +5,7 @@ import {
   AGY_SCRATCH_FOLDER,
   AGY_UPLOADS_FOLDER
 } from './shared/agyBrain'
-import { SLOT_FILLS } from './prompts/text'
+import { SLOT_ADDITIONS, SLOT_FILLS } from './prompts/text'
 
 export const agent = {
   id: 'agy',
@@ -29,7 +29,7 @@ export const agent = {
   skillPrefix: '/',
   // AGY§13 AGY§14
   questionToolName: 'ask_question',
-  // AGY§2
+  // AGY§2 AGY§32
   instructionFileNames: ['AGENTS.md', 'GEMINI.md'],
   // AGY§5
   trustQuestion: 'Do you trust the contents of this project?',
@@ -42,6 +42,7 @@ export const agent = {
     foldersMadeEmptyAhead: [AGY_SCRATCH_FOLDER]
   },
   slotFills: SLOT_FILLS,
+  slotAdditions: SLOT_ADDITIONS,
   flags: {
     // AGY§5
     resumeCanWaitOnAQuestionBeforeAnySign: false,
@@ -50,6 +51,12 @@ export const agent = {
     // AGY§15
     pasteKeepsItsLastLineFeeds: false,
     // AGY§15 AGY§16
-    passedOnMessageShowsAsFromAnotherSession: false
+    passedOnMessageShowsAsFromAnotherSession: false,
+    // AGY§25
+    commandsItRunsCanHaveATerminalOfTheirOwn: true,
+    // AGY§25
+    runsCommandsInASandboxWhereSudoCannotStart: false,
+    // AGY§14
+    questionToolTakesNoOptionDescriptions: true
   }
 } as const satisfies AgentManifest

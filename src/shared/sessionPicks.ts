@@ -34,6 +34,9 @@ export const TIER_PICKS: Record<BackendId, Record<TaskTier, Pick>> = {
 // AGY§21
 const NORMAL_ON_EVERY_ACCOUNT: Partial<Record<BackendId, string>> = { agy: 'argon' }
 
+export const hasAStandInForItsNormalModel = (backend: BackendId): boolean =>
+  !!NORMAL_ON_EVERY_ACCOUNT[backend]
+
 const WITHOUT_FABLE: Pick = { model: 'opus', effort: 'xhigh' }
 
 export const pickFlags = (pick: Pick): string => `--model ${pick.model} --effort ${pick.effort}`
