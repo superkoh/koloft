@@ -69,6 +69,7 @@ export function AccountsPane(): JSX.Element {
   // ADR-0002
   const [form, setForm] = useState<PaneForm | null>(null)
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
+  const [removeFailed, setRemoveFailed] = useState<string | null>(null)
   const [refresh, setRefresh] = useState<'idle' | 'busy' | 'done'>('idle')
   const refreshBeat = useRef<ReturnType<typeof setTimeout>>(undefined)
   useEffect(() => () => clearTimeout(refreshBeat.current), [])
@@ -130,11 +131,18 @@ export function AccountsPane(): JSX.Element {
           )
           void window.api.accounts.toggle(a.name, a.kind, en)
         }}
-        onAskRemove={() => setConfirmDel(key)}
+        removeFailed={removeFailed === key}
+        onAskRemove={() => {
+          setRemoveFailed(null)
+          setConfirmDel(key)
+        }}
         onCancelRemove={() => setConfirmDel(null)}
-        onRemove={() => {
+        onRemove={async () => {
           setConfirmDel(null)
-          void window.api.accounts.remove(a.name, a.kind)
+          setRemoveFailed(null)
+          if (await window.api.accounts.remove(a.name, a.kind).catch(() => false)) return
+          setRemoveFailed(key)
+          setConfirmDel(key)
         }}
         onRelogin={
           a.kind === 'oauth'
@@ -499,7 +507,9 @@ export function SignInDialog({
       setError(
         r.error === 'invalid-name'
           ? INVALID_ACCOUNT_NAME
-          : `A ${label} account already has that name`
+          : r.error === 'keychain'
+            ? 'Koloft could not clear an old Keychain credential under that name. Try again.'
+            : `A ${label} account already has that name`
       )
       return
     }
@@ -549,6 +559,7 @@ export function SignInDialog({
 function AccountRow({
   account: a,
   confirming,
+  removeFailed,
   onToggle,
   onAskRemove,
   onCancelRemove,
@@ -557,6 +568,7 @@ function AccountRow({
 }: {
   account: AccountView
   confirming: boolean
+  removeFailed: boolean
   onToggle(enabled: boolean): void
   onAskRemove(): void
   onCancelRemove(): void
@@ -612,7 +624,12 @@ function AccountRow({
       {confirming && (
         <div className="acct-confirm">
           <span>
-            {SIGN_IN_FOLDER_KINDS.includes(a.kind) ? (
+            {removeFailed ? (
+              <span className="acct-login-state bad">
+                Koloft could not remove its Keychain credential, so the account is kept. Delete
+                again to retry.
+              </span>
+            ) : SIGN_IN_FOLDER_KINDS.includes(a.kind) ? (
               <>
                 Delete <b>{a.name}</b>? Its sign-in folder stays on disk, so its sessions stay in
                 your history.

@@ -299,7 +299,7 @@ import {
   GIT_PLATFORMS,
   isHttpUrl,
   keychainNamespace,
-  SIGN_IN_FOLDER_KINDS,
+  keepsSecretInKeychain,
   BACKEND_OF_SIGN_IN_FOLDER,
   isSignInFolderKind,
   type SignInFolderKind,
@@ -2822,6 +2822,8 @@ async function signInToHome(
       : 'invalid-name'
     : validateNewAccount(name, kind)
   if (v !== 'ok') return { ok: false, error: v }
+  if (!again && keepsSecretInKeychain(kind) && !(await keychainDelete(kind, name)))
+    return { ok: false, error: 'keychain' }
   if (signInFailure) setSignInFailure(null)
   const login = await homeLogin[kind](name)
   noteHomeAccount(name, kind)
@@ -5721,9 +5723,9 @@ function registerIpc(): void {
     ) => addAccount(name, kind, secret, endpoint)
   )
   ipcMain.handle(CH.accounts.remove, async (_e, name: string, kind: AccountKind) => {
-    // CODEX§15
-    if (!SIGN_IN_FOLDER_KINDS.includes(kind)) await keychainDelete(kind, name)
+    if (keepsSecretInKeychain(kind) && !(await keychainDelete(kind, name))) return false
     forgetAccount(name, kind)
+    return true
   })
   ipcMain.handle(CH.accounts.toggle, (_e, name: string, kind: AccountKind, enabled: boolean) => {
     setAccountEnabled(name, kind, enabled === true)
