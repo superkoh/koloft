@@ -6,6 +6,8 @@ import {
   assistRunsOn,
   withAssistPick
 } from '../../src/shared/assistPicks'
+import { EVERY_ACCOUNT_TAKES } from '../../src/core/assistModels'
+import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import type { AssistSetting } from '../../src/shared/types'
 import { DEFAULT_SETTINGS } from '../../src/shared/settingsOps'
 import { meta } from './helpers/accounts'
@@ -70,6 +72,15 @@ describe('the model and thinking a job runs with', () => {
       modelFromTheTable: true,
       effortFromTheTable: true
     })
+  })
+
+  it('a small, quick job runs on the model every account of its tool takes, where the tool has such a model, so no account refuses it', () => {
+    const withSuchAModel = SESSION_BACKENDS.filter((b) => EVERY_ACCOUNT_TAKES[b].model)
+    expect(withSuchAModel).not.toEqual([])
+    for (const backend of withSuchAModel)
+      expect(assistLaunchOn('title', backend, on({})).model, backend).toBe(
+        EVERY_ACCOUNT_TAKES[backend].model
+      )
   })
 
   it('take the job’s own model and thinking each on its own, and only on the tool the pick names, even after Assist moves to another tool', () => {
