@@ -125,12 +125,9 @@ async function deleteSecret(service: string, name: string): Promise<boolean> {
       return false
     }
   }
-  const found = await execSecurity(['find-generic-password', '-s', service, '-a', name])
-  // PLATFORM§3
-  if (found.code === SECURITY_ITEM_NOT_FOUND) return true
-  if (found.code !== 0) return false
   const { code } = await execSecurity(['delete-generic-password', '-s', service, '-a', name])
-  return code === 0
+  // PLATFORM§3
+  return code === 0 || code === SECURITY_ITEM_NOT_FOUND
 }
 
 export function keychainDelete(kind: AccountKind, name: string): Promise<boolean> {

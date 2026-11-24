@@ -269,21 +269,18 @@ describe('U3 · keychain adapter seams', () => {
     expect(await keychainRead('agy-home', 'kept')).toBe('AIza-kept')
   })
 
-  it('outside test mode a delete counts an entry security reports as not found as never there, and a locked, cancelled or timed-out Keychain or a refused delete as not removed', async () => {
+  it('outside test mode a delete counts a removed entry and one security reports as not there (exit 44) as gone, and a locked, cancelled or timed-out Keychain as not removed', async () => {
     delete process.env.KOLOFT_TEST_BACKGROUND
-    security.exitCode = (args) => (args[0] === 'find-generic-password' ? 44 : 1)
-    expect(await keychainDelete('agy-home', 'google-only')).toBe(true)
+    security.exitCode = () => 0
+    expect(await keychainDelete('agy-home', 'stored')).toBe(true)
 
-    for (const findAnswer of [51, 1, null]) {
-      security.exitCode = () => findAnswer
+    security.exitCode = (args) => (args[0] === 'delete-generic-password' ? 44 : 0)
+    expect(await keychainDelete('agy-home', 'deleted-by-the-other-click')).toBe(true)
+
+    for (const refusal of [51, 1, null]) {
+      security.exitCode = () => refusal
       expect(await keychainDelete('agy-home', 'locked')).toBe(false)
     }
-
-    security.exitCode = (args) => (args[0] === 'find-generic-password' ? 0 : 51)
-    expect(await keychainDelete('agy-home', 'stuck')).toBe(false)
-
-    security.exitCode = () => 0
-    expect(await keychainDelete('agy-home', 'stuck')).toBe(true)
   })
 })
 
