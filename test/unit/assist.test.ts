@@ -207,6 +207,22 @@ describe('Koloft Assist', () => {
       expect(codex.models()).toEqual(['gpt-6.1-sol', 'gpt-6-luna'])
     })
 
+    // AGY§21
+    it('on Antigravity, which names no model that every account takes, runs once more with no model named', async () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-assist-refused-'))
+      const bin = path.join(dir, 'agy')
+      const runs = path.join(dir, 'runs')
+      fs.writeFileSync(
+        bin,
+        `#!/bin/sh\ncase "$*" in *--model*) echo "named a model" >> ${JSON.stringify(runs)}; echo "invalid model selection" >&2; exit 1 ;; esac\n` +
+          `echo "named none" >> ${JSON.stringify(runs)}\necho '{"status":"SUCCESS","response":"ACT"}'\n`,
+        { mode: 0o755 }
+      )
+      const reply = await assistWith({ backend: 'agy' }, { agy: bin })(JOB)
+      expect(reply).toBe('ACT')
+      expect(read(runs)?.trim().split('\n')).toEqual(['named a model', 'named none'])
+    })
+
     it('does not run again after a failure that is not about the model', async () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-assist-auth-'))
       const bin = path.join(dir, 'codex')
