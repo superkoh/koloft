@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { AGENT_MANIFESTS } from '@core/agent/registry'
-import { composePrompt, fillSlots } from '@core/prompt'
+import { composePrompt, fillSlots, type PromptContext } from '@core/prompt'
+import { DISCORD_BOUND } from '@plugins/discord/api'
 import type { SavedSettings } from '@core/settings'
 import { knowPluginStates, pluginStates } from '@core/switches'
 import { PLUGINS } from '@plugins/list'
@@ -10,11 +11,15 @@ const SLOTS_EACH_AGENT_FILLS = PLUGINS.flatMap((p) => p.slotsEachAgentFills ?? [
 const SLOTS_ANY_AGENT_ADDS_TO = PLUGINS.flatMap((p) => p.slotsAnyAgentAddsTo ?? [])
 const BLOCKS = PLUGINS.flatMap((p) => p.text ?? [])
 const BLOCKS_PICKED_BY_A_FLAG = BLOCKS.filter((block) => block.whenAgentFlag)
+const VALUES_ONLY_A_SESSIONS_PROMPT_IS_GIVEN = ['question-tool', 'session-model-tiers']
+const NO_AGENT: PromptContext = {}
+const THE_BUTLERS_ROLE: PromptContext = {
+  values: { 'butler-name': 'Alfred' },
+  facts: [DISCORD_BOUND]
+}
 
 const writes = (plugin: (typeof PLUGINS)[number], slot: string): boolean =>
-  (plugin.text ?? [])
-    .flatMap((block) => [block.text, ...Object.values(block.byAgent ?? {})])
-    .some((text) => text.includes(`{{${slot}}}`))
+  (plugin.text ?? []).some((block) => block.text.includes(`{{${slot}}}`))
 
 function turnEveryOptionalPluginOff(): void {
   const pluginsOn = Object.fromEntries(
@@ -57,16 +62,29 @@ describe('the slots a plugin leaves for each agent to fill', () => {
     ['on', () => {}],
     ['off', turnEveryOptionalPluginOff]
   ])(
-    'a text put together for no agent cannot take what belongs to the agent reading it, a slot each agent fills or a block picked by an agent’s flag, with every optional plugin %s',
+    'a text put together for no agent, the butler’s role with its name and facts included, cannot take what belongs to the agent reading it: a slot each agent fills, a block picked by an agent’s flag, or a value only a session’s prompt is given, with every optional plugin %s',
     (_, setPlugins) => {
       setPlugins()
-      for (const slot of SLOTS_EACH_AGENT_FILLS)
-        expect(() => fillSlots(`{{${slot}}}`), slot).toThrow('no agent was given')
-      expect(BLOCKS_PICKED_BY_A_FLAG).not.toEqual([])
-      for (const { slot } of BLOCKS_PICKED_BY_A_FLAG)
-        expect(() => composePrompt(slot), slot).toThrow('no agent was given')
+      for (const reader of [NO_AGENT, THE_BUTLERS_ROLE]) {
+        for (const slot of SLOTS_EACH_AGENT_FILLS)
+          expect(() => fillSlots(`{{${slot}}}`, reader), slot).toThrow('no agent was given')
+        expect(BLOCKS_PICKED_BY_A_FLAG).not.toEqual([])
+        for (const { slot } of BLOCKS_PICKED_BY_A_FLAG)
+          expect(() => composePrompt(slot, reader), slot).toThrow('no agent was given')
+        for (const value of VALUES_ONLY_A_SESSIONS_PROMPT_IS_GIVEN)
+          expect(() => fillSlots(`{{${value}}}`, reader), value).toThrow('no value was given')
+      }
     }
   )
+
+  it('the values only a session’s prompt is given are written in the text some agent reads, so the case above is about real names', () => {
+    const written = [
+      ...BLOCKS.map((block) => block.text),
+      ...AGENT_MANIFESTS.flatMap((agent) => Object.values(agent.slotFills))
+    ].join('')
+    for (const value of VALUES_ONLY_A_SESSIONS_PROMPT_IS_GIVEN)
+      expect(written, value).toContain(`{{${value}}}`)
+  })
 })
 
 describe('the slots a plugin leaves, in text every agent reads, for any agent to add words about itself to', () => {

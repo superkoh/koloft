@@ -38,10 +38,7 @@ const everyText = (): Record<string, string> => ({
 
 const ownWords = (id: string): string[] => {
   const plugin = PLUGINS.find((p) => p.id === id)!
-  const itsBlocks = (plugin.text ?? []).flatMap((block) => [
-    block.text,
-    ...Object.values(block.byAgent ?? {})
-  ])
+  const itsBlocks = (plugin.text ?? []).map((block) => block.text)
   const addedByAgents = (plugin.slotsAnyAgentAddsTo ?? []).flatMap((slot) =>
     AGENT_MANIFESTS.map((agent) => agent.slotAdditions[slot] ?? '')
   )

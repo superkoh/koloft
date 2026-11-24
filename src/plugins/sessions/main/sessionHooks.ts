@@ -37,6 +37,7 @@ export interface TurnParts {
   replies: { turnEnded(tabId: string, turn: Turn): boolean }
   asks: MadeLater<Pick<SessionAsks, 'onAsk'>>
   askBeforeAsksAreMade(tabId: string): void
+  askAsItsAgentGaveIt(tabId: string): Parameters<SessionAsks['onAsk']>[1] | undefined
 }
 
 export function followEachTurn(
@@ -52,10 +53,11 @@ export function followEachTurn(
     if (d.replies.turnEnded(tabId, turn)) taken.add(tabId)
   })
   moments.listen(plugin.id, TAB_EXITED, ({ tabId }) => taken.delete(tabId))
-  moments.listen(plugin.id, QUESTION_ASKED, ({ tabId, ask }) => {
+  moments.listen(plugin.id, QUESTION_ASKED, ({ tabId }) => {
     const asks = d.asks()
-    if (asks) asks.onAsk(tabId, ask)
-    else d.askBeforeAsksAreMade(tabId)
+    if (!asks) return d.askBeforeAsksAreMade(tabId)
+    const given = d.askAsItsAgentGaveIt(tabId)
+    if (given) asks.onAsk(tabId, given)
   })
   moments.listen(plugin.id, SESSION_BOUND, ({ tabId, key }) => d.slash.bound(tabId, key))
   return { tookTheTurn: (tabId) => taken.has(tabId) }

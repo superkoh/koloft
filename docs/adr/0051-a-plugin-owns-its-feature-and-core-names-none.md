@@ -18,13 +18,14 @@ window places where the manifest's `ui` entries say; `settings.ts`, each plugin'
 setting keys with their defaults and clean-up, which the app loads and saves under the
 names the manifest's `settings` lists; and `starts.ts`, each plugin's start function,
 which the main process calls once to let the plugin register its main-process code. So a text block names no reader: it
-names the slot it fills, and core keeps no list of readers. A plugin
+names the slot it fills, and core keeps no list of readers. Nor does a manifest name an
+agent: words about one agent, and the model an agent does a small job with, come from that
+agent's own manifest, through a slot, a flag or a kind of job the plugin names (ADR-0054). A plugin
 imports core, the `api.ts` or `windowApi.ts` of the plugins it says it needs, and itself;
 `windowApi.ts` is the part the window can load, with no main-process code and no text for
-agents. Until a test holds
-the manifest's shape, that shape may still change at version 1; once one does, the
-version goes up whenever a manifest written for the old version would no longer mean the
-same thing.
+agents. A test holds
+the manifest's shape, and the version goes up whenever a manifest written for the old
+version would no longer mean the same thing.
 **Rejected**: core calling each feature by name and checking a switch at each call — every
 new feature then edits core, and a switch that misses one call leaves a sentence or a
 button behind. A list of readers in core (butler, helper, session) — the butler is a

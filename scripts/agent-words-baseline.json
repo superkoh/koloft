@@ -61,11 +61,6 @@
       "openApproval(tabId: string): CodexApproval | undefined",
       "openQuestion(tabId: string): CodexQuestion | undefined"
     ],
-    "src/core/assistModels.ts": [
-      "agy: { model: 'gemini-3.8-flash', effort: 'low' }",
-      "claude: EVERY_ACCOUNT_TAKES.claude,",
-      "codex: { ...EVERY_ACCOUNT_TAKES.codex, effort: 'low' },"
-    ],
     "src/core/typeKeys.ts": [
       "const CHARS_PER_WRITE_CLAUDE_STILL_TAKES_AS_TYPING = 128",
       "const TYPED_PIECE = new RegExp(`[\\\\s\\\\S]{1,${CHARS_PER_WRITE_CLAUDE_STILL_TAKES_AS_TYPING}}`, 'gu')"
@@ -356,6 +351,7 @@
       "agyStatuslineScript",
       "apiKeyOf: agyApiKeyOf,",
       "args: [`--gemini_dir=${shot.dir}`],",
+      "askAsItsAgentGaveIt: (tabId) => claudeAsks.get(tabId)",
       "async function agyApiKeyOf(name: string): Promise<string | undefined> {",
       "async function agyBinary(): Promise<string | undefined> {",
       "async function agyOneShotTarget(): Promise<AssistTarget | null> {",
@@ -1152,11 +1148,6 @@
     "src/plugins/browser-control/renderer/BrowserControlSettings.tsx": [
       "you can see, signed in as you. Claude Code sessions on another machine (over SSH) can"
     ],
-    "src/plugins/butler/shared/assistJobs.ts": [
-      "agy: { model: 'gemini-3.8-flash', effort: 'low' }",
-      "claude: { model: 'sonnet', effort: 'low' },",
-      "codex: { model: 'gpt-6.1-sol', effort: 'low' },"
-    ],
     "src/plugins/discord/main/interactions.ts": [
       "description: 'The command, like /context or /model haiku',"
     ],
@@ -1382,11 +1373,6 @@
       "this.claudeUsedFolders(),",
       "used.push({ path: cwd, ...use, agents: { claude: use } })",
       "}).map(claudeRow)"
-    ],
-    "src/plugins/sessions/shared/assistJobs.ts": [
-      "agy: { model: 'gemini-4-argon', effort: 'medium' }",
-      "claude: { model: 'haiku' },",
-      "codex: { model: 'gpt-6.1-sol', effort: 'medium' },"
     ],
     "src/plugins/todo/main/todoVerb.ts": [
       "'koloft todo file: give a workspace and one of the files koloft todo listed for it, like: koloft todo file koloft CLAUDE.md'"

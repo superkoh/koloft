@@ -2,6 +2,9 @@ import type { AgentManifest } from '@core/agent/manifest'
 import { CRON_EFFORTS } from '@shared/efforts'
 import { SLOT_ADDITIONS, SLOT_FILLS } from './prompts/text'
 
+// CC§9
+const MODEL_EVERY_ACCOUNT_TAKES = 'haiku'
+
 export const agent = {
   id: 'claude',
   name: 'Claude',
@@ -38,8 +41,7 @@ export const agent = {
     internalNameEndings: [],
     foldersMadeEmptyAhead: []
   },
-  // CC§9
-  modelEveryAccountTakes: 'haiku',
+  modelEveryAccountTakes: MODEL_EVERY_ACCOUNT_TAKES,
   namedModels: [
     { id: 'fable', label: 'Fable' },
     { id: 'opus', label: 'Opus' },
@@ -49,6 +51,12 @@ export const agent = {
     'very simple': { model: 'sonnet', effort: 'low' },
     normal: { model: 'opus', effort: 'medium' },
     'very hard': { model: 'fable', effort: 'high' }
+  },
+  // CC§9
+  smallJobModels: {
+    smallAndQuick: { model: MODEL_EVERY_ACCOUNT_TAKES },
+    judgesAReply: { model: 'haiku' },
+    picksFromAList: { model: 'sonnet', effort: 'low' }
   },
   ownSettings: { fablePriority: { default: true, keptOnReset: true } },
   slotFills: SLOT_FILLS,

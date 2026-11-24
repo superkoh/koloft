@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import fs from 'fs'
 import path from 'path'
-import type { SessionInfo } from '@shared/types'
+import type { BackendId, SessionInfo } from '@shared/types'
 import type { IpcMainEvent } from 'electron'
 import type { ComponentType } from 'react'
-import { PLUGIN_FORMAT_VERSION, type PluginManifest, type eachAgent } from '@core/plugin'
+import { PLUGIN_FORMAT_VERSION, type PluginManifest } from '@core/plugin'
 import type { AgentFlags } from '@core/agent/manifest'
 import type { Commands } from '@core/commands'
 import type { answered, refused } from '@core/command'
@@ -28,11 +28,9 @@ interface Probe {
   probe: true
 }
 
-type V1Agent = 'claude' | 'codex' | 'agy'
+type V2SmallJobKind = 'smallAndQuick' | 'judgesAReply' | 'picksFromAList'
 
-type V1Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
-
-type V1UiPlace =
+type V2UiPlace =
   | 'sidebar-head'
   | 'sidebar-row'
   | 'sidebar-foot'
@@ -42,33 +40,31 @@ type V1UiPlace =
   | 'palette-item'
   | 'settings-page'
 
-interface V1TextBlock {
+interface V2TextBlock {
   slot: string
   text: string
-  byAgent?: Partial<Record<V1Agent, string>>
-  byModel?: Readonly<Record<string, string>>
   when?: string
   whenAgentFlag?: keyof AgentFlags
 }
 
-interface V1Manifest {
-  formatVersion: 1
+interface V2Manifest {
+  formatVersion: 2
   id: string
   name: string
   does: string
   mandatory: boolean
   needs: readonly string[]
   offUntilSetUp?: string
-  text?: readonly V1TextBlock[]
+  text?: readonly V2TextBlock[]
   slotsEachAgentFills?: readonly string[]
   slotsAnyAgentAddsTo?: readonly string[]
-  skills?: readonly string[]
+  skills?: readonly { name: string; group: string }[]
   commands?: readonly { verb: string }[]
   channels?: readonly string[]
   moments?: { announces?: readonly string[]; listens?: readonly string[] }
   settings?: { page?: { label: string; words: readonly string[] }; keys: readonly string[] }
   ui?: readonly (
-    | { place: Exclude<V1UiPlace, 'palette-item'>; id: string }
+    | { place: Exclude<V2UiPlace, 'palette-item'>; id: string }
     | {
         place: 'palette-item'
         id: string
@@ -78,30 +74,25 @@ interface V1Manifest {
       }
   )[]
   hints?: readonly string[]
-  assistJobs?: readonly {
-    id: string
-    name: string
-    does: string
-    defaults: Record<V1Agent, { model?: string; effort?: V1Effort }>
-  }[]
+  assistJobs?: readonly { id: string; name: string; does: string; kind: V2SmallJobKind }[]
   mcpServers?: readonly { name: string; command: string; args: readonly string[] }[]
 }
 
-interface V1Reply {
+interface V2Reply {
   text: string
   exit: number
 }
 
-interface V1Caller {
+interface V2Caller {
   tabId: string
   cwd: string
   session: SessionInfo
   stillWaiting?(): boolean
 }
 
-type V1Verb = (args: string[], caller: V1Caller) => V1Reply | Promise<V1Reply>
+type V2Verb = (args: string[], caller: V2Caller) => V2Reply | Promise<V2Reply>
 
-interface V1MainIpc {
+interface V2MainIpc {
   handle<A extends unknown[]>(channel: string, handler: (...args: A) => unknown): void
   on<A extends unknown[]>(channel: string, listener: (...args: A) => void): void
   onEvent<A extends unknown[]>(
@@ -111,52 +102,52 @@ interface V1MainIpc {
   push(channel: string, ...args: unknown[]): boolean
 }
 
-interface V1PreloadIpc {
+interface V2PreloadIpc {
   invoke<T>(channel: string, ...args: unknown[]): Promise<T>
   send(channel: string, ...args: unknown[]): void
   sendSync<T>(channel: string, ...args: unknown[]): T
   listen<A extends unknown[]>(channel: string, listener: (...args: A) => void): () => void
 }
 
-type V1HandOver = (raw: unknown) => readonly unknown[]
+type V2HandOver = (raw: unknown) => readonly unknown[]
 
-interface V1SettingKey<T> {
+interface V2SettingKey<T> {
   default: T
   clean: (raw: unknown, handed: readonly unknown[]) => T
   keptOnReset?: true
   writtenByMainOnly?: true
-  retires?: Readonly<Record<string, V1HandOver>>
-  handsTo?: Readonly<Record<string, V1HandOver>>
+  retires?: Readonly<Record<string, V2HandOver>>
+  handsTo?: Readonly<Record<string, V2HandOver>>
 }
 
-interface V1Slot<T> {
+interface V2Slot<T> {
   name: string
   filledWith?: T
 }
 
-interface V1SlotFill {
-  slot: V1Slot<unknown>
+interface V2SlotFill {
+  slot: V2Slot<unknown>
   value: unknown
 }
 
-interface V1Moment<T> {
+interface V2Moment<T> {
   readonly name: string
   readonly carries?: T
   readonly heardWhileOff?: true
 }
 
-interface V1PromptContext {
-  agent?: V1Agent
+interface V2PromptContext {
+  agent?: BackendId
   facts?: readonly string[]
   values?: Readonly<Record<string, string>>
 }
 
-interface V1PromptState {
+interface V2PromptState {
   on: Readonly<Record<string, boolean>>
   facts: readonly string[]
 }
 
-interface V1TabEnded {
+interface V2TabEnded {
   exitCode: number
   signal?: number
   unexpected?: true
@@ -167,65 +158,69 @@ interface V1TabEnded {
   left?: { treeRoot?: string; sessionId?: string }
 }
 
-type V1RunState = 'working' | 'waiting' | 'approval' | 'idle'
+type V2RunState = 'working' | 'waiting' | 'approval' | 'idle'
 
-interface V1PluginCore {
-  commands: { register: (handlers: Readonly<Record<string, V1Verb>>) => void }
+interface V2PluginCore {
+  commands: { register: (handlers: Readonly<Record<string, V2Verb>>) => void }
   moments: {
     listen: <T>(
       pluginId: string,
-      moment: V1Moment<T>,
+      moment: V2Moment<T>,
       hear: (moment: T) => unknown,
       afterPlugins?: readonly string[],
       heardWhileOff?: boolean
     ) => () => void
-    announce: <T>(moment: V1Moment<T>, m: T) => Promise<string[]>
+    announce: <T>(moment: V2Moment<T>, m: T) => Promise<string[]>
   }
-  ipc: V1MainIpc
+  ipc: V2MainIpc
 }
 
 interface PinnedFormats {
-  1: {
-    start: (core: V1PluginCore, deps: Probe) => Probe
+  2: {
+    start: (core: V2PluginCore, deps: Probe) => Probe
     buildLater: (deps: Probe) => Probe
     stopOnQuit: () => void
-    manifest: V1Manifest
-    eachAgent: (slot: string, textOf: (agent: V1Agent) => string) => V1TextBlock
-    register: (handlers: Readonly<Record<string, V1Verb>>) => void
-    answered: (text: string) => V1Reply
-    refused: (text: string, exit?: number) => V1Reply
-    mainIpc: V1MainIpc
-    preloadIpc: V1PreloadIpc
-    settingKey: V1SettingKey<Probe>
-    settingKeys: Readonly<Record<string, V1SettingKey<unknown>>>
-    setting: <T>(key: V1SettingKey<T>) => V1SettingKey<T>
+    manifest: V2Manifest
+    register: (handlers: Readonly<Record<string, V2Verb>>) => void
+    answered: (text: string) => V2Reply
+    refused: (text: string, exit?: number) => V2Reply
+    mainIpc: V2MainIpc
+    preloadIpc: V2PreloadIpc
+    settingKey: V2SettingKey<Probe>
+    settingKeys: Readonly<Record<string, V2SettingKey<unknown>>>
+    setting: <T>(key: V2SettingKey<T>) => V2SettingKey<T>
     pluginUi: {
       parts?: Readonly<Record<string, ComponentType>>
-      fills?: readonly V1SlotFill[]
+      fills?: readonly V2SlotFill[]
     }
-    slot: <T>(name: string) => V1Slot<T>
-    fill: <T>(into: V1Slot<T>, value: T) => V1SlotFill
-    moment: V1Moment<Probe>
+    slot: <T>(name: string) => V2Slot<T>
+    fill: <T>(into: V2Slot<T>, value: T) => V2SlotFill
+    moment: V2Moment<Probe>
     hears: (moment: Probe) => unknown
     listen: <T>(
       pluginId: string,
-      moment: V1Moment<T>,
+      moment: V2Moment<T>,
       hear: (moment: T) => unknown,
       afterPlugins?: readonly string[],
       heardWhileOff?: boolean
     ) => () => void
-    announce: <T>(moment: V1Moment<T>, m: T) => Promise<string[]>
-    promptContext: V1PromptContext
-    composePrompt: (slot: string, context?: V1PromptContext) => string
-    fillSlots: (text: string, context?: V1PromptContext) => string
-    fillsGained: (slots: readonly string[], was: V1PromptState, now: V1PromptState) => string[]
-    pluginStateOf: (id: string) => { on: boolean; offBecause?: V1Manifest }
+    announce: <T>(moment: V2Moment<T>, m: T) => Promise<string[]>
+    promptContext: V2PromptContext
+    composePrompt: (slot: string, context?: V2PromptContext) => string
+    fillSlots: (text: string, context?: V2PromptContext) => string
+    fillsGained: (
+      slots: readonly string[],
+      was: V2PromptState,
+      now: V2PromptState,
+      values: Readonly<Record<string, string>> | undefined
+    ) => string[]
+    pluginStateOf: (id: string) => { on: boolean; offBecause?: V2Manifest }
     carries: {
       FILE_OPENED: { tabId: string; target: string; view?: 'render' | 'diff' | 'source' }
       SESSION_STARTING: { helper: boolean }
       SESSION_STARTED: { by: string; tabId: string; workspace: string; name?: string }
-      TAB_EXITED: V1TabEnded
-      TAB_TORN_DOWN: V1TabEnded
+      TAB_EXITED: V2TabEnded
+      TAB_TORN_DOWN: V2TabEnded
       TAB_FORGOTTEN: string
       TURN_STARTED: string
       TURN_ENDED: {
@@ -236,12 +231,9 @@ interface PinnedFormats {
           at: number
         }
       }
-      QUESTION_ASKED: {
-        tabId: string
-        ask: { tool_name?: string; tool_input?: Record<string, unknown> }
-      }
+      QUESTION_ASKED: { tabId: string; id: string }
       SESSION_BOUND: { tabId: string; key: string; idleCompaction: boolean }
-      STATE_CHANGED: { tabId: string; prev: V1RunState | undefined; next: V1RunState }
+      STATE_CHANGED: { tabId: string; prev: V2RunState | undefined; next: V2RunState }
       TOOL_DONE: {
         tabId: string
         call: { name: string; input: Record<string, unknown> }
@@ -300,7 +292,7 @@ type WhatEachMomentCarries = {
 const HEARD_WHILE_OFF = true
 
 const PINNED_MOMENT_NAMES: Record<keyof PinnedFormats, Pinned['heardWhileOff']> = {
-  1: {
+  2: {
     'file-opened': false,
     'session-starting': false,
     'session-started': false,
@@ -327,7 +319,6 @@ describe('the plugin format', () => {
   it('a manifest and every registry keep the shape pinned for their format version, so a change fails the typecheck until it is pinned or the version goes up', () => {
     const typedOnly = (): void => {
       same<PluginManifest, Pinned['manifest']>(true)
-      same<typeof eachAgent, Pinned['eachAgent']>(true)
       same<Commands['register'], Pinned['register']>(true)
       same<typeof answered, Pinned['answered']>(true)
       same<typeof refused, Pinned['refused']>(true)

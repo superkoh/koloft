@@ -2,6 +2,9 @@ import type { AgentManifest } from '@core/agent/manifest'
 import { CRON_EFFORTS } from '@shared/efforts'
 import { SLOT_ADDITIONS, SLOT_FILLS } from './prompts/text'
 
+// CODEX§15
+const MODEL_EVERY_ACCOUNT_TAKES = 'gpt-6-luna'
+
 export const agent = {
   id: 'codex',
   name: 'Codex',
@@ -30,8 +33,7 @@ export const agent = {
   trustQuestion: 'do you trust the contents of this directory?',
   ownLogFolderNames: [],
   atTopOfSessionFolder: { internalNames: [], internalNameEndings: [], foldersMadeEmptyAhead: [] },
-  // CODEX§15
-  modelEveryAccountTakes: 'gpt-6-luna',
+  modelEveryAccountTakes: MODEL_EVERY_ACCOUNT_TAKES,
   // CODEX§14
   namedModels: [
     { id: 'gpt-6.1-sol', label: 'GPT-6.1-Sol' },
@@ -43,6 +45,12 @@ export const agent = {
     'very simple': { model: 'luna', effort: 'low' },
     normal: { model: 'sol', effort: 'medium' },
     'very hard': { model: 'astra', effort: 'high' }
+  },
+  // CODEX§15
+  smallJobModels: {
+    smallAndQuick: { model: MODEL_EVERY_ACCOUNT_TAKES, effort: 'low' },
+    judgesAReply: { model: 'gpt-6.1-sol', effort: 'medium' },
+    picksFromAList: { model: 'gpt-6.1-sol', effort: 'low' }
   },
   ownSettings: {},
   slotFills: SLOT_FILLS,

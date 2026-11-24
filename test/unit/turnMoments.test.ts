@@ -21,7 +21,9 @@ import { discordFollowsEachTurn } from '../../src/plugins/discord/main/sessionHo
 const turn = { reply: 'done', said: [] } as unknown as Turn
 const ask = {} as AskPayload
 
-function wired(o: { handsOff?: boolean; asksMade?: boolean; butlerTab?: boolean } = {}): {
+function wired(
+  o: { handsOff?: boolean; asksMade?: boolean; askKept?: boolean; butlerTab?: boolean } = {}
+): {
   moments: Moments
   calls: string[]
   settle: () => Promise<void>
@@ -46,7 +48,8 @@ function wired(o: { handsOff?: boolean; asksMade?: boolean; butlerTab?: boolean 
       }
     },
     asks: () => (o.asksMade === false ? null : { onAsk: (tabId) => say('asks.onAsk')(tabId) }),
-    askBeforeAsksAreMade: say('row shows the ask')
+    askBeforeAsksAreMade: say('row shows the ask'),
+    askAsItsAgentGaveIt: () => (o.askKept === false ? undefined : ask)
   })
   butlerFollowsEachTurn(moments, {
     butler: () => ({ onBound: say('butler.onBound'), isButlerTab: () => !!o.butlerTab }),
@@ -127,7 +130,8 @@ describe('what each plugin does when a turn starts or ends, a question is asked 
       slash: { turnEnded: () => {}, bound: () => {} },
       replies: { turnEnded: () => handsOff },
       asks: () => null,
-      askBeforeAsksAreMade: () => {}
+      askBeforeAsksAreMade: () => {},
+      askAsItsAgentGaveIt: () => undefined
     })
     const ended = (): Promise<unknown> =>
       moments.announce(TURN_ENDED, { tabId: 't1', turn }).catch(() => undefined)
@@ -154,14 +158,15 @@ describe('what each plugin does when a turn starts or ends, a question is asked 
     expect(calls).toEqual(['judge.prompted t1', 'digest.prompted t1'])
   })
 
-  it('a question goes to the session’s asks and the Inbox; before the asks exist it shows on its row', () => {
-    for (const [asksMade, first] of [
-      [true, 'asks.onAsk t1'],
-      [false, 'row shows the ask t1']
+  it('a question goes to the session’s asks, as its agent gave it, and the Inbox; before the asks exist it shows on its row; with nothing kept for its tab only the Inbox hears', () => {
+    for (const [asksMade, askKept, heard] of [
+      [true, true, ['asks.onAsk t1', 'inbox.asked t1']],
+      [false, true, ['row shows the ask t1', 'inbox.asked t1']],
+      [true, false, ['inbox.asked t1']]
     ] as const) {
-      const { moments, calls } = wired({ asksMade })
-      void moments.announce(QUESTION_ASKED, { tabId: 't1', ask })
-      expect(calls).toEqual([first, 'inbox.asked t1'])
+      const { moments, calls } = wired({ asksMade, askKept })
+      void moments.announce(QUESTION_ASKED, { tabId: 't1', id: '1' })
+      expect(calls).toEqual(heard)
     }
   })
 

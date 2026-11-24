@@ -26,9 +26,6 @@ const SLOTS_ANY_AGENT_ADDS_TO = new Set(PLUGINS.flatMap((p) => p.slotsAnyAgentAd
 const whatAgentsAddTo = (slot: string): string =>
   AGENT_MANIFESTS.map((agent) => agent.slotAdditions[slot] ?? '').join('')
 
-const textFor = (block: TextBlock, agent: BackendId | undefined): string =>
-  (agent ? block.byAgent?.[agent] : undefined) ?? block.text
-
 const OR_LIST = '-or-list'
 
 const asTheEndOfAList = (items: readonly string[]): string =>
@@ -61,19 +58,20 @@ export function composePrompt(slot: string, context: PromptContext = {}): string
   const now: PromptState = { on: {}, facts: context.facts ?? [] }
   const texts = BLOCKS_IN_LIST_ORDER.filter(
     (listed) => listed.block.slot === slot && holdsIn(now, listed, context.agent)
-  ).map(({ block }) => textFor(block, context.agent))
+  ).map(({ block }) => block.text)
   return fillSlots(slot.endsWith(OR_LIST) ? asTheEndOfAList(texts) : texts.join(''), context)
 }
 
 export const fillsGained = (
   slots: readonly string[],
   was: PromptState,
-  now: PromptState
+  now: PromptState,
+  values: PromptContext['values']
 ): string[] =>
   slots.flatMap((slot) =>
     BLOCKS_IN_LIST_ORDER.filter(
       (listed) => listed.block.slot === slot && holdsIn(now, listed) && !holdsIn(was, listed)
-    ).map(({ block }) => fillSlots(block.text, { facts: now.facts }))
+    ).map(({ block }) => fillSlots(block.text, { facts: now.facts, values }))
   )
 
 export function fillSlots(text: string, context: PromptContext = {}): string {
