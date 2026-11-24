@@ -127,11 +127,15 @@ export function scratchpadEntries(
 ): DirEntry[] {
   if (!entries) return []
   if (!backend) return [...entries]
-  const { named, nameEndingIn, foldersWhileEmpty } = agentManifest(backend).hiddenAtTopOfScratchpad
+  const { internalNames, internalNameEndings, foldersMadeEmptyAhead } =
+    agentManifest(backend).atTopOfSessionFolder
   return entries.filter((e) => {
     if (e.path !== `${scratchpadDir}/${e.name}`) return true
-    if (e.isDir && foldersWhileEmpty.includes(e.name)) return !!listed[e.path]?.length
-    return !named.includes(e.name) && !nameEndingIn.some((ending) => e.name.endsWith(ending))
+    if (e.isDir && foldersMadeEmptyAhead.includes(e.name)) return !!listed[e.path]?.length
+    return (
+      !internalNames.includes(e.name) &&
+      !internalNameEndings.some((ending) => e.name.endsWith(ending))
+    )
   })
 }
 
@@ -140,7 +144,7 @@ export function scratchpadFoldersHiddenWhileEmpty(
   backend: BackendId | undefined
 ): string[] {
   if (!scratchpadDir || !backend) return []
-  return agentManifest(backend).hiddenAtTopOfScratchpad.foldersWhileEmpty.map(
+  return agentManifest(backend).atTopOfSessionFolder.foldersMadeEmptyAhead.map(
     (name) => `${scratchpadDir}/${name}`
   )
 }

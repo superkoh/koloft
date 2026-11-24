@@ -16,6 +16,6 @@ export const agent = {
     ],
     quoted: []
   },
-  folderNamesNotWatched: [],
-  hiddenAtTopOfScratchpad: { named: [], nameEndingIn: [], foldersWhileEmpty: [] }
+  ownLogFolderNames: [],
+  atTopOfSessionFolder: { internalNames: [], internalNameEndings: [], foldersMadeEmptyAhead: [] }
 } as const satisfies AgentManifest

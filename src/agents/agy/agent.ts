@@ -22,11 +22,11 @@ export const agent = {
     quoted: []
   },
   // AGY§8
-  folderNamesNotWatched: [AGY_LOGS_FOLDER],
+  ownLogFolderNames: [AGY_LOGS_FOLDER],
   // AGY§8 AGY§19
-  hiddenAtTopOfScratchpad: {
-    named: [AGY_LOGS_FOLDER, AGY_UPLOADS_FOLDER],
-    nameEndingIn: [AGY_ARTIFACT_SIDECAR],
-    foldersWhileEmpty: [AGY_SCRATCH_FOLDER]
+  atTopOfSessionFolder: {
+    internalNames: [AGY_LOGS_FOLDER, AGY_UPLOADS_FOLDER],
+    internalNameEndings: [AGY_ARTIFACT_SIDECAR],
+    foldersMadeEmptyAhead: [AGY_SCRATCH_FOLDER]
   }
 } as const satisfies AgentManifest

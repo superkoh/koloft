@@ -55,7 +55,7 @@ const dirWatchers = new Map<string, DirWatch>()
 const DIR_CHANGE_DEBOUNCE_MS = 300
 const CHANGED_PATHS_PAST_WHICH_EVERY_OPEN_FOLDER_RELISTS = 500
 const FOLDER_NAMES_NOT_WATCHED = new Set(
-  AGENT_MANIFESTS.flatMap((agent) => agent.folderNamesNotWatched)
+  AGENT_MANIFESTS.flatMap((agent) => agent.ownLogFolderNames)
 )
 
 function watchIgnored(filename: string | Buffer | null): boolean {

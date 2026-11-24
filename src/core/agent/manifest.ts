@@ -5,15 +5,15 @@ export interface AgentWords {
   quoted: readonly string[]
 }
 
-export interface HiddenAtTopOfScratchpad {
-  named: readonly string[]
-  nameEndingIn: readonly string[]
-  foldersWhileEmpty: readonly string[]
+export interface AtTopOfSessionFolder {
+  internalNames: readonly string[]
+  internalNameEndings: readonly string[]
+  foldersMadeEmptyAhead: readonly string[]
 }
 
 export interface AgentManifest {
   id: string
   wordsThatNameMe: AgentWords
-  folderNamesNotWatched: readonly string[]
-  hiddenAtTopOfScratchpad: HiddenAtTopOfScratchpad
+  ownLogFolderNames: readonly string[]
+  atTopOfSessionFolder: AtTopOfSessionFolder
 }
