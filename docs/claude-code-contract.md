@@ -249,7 +249,11 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   (§7) and 10 others none of which `src/` spells; one slash command, `/access`, new and
   none gone; the one new flag, `--start-dir <owner>/<repo>=<folder>`, is parsed only
   beside the self-hosted runner's own flags such as `--confine-repo-settings`, not by a
-  session's argv scanner).
+  session's argv scanner), and on 2.1.331, darwin-arm64 (`strings` beside 2.1.330,
+  2026-11-24: the same 33 names in the same order; 13 new `CLAUDE_CODE_*` names, among
+  them `DISABLE_RESPONSE_COMPRESSION` and `LAZY_WORKTREE`, none of which `src/` spells,
+  and none gone; no `ANTHROPIC_*` change; the same 106 slash commands; `--help` and its
+  subcommands differ only in `auth logout [options]`, whose one option is `-h`).
 - **Since 2.1.304 the hooks a skill declares in its `SKILL.md` front matter register
   only while the skills of one source stay within 1,024 hooks and 16,384 matcher
   characters per session**; past that, none of that skill's hooks register and its
@@ -597,6 +601,18 @@ Unless a bullet below says more, it is inferred, not checked.
   (`claude-opus-4-20250514`, `claude-sonnet-4-20250514`).
 - **The Stop hook can fire a moment before the turn's assistant record is flushed** to
   the jsonl (seen live on 2.1.263), so a reader that trusts Stop has to poll for it.
+  **2.1.331 writes it first.** 2026-11-24, CC 2.1.293, 2.1.330 and 2.1.331, the
+  interactive TUI in a python pty, a scratch `HOME`, a stand-in Messages API, Stop and
+  SubagentStop hooks from `--settings` that read the transcript the moment they ran, six
+  typed turns per session (text-only and Bash-then-text in turn): the turn's final
+  assistant record was missing at the start of the Stop hook in 6 of 6 turns on 2.1.293
+  and 11 of 12 on 2.1.330, and landed 14–65 ms later while the hook still ran (the first
+  turn of a session sometimes had none of its records yet); on 2.1.331 it was there in
+  12 of 12. A subagent's own file held its final reply when SubagentStop ran in 30 of 67
+  on 2.1.330 and 69 of 69 on 2.1.331 (background subagents). The changelog: "Fixed Stop
+  hooks that read the transcript missing the last reply in Claude Desktop; SubagentStop
+  hooks now wait for it too". Every version from the minimum to 2.1.330 still flushes
+  late, so the poll stays.
 - **A Stop always ends a turn with lines of its own: no Stop comes twice, or after its
   turn has already ended.** Each Stop that runs a hook writes a `stop_hook_summary`
   record after its turn's records. Sweep of every main transcript on a dev Mac
@@ -1704,7 +1720,8 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   token securely") and the browser step (`BROWSER`, else `open`, with the URL) are the
   same on 2.1.306 and 2.1.308 once minified names are evened out (`strings`, 2026-10-22,
   not run: no login was made). **The printed sign-in link is wrapped in an OSC 8
-  hyperlink**: `ESC ] 8 ; ; <url> BEL <url> ESC ] 8 ; ; BEL`, even with
+  hyperlink**: `ESC ] 8 ; <params> ; <url> BEL <url> ESC ] 8 ; ; BEL`, `<params>` being
+  `id=<6 characters>` on 2.1.330 and 2.1.331 (2026-11-24), even with
   `TERM_PROGRAM=Apple_Terminal`, so a URL match that does not stop at the first control
   character takes the target, the visible text and the closing code as one link. From
   2.1.330 the printed link is short by default, `https://claude.ai/oauth/authorize?<44
@@ -1712,7 +1729,10 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   follows with a 307 to the full link; `CLAUDE_CODE_FULL_SIGN_IN_LINK=1` prints the full
   link again. The URL claude hands the browser itself (`BROWSER`, else `open`) is the full
   link on both versions. (2026-11-21, 2.1.329 and 2.1.330 linux-arm64 in Docker, output
-  captured with `script`, not signed in.)
+  captured with `script`, not signed in.) The same on 2.1.331: the printed short link, the
+  full link handed to `BROWSER` and the lines before them match 2.1.330's (2026-11-24,
+  2.1.330 and 2.1.331 linux-arm64 in Docker, `script`, not signed in; the 2.1.331
+  changelog's shorter link is the Console one of `/login` and `auth login --console`).
 - **Saved limit resets need a full-scope login; the token Koloft holds cannot read or use
   them.** Read 2026-10-13 from the 2.1.296 binary (`strings`): a hidden `/limit-reset`
   command reads resets from `GET /api/oauth/usage?cedar_ember=1&skip_spend=1` (blocks
@@ -2438,7 +2458,12 @@ other bullets of §9 were not re-measured on this build.
   2.1.328, which does not draw that line for the same folder; hooks given only through
   `--settings` add no line, and a trust entry written beforehand still skips the
   question. Measured 2026-11-20 on 2.1.328 and 2.1.329, a python pty drawn through
-  `pyte`, a scratch `HOME`, a stand-in Messages API, one run per case. A worktree
+  `pyte`, a scratch `HOME`, a stand-in Messages API, one run per case. On 2.1.331
+  (2026-11-24, beside 2.1.330, the same setup, one run per size) the text, options and
+  footer are unchanged and the 100×30 screens identical; at 80×15 2.1.330 scrolls the
+  top rule, `Accessing workspace:` and the start of the path off screen, while 2.1.331
+  drops the blank lines and keeps the whole path in view; a trust entry written
+  beforehand for the folder's real path still skips the question. A worktree
   created under an already-trusted repo inherits the trust and asks nothing. Anything
   automated that launches CC in a folder for the first time therefore stalls on a
   question. The answer is recorded in `~/.claude.json` as
@@ -2823,7 +2848,10 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   in their line numbers. With Koloft's launch as it ships, 0 of 226 paints tore and
   claude opened a median 37 synchronized frames per one-tab wheel run; with
   `CLAUDE_CODE_FORCE_SYNC_OUTPUT` taken out of the launch, 32 tore (wheel 6 of 110,
-  trackpad 19 of 73, 14 tabs 7 of 110) and none came synchronized.
+  trackpad 19 of 73, 14 tabs 7 of 110) and none came synchronized. The same on 2.1.331
+  (2026-11-24, the same measurement): `CLAUDE_CODE_FORCE_SYNC_OUTPUT` is still in its
+  `strings`; 0 paints tore with a median 38 synchronized frames per one-tab wheel run,
+  and with the switch taken out 37 tore and none came synchronized.
 - **Up to 2.1.325 the cheap scroll (a scroll region, `ESC[<top>;<bottom>r`, and
   `ESC[<n>S`/`T`, then only the rows that came into view) needs synchronized output on,
   no tmux, zellij or JetBrains terminal, and `CLAUDE_CODE_DECSTBM` set or the remote flag
@@ -3736,7 +3764,15 @@ below was one run.
   refused, run — the same on both builds, with the same stdin keys for every event. The
   2.1.326 changelog's "`"decision": "block"` … hold in more cases" and "`updatedInput` is
   kept when more than one hook answers" changed none of these. The `deny` and `answers`
-  shapes were not rerun.
+  shapes were not rerun. On 2.1.331 (2026-11-24, beside 2.1.330, python pty, scratch
+  `HOME`, a stand-in API, `--permission-mode default`, a Bash `touch` outside the working
+  folder): `allow` with `updatedInput` unchanged ran it (2 of 2 on each build), and `deny`
+  with a `message` handed claude that text as the `tool_result` and the turn ended (2 of
+  2, 2.1.331 only); the hook's stdin keys are `cwd, effort, hook_event_name,
+  permission_mode, permission_suggestions, prompt_id, session_id, tool_input, tool_name,
+  transcript_path` on both. The 2.1.331 changelog's `Skill(name:*)` rule saving and
+  `PermissionDenied`'s `retry` touch nothing Koloft sends: its answer carries no
+  `updatedPermissions` and it has no `PermissionDenied` hook.
 - **The keys that answer a dialog in the terminal** (2026-10-03, CC 2.1.288, a pty, scratch
   `HOME`, haiku, `--dangerously-skip-permissions`, a `PermissionRequest` hook that printed
   nothing):

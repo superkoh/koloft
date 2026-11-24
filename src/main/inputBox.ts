@@ -30,7 +30,7 @@ export function codexComposerDraft(lines: string[]): string | undefined {
     .trim()
 }
 
-const CODEX_PANEL_KEY_HINT = /\b(esc (back|close|exit)|q close)\b/
+const CODEX_PANEL_KEY_HINT = /\b(esc (back|cancel|close|exit)|q close)\b/
 
 // CODEX§21
 export function codexShowsAPanel(lines: string[]): true | undefined {

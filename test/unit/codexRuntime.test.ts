@@ -110,7 +110,9 @@ describe('Codex shell runtime', () => {
     { printed: '0.169.0', verified: true },
     { printed: '0.169.2', verified: true },
     { printed: '0.170.0', verified: true },
-    { printed: '0.171.0', verified: false },
+    { printed: '0.171.0', verified: true },
+    { printed: '0.172.0', verified: true },
+    { printed: '0.173.0', verified: false },
     { printed: '1.0.0', verified: false }
   ])(
     'counts Codex $printed as tested only up to the last rechecked line, whatever the minimum (verified $verified)',

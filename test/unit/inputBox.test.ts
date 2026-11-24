@@ -44,6 +44,28 @@ describe('Codex shows a panel: the closing key a menu, list or pager names under
     ).toBe(true)
   })
 
+  it('sees the /statusline and /experimental pickers, which Esc cancels', () => {
+    expect(
+      codexShowsAPanel([
+        '  Configure Status Line',
+        '  Type to search',
+        '› [x] Use theme colors      Apply colors from the active /theme',
+        '  [x] context-used          Percentage of context window used (omitted when unknown)',
+        '↓',
+        '  Context 0% used · 0.172.0 · gpt-6.2-sol default · ~/work',
+        '  space toggle · ←/→ reorder · enter save · esc cancel'
+      ])
+    ).toBe(true)
+    expect(
+      codexShowsAPanel([
+        '  Experimental features',
+        '› [ ] Custom status line',
+        '',
+        '  space toggle · enter save · esc cancel'
+      ])
+    ).toBe(true)
+  })
+
   it('sees the full-screen /resume list and the /diff pager, which only q closes', () => {
     expect(
       codexShowsAPanel([
