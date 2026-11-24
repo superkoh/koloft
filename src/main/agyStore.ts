@@ -5,9 +5,9 @@ import readline from 'readline'
 import { fileURLToPath } from 'url'
 import type { SaidLine, Turn } from '@shared/turns'
 import { AGY_LOGS_FOLDER } from '@shared/agyBrain'
-import { nonEmptyString, record } from '@plugins/sessions/main/codexObservation'
+import { nonEmptyString, record } from '@core/unknownValue'
 import { readAppendedLines, type AppendCursor } from './appendedLines'
-import type { HistoryEntry } from '@plugins/sessions/main/storedSessions'
+import type { HistoryEntry } from '@agents/kit/main/storedSessions'
 
 export const AGY_APP_DIR = 'antigravity-cli'
 

@@ -5,7 +5,7 @@ import { execFile, execFileSync } from 'child_process'
 import { promisify } from 'util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BackgroundFile } from '../../src/main/backgroundFile'
-import { SessionStore } from '../../src/plugins/sessions/main/sessionStore'
+import { SessionStore } from '../../src/agents/kit/main/sessionStore'
 import { SessionWorktrees, type TreeIo } from '../../src/main/sessionWorktrees'
 import { barePath, formatRemoteKey } from '../../src/shared/remoteKey'
 

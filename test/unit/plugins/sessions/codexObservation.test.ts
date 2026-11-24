@@ -4,11 +4,7 @@ import {
   userThread,
   type CodexEvent
 } from '../../../../src/plugins/sessions/main/codexObservation'
-import {
-  SessionRuntime,
-  turnOf,
-  type StatusEdge
-} from '../../../../src/plugins/sessions/main/sessionRuntime'
+import { SessionRuntime, turnOf, type StatusEdge } from '../../../../src/core/agent/sessionRuntime'
 import { AttentionTracker } from '../../../../src/plugins/sessions/main/attention'
 import { PLAN_READY, type AttentionKind, type BackgroundItem } from '../../../../src/shared/types'
 

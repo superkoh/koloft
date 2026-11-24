@@ -18,7 +18,7 @@ import type { InstructionsVersion } from '../../../../src/core/ownerInstructions
 import { DISCORD_BOUND } from '../../../../src/plugins/discord/api'
 import { realpathSafe } from '../../../../src/main/projectInfo'
 import { TODO_NEWS } from '../../../../src/plugins/todo/api'
-import { FROM_KOLOFT } from '../../../../src/plugins/sessions/main/crossSessionMessage'
+import { FROM_KOLOFT } from '../../../../src/plugins/sessions/main/messageOpenings'
 
 const DEADLINE_MS = 1000
 const CLAUDE_KEY = 's1'

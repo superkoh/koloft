@@ -1,6 +1,6 @@
 import path from 'path'
 import type { CreateTabOptions, LaunchPermission } from '@shared/types'
-import { record } from '@plugins/sessions/main/codexObservation'
+import { record } from '@core/unknownValue'
 import { playwrightMcpEnv } from './browserControlEnv'
 
 // CODEX§27 CODEX§30

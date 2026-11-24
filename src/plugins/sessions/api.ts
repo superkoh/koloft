@@ -8,7 +8,7 @@ import {
 } from './prompts/text'
 
 export { PICKED_FLAGS, PICK_FOR_THE_TASK, WAITING_QUESTION_TOOL, withProjectRules }
-export { FROM_KOLOFT } from './main/crossSessionMessage'
+export { FROM_KOLOFT } from './main/messageOpenings'
 export {
   SlashCommands,
   toCaller,
@@ -29,7 +29,7 @@ export type { ReplyChoices, Verdict } from './main/turnNews'
 export { SHOWS_NO_DIALOG } from './main/sessionAsks'
 export { HandOver, type HandOverDeps, type HandingMarks, type Recipient } from './main/handOver'
 export type { SendResult, StartResult, StartSpec } from './main/sendAndStart'
-export type { SessionsWithStore } from './main/storedSessions'
+export type { SessionsWithStore } from '@agents/kit/main/storedSessions'
 export {
   placedRows,
   resolveWorkspace,

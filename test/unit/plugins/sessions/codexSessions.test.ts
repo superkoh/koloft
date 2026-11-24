@@ -9,18 +9,18 @@ import {
   machineImagesDir,
   type CodexSessionDeps
 } from '../../../../src/plugins/sessions/main/codexSessions'
-import { storedBackend } from '../../../../src/plugins/sessions/main/backends/stored'
+import { storedBackend } from '../../../../src/agents/kit/main/stored'
 import {
   codexSessionKey,
   type WorktreeResource
-} from '../../../../src/plugins/sessions/main/sessionStore'
+} from '../../../../src/agents/kit/main/sessionStore'
 import type {
   CodexProcessOptions,
   CodexTransportOptions
 } from '../../../../src/main/codexTransport'
 import { HAS_CODEX_HOME_CMD, type MachineLogin } from '../../../../src/main/remote/codexMachine'
 import { CODEX_ASKS_AND_WAITS } from '../../../../src/main/codexLaunchConfig'
-import { SessionRuntime } from '../../../../src/plugins/sessions/main/sessionRuntime'
+import { SessionRuntime } from '../../../../src/core/agent/sessionRuntime'
 import {
   CODEX_REPLY_LANGUAGE_HOOKS,
   CODEX_SHELL_WRITES_HOOKS

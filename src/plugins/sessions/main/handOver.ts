@@ -1,12 +1,12 @@
 import type { BackendId } from '@shared/types'
 import { messagingOf } from '@shared/sessionBackend'
 import { errorText } from '@core/errorText'
+import type { ModeClass } from '@core/agent/sessionBackends'
 import {
   MESSAGE_SOCKET_SHOWS_WITHIN_MS,
   crossSessionLine,
-  fitsACrossSessionMessage,
-  type ModeClass
-} from './crossSessionMessage'
+  fitsACrossSessionMessage
+} from '@agents/claude/main/crossSessionMessage'
 
 const PROMPT_SETTLES_AFTER_BIND_MS = 1000
 const RECIPIENT_GETS_READY_WITHIN_MS = 10 * 60_000

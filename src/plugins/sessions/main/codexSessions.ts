@@ -15,10 +15,10 @@ import { CODEX_RESET_OUTCOMES } from '@shared/types'
 import { barePath, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import type { Turn } from '@shared/turns'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
+import { record } from '@core/unknownValue'
 import {
   CodexObservation,
   codexTurns,
-  record,
   userThread,
   type CodexEvent,
   type CodexThread
@@ -101,7 +101,7 @@ import {
   endCodexAppServersLeftByACrash,
   removeFoldersLeftByEndedRuns
 } from '../../../main/leftovers'
-import { codexSessionKey } from './sessionStore'
+import { codexSessionKey } from '@agents/kit/main/sessionStore'
 import { resolveCodexRuntime, updateCodex } from '../../../main/codexRuntime'
 import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from '../../../main/cliMinimums'
 import { startToolShim } from '../../../main/toolShim'
@@ -126,7 +126,7 @@ import {
   type StartContext,
   type StoredRun,
   type StoredSessionDeps
-} from './storedSessions'
+} from '@agents/kit/main/storedSessions'
 import { promptParts, type LaunchIdentity } from '../../../main/launchPrompt'
 
 const MACHINE_HISTORY_FRESH_MS = 15_000

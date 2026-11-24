@@ -18,7 +18,7 @@ import type { Turn } from '@shared/turns'
 import type { SearchCandidate } from '../../../main/sessionSearch'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
 import type { SessionPlace } from '../../../main/usageCache'
-import type { CodexApproval, CodexQuestion, SentAnswer } from './dialog'
+import type { CodexApproval, CodexQuestion, SentAnswer } from '@plugins/sessions/main/dialog'
 import { SessionStore, hostOfPath, type KeyOf, type WorktreeResource } from './sessionStore'
 import { SessionWorktrees, type TreeIo } from '../../../main/sessionWorktrees'
 import type { PtyManager } from '../../../main/ptyManager'
@@ -41,7 +41,7 @@ import { forgetAgentsInLoginShell } from '../../../main/loginShell'
 import type { LaunchedSession } from '../../../main/accountPicker'
 import { isNewer } from '../../../main/releaseNotes'
 import { pathWithDirFirst, pathWithDirLast } from '../../../main/toolInstall'
-import { turnOf, type SessionRuntime, type StatusEdge } from './sessionRuntime'
+import { turnOf, type SessionRuntime, type StatusEdge } from '@core/agent/sessionRuntime'
 
 const AVAILABILITY_FAILURE_MS = 60_000
 const EMIT_THROTTLE_MS = 500

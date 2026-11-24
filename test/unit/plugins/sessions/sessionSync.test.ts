@@ -4,7 +4,7 @@ import {
   type SyncSession,
   type DefaultMove
 } from '../../../../src/plugins/sessions/main/sessionSync'
-import { FROM_KOLOFT } from '../../../../src/plugins/sessions/main/crossSessionMessage'
+import { FROM_KOLOFT } from '../../../../src/plugins/sessions/main/messageOpenings'
 
 const HOLDS_THE_TIP = '/r/held'
 const ON_MAIN = '/r/root'

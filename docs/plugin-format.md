@@ -186,7 +186,10 @@ the types a plugin registers with.
 | `src/core/worktree.ts` | `GitOut`, `branchExists` and `TidyResult`, for the worktree git helpers |
 | `src/core/typeKeys.ts` | `typeKeys`, `pressesAKey`, `clicksTheMouse` and their helpers: what Koloft types into a session's terminal |
 | `src/core/transcriptPlaces.ts` | `TranscriptPlaces`: where a session's transcript is, on this Mac or on its machine |
+| `src/core/agent/` | what is the same for every agent: the agent ids and the two defaults from the list of agents (`registry.ts`), the manifest type (`manifest.ts`), the session interface `SessionBackend` with its registry `SessionBackends` (`sessionBackends.ts`), and a session's run state, `SessionRuntime` and `envMs` (`sessionRuntime.ts`) |
+| `src/core/scheduleLabel.ts` | `scheduleLabel` and `wakeupItem`: the label of a timer or scheduled task a session is waiting on |
 | `src/core/privateFile.ts` | `PrivateRecordFile`: a JSON record file only the owner can read |
+| `src/core/unknownValue.ts` | `record` and `nonEmptyString`: read a value of unknown shape as an object or as a string that is not empty |
 | `src/core/thisMacsServers.ts` | `namesThisMacsServer` and `reachesThisMacsServer`, whether a web address reaches a server on this Mac |
 | `src/core/openDrop.ts` | `openDropTarget` and `openDropHandler`, the file or address an `open` request names |
 | `src/core/isUnderAnyRoot.ts` | `isUnderAnyRoot`, whether a path sits inside one of some folders |

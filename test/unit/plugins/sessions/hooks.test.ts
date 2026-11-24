@@ -40,11 +40,8 @@ import {
   handoverPreamble,
   withHandover
 } from '../../../../src/plugins/sessions/main/handoverPreamble'
-import {
-  A_HELPER_HAS_IT,
-  FROM_KOLOFT,
-  crossSessionLine
-} from '../../../../src/plugins/sessions/main/crossSessionMessage'
+import { A_HELPER_HAS_IT, FROM_KOLOFT } from '../../../../src/plugins/sessions/main/messageOpenings'
+import { crossSessionLine } from '../../../../src/agents/claude/main/crossSessionMessage'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../../../src/main/remote/paths'
 import { machineHookSettings } from '../../../../src/agents/claude/main/backend'
 import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from '../../../../src/plugins/sessions/main/agyHooks'

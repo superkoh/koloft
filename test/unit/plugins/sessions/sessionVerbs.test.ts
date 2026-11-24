@@ -14,10 +14,8 @@ import {
   type Target
 } from '../../../../src/plugins/sessions/main/sessionVerbs'
 import type { PinnedWorkspace } from '../../../../src/plugins/sessions/api'
-import {
-  A_HELPER_HAS_IT,
-  crossSessionLine
-} from '../../../../src/plugins/sessions/main/crossSessionMessage'
+import { A_HELPER_HAS_IT } from '../../../../src/plugins/sessions/main/messageOpenings'
+import { crossSessionLine } from '../../../../src/agents/claude/main/crossSessionMessage'
 import type { TranscriptPlaces } from '../../../../src/core/transcriptPlaces'
 import { INBOX_SENDER } from '../../../../src/plugins/inbox/main/inbox'
 import { butlersFolderClaim } from '../../../../src/plugins/butler/api'

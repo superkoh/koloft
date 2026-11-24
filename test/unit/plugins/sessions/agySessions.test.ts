@@ -12,11 +12,11 @@ import {
   type AgySessionDeps
 } from '../../../../src/plugins/sessions/main/agySessions'
 import { BackgroundFile } from '../../../../src/main/backgroundFile'
-import { agySessionKey } from '../../../../src/plugins/sessions/main/sessionStore'
+import { agySessionKey } from '../../../../src/agents/kit/main/sessionStore'
 import { agyTranscript, annotationFile, type SummaryRow } from '../../../../src/main/agyStore'
 import type { AgyMachineLaunch, RemoteAgyConfig } from '../../../../src/main/remote/agyTab'
 import { TAB_TMUX_NAME_SH } from '../../../../src/main/remote/launch'
-import { SessionRuntime } from '../../../../src/plugins/sessions/main/sessionRuntime'
+import { SessionRuntime } from '../../../../src/core/agent/sessionRuntime'
 import { PROGRAM_STATUS_REPLY } from '../../../../src/main/programStatus'
 import type { SessionEvent } from '../../../../src/shared/sessionEvent'
 import { NO_USABLE_ACCOUNT } from '../../../../src/shared/accountUsage'

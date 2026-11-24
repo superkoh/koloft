@@ -8,7 +8,7 @@ import {
   fitsACrossSessionMessage,
   writeLine,
   writeLineInTurn
-} from '../../../../src/plugins/sessions/main/crossSessionMessage'
+} from '../../../../src/agents/claude/main/crossSessionMessage'
 
 const BODY_LARGER_THAN_ANY_SOCKET_BUFFER = 4 * 1024 * 1024
 

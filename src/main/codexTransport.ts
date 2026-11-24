@@ -11,7 +11,7 @@ import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { CODEX_TMP_DIR, ownedByThisRun } from './leftovers'
 import { answerStreamOf } from './remote/ssh'
 import { sharedProcessTable, type ProcessRow } from './processTable'
-import { envMs } from '@plugins/sessions/main/sessionRuntime'
+import { envMs } from '@core/agent/sessionRuntime'
 
 export type CodexFrame = Record<string, unknown>
 

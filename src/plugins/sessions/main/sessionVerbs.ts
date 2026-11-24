@@ -59,14 +59,13 @@ import { composePrompt } from '@core/prompt'
 import type { Commands } from '@core/commands'
 import type { SessionStarted, SessionStarting } from '@core/moment'
 import { AGENT_SHIM_WAITS_MS } from '@core/command'
+import type { ModeClass } from '@core/agent/sessionBackends'
 import {
   A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
   FROM_A_SESSION,
-  FROM_KOLOFT,
-  crossSessionLine,
-  fitsACrossSessionMessage,
-  type ModeClass
-} from './crossSessionMessage'
+  FROM_KOLOFT
+} from './messageOpenings'
+import { crossSessionLine, fitsACrossSessionMessage } from '@agents/claude/main/crossSessionMessage'
 import {
   OWNER_WORDS_QUOTED_CHARS,
   handoverInOwnersLanguage,
