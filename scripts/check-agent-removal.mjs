@@ -3,12 +3,14 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { execFileSync, spawn } from 'node:child_process'
-import { createJiti } from 'jiti'
 import { LEDGERS } from './ledgers.mjs'
 import {
   AGENTS_DIR,
-  ALIASES,
+  AGENT_LIST,
   LISTS_OF_AGENTS,
+  agentFolderOf,
+  byCodeUnit,
+  importAgentList,
   importedPath,
   parseSource,
   sourceFilesUnder,
@@ -17,7 +19,7 @@ import {
 } from './source-imports.mjs'
 
 const ROOT = process.cwd()
-const MANIFEST_LIST = 'src/agents/list.ts'
+const MANIFEST_LIST = AGENT_LIST
 const MANIFEST_ARRAY = 'AGENTS'
 const CHECKS = [
   { label: 'main process', config: 'tsconfig.node.json' },
@@ -29,28 +31,46 @@ const NOTHING_DELETED = 'nothing deleted'
 const CANNOT_RUN = 2
 const SHOW_FILES = process.argv.includes('--files')
 
-const byCodeUnit = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
-
 class CannotRun extends Error {}
 
 function cannotRun(why) {
   throw new CannotRun(why)
 }
 
-function identifiersNamed(program, names) {
-  const found = new Set()
-  walk(program, (node) => {
-    if (node.type === 'Identifier' && names.has(node.name)) found.add(node.name)
-  })
-  return [...found]
+const NAME_NOT_A_REFERENCE = {
+  ImportSpecifier: ['imported'],
+  ExportSpecifier: ['exported'],
+  ObjectProperty: ['key'],
+  ObjectMethod: ['key'],
+  ClassProperty: ['key'],
+  ClassMethod: ['key'],
+  MemberExpression: ['property'],
+  OptionalMemberExpression: ['property'],
+  TSPropertySignature: ['key'],
+  TSQualifiedName: ['right']
 }
 
-function agentFolderOf(rel) {
-  return rel?.startsWith(AGENTS_DIR) ? rel.slice(AGENTS_DIR.length).split('/')[0] : undefined
+function referencesTo(node, names, found = new Set()) {
+  if (node.type === 'Identifier' && names.has(node.name)) found.add(node.name)
+  const skipped = node.computed ? [] : (NAME_NOT_A_REFERENCE[node.type] ?? [])
+  for (const [key, value] of Object.entries(node)) {
+    if (skipped.includes(key)) continue
+    for (const child of Array.isArray(value) ? value : [value])
+      if (child && typeof child.type === 'string') referencesTo(child, names, found)
+  }
+  return [...found]
 }
 
 function agentImports(root, file) {
   const program = parseSource(root, file)
+  const reExport = program.body.find(
+    (node) =>
+      /^Export(Named|All)Declaration$/.test(node.type) &&
+      node.source &&
+      agentFolderOf(importedPath(file, node.source.value))
+  )
+  if (reExport)
+    cannotRun(`${file}: re-exports from an agent's folder, which this script cannot take out yet`)
   const imports = program.body
     .filter((node) => node.type === 'ImportDeclaration')
     .map((node) => ({ node, folder: agentFolderOf(importedPath(file, node.source.value)) }))
@@ -79,11 +99,7 @@ function foldersInListOrder() {
 }
 
 async function manifestsInListOrder() {
-  const alias = Object.fromEntries(
-    Object.entries(ALIASES).map(([name, dir]) => [name, path.join(ROOT, dir)])
-  )
-  const list = await createJiti(import.meta.url, { alias }).import(path.join(ROOT, MANIFEST_LIST))
-  return list[MANIFEST_ARRAY]
+  return (await importAgentList(ROOT))[MANIFEST_ARRAY]
 }
 
 function lineEnd(text, at) {
@@ -147,7 +163,7 @@ function takeOutEntriesOf(root, file, folder, agentFolders) {
   } catch (e) {
     cannotRun(`${file}: no longer parses once ${folder} is taken out (${e.message})`)
   }
-  const left = identifiersNamed(after, names)
+  const left = referencesTo(after, names)
   if (left.length > 0)
     cannotRun(
       `${file}: cannot take out ${left.join(', ')} (used in a way this script does not know; teach takeOutEntriesOf)`
@@ -206,7 +222,7 @@ async function inTurn(jobs, atOnce) {
   const failures = []
   let next = 0
   const worker = async () => {
-    while (next < jobs.length) {
+    while (next < jobs.length && failures.length === 0) {
       const i = next++
       results[i] = await jobs[i]().catch((e) => failures.push(e))
     }
@@ -230,6 +246,8 @@ function ledgerOwners(manifests) {
     const named = manifests.filter((m) =>
       m.wordsThatNameMe.anyCase.some((w) => name.includes(w.toLowerCase()))
     )
+    if (named.length > 1)
+      cannotRun(`${file} is named by more than one agent: ${named.map((m) => m.id).join(', ')}`)
     if (named.length === 1) owners.set(prefix, named[0].id)
   }
   return owners
@@ -272,7 +290,7 @@ function report(runs) {
   ]
   const widths = rows[0].map((_, i) => Math.max(...rows.map((row) => row[i].length)))
   const out = [
-    'check-agent-removal: each agent deleted in turn from a copy of the repo, both typechecks run (a report, never a failure)',
+    'check-agent-removal: each agent deleted in turn from a copy of the repo, both typechecks run (only reports: it fails only when the copy with nothing deleted does not typecheck)',
     ...rows.map(
       (row) =>
         '  ' +

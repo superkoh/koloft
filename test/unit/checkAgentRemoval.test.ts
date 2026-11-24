@@ -117,10 +117,10 @@ describe('check-agent-removal', () => {
         'src/agents/starts.ts': [
           "import type { Start } from './kit/start'",
           "import { start as betaStart } from './beta/main/start'",
-          "import { start as alphaStart } from './alpha/main/start'",
+          "import { start } from './alpha/main/start'",
           "import { stop as alphaStop } from './alpha/main/stop'",
-          'export const STARTS: Start[] = [betaStart, alphaStart, alphaStop]',
-          'export const FIRST: Start = alphaStart',
+          'export const STARTS: Start[] = [betaStart, start, alphaStop]',
+          'export const FIRST: Start = start',
           ''
         ].join('\n')
       })

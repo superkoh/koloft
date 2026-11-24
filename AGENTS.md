@@ -151,9 +151,10 @@ Working principles:
   ones leave with `-- --prune`. A PR of issue #2410 reports the numbers the script
   prints: what is left, by rule and by step.
 - `npm run check:agent-removal` deletes each agent in turn from a copy of the repo (its
-  folder and its entries in the list files) and runs both typechecks; it prints, per
-  agent, the files and errors each check finds, by area, and the markers to its ledger
-  left in `src` (`-- --files` lists the files). It only reports: it fails only when the
+  folder and its entries in the list files) and runs the main-process and window
+  typechecks (not the tests'); it prints, per agent, each check's files and errors, the
+  files with an error by area, and the markers to its ledger left in `src` (`-- --files`
+  lists the files). It only reports: it fails only when the
   copy with nothing deleted does not typecheck, and is not in CI or the before-push hook
   until issue #2410 ends with it at 0. A PR of issue #2410 reports its table.
 - Comments: none. In `.ts/.tsx/.js/.mjs/.cjs/.css` — and in the `#` lines of a

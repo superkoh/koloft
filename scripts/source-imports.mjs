@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { parse } from '@babel/parser'
+import { createJiti } from 'jiti'
 
 export const ALIASES = {
   '@shared': 'src/shared',
@@ -19,7 +20,21 @@ export const LISTS_OF_AGENTS = new Set(Object.keys(ENTRY_EACH_LIST_OF_AGENTS_IMP
 export const MANIFEST_TYPES = 'src/core/agent/manifest.ts'
 export const EVERY_NAME = '*'
 
+export const AGENT_LIST = 'src/agents/list.ts'
+
 export const keyOf = (file, name) => `${file}\n${name}`
+export const byCodeUnit = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
+
+export function agentFolderOf(rel) {
+  return rel?.startsWith(AGENTS_DIR) ? rel.slice(AGENTS_DIR.length).split('/')[0] : undefined
+}
+
+export function importAgentList(root) {
+  const alias = Object.fromEntries(
+    Object.entries(ALIASES).map(([name, dir]) => [name, path.join(root, dir)])
+  )
+  return createJiti(import.meta.url, { alias }).import(path.join(root, AGENT_LIST))
+}
 export const isMember = (node) => /^(Optional)?MemberExpression$/.test(node?.type ?? '')
 
 export function nameOf(node) {
