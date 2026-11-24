@@ -16,6 +16,9 @@ export interface AgentFlags {
   conversationStartsAtFirstPrompt: boolean
   pasteKeepsItsLastLineFeeds: boolean
   passedOnMessageShowsAsFromAnotherSession: boolean
+  commandsItRunsCanHaveATerminalOfTheirOwn: boolean
+  runsCommandsInASandboxWhereSudoCannotStart: boolean
+  questionToolTakesNoOptionDescriptions: boolean
 }
 
 export interface AgentManifest {
@@ -31,5 +34,6 @@ export interface AgentManifest {
   ownLogFolderNames: readonly string[]
   atTopOfSessionFolder: AtTopOfSessionFolder
   slotFills: Readonly<Record<string, string>>
+  slotAdditions: Readonly<Record<string, string>>
   flags: AgentFlags
 }

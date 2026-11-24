@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { knowPluginStates, pluginStates } from '../../src/core/switches'
 import type { SavedSettings } from '../../src/core/settings'
+import { AGENT_MANIFESTS } from '../../src/core/agent/registry'
 import { PLUGINS } from '../../src/plugins/list'
 import { DEFAULT_SETTINGS } from '../../src/shared/settingsOps'
 import { agentGuide, agentSkillDescription } from '../../src/shared/agentGuide'
@@ -35,12 +36,20 @@ const everyText = (): Record<string, string> => ({
   ...Object.fromEntries(SESSION_BACKENDS.map((b) => [`${b} session`, koloftPrompt(b)]))
 })
 
-const ownWords = (id: string): string[] =>
-  (PLUGINS.find((p) => p.id === id)!.text ?? [])
-    .flatMap((block) => [block.text, ...Object.values(block.byAgent ?? {})])
+const ownWords = (id: string): string[] => {
+  const plugin = PLUGINS.find((p) => p.id === id)!
+  const itsBlocks = (plugin.text ?? []).flatMap((block) => [
+    block.text,
+    ...Object.values(block.byAgent ?? {})
+  ])
+  const addedByAgents = (plugin.slotsAnyAgentAddsTo ?? []).flatMap((slot) =>
+    AGENT_MANIFESTS.map((agent) => agent.slotAdditions[slot] ?? '')
+  )
+  return [...itsBlocks, ...addedByAgents]
     .flatMap((text) => text.split(/\{\{[a-z-]+\}\}/))
     .map((part) => part.trim())
     .filter((part) => part.length > 12)
+}
 
 const JOINT_DEBRIS = [/\{\{/, /\S {2,}\S/, / ,/, /, ,/, /,\./, /\n\n\n/, /\( /, / \)/]
 

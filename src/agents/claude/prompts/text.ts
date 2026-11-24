@@ -6,3 +6,16 @@ export const SLOT_FILLS = {
 5. {{helper-rule-anything-else}}`,
   'session-questions': ''
 }
+
+export const SLOT_ADDITIONS = {
+  'koloft-help-session-new-examples': `
+    Example: koloft session new --name "Fix docs links" --backend claude --model sonnet --effort low -- "Fix the broken links in docs/."`,
+  'koloft-help-own-message-tool': `
+    Claude to Claude on the same machine: use your SendMessage tool with its name. ListAgents shows the sessions on this machine; SendMessage cannot reach one on another machine, so use "koloft session send" for that.`,
+  'koloft-help-send-but-own-message-tool':
+    ', except from one open Claude session to another on the same machine, which uses SendMessage',
+  'koloft-help-command-arguments-example': ' (like /model haiku)',
+  // CC§3
+  'koloft-help-git-at-the-main-checkout-refused-by':
+    ' (Claude Code refuses it, and a ! command too)'
+}

@@ -279,6 +279,7 @@ what reads the field today.
 | `offUntilSetUp` | a setting key | an optional plugin that starts off while this setting still holds its default; the owner's choice wins once made ([Switches](#switches)) | `pluginStates` |
 | `text` | list of `TextBlock` | text the plugin adds to agents' prompts ([Text blocks](#text-blocks)) | `composePrompt`, `fillSlots` |
 | `slotsEachAgentFills` | list of slot names | the slots the plugin leaves in its text for each agent to fill with its own words ([Text blocks](#text-blocks)) | `fillSlots` |
+| `slotsAnyAgentAddsTo` | list of slot names | the slots the plugin leaves in text every agent reads, for any agent to add words about itself to ([Text blocks](#text-blocks)) | `fillSlots` |
 | `commands` | list of `{ verb }` | each `koloft <verb>` command the plugin owns ([Commands](#commands)) | `Commands` |
 | `channels` | list of strings | the IPC channels the plugin's code uses, written `Object.values(CHANNELS)` ([IPC channels](#ipc-channels)) | the unit test `test/unit/ipcChannels.test.ts` only |
 | `moments` | `{ announces?, listens? }`, each a list of moment names | the session moments the plugin announces and those it hears ([Moments](#moments)) | `Moments` |
@@ -382,6 +383,40 @@ in its text. Each agent gives its words for that name in `slotFills` of its mani
 - The caller must say which agent reads the text; with none, putting the text together
   throws, whether the plugin is on or off.
 
+Some text is read by every agent alike and has no agent reading it: the guide that
+`koloft help` prints, the method `koloft todo` prints. Where such text names one agent, the
+plugin names none itself. There are two ways.
+
+**A slot any agent adds to**, for words that are one agent's own: an example that uses its
+model or its command, or how its own tool is used. The plugin lists the slot's name in
+`slotsAnyAgentAddsTo` and writes `{{name}}` in its text. An agent that has something to
+say gives its words for that name in `slotAdditions` of its manifest (the words are in
+`src/agents/<id>/prompts/text.ts`, in `SLOT_ADDITIONS`). The rules:
+
+- The slot's name belongs to the plugin that lists it; only that plugin writes `{{name}}`,
+  and no text block fills the same name. A name is in `slotsAnyAgentAddsTo` or in
+  `slotsEachAgentFills`, never both.
+- An agent may leave a slot alone. An agent adds to no name that no plugin lists. The unit
+  test `test/unit/slotsEachAgentFills.test.ts` holds these rules.
+- The agents' words are joined in the order of `src/agents/list.ts`, with nothing between
+  them, and put in as they are: a `{{…}}` inside them is not filled. So every agent's words
+  carry their own joint (the leading space, comma, bracket or line break), and a slot that
+  two agents add to reads well only when their words are written to stand side by side.
+- An agent's words name only that agent. When an agent is gone, its words go with it,
+  brackets and all.
+- No agent has to be given: the words are about the agent that wrote them, not about the
+  one reading.
+
+**Names picked by a flag**, for a sentence of the plugin's own that holds for some agents.
+The sentence stays in the plugin; the names come from the agents whose manifest answers yes
+(or no) to a yes-or-no flag, in the order of the list: `agentsThatSay(flag)` in
+`src/core/agent/registry.ts` gives their ids, and `kindsOf`, `productList` and `whenAny` in
+`src/shared/sessionBackend.ts` turn them into "Codex or Antigravity", and into nothing at
+all when no agent answers so. A flag states the agent's own fact, with a measured basis in
+its contract ledger. A sentence about something Koloft itself does differently for some
+agents reads the table that Koloft's code reads for it, until that table moves into the
+agents' folders.
+
 These are two of the Todo plugin's blocks, from its `prompts/text.ts` (the file also has a
 longer one about `koloft todo` itself, and exports the notice an old butler conversation gets,
 [Main-process parts](#main-process-parts)). The first
@@ -417,7 +452,9 @@ fact names that hold) and `values` (a map from a name to a text). It works in th
 5. It fills each `{{name}}`. When the caller gave a value called `name`, it puts that value
    in as it is, and does not look for `{{…}}` inside it. Otherwise, when a plugin lists
    `name` in `slotsEachAgentFills`, it puts `agent`'s words for it, with their own `{{…}}`
-   places filled the same way with the same context. Otherwise it puts the text of slot
+   places filled the same way with the same context. Otherwise, when a plugin lists `name`
+   in `slotsAnyAgentAddsTo`, it puts every agent's words for it, joined in the order of the
+   list of agents, as they are. Otherwise it puts the text of slot
    `name`, put together the same way with the same context. When no plugin's block fills
    that slot and no value was given, it throws an error. A slot whose blocks were all dropped
    gives empty text. So text an optional plugin adds to another plugin's sentence goes in a
@@ -476,6 +513,14 @@ These are the slots, values, facts and agent flags in use today:
 | slot | `route-worktree-picks` | GitHub; the picks ⌘P's routing prompt offers for a new worktree session (an issue number) |
 | slot | `koloft-help` | Sessions core; the guide that `koloft help` prints, the `koloft` skill holds and the `koloft` command carries as a file, with one slot for each other section in its order |
 | slot | `koloft-help-…` | one for each section, rule or half-sentence of that guide; filled by Sessions core, Workbench, Browser control, Inbox, Scheduled tasks, GitHub, Discord and Passwords and sign-in (each plugin's `skill/text.ts` names its own) |
+| slot any agent adds to | `koloft-help-session-new-examples` | listed by Sessions core; an example line under `koloft session new` that uses the agent's own model names |
+| slot any agent adds to | `koloft-help-own-message-tool` | listed by Sessions core; a line of "How to talk to a session you started" for an agent whose sessions reach each other with a tool of its own |
+| slot any agent adds to | `koloft-help-send-but-own-message-tool` | listed by Sessions core; the half sentence under `koloft session send` for the same tool |
+| slot any agent adds to | `koloft-help-new-conversation-also` | listed by Sessions core; a bracket under `koloft session command` for an agent's own command that starts a new conversation |
+| slot any agent adds to | `koloft-help-command-arguments-example` | listed by Sessions core; a bracket there with an example of a command and its argument |
+| slot any agent adds to | `koloft-help-git-at-the-main-checkout-refused-by` | listed by Sessions core; a bracket under `koloft session close` for an agent that refuses git aimed at the main checkout from a worktree session |
+| slot any agent adds to | `koloft-help-secret-url-like` | listed by Passwords and sign-in; half a sentence under `koloft secret url` naming a command that signs in that way |
+| slot any agent adds to | `koloft-help-secret-url-examples` | listed by Passwords and sign-in; an example line there with a sign-in address |
 | slot | `koloft-skill` | Sessions core; the `koloft` skill's one-line description, with slots `koloft-skill-…` where Workbench, Browser control and Scheduled tasks add a few words, and `koloft-skill-or-list`, where Passwords and sign-in adds an item |
 | value | `butler-name` | the butler's code; the butler's name |
 | value | `owner-instructions` | the butler's code and Sessions core; what the owner wrote in the butler's Instructions, in a workspace's, or in the Instructions for every workspace |
@@ -488,6 +533,9 @@ These are the slots, values, facts and agent flags in use today:
 | value | `question-tool` | Sessions core's `koloftPrompt`; the name of the question tool of the agent reading the session prompt, from its manifest |
 | value | `session-model-tiers` | Sessions core's `koloftPrompt`; the model and effort that agent uses for each kind of task |
 | agent flag | `passedOnMessageShowsAsFromAnotherSession` | each agent's manifest; a message another program passes into the session shows there as a message from another session |
+| agent flag | `commandsItRunsCanHaveATerminalOfTheirOwn` | each agent's manifest; a command the model runs can have a terminal of its own, which is not the owner's. Passwords and sign-in names these agents in its sentence on when sudo asks |
+| agent flag | `runsCommandsInASandboxWhereSudoCannotStart` | each agent's manifest; unless told otherwise the agent runs the model's commands in a sandbox, and sudo cannot start in it. Passwords and sign-in names these agents in its sentence on the sandbox |
+| agent flag | `questionToolTakesNoOptionDescriptions` | each agent's manifest; the agent's question tool takes no description for an option. Todo names these agents in its rule on writing a question's options |
 | fact | `discord-bound` | Discord's code, when Discord has a bound channel; it reaches the butler's prompt through the butler's `roleFacts` |
 
 ### Commands
@@ -1126,8 +1174,9 @@ names, until whoever made it does one of two things:
 - for any other change, raises `PLUGIN_FORMAT_VERSION` and adds a pin for the new version.
 
 The same test fails when a built-in plugin uses a manifest field, command, setting key, UI
-entry or place, Assist job, tip, moment, text slot, slot for each agent, fact, agent flag or
-window slot that this page does not name in the section about that kind of registration.
+entry or place, Assist job, tip, moment, text slot, slot for each agent, slot any agent adds
+to, fact, agent flag or window slot that this page does not name in the section about that
+kind of registration.
 
 Text slots, values, facts, agent flags and the window's slots are not pinned: whether they
 stay stable for plugins written outside Koloft is not decided.

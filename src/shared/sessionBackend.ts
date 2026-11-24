@@ -23,12 +23,19 @@ export const BACKEND_LABEL = ofEachAgent((b) => agentManifest(b).name)
 
 export const BACKEND_PRODUCT = ofEachAgent((b) => agentManifest(b).productName)
 
-export const kindsOf = (backends: BackendId[], joiner: 'or' | 'and'): string => {
-  const labels = backends.map((b) => BACKEND_LABEL[b])
-  return labels.length < 2
-    ? labels.join('')
-    : `${labels.slice(0, -1).join(', ')} ${joiner} ${labels[labels.length - 1]}`
-}
+export const inWords = (items: readonly string[], joiner: 'or' | 'and'): string =>
+  items.length < 2
+    ? items.join('')
+    : `${items.slice(0, -1).join(', ')} ${joiner} ${items[items.length - 1]}`
+
+export const kindsOf = (backends: BackendId[], joiner: 'or' | 'and'): string =>
+  inWords(
+    backends.map((b) => BACKEND_LABEL[b]),
+    joiner
+  )
+
+export const whenAny = (named: string, say: (named: string) => string): string =>
+  named ? say(named) : ''
 
 export const SKILL_PREFIX = ofEachAgent((b) => agentManifest(b).skillPrefix)
 
@@ -45,10 +52,10 @@ export function backendsFrom(preferred: BackendId): BackendId[] {
 }
 
 export function productList(backends: readonly BackendId[], joiner: 'or' | 'and'): string {
-  const names = backends.map((b) => BACKEND_PRODUCT[b])
-  return names.length < 2
-    ? (names[0] ?? '')
-    : `${names.slice(0, -1).join(', ')} ${joiner} ${names[names.length - 1]}`
+  return inWords(
+    backends.map((b) => BACKEND_PRODUCT[b]),
+    joiner
+  )
 }
 
 export function statusUnavailable(session?: Pick<SessionInfo, 'details'>): boolean {

@@ -27,4 +27,15 @@ describe('the list of agents', () => {
   it('the typecheck of the tests fails once the agent id type takes any string, not only the ids on the list', () => {
     expectTypeOf<string>().not.toExtend<AgentId>()
   })
+
+  // CC§30 CODEX§17 AGY§32
+  it('each agent lists the instruction file it reads first as the first of its instruction files, since text that says which file to write in takes that one', () => {
+    expect(
+      Object.fromEntries(AGENTS.map((agent) => [agent.id, agent.instructionFileNames[0]]))
+    ).toEqual({
+      claude: 'CLAUDE.md',
+      codex: 'AGENTS.md',
+      agy: 'AGENTS.md'
+    })
+  })
 })

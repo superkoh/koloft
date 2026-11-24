@@ -36,6 +36,14 @@ export const plugin: PluginManifest = {
   ],
   text: [...TEXT, ...SKILL_TEXT],
   slotsEachAgentFills: ['session-helper-rules', 'session-questions'],
+  slotsAnyAgentAddsTo: [
+    'koloft-help-session-new-examples',
+    'koloft-help-own-message-tool',
+    'koloft-help-send-but-own-message-tool',
+    'koloft-help-new-conversation-also',
+    'koloft-help-command-arguments-example',
+    'koloft-help-git-at-the-main-checkout-refused-by'
+  ],
   assistJobs: ASSIST_JOBS,
   channels: Object.values(CHANNELS),
   moments: {

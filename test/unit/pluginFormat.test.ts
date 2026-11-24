@@ -61,6 +61,7 @@ interface V1Manifest {
   offUntilSetUp?: string
   text?: readonly V1TextBlock[]
   slotsEachAgentFills?: readonly string[]
+  slotsAnyAgentAddsTo?: readonly string[]
   skills?: readonly string[]
   commands?: readonly { verb: string }[]
   channels?: readonly string[]
@@ -450,12 +451,13 @@ describe('the plugin format reference names every registration a built-in plugin
     ).toEqual([])
   })
 
-  it('every text slot a plugin fills or leaves for each agent to fill, every fact a block waits on and every agent flag a block is picked by', () => {
+  it('every text slot a plugin fills, leaves for each agent to fill or leaves for any agent to add to, every fact a block waits on and every agent flag a block is picked by', () => {
     expect(
       unnamedIn(
         ['Text blocks'],
         PLUGINS.flatMap((p) => [
           ...(p.slotsEachAgentFills ?? []),
+          ...(p.slotsAnyAgentAddsTo ?? []),
           ...(p.text ?? []).flatMap((b) => [
             b.slot,
             ...(b.when ? [b.when] : []),

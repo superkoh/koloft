@@ -3751,6 +3751,11 @@ below was one run.
     Claude's plan"), the turn ended and the session stayed in plan mode.
   - a `Bash` dialog (`--permission-mode default`) offers `1. Yes`, `2. Yes, and always
     allow …`, `3. No`; `1` ran it, `3` and Esc refused it (2026-10-02 round, same version).
+- **`AskUserQuestion` takes a description for each option.** 2026-11-24, CC 2.1.331, macOS,
+  read from the tool's definition as the model of a live interactive session is given it (a
+  Koloft worktree session): each entry of a question's `options` is `{label, description,
+  preview?}`, and `label` and `description` are both required. What the dialog draws of a
+  description was not looked at in this round.
 - **The keys that answer an `AskUserQuestion` of several questions, or one that takes
   several picks.** 2026-11-03, CC 2.1.317 (the native binary, not the shim), a python
   pty rendered with `pyte`, scratch `HOME` and `CLAUDE_CONFIG_DIR`,
