@@ -716,6 +716,7 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
       await agyRows(page).click()
       const mask = page.locator('.term-wrap:visible .empty', { hasText: 'Resuming' })
       await expect(mask).toBeVisible({ timeout: 20_000 })
+      await expect(mask).not.toContainText('Claude')
       await expect.poll(() => sessionCalls(env).length).toBe(2)
       expect(sessionCalls(env)[1].argv.slice(2)).toEqual([
         '--dangerously-skip-permissions',

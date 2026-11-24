@@ -586,7 +586,7 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
       await expect(confirm).toBeVisible({ timeout: 15_000 })
       await expect(confirm.locator('.field-hint')).toHaveText(
         '1 running session will be closed, and 1 scheduled job will be deleted. ' +
-          'Sessions are kept by Claude or Codex — re-adding the folder brings them back as resumable. ' +
+          'Each agent keeps its own sessions — re-adding the folder brings them back as resumable. ' +
           'Jobs do not come back.'
       )
     } finally {
