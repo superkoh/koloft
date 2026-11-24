@@ -32,8 +32,11 @@ const CALLED_WITH_EACH_ELEMENT = new Set([
   'forEach'
 ])
 const COMPARISONS = new Set(['===', '!==', '==', '!='])
-const OPENS_A_SCOPE =
-  /^(Program|BlockStatement|For(Of|In)?Statement|(Arrow)?FunctionExpression|FunctionDeclaration|ObjectMethod|ClassMethod)$/
+const DECLARES_PARAMETERS =
+  /^((Arrow)?FunctionExpression|FunctionDeclaration|ObjectMethod|ClassMethod)$/
+const OPENS_A_SCOPE = new RegExp(
+  `^(Program|BlockStatement|For(Of|In)?Statement)$|${DECLARES_PARAMETERS.source}`
+)
 
 const isFunction = (node) => /^(Arrow)?FunctionExpression$/.test(node?.type ?? '')
 const isFixedText = (node) =>
@@ -80,16 +83,22 @@ function flagTypesThatAreNotYesOrNo(modules) {
         why: 'its type is not an interface or an object type written in this file, so no flag can be checked'
       }
     ]
+  const isOneAnswerPerHost = (m) => {
+    const answers = membersOf(typeOf(m)) ?? []
+    return (
+      !m.optional &&
+      answers.length === HOSTS.length &&
+      answers.every(isYesOrNo) &&
+      HOSTS.every((host) => answers.some((a) => nameOf(a.key) === host))
+    )
+  }
   return members
-    .filter((m) => {
-      const answers = membersOf(typeOf(m)) ?? []
-      return !isYesOrNo(m) && !(!m.optional && answers.length > 0 && answers.every(isYesOrNo))
-    })
+    .filter((m) => !isYesOrNo(m) && !isOneAnswerPerHost(m))
     .map((m) => ({
       file: MANIFEST_TYPES,
       line: m.loc.start.line,
       what: `${FLAGS}.${m.key ? nameOf(m.key) : '(not a plain field)'}`,
-      why: 'its type is not `boolean`, nor one `boolean` for each kind of machine'
+      why: `its type is not \`boolean\`, nor { ${HOSTS.map((h) => `${h}: boolean`).join('; ')} }`
     }))
 }
 
@@ -110,22 +119,27 @@ const fieldOf = (object, name) =>
 
 function manifestsInListOrder(modules) {
   const list = modules.get(LIST_OF_MANIFESTS)
-  if (!list) return []
-  let agents = []
-  walk(list.program, (node) => {
+  const agents = []
+  const unread = []
+  walk(list?.program ?? {}, (node) => {
     const init = initOf(node)
-    if (init?.type === 'ArrayExpression' && node.id.name === LISTED_MANIFESTS)
-      agents = init.elements.flatMap((e) => {
-        const from = e?.type === 'Identifier' && list.namesBoundToImports.get(e.name)
-        const object =
-          from && modules.has(from.to) && declaredObject(modules.get(from.to), from.name)
-        const id = fieldOf(object, 'id')?.value
-        return object && id?.type === 'StringLiteral'
-          ? [{ id: id.value, file: from.to, object }]
-          : []
-      })
+    if (init?.type !== 'ArrayExpression' || node.id.name !== LISTED_MANIFESTS) return
+    for (const e of init.elements) {
+      const from = e?.type === 'Identifier' && list.namesBoundToImports.get(e.name)
+      const object = from && modules.has(from.to) && declaredObject(modules.get(from.to), from.name)
+      const id = fieldOf(object, 'id')?.value
+      if (object && id?.type === 'StringLiteral')
+        agents.push({ id: id.value, file: from.to, object })
+      else
+        unread.push({
+          file: LIST_OF_MANIFESTS,
+          line: (e ?? init).loc.start.line,
+          what: `an entry of ${LISTED_MANIFESTS}`,
+          why: "it is not an imported `agent` written in its agent.ts as { id: '…', … }, so its flags cannot be checked"
+        })
+    }
   })
-  return agents
+  return { agents, unread }
 }
 
 function answerOf(node) {
@@ -138,8 +152,9 @@ function answerOf(node) {
 }
 
 function flagAnswers(modules) {
-  const problems = []
-  const agents = manifestsInListOrder(modules).map(({ id, file, object }) => {
+  const listed = manifestsInListOrder(modules)
+  const problems = [...listed.unread]
+  const agents = listed.agents.map(({ id, file, object }) => {
     const answers = new Map()
     const flags = fieldOf(object, FLAGS)
     if (flags && flags.value.type !== 'ObjectExpression')
@@ -223,6 +238,21 @@ function readersOf(modules, file, declaredIn, tables) {
   return { one, every, table }
 }
 
+function namesDeclaredBy(pattern) {
+  const target =
+    pattern?.type === 'AssignmentPattern'
+      ? pattern.left
+      : pattern?.type === 'RestElement'
+        ? pattern.argument
+        : pattern
+  if (target?.type === 'Identifier') return [target.name]
+  if (target?.type === 'ObjectPattern')
+    return target.properties.flatMap((p) =>
+      namesDeclaredBy(p.type === 'ObjectProperty' ? p.value : p)
+    )
+  return target?.type === 'ArrayPattern' ? target.elements.flatMap(namesDeclaredBy) : []
+}
+
 function walkInScopes(node, visit, scope = node) {
   const inner = OPENS_A_SCOPE.test(node.type) ? node : scope
   visit(node, inner)
@@ -264,11 +294,19 @@ function factsIn(program, { one, every, table }) {
       if (p.type === 'ObjectProperty' && !p.computed && nameOf(p.key) !== FLAGS)
         bind(p.value, false, scope)
   }
+  const hideOuterNames = (pattern, scope) => {
+    for (const name of namesDeclaredBy(pattern))
+      if (!bound.some((b) => b.name === name && b.scope === scope))
+        bound.push({ name, isAManifest: undefined, scope })
+  }
   walkInScopes(program, (node, scope) => {
     if (node.type === 'VariableDeclarator') {
       if (isManifest(node.init)) bind(node.id, true, scope)
       else if (isFact(node.init)) bind(node.id, false, scope)
+      hideOuterNames(node.id, scope)
     }
+    if (DECLARES_PARAMETERS.test(node.type))
+      for (const param of node.params) hideOuterNames(param, node)
     if (node.type === 'ForOfStatement' && isEveryManifest(node.right))
       bind(
         node.left.type === 'VariableDeclaration' ? node.left.declarations[0].id : node.left,

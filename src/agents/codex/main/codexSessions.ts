@@ -7,7 +7,6 @@ import type {
   BackendSessionInfo,
   BackendSessionRow,
   CreateTabOptions,
-  HostId,
   CodexResetOutcome,
   LaunchPermission
 } from '@shared/types'

@@ -140,7 +140,7 @@ Working principles:
   by whether a method is there) and on a new use of `messagingOf` outside the three
   agents' own folders. It fails too, with no baseline, on a flag in a manifest that is
   not yes-or-no (a field of `flags`: `boolean`, or one `boolean` each for `local` and
-  `ssh`), and where common code or a plugin compares a text from a manifest, or from a
+  `ssh`), and where common code, `kit` or a plugin compares a text from a manifest, or from a
   table built from one such as `BACKEND_LABEL`, with a text written in the code; and it
   prints each flag's answer for the six kinds of tab (`scripts/agent-facts.mjs`). A
   manifest field states the agent's own fact, never what Koloft does with it

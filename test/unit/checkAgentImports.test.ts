@@ -645,7 +645,7 @@ describe('check-agent-imports: a flag in an agent’s manifest is yes-or-no', ()
     expect(r.out).toMatch(/^ +takesAName +yes +no +yes +yes$/m)
   })
 
-  it('fails on a flag whose type is a text, a choice of texts, left out by some agent, or one answer per machine that is not yes-or-no, and on an answer an agent does not write as true or false, and says how to fix it', () => {
+  it('fails on a flag whose type is a text, a choice of texts, left out by some agent, one answer per machine that is not yes-or-no, or yes-or-no answers under other names than the two kinds of machine, and on an answer an agent does not write as true or false, and says how to fix it', () => {
     const r = check(
       fixtureRepo(
         {
@@ -656,7 +656,8 @@ describe('check-agent-imports: a flag in an agent’s manifest is yes-or-no', ()
             "howItSends: 'queue' | 'typed'",
             'label: string',
             'maybe?: boolean',
-            'perMachine: { local: string; ssh: boolean }'
+            'perMachine: { local: string; ssh: boolean }',
+            'otherNames: { here: boolean; there: boolean }'
           ),
           'src/agents/alpha/agent.ts': manifestOf(
             'alpha',
@@ -675,6 +676,7 @@ describe('check-agent-imports: a flag in an agent’s manifest is yes-or-no', ()
       `${MANIFEST_TYPES} label`,
       `${MANIFEST_TYPES} maybe`,
       `${MANIFEST_TYPES} perMachine`,
+      `${MANIFEST_TYPES} otherNames`,
       'src/agents/alpha/agent.ts worked',
       'src/agents/alpha/agent.ts half'
     ])
@@ -682,7 +684,7 @@ describe('check-agent-imports: a flag in an agent’s manifest is yes-or-no', ()
     expect(r.out).toContain('A name, a file name or a sentence is a fact, not a flag')
   })
 
-  it('fails, rather than passing with nothing checked, when the flags’ type is not written out in the manifest type file or an agent does not write its flags out', () => {
+  it('fails, rather than passing with nothing checked, when the flags’ type is not written out in the manifest type file, an agent on the list is not a manifest written out in its agent.ts, or an agent does not write its flags out', () => {
     const r = check(
       fixtureRepo(
         {
@@ -691,15 +693,21 @@ describe('check-agent-imports: a flag in an agent’s manifest is yes-or-no', ()
             'flags: AgentFlags',
             'flags: Partial<AgentFlags>'
           ),
-          'src/agents/alpha/agent.ts': manifestOf('alpha', 'Alpha', 'SOME_FLAGS')
+          'src/agents/alpha/agent.ts': manifestOf('alpha', 'Alpha', 'SOME_FLAGS'),
+          'src/agents/beta/agent.ts': "export const agent = made({ id: 'beta' })\n"
         },
         {}
       )
     )
     expect(r.code).toBe(1)
-    expect([...r.out.matchAll(/^ {2}(src\/\S+):\d+ {2}flags {2}\(/gm)].map((m) => m[1])).toEqual([
-      MANIFEST_TYPES,
-      'src/agents/alpha/agent.ts'
+    expect(
+      [...r.out.matchAll(/^ {2}(src\/\S+):\d+ {2}(flags|an entry of AGENTS) {2}\(/gm)].map(
+        (m) => `${m[1]} ${m[2]}`
+      )
+    ).toEqual([
+      `${MANIFEST_TYPES} flags`,
+      'src/agents/list.ts an entry of AGENTS',
+      'src/agents/alpha/agent.ts flags'
     ])
   })
 })
@@ -768,7 +776,7 @@ describe('check-agent-imports: a text from a manifest is never compared with a t
     expect(r.out).toContain('add a yes-or-no flag to the manifests')
   })
 
-  it('lets a fact be put in a sentence, compared with a value read at run time and looked up in a list; lets a flag, a field of another object and another function’s variable of the same name be compared; and does not check an agent’s own folder', () => {
+  it('lets a fact be put in a sentence, compared with a value read at run time and looked up in a list; lets a flag, a field of another object, another function’s variable of the same name and a parameter that hides a fact’s name be compared; and does not check an agent’s own folder', () => {
     const r = check(
       fixtureRepo(
         {
@@ -781,6 +789,9 @@ describe('check-agent-imports: a text from a manifest is never compared with a t
             '  AGENT_MANIFESTS.some((agent) => agent.fileNames.includes(file))',
             "export const flag = agentManifest('x').flags.keepsLineFeeds === 'true'",
             "export const flagInBrackets = agentManifest('x')['flags'].keepsLineFeeds === 'true'",
+            "const { name } = agentManifest('x')",
+            'export const greeting = `Hello from ${name}`',
+            "export const isAlpha = (name: string): boolean => name === 'Alpha'",
             "const other = { name: 'Alpha' }",
             "export const unrelated = other.name === 'Alpha'",
             'export const names = AGENT_MANIFESTS.map((agent) => agent.name)',
