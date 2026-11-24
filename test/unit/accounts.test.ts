@@ -10,6 +10,23 @@ vi.mock('electron', async () => {
   return { app: { getPath: () => base, getName: () => 'koloft', isPackaged: false } }
 })
 
+const security = vi.hoisted(() => ({
+  exitCode: (() => 44) as (args: string[]) => number | null
+}))
+
+vi.mock('child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('child_process')>()),
+  execFile: (
+    _cmd: string,
+    args: string[],
+    _opts: unknown,
+    done: (err: Error | null, stdout: string) => void
+  ) => {
+    const code = security.exitCode(args)
+    done(code === 0 ? null : Object.assign(new Error('security failed'), { code }), '')
+  }
+}))
+
 import { app } from 'electron'
 import { loadSettings, saveSettings, rereadSettingsOnNextLoad } from '../../src/main/settings'
 import { BackgroundFile, FOLDER_OF_HALF_WRITTEN_FILES } from '../../src/main/backgroundFile'
@@ -62,6 +79,7 @@ beforeEach(async () => {
   rereadSettingsOnNextLoad()
   fs.rmSync(fixtureFile, { force: true })
   resetProbeOutcomeState()
+  security.exitCode = () => 44
   process.env.KOLOFT_TEST_BACKGROUND = '1'
   process.env.KOLOFT_KEYCHAIN_FILE = fixtureFile
 })
@@ -235,6 +253,34 @@ describe('U3 · keychain adapter seams', () => {
     fs.writeFileSync(fixtureFile, JSON.stringify({ 'koloft-claude-oauth': { bravo: 'tok-x' } }))
     delete process.env.KOLOFT_TEST_BACKGROUND
     expect(await keychainRead('oauth', 'bravo')).toBeNull()
+  })
+
+  it('a delete reports the secret gone when it was removed or was never there, and not gone when the write fails', async () => {
+    await keychainWrite('oauth', 'bravo', 'tok-1')
+    expect(await keychainDelete('oauth', 'bravo')).toBe(true)
+    expect(await keychainDelete('agy-home', 'never-stored')).toBe(true)
+    await keychainWrite('agy-home', 'kept', 'AIza-kept')
+    fs.chmodSync(fixtureFile, 0o400)
+    try {
+      expect(await keychainDelete('agy-home', 'kept')).toBe(false)
+    } finally {
+      fs.chmodSync(fixtureFile, 0o600)
+    }
+    expect(await keychainRead('agy-home', 'kept')).toBe('AIza-kept')
+  })
+
+  it('outside test mode a delete counts a removed entry and one security reports as not there (exit 44) as gone, and a locked, cancelled or timed-out Keychain as not removed', async () => {
+    delete process.env.KOLOFT_TEST_BACKGROUND
+    security.exitCode = () => 0
+    expect(await keychainDelete('agy-home', 'stored')).toBe(true)
+
+    security.exitCode = (args) => (args[0] === 'delete-generic-password' ? 44 : 0)
+    expect(await keychainDelete('agy-home', 'deleted-by-the-other-click')).toBe(true)
+
+    for (const refusal of [51, 1, null]) {
+      security.exitCode = () => refusal
+      expect(await keychainDelete('agy-home', 'locked')).toBe(false)
+    }
   })
 })
 

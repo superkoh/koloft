@@ -13,6 +13,7 @@ import {
 import {
   E2E_AGY_ACCOUNT,
   UNPACKAGED_BUILD_AGY_SVC,
+  addKeychainEntry,
   agyCalls,
   agySessionCalls as sessionCalls,
   agyTranscriptOf as transcriptOf,
@@ -104,6 +105,27 @@ const apiCalls = (env: E2EEnv): Record<string, unknown>[] =>
   fileLines(path.join(env.home, 'fake-agy-api.jsonl'))
 const injected = (env: E2EEnv): Record<string, unknown>[] =>
   fileLines(path.join(env.home, 'fake-agy-injected.jsonl'))
+
+async function signInWithGoogleAs(page: Page, env: E2EEnv, name: string): Promise<AgyCall> {
+  const home = path.join(env.userData, 'agy-homes', name)
+  const before = agyCalls(env).length
+  const signIn = (): AgyCall | undefined =>
+    agyCalls(env)
+      .slice(before)
+      .find((c) => c.geminiDir === home)
+  await page.getByRole('button', { name: 'Sign in with Google' }).click()
+  await page.locator('.acct-add input[type="text"]').fill(name)
+  await page.locator('.acct-add').getByRole('button', { name: 'Sign in', exact: true }).click()
+  await expect.poll(signIn, { timeout: 30_000 }).toBeTruthy()
+  return signIn()!
+}
+
+function apiKeyRouteOf(home: string): string | undefined {
+  const file = path.join(home, 'antigravity-cli', 'settings.json')
+  return fs.existsSync(file)
+    ? (JSON.parse(fs.readFileSync(file, 'utf8')) as { modelProvider?: string }).modelProvider
+    : undefined
+}
 
 async function startAgy(page: Page, env: E2EEnv, ws = 'ws-a'): Promise<AgyCall> {
   const before = sessionCalls(env).length
@@ -1244,6 +1266,75 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
         )
       ) as { modelProvider?: string }
       expect(own.modelProvider).toBe('gemini')
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('deleting an Antigravity API key account takes its key out of the Keychain: a delete the Keychain refuses keeps the row with a line saying so, Delete again removes both, and a Google sign-in under the same name then opens agy with no Gemini key and no API key route', async ({
+    env
+  }) => {
+    installAgy(env)
+    seedSettings(env, { hintsOff: true })
+    const keyOf = (): string | undefined =>
+      (
+        JSON.parse(fs.readFileSync(env.keychainFile, 'utf8')) as Record<
+          string,
+          Record<string, string>
+        >
+      )[UNPACKAGED_BUILD_AGY_SVC]?.[E2E_AGY_ACCOUNT]
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      const row = page.locator('.acct-row', {
+        has: page.locator('.acct-name', { hasText: /^e2e-agy$/ })
+      })
+      await expect(row.locator('.acct-badge')).toHaveText('API KEY')
+      expect(keyOf()).toBe('fake-gemini-key')
+
+      fs.chmodSync(env.keychainFile, 0o400)
+      try {
+        await row.locator('.acct-x').click()
+        await row.locator('.acct-confirm button', { hasText: 'Delete' }).click()
+        await expect(row.locator('.acct-confirm .acct-login-state.bad')).toContainText(
+          'Koloft could not remove its Keychain credential, so the account is kept.'
+        )
+      } finally {
+        fs.chmodSync(env.keychainFile, 0o600)
+      }
+      expect(keyOf()).toBe('fake-gemini-key')
+
+      await row.locator('.acct-confirm button', { hasText: 'Delete' }).click()
+      await expect(row).toHaveCount(0)
+      expect(keyOf()).toBeUndefined()
+
+      const signIn = await signInWithGoogleAs(page, env, E2E_AGY_ACCOUNT)
+      expect(signIn.env.GEMINI_API_KEY).toBe(false)
+      expect(apiKeyRouteOf(signIn.geminiDir)).toBeUndefined()
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('a Gemini key an older Koloft left in the Keychain when it deleted an account is cleared by a new Google sign-in under that name, which opens agy with no Gemini key and no API key route', async ({
+    env
+  }) => {
+    installAgyWithNoAccount(env)
+    addKeychainEntry(env, UNPACKAGED_BUILD_AGY_SVC, 'left', 'AIza-left-behind')
+    seedSettings(env, { hintsOff: true })
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      const signIn = await signInWithGoogleAs(page, env, 'left')
+      expect(signIn.env.GEMINI_API_KEY).toBe(false)
+      expect(apiKeyRouteOf(signIn.geminiDir)).toBeUndefined()
+      expect(fs.readFileSync(env.keychainFile, 'utf8')).not.toContain('AIza-left-behind')
     } finally {
       await quitAndClose(app)
     }

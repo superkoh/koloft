@@ -219,6 +219,19 @@ method. A recheck adds its date, version and command to the bullet.
   `/usr/bin/security` in its ACL**, so any process running as the user can read it
   through `security find-generic-password`, whatever the service name, and a real
   authorization prompt does not show up in normal use.
+- **`security find-generic-password -s <service> -a <account>` exits 44 when no such item
+  exists**, printing `security: SecKeychainSearchCopyNext: The specified item could not be
+  found in the keychain.` on stderr. Seen 2026-10-15 and 2026-10-18 on the development Mac,
+  run by hand in a session (no `-w`) for two items that were not there.
+- **`security` exit codes for a generic password, item by item**: `add-generic-password`
+  that stores it exits 0; `find-generic-password` that finds it exits 0;
+  `delete-generic-password` that removes it exits 0 and prints `password has been
+  deleted.` on stderr; a `find` after that exits 44; a `delete` of an item that is not
+  there also exits 44, with the same `SecKeychainSearchCopyNext` line as `find`. Measured
+  2026-11-24 on macOS 27.2.1, against a throwaway keychain file made with `security
+  create-keychain` in a temporary folder and named at the end of every command, then
+  removed with `delete-keychain`; the login keychain was not touched and the search list
+  was the same before and after.
 - **`lsof` exits 1** whenever one of the pids it was asked about has nothing to show,
   while still printing the rest (2026-09-24, macOS 27.0: `lsof -p <live>,999999`
   exited 1).

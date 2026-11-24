@@ -32,6 +32,12 @@ export type SignInFolderKind = (typeof SIGN_IN_FOLDER_OF)[SignInBackend]
 
 export const SIGN_IN_FOLDER_KINDS: readonly AccountKind[] = Object.values(SIGN_IN_FOLDER_OF)
 
+// CODEX§15 ADR-0001
+const KINDS_WITH_NO_KEYCHAIN_SECRET: readonly AccountKind[] = [SIGN_IN_FOLDER_OF.codex]
+
+export const keepsSecretInKeychain = (kind: AccountKind): boolean =>
+  !KINDS_WITH_NO_KEYCHAIN_SECRET.includes(kind)
+
 export const BACKEND_OF_SIGN_IN_FOLDER = Object.fromEntries(
   Object.entries(SIGN_IN_FOLDER_OF).map(([backend, kind]) => [kind, backend])
 ) as Record<SignInFolderKind, SignInBackend>
@@ -299,7 +305,8 @@ export interface AccountView extends AccountMeta {
 }
 
 export type SignInResult =
-  { ok: true; tabId: string; cwd: string } | { ok: false; error: 'invalid-name' | 'duplicate' }
+  | { ok: true; tabId: string; cwd: string }
+  | { ok: false; error: 'invalid-name' | 'duplicate' | 'keychain' }
 
 export interface SignInFailure {
   backend: SignInBackend
@@ -1199,7 +1206,7 @@ export interface CoreApi {
       secret: string,
       endpoint?: { baseUrl: string; model?: string }
     ): Promise<AccountAddResult>
-    remove(name: string, kind: AccountKind): Promise<void>
+    remove(name: string, kind: AccountKind): Promise<boolean>
     toggle(name: string, kind: AccountKind, enabled: boolean): Promise<void>
     probe(): Promise<AccountView[]>
     // CC§7

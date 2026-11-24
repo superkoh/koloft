@@ -1855,7 +1855,7 @@ test.describe('Codex sessions through the real method chooser, process transport
   })
 
   // CODEX§15
-  test('Paste API key opens its form inside the Codex section, closing the Claude Paste token form opened before it; an OpenAI API key pasted there is logged in with codex login --with-api-key into the new account’s own sign-in folder (a login that fails says Could not save and adds no row), its row carries the API KEY badge and the metered note with no meters, Codex sessions run in that folder, and starting them does not re-check the account', async ({
+  test('Paste API key opens its form inside the Codex section, closing the Claude Paste token form opened before it; an OpenAI API key pasted there is logged in with codex login --with-api-key into the new account’s own sign-in folder (a login that fails says Could not save and adds no row), its row carries the API KEY badge and the metered note with no meters, Codex sessions run in that folder, starting them does not re-check the account, and Delete removes the row while its sign-in folder stays', async ({
     env
   }) => {
     installCodex(env)
@@ -1922,6 +1922,13 @@ test.describe('Codex sessions through the real method chooser, process transport
       expect((await startCodex(page, env)).codexHome).toBe(home)
       await page.evaluate(() => window.api.accounts.probe())
       expect(accountReads()).toBe(readsAfterAdding + 1)
+
+      await sendShortcut(app, 'shortcut:open-settings')
+      await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
+      await row.locator('.acct-x').click()
+      await row.locator('.acct-confirm button', { hasText: 'Delete' }).click()
+      await expect(row).toHaveCount(0)
+      expect(fs.existsSync(path.join(home, 'auth.json'))).toBe(true)
     } finally {
       await quitAndClose(app)
     }
