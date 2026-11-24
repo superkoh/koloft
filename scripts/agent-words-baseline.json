@@ -2012,6 +2012,7 @@
       "codex: 'codex-home',",
       "codex?: { observation: 'live' | 'degraded' }",
       "codexUseReset(name: string): Promise<CodexResetOutcome>",
+      "const KINDS_WITH_NO_KEYCHAIN_SECRET: readonly AccountKind[] = [SIGN_IN_FOLDER_OF.codex]",
       "enabled: { claude: true, codex: true, agy: true }",
       "export const CODEX_RESET_OUTCOMES = [",
       "export const PLACEHOLDER_SESSION_TITLE = 'Claude session'",
