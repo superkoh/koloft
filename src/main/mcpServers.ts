@@ -2,7 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import type { BackendId, McpServer } from '@shared/types'
 import { runsPlaywrightMcp } from './browserControlEnv'
-import { claudeJsonPath, claudeProjectKey } from './claudeTrust'
+import { claudeJsonPath, claudeProjectKey } from '@agents/claude/main/claudeTrust'
 import { realpathSafe } from './projectInfo'
 
 export interface ConfigText {

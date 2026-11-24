@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { ClaudeTouchedFiles } from '../../src/main/claudeTouchedFiles'
+import { ClaudeTouchedFiles } from '../../src/agents/claude/main/claudeTouchedFiles'
 
 describe('ClaudeTouchedFiles — the files a Claude Code session read or wrote', () => {
   it('Edit / MultiEdit line deltas and read-never-downgrades-write', () => {

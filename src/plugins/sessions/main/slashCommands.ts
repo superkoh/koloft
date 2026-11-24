@@ -1,7 +1,7 @@
 import type { BackendId } from '@shared/types'
 import type { Turn } from '@shared/turns'
 import { waitingForAnswer } from '@shared/slashCommands'
-import type { CommandOutput } from '../../../main/claudeCommandOutput'
+import type { CommandOutput } from '@agents/claude/main/claudeCommandOutput'
 import { sleep } from '@core/sleep'
 import { CLEAR_TO_LINE_START, TO_LINE_END } from '@shared/lineEditKeys'
 import { errorText } from '@core/errorText'

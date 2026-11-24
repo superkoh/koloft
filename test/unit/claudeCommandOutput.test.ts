@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { commandOutputOf } from '../../src/main/claudeCommandOutput'
+import { commandOutputOf } from '../../src/agents/claude/main/claudeCommandOutput'
 
 const ESC = String.fromCharCode(27)
 

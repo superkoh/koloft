@@ -19,7 +19,7 @@ import {
   realFilesHere,
   type RealFilesOnMachine
 } from '../../../main/realFiles'
-import { ClaudeTouchedFiles, toolFilePath } from '../../../main/claudeTouchedFiles'
+import { ClaudeTouchedFiles, toolFilePath } from '@agents/claude/main/claudeTouchedFiles'
 import { claudeToolDid } from '../../../main/rowActivity'
 import { TitleSources } from '../../../main/titleSources'
 import { UsageMeter } from '../../../main/usageMeter'
@@ -30,7 +30,7 @@ import type { LaunchedSession } from '../../../main/accountPicker'
 import type { MachineTmp } from '../../../main/remote/install'
 import { REMOTE_CLAUDE_PROJECTS } from '../../../main/remote/paths'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
-import { claudeWroteIt, commandOutputOf } from '../../../main/claudeCommandOutput'
+import { claudeWroteIt, commandOutputOf } from '@agents/claude/main/claudeCommandOutput'
 import { withoutHandover } from './handoverPreamble'
 import { messageText } from './messageText'
 import {

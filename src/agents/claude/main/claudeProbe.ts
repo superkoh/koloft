@@ -1,4 +1,8 @@
-import { agentsInLoginShell, forgetAgentsInLoginShell, LoginShellError } from './loginShell'
+import {
+  agentsInLoginShell,
+  forgetAgentsInLoginShell,
+  LoginShellError
+} from '../../../main/loginShell'
 
 const REASK_AFTER_UNSURE_OR_NO_MS = 60_000
 

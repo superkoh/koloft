@@ -2,7 +2,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { expect, it, onTestFinished, vi } from 'vitest'
-import { probeClaude } from '../../src/main/claudeProbe'
+import { probeClaude } from '../../src/agents/claude/main/claudeProbe'
 
 // CC§10
 it('finds a claude whose PATH entry lives in .zshrc alone', async () => {
@@ -27,7 +27,7 @@ it('counts a claude the profile defines as a shell function as installed, as a t
 
 async function freshProbe(): Promise<typeof probeClaude> {
   vi.resetModules()
-  return (await import('../../src/main/claudeProbe')).probeClaude
+  return (await import('../../src/agents/claude/main/claudeProbe')).probeClaude
 }
 
 function fakeShell(body: string): string {

@@ -273,7 +273,7 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   `compact` (it can fire mid-turn, with no prompt after it).
 
 Evidence: live experiments E1–E8, 2026-08-10, claude 2.1.227; enums read from CC 2.1.238 source on 2026-08-22. Koloft dependents: the `EVICTING_END_REASONS` whitelist
-in `src/plugins/sessions/main/backends/claude.ts` (marked `CC§1`); `sessionTracker.bindSession` (it takes
+in `src/agents/claude/main/backend.ts` (marked `CC§1`); `sessionTracker.bindSession` (it takes
 the hook's `cwd` — the launch-directory entry above) and `followWorktreeState` (which
 then moves the root to the worktree the last `worktree-state` names); the start line in
 the status log (`HOOK_SCRIPT` in `src/plugins/sessions/main/hooks.ts`), which `ClaudeBackend` applies in
@@ -903,7 +903,7 @@ move entries: full sweep of all 965 on-disk transcripts plus live probes, 2026-0
 
 Evidence: experiments E3/E4/E8, 2026-08-10, plus `strings` analysis of the claude
 2.1.227 binary. Koloft dependents: the resume decision tree in `src/main/resumePlan.ts`
-(behind `sessions:resumePlan`); `claudeArgv` in `src/main/claudeArgs.ts`, which composes
+(behind `sessions:resumePlan`); `claudeArgv` in `src/agents/claude/main/claudeArgs.ts`, which composes
 `--resume`/`-w`; `copyWorktreeIncludes` in `src/main/sessionWorktrees.ts`, which copies
 the same files into a worktree Koloft makes or rebuilds itself; `worktreeNameFor` and
 `CronRunner.taken` in `src/plugins/scheduled-tasks/main/cronRunner.ts`, which count a left `worktree-<n>` branch
@@ -1124,7 +1124,7 @@ file with the field kept carries on both builds.
   `ExitWorktree` and the worktree exit dialog deleting a worktree that another running
   Claude Code session was working in". Not probed: Keep on 2.1.330, a second session
   started with `-w` or `-p`, a remote (Linux, tmux) tab. Koloft dependent:
-  `src/main/claudeWorktreeExit.ts` reads the kept line as a removal that did not happen
+  `src/agents/claude/main/claudeWorktreeExit.ts` reads the kept line as a removal that did not happen
   (the row comes back, the line shows in the "did not remove" toast), but the removal it
   finishes after Koloft quits does not check for another session (issue #2343).
 
@@ -1133,7 +1133,7 @@ Evidence: experiments E2/E8, 2026-08-10, claude 2.1.227; four live worktree exit
 checked with `git worktree list`, `git branch` and `ls ~/.claude/projects/<slug>`); the
 unchanged-tree removal on 2026-09-08, claude 2.1.265.
 Koloft dependents: the §1 whitelist eviction path; `fake-claude.js`'s dirty-tree exit
-prompt and removal emulation; `src/main/claudeWorktreeExit.ts`, which hides a tab, on this Mac or on a machine, the
+prompt and removal emulation; `src/agents/claude/main/claudeWorktreeExit.ts`, which hides a tab, on this Mac or on a machine, the
 moment its CC starts removing, and on this Mac finishes the removal if Koloft quits first.
 
 ## §5 fork and background sessions (claude daemon)
@@ -2537,8 +2537,8 @@ other bullets of §9 were not re-measured on this build.
   Desktop app or VS Code.
 
 Koloft dependents: the scheduled-jobs runner's launch line and the shim's new-session
-branch (`src/main/shim.ts`), `src/main/claudeArgs.ts`, `src/main/skillList.ts`,
-`src/main/claudeTrust.ts`, the env scrubs in `src/main/ptyManager.ts` and
+branch (`src/main/shim.ts`), `src/agents/claude/main/claudeArgs.ts`, `src/main/skillList.ts`,
+`src/agents/claude/main/claudeTrust.ts`, the env scrubs in `src/main/ptyManager.ts` and
 `scripts/code-review.mjs`,
 `src/main/leftovers.ts`, the warm-up `claude -p ok --max-turns 1` in
 `src/main/remote/launch.ts`, the remote launch and trust check in
@@ -2676,7 +2676,7 @@ rechecks against real installs of 2.1.322 on macOS (darwin-arm64) and Linux
   output or a short command only when stdout and stderr are different files.
   (`strings`, darwin-arm64 and linux-arm64, 2026-11-07, not run: inferred, not checked;
   whether `claude --version` reaches the check is not read.) Koloft writes only
-  `~/.claude.json` (`src/main/claudeTrust.ts` locally, `src/main/remote/launch.ts`
+  `~/.claude.json` (`src/agents/claude/main/claudeTrust.ts` locally, `src/main/remote/launch.ts`
   remotely), never `.config.json`, and never looks at `CLAUDE_CONFIG_DIR`. The local
   writer creates `~/.claude.json` when it is missing; the remote one does so only when
   Koloft supplied the login (the tab's `.env` file exists). So on a home whose claude
@@ -2789,7 +2789,7 @@ sessions plus a tmux probe, 2026-09-23, CC 2.1.281 (bullets below).
     2026-09-24 on CC 2.1.281: `TZ=UTC ps -o lstart= -p <pid>` equalled `procStart`
     for 7 of 7 entries.
 
-Koloft dependents: `src/main/claudeSessionRegistry.ts`, read before resuming a
+Koloft dependents: `src/agents/claude/main/claudeSessionRegistry.ts`, read before resuming a
 session; `restoreOpenTabs` in `src/main/index.ts`, which starts the Keep running
 sessions once at launch and does not retry one found still registered.
 
@@ -4746,7 +4746,7 @@ servers `globalprobe` (top-level `mcpServers` of `~/.claude.json`), `localprobe`
   `enabledMcpjsonServers` (which claude moves into `<A>/.claude/settings.local.json`).
 
 Koloft dependents: `claudeServers` in `src/main/mcpServers.ts`, which `koloft todo` lists,
-and `claudeProjectKey` in `src/main/claudeTrust.ts`, which picks the `projects` key it reads.
+and `claudeProjectKey` in `src/agents/claude/main/claudeTrust.ts`, which picks the `projects` key it reads.
 
 ## §23 A resumed conversation keeps its first system prompt, until its next compaction
 
@@ -4884,7 +4884,7 @@ sentence with `Signed: WALRUS`. Prompt: "Say hello in one short sentence."; abou
 - **Every run named the clash in its reply** and said which one it followed.
 
 Koloft dependents: a workspace's Instructions reach a Claude Code session as an inline
-`--append-system-prompt` (`src/plugins/sessions/main/backends/claude.ts`), and the Session defaults dialog
+`--append-system-prompt` (`src/agents/claude/main/backend.ts`), and the Session defaults dialog
 says the project's own file may win (`src/renderer/src/components/SessionDefaultsDialog.tsx`).
 
 ## §27 Who started a turn: a person's typing and a program's look the same
@@ -4971,7 +4971,7 @@ precedence of a project's `settings.json` `model`.
 Koloft dependents: the claude shim on the Mac and the `bin/claude` wrapper on a
 remote machine turn the advisor off for each Fable launch and back on for each other one,
 tab or nested, and read a resumed session's model from its transcript
-(`src/main/advisorOnFable.ts`).
+(`src/agents/claude/main/advisorOnFable.ts`).
 
 ## §30 Which of a folder's `CLAUDE.md` and `AGENTS.md` CC reads
 

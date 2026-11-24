@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   A_HOOK_LINE_FIRED_BEFORE_THE_ANSWER_LANDS_WITHIN_MS,
   ClaudeDialogWatch
-} from '../../src/main/claudeDialogWatch'
+} from '../../src/agents/claude/main/claudeDialogWatch'
 import { PROGRAM_STATUS_REPLY } from '../../src/main/programStatus'
 
 const QUERY = '\x1b]7501;?\x07'

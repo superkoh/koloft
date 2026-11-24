@@ -1,4 +1,4 @@
-import { descendants, type ProcessTable } from './processTable'
+import { descendants, type ProcessTable } from '../../../main/processTable'
 
 export function looksLikeClaude(command: string): boolean {
   return /claude/i.test(command)

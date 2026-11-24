@@ -34,7 +34,7 @@ import { GithubRepos, type GithubReposOptions } from '../githubRepos'
 import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { parseLeftRight, type FreshnessRunner, type GitSnapshot } from '../gitFreshness'
 import { FINGERPRINT, remoteAnswerCommand } from '../remote/install'
-import { TRUSTED_JS } from '../remote/claudeTrustJs'
+import { TRUSTED_JS } from '@agents/claude/main/claudeTrustJs'
 import {
   claudeTabSpec,
   killSessionCmd,
@@ -82,7 +82,7 @@ import {
   type NoticeFile,
   type SentNote
 } from '@plugins/sessions/main/hooks'
-import { claudeArgv } from '../claudeArgs'
+import { claudeArgv } from '@agents/claude/main/claudeArgs'
 import { parseAnnotationTitle, type SummaryRow } from '../agyStore'
 import {
   AGY_HELD_ELSEWHERE_EXIT,

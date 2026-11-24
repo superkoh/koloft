@@ -8,7 +8,7 @@ import {
   claudeTrustsFolder,
   isTrustedByClaude,
   markClaudeOnboarded
-} from '../../src/main/claudeTrust'
+} from '../../src/agents/claude/main/claudeTrust'
 
 const doc =
   (projects: Record<string, unknown>): (() => unknown) =>

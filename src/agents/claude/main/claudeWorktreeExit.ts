@@ -1,6 +1,6 @@
 import { spawn } from 'child_process'
 import path from 'path'
-import { worktreeHomeRoot } from './resumePlan'
+import { worktreeHomeRoot } from '../../../main/resumePlan'
 import { stripTerminalCodes } from '@core/terminalCodes'
 
 // CC§4

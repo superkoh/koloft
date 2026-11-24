@@ -1,4 +1,4 @@
-import { noteRead, noteWrite, type FileAcc } from './touchedFiles'
+import { noteRead, noteWrite, type FileAcc } from '../../../main/touchedFiles'
 
 export const WRITE_TOOLS: ReadonlySet<string> = new Set([
   'Write',

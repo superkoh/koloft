@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { claudeArgv } from '../../src/main/claudeArgs'
+import { claudeArgv } from '../../src/agents/claude/main/claudeArgs'
 import type { CronEffort, LaunchPermission } from '../../src/shared/types'
 
 const BASE = 'claude'
