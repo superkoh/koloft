@@ -5,6 +5,7 @@ import type { SessionInfo } from '@shared/types'
 import type { IpcMainEvent } from 'electron'
 import type { ComponentType } from 'react'
 import { PLUGIN_FORMAT_VERSION, type PluginManifest, type eachAgent } from '@core/plugin'
+import type { AgentFlags } from '@core/agent/manifest'
 import type { Commands } from '@core/commands'
 import type { answered, refused } from '@core/command'
 import type { MainIpc, PreloadIpc } from '@core/ipc'
@@ -47,6 +48,7 @@ interface V1TextBlock {
   byAgent?: Partial<Record<V1Agent, string>>
   byModel?: Readonly<Record<string, string>>
   when?: string
+  whenAgentFlag?: keyof AgentFlags
 }
 
 interface V1Manifest {
@@ -58,6 +60,7 @@ interface V1Manifest {
   needs: readonly string[]
   offUntilSetUp?: string
   text?: readonly V1TextBlock[]
+  slotsEachAgentFills?: readonly string[]
   skills?: readonly string[]
   commands?: readonly { verb: string }[]
   channels?: readonly string[]
@@ -447,11 +450,18 @@ describe('the plugin format reference names every registration a built-in plugin
     ).toEqual([])
   })
 
-  it('every text slot a plugin fills, and every fact a block waits on', () => {
+  it('every text slot a plugin fills or leaves for each agent to fill, every fact a block waits on and every agent flag a block is picked by', () => {
     expect(
       unnamedIn(
         ['Text blocks'],
-        PLUGINS.flatMap((p) => (p.text ?? []).flatMap((b) => [b.slot, ...(b.when ? [b.when] : [])]))
+        PLUGINS.flatMap((p) => [
+          ...(p.slotsEachAgentFills ?? []),
+          ...(p.text ?? []).flatMap((b) => [
+            b.slot,
+            ...(b.when ? [b.when] : []),
+            ...(b.whenAgentFlag ? [b.whenAgentFlag] : [])
+          ])
+        ])
       )
     ).toEqual([])
   })

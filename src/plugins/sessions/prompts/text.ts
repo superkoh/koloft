@@ -1,6 +1,4 @@
-import { eachAgent, type TextBlock } from '@core/plugin'
-import type { BackendId } from '@shared/types'
-import { tiersOf } from '@shared/sessionPicks'
+import type { TextBlock } from '@core/plugin'
 import { SESSION_BACKENDS, kindsOf } from '@shared/sessionBackend'
 import { agentManifest, ofEachAgent } from '@core/agent/registry'
 import { OWNER_QUOTE_MARKS } from '@core/ownerWords'
@@ -37,67 +35,31 @@ const SHARED_CHECKOUT_RULE =
 const ONE_SESSION_PER_PULL_REQUEST =
   'When work will end in several pull requests, split it by pull request first: each pull request gets its own -w session, whose task covers only that pull request and asks it to push its branch; this session then only plans the order, hands out the work and collects the results. Stacked pull requests (each one built on the one before) go one at a time: start the next session only once the branch it builds on is pushed, and tell it to start its own branch from that one. If you already work in a worktree of your own on such work, even when your task names all of it, make only one pull request yourself, then start the next session the same way and collect its result before you report back.'
 
-const HELPER_RULES: Record<BackendId, string[]> = {
-  claude: [
-    `${OWN_WORKTREE_RULE}, and instead of giving a subagent or a workflow agent a worktree of its own. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
-    WATCHED_SESSION_RULE,
-    'Dozens of similar small jobs, like checking 40 files the same way: do not start a workflow yourself. Suggest one to the owner, say about how many agents it would run, and start it only when the owner asks for it.',
-    'A side job that finishes on its own and only hands you back an answer, like searching or reading many files: a subagent. Use Explore to search and read, or a fork when it needs what this conversation already knows.',
-    'Anything else: do it yourself, in this session.'
-  ],
-  codex: [
-    `${OWN_WORKTREE_RULE}. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
-    WATCHED_SESSION_RULE,
-    'A side job that only hands you back an answer, like searching, reading or checking: never a Koloft session. Use a sub-agent (spawn_agent) when the owner asked for sub-agents or for work in the background; otherwise do it yourself. Your sub-agents share this folder, so never let two of them change files at the same time; use rule 1 for that.',
-    'Anything else: do it yourself, in this session.'
-  ],
-  agy: [
-    `${OWN_WORKTREE_RULE}. ${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`,
-    WATCHED_SESSION_RULE,
-    'A side job that only hands you back an answer, like searching, reading or checking: never a Koloft session. Use a subagent (invoke_subagent) when the owner asked for subagents or for work in the background; otherwise do it yourself. Your subagents share this folder, so never let two of them change files at the same time; use rule 1 for that.',
-    'Anything else: do it yourself, in this session.'
-  ]
-}
-
 export const WAITING_QUESTION_TOOL = ofEachAgent((b) => agentManifest(b).questionToolName)
 
-function questionRule(askWith: string, after?: string): string {
-  return `
-
-QUESTIONS
-
-When the owner has to choose or answer something, ask with ${askWith}: it shows the owner a box with choices and waits for the answer.${after ? ` ${after}` : ''}`
-}
-
-// AGY§14
-const QUESTION_RULE: Record<BackendId, string> = {
-  claude: '',
-  codex: questionRule(
-    `${WAITING_QUESTION_TOOL.codex}, called as a tool of its own (not inside exec)`,
-    `Never use ${WAITING_QUESTION_TOOL.codex}_async, which does not wait, and never sleep or poll while you wait.`
-  ),
-  agy: questionRule(WAITING_QUESTION_TOOL.agy)
-}
-
-const sessionPrompt = (
-  backend: BackendId
-): string => `You are running inside Koloft, an app that runs and manages coding sessions for its owner (the person you work for). Run "koloft help" in your shell to see what Koloft lets you do{{session-opening}}.
+const SESSION_PROMPT = `You are running inside Koloft, an app that runs and manages coding sessions for its owner (the person you work for). Run "koloft help" in your shell to see what Koloft lets you do{{session-opening}}.
 
 HELPERS
 
 When you hand work to a helper, take the first rule that fits:
 
-${HELPER_RULES[backend].map((rule, i) => `${i + 1}. ${rule}`).join('\n')}
+{{session-helper-rules}}
 
-Every Koloft session you start gets the model and effort that fit its task. {{project-rules}}${PICK_FOR_THE_TASK} ${tiersOf(backend)}. koloft help lists the other agents'.
+Every Koloft session you start gets the model and effort that fit its task. {{project-rules}}${PICK_FOR_THE_TASK} {{session-model-tiers}}. koloft help lists the other agents'.
 
 ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE}
 
-${REMEMBER_FOR_THIS_WORKSPACE}${QUESTION_RULE[backend]}`
+${REMEMBER_FOR_THIS_WORKSPACE}{{session-questions}}`
 
 export const TEXT: readonly TextBlock[] = [
-  eachAgent('session', sessionPrompt),
-  eachAgent('question-tool', (backend) => WAITING_QUESTION_TOOL[backend]),
+  { slot: 'session', text: SESSION_PROMPT },
+  { slot: 'helper-rule-own-worktree', text: OWN_WORKTREE_RULE },
+  {
+    slot: 'helper-rule-shared-checkout',
+    text: `${SHARED_CHECKOUT_RULE} ${ONE_SESSION_PER_PULL_REQUEST}`
+  },
+  { slot: 'helper-rule-watched-session', text: WATCHED_SESSION_RULE },
+  { slot: 'helper-rule-anything-else', text: 'Anything else: do it yourself, in this session.' },
   {
     slot: 'owners-ai-koloft',
     text: ` Every session you start gets the model and effort that fit its task (${PICKED_FLAGS}; koloft help lists each agent's). ${PICK_FOR_THE_TASK} ${WRITE_TO_SESSIONS_IN_THE_OWNERS_LANGUAGE}`

@@ -278,6 +278,7 @@ what reads the field today.
 |---|---|---|---|
 | `offUntilSetUp` | a setting key | an optional plugin that starts off while this setting still holds its default; the owner's choice wins once made ([Switches](#switches)) | `pluginStates` |
 | `text` | list of `TextBlock` | text the plugin adds to agents' prompts ([Text blocks](#text-blocks)) | `composePrompt`, `fillSlots` |
+| `slotsEachAgentFills` | list of slot names | the slots the plugin leaves in its text for each agent to fill with its own words ([Text blocks](#text-blocks)) | `fillSlots` |
 | `commands` | list of `{ verb }` | each `koloft <verb>` command the plugin owns ([Commands](#commands)) | `Commands` |
 | `channels` | list of strings | the IPC channels the plugin's code uses, written `Object.values(CHANNELS)` ([IPC channels](#ipc-channels)) | the unit test `test/unit/ipcChannels.test.ts` only |
 | `moments` | `{ announces?, listens? }`, each a list of moment names | the session moments the plugin announces and those it hears ([Moments](#moments)) | `Moments` |
@@ -349,13 +350,37 @@ fills:
 - `text`: the text.
 - `byAgent`: optional; text to use instead for some agents, keyed by agent id: `claude`,
   `codex` or `agy` (Antigravity). `eachAgent(slot, textOf)` in `src/core/plugin.ts`
-  builds a block that has its own text for every agent.
+  builds a block that has its own text for every agent. No built-in plugin uses either now:
+  words about one agent's own tools go in a slot each agent fills (below), so the plugin
+  names no agent.
 - `byModel`: optional; text to use instead for some models, keyed by model id. Nothing reads
   it yet, and nothing checks the key against a list of models.
 - `when`: optional; the name of a fact. The block is used only when the caller says that
   fact holds.
+- `whenAgentFlag`: optional; the name of a yes-or-no flag in the agents' manifests
+  (`AgentFlags` in `src/core/agent/manifest.ts`). The block is used only for an agent whose
+  manifest answers yes. The caller must say which agent reads the text; with none, putting
+  the text together throws, whether the plugin is on or off.
 
 Inside a text, `{{name}}` (lowercase letters and hyphens) marks a place for more text.
+
+A plugin can leave a slot for each agent to fill, for a part of its text that is about the
+agent's own tools. It lists the slot's name in `slotsEachAgentFills` and writes `{{name}}`
+in its text. Each agent gives its words for that name in `slotFills` of its manifest
+(`src/agents/<id>/agent.ts`; the words are in `src/agents/<id>/prompts/text.ts`). The rules:
+
+- The slot's name belongs to the plugin that lists it. An agent fills it by that name alone:
+  the plugin imports no agent, and the agent imports no plugin.
+- Every agent fills every such slot. An agent with nothing to say writes an empty text. No
+  agent fills a name that no plugin lists. The unit test
+  `test/unit/slotsEachAgentFills.test.ts` holds both.
+- An agent's words may hold `{{…}}` places of their own: a slot the plugin fills for every
+  agent to quote (such as `helper-rule-watched-session`), or a value the caller gives.
+- Only the plugin that lists the slot writes `{{name}}`, in its own blocks, and no text
+  block fills the same name. So when the plugin is off and its blocks are dropped, the slot
+  is not in the text and the agent's words for it are not either.
+- The caller must say which agent reads the text; with none, putting the text together
+  throws, whether the plugin is on or off.
 
 These are two of the Todo plugin's blocks, from its `prompts/text.ts` (the file also has a
 longer one about `koloft todo` itself, and exports the notice an old butler conversation gets,
@@ -381,15 +406,18 @@ fact names that hold) and `values` (a map from a name to a text). It works in th
 
 1. It takes every block that fills the slot, from every plugin, in the order of
    `src/plugins/list.ts`, and within one plugin in the order of its `text` list.
-2. It drops each block of a plugin that is off, and each block whose `when` names a fact not
-   in `facts`.
+2. It drops each block of a plugin that is off, each block whose `when` names a fact not
+   in `facts`, and each block whose `whenAgentFlag` names a flag that `agent`'s manifest
+   answers no to.
 3. For each block left, it takes `byAgent[agent]` when there is one, else `text`.
 4. It joins the texts with nothing between them, so a block starts with its own space or
    line break. A slot whose name ends in `-or-list` is joined as the end of a list instead:
    its blocks are items with no leading comma, joined as `, a, b, or c` (one item: `, or a`),
    so the list still ends with "or" when some of its plugins are off.
 5. It fills each `{{name}}`. When the caller gave a value called `name`, it puts that value
-   in as it is, and does not look for `{{…}}` inside it. Otherwise it puts the text of slot
+   in as it is, and does not look for `{{…}}` inside it. Otherwise, when a plugin lists
+   `name` in `slotsEachAgentFills`, it puts `agent`'s words for it, with their own `{{…}}`
+   places filled the same way with the same context. Otherwise it puts the text of slot
    `name`, put together the same way with the same context. When no plugin's block fills
    that slot and no value was given, it throws an error. A slot whose blocks were all dropped
    gives empty text. So text an optional plugin adds to another plugin's sentence goes in a
@@ -406,7 +434,8 @@ leaves out counts as it is now) and which facts hold (`facts`). Only the blocks 
 against the two states: a `{{…}}` inside a block is filled from the switches as they are now,
 with the facts of `now`, so `now` should be the state the prompt is put together in today.
 It does not join an `-or-list` slot's items, takes each block's `text` (never `byAgent`), and
-gives no values, so it suits slots whose blocks need no agent and no value. The butler uses it to tell a conversation that
+gives no agent and no values, so it suits slots whose blocks need no agent and no value: a
+block there with `whenAgentFlag`, or a slot each agent fills, makes it throw. The butler uses it to tell a conversation that
 is already running the sentences a plugin turned on, or a fact that came to hold, adds to its
 prompt.
 
@@ -414,13 +443,19 @@ For example, the slot `owners-ai-koloft` is filled by Sessions core, GitHub, Dis
 Todo, in that order. Discord's block there has `when: 'discord-bound'`, so its sentences are
 in the butler's prompt only while Discord has a bound channel.
 
-These are the slots, values and facts in use today:
+These are the slots, values, facts and agent flags in use today:
 
 | Kind | Name | Filled or given by |
 |---|---|---|
 | slot | `session` | Sessions core and Discord; the prompt every session gets |
 | slot | `session-opening` | Browser control; half a sentence in the session prompt |
-| slot | `question-tool` | Sessions core; the name of each agent's question tool |
+| slot for each agent | `session-helper-rules` | listed by Sessions core, filled by each agent; the numbered rules of the session prompt for handing work to a helper, which name the agent's own tools for it |
+| slot for each agent | `session-questions` | listed by Sessions core, filled by each agent; the session prompt's part on asking the owner with the agent's question tool, empty for an agent that needs none |
+| slot | `helper-rule-own-worktree` | Sessions core; the rule, in `session-helper-rules`, for work that needs a worktree of its own, up to where an agent may add to the sentence |
+| slot | `helper-rule-shared-checkout` | Sessions core; the sentences that end that rule: no branch change in a shared checkout, one session for each pull request |
+| slot | `helper-rule-watched-session` | Sessions core; the rule for work the owner should be able to watch |
+| slot | `helper-rule-anything-else` | Sessions core; the last rule |
+| slot | `session-discord-arrives-as` | Discord; half a sentence in its part of the session prompt, for an agent that answers yes to `passedOnMessageShowsAsFromAnotherSession` |
 | slot | `every-workspace-owner-instructions` | Sessions core; the owner's Instructions for every workspace, put before a workspace's own in the prompt of every session started in a workspace that does not leave them out (the butler's side never gets them) |
 | slot | `workspace-owner-instructions` | Sessions core; the owner's own Instructions for a workspace, put last in the prompt of every session started in it (or in another copy of the same repository) when the owner wrote some |
 | slot | `butler` | Butler; the butler's prompt |
@@ -450,6 +485,9 @@ These are the slots, values and facts in use today:
 | value | `the-question` | Sessions core; "it" or "this one" in `session-answered-by-keys` |
 | value | `koloft-help-pick-model` | the caller; how to pick a session's model and effort in `koloft help`, the project's own rules first when it has some |
 | value | `project-rules` | the caller; the rules the owner wrote for the model and effort of sessions in a project |
+| value | `question-tool` | Sessions core's `koloftPrompt`; the name of the question tool of the agent reading the session prompt, from its manifest |
+| value | `session-model-tiers` | Sessions core's `koloftPrompt`; the model and effort that agent uses for each kind of task |
+| agent flag | `passedOnMessageShowsAsFromAnotherSession` | each agent's manifest; a message another program passes into the session shows there as a message from another session |
 | fact | `discord-bound` | Discord's code, when Discord has a bound channel; it reaches the butler's prompt through the butler's `roleFacts` |
 
 ### Commands
@@ -1076,8 +1114,10 @@ of what each moment carries; of `composePrompt`, `fillSlots` and `pluginStateOf`
 function and the `PluginCore` it is handed; and the
 name of every moment and whether a plugin that is off hears it. The pin holds its own copy of
 each shape these use, such as the agent ids and what a turn holds, so a change made elsewhere
-in the app trips it too. Only three types are pinned by name: the session a command's caller
-carries (`SessionInfo`), Electron's `IpcMainEvent` and React's `ComponentType`. A change to
+in the app trips it too. Only four types are pinned by name: the session a command's caller
+carries (`SessionInfo`), Electron's `IpcMainEvent`, React's `ComponentType`, and the names of
+the agents' flags (`AgentFlags`, which a block's `whenAgentFlag` picks from), so an agent's
+new flag does not trip the pin. A change to
 any of them fails Koloft's typecheck (`npm run typecheck`), or the unit test for the moments'
 names, until whoever made it does one of two things:
 
@@ -1086,11 +1126,11 @@ names, until whoever made it does one of two things:
 - for any other change, raises `PLUGIN_FORMAT_VERSION` and adds a pin for the new version.
 
 The same test fails when a built-in plugin uses a manifest field, command, setting key, UI
-entry or place, Assist job, tip, moment, text slot, fact or window slot that this page does
-not name in the section about that kind of registration.
+entry or place, Assist job, tip, moment, text slot, slot for each agent, fact, agent flag or
+window slot that this page does not name in the section about that kind of registration.
 
-Text slots, values, facts and the window's slots are not pinned: whether they stay stable for
-plugins written outside Koloft is not decided.
+Text slots, values, facts, agent flags and the window's slots are not pinned: whether they
+stay stable for plugins written outside Koloft is not decided.
 
 ## The import rule
 

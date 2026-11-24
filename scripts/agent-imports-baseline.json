@@ -13,7 +13,6 @@
         "src/plugins/sessions/main/messageOpenings.ts": "C9"
       },
       "src/agents/agy/main/agySessions.ts": {
-        "src/plugins/sessions/api.ts": "A4",
         "src/plugins/sessions/main/dialog.ts": "C1",
         "src/plugins/sessions/main/hooks.ts": "C9"
       },
@@ -26,7 +25,6 @@
       "src/agents/codex/main/codexMachine.ts": { "src/plugins/sessions/main/hooks.ts": "C9" },
       "src/agents/codex/main/codexObservation.ts": { "src/plugins/sessions/main/dialog.ts": "C1" },
       "src/agents/codex/main/codexSessions.ts": {
-        "src/plugins/sessions/api.ts": "A4",
         "src/plugins/sessions/main/dialog.ts": "C1",
         "src/plugins/sessions/main/hooks.ts": "C9"
       },

@@ -34,6 +34,7 @@ export interface AgentFlags {
   resumeCanWaitOnAQuestionBeforeAnySign: boolean
   conversationStartsAtFirstPrompt: boolean
   pasteKeepsItsLastLineFeeds: boolean
+  passedOnMessageShowsAsFromAnotherSession: boolean
 }
 
 export interface AgentPureFunctions {
@@ -57,6 +58,7 @@ export interface AgentManifest {
   namedModels: readonly NamedModel[]
   picksByTaskTier: Readonly<Record<TaskTier, ModelPick>>
   ownSettings: Readonly<Record<string, OwnSetting>>
+  slotFills: Readonly<Record<string, string>>
   flags: AgentFlags
   pureFunctions: AgentPureFunctions
 }

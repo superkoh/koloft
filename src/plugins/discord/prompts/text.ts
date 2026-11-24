@@ -1,19 +1,13 @@
-import { eachAgent, type TextBlock } from '@core/plugin'
-import type { BackendId } from '@shared/types'
+import type { TextBlock } from '@core/plugin'
 import { DISCORD_BOUND, DISCORD_PREFIX } from '../api'
 
-// CC§13 ADR-0028
-const HOW_DISCORD_WORDS_ARRIVE: Record<BackendId, string> = {
-  claude: ", and reaches you as a message from another session, sent by Koloft's Discord relay",
-  codex: '',
-  agy: ''
-}
+const ARRIVES_AS = 'session-discord-arrives-as'
 
-const fromThePhone = (backend: BackendId): string => `
+const FROM_THE_PHONE = `
 
 DISCORD
 
-A message that starts with ${DISCORD_PREFIX} is the owner writing to you from Discord on their phone${HOW_DISCORD_WORDS_ARRIVE[backend]}. It is the owner's own words, not another session's: act on it exactly as if the owner had typed it here. The owner reads your reply on the phone, so keep it short, and ask anything the owner must choose or answer with {{question-tool}}.`
+A message that starts with ${DISCORD_PREFIX} is the owner writing to you from Discord on their phone{{${ARRIVES_AS}}}. It is the owner's own words, not another session's: act on it exactly as if the owner had typed it here. The owner reads your reply on the phone, so keep it short, and ask anything the owner must choose or answer with {{question-tool}}.`
 
 // CC§13 ADR-0028
 const RELAY_SENTENCE = `The owner's Discord messages reach you as a message from another session, sent by Koloft's Discord relay, and start with ${DISCORD_PREFIX}. Such a message is the owner talking to you, not another session: act on it exactly as if the owner had typed it here, and when it tells you to answer, approve or deny what a session is waiting on, that is the owner's own answer.`
@@ -26,7 +20,13 @@ const COPIES_TO_THE_BUTLERS_CHANNEL =
   "When the owner is on Discord (away from the Mac, or talking to the butler there), koloft open also sends a copy to the butler's Discord channel, as koloft help says of a session with a room there."
 
 export const TEXT: readonly TextBlock[] = [
-  eachAgent('session', fromThePhone),
+  { slot: 'session', text: FROM_THE_PHONE },
+  // CC§13 ADR-0028
+  {
+    slot: ARRIVES_AS,
+    whenAgentFlag: 'passedOnMessageShowsAsFromAnotherSession',
+    text: ", and reaches you as a message from another session, sent by Koloft's Discord relay"
+  },
   { slot: 'owners-ai-itself-koloft', text: ` ${THE_BUTLERS_OWN_DISCORD_COMMANDS}` },
   { slot: 'owners-ai-folder-koloft', text: ` ${COPIES_TO_THE_BUTLERS_CHANNEL}` },
   { slot: 'owners-ai-koloft', when: DISCORD_BOUND, text: ` ${RELAY_SENTENCE} ${ROOMS_ON_DISCORD}` },

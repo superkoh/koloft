@@ -6,6 +6,7 @@ import {
   AGY_UPLOADS_FOLDER
 } from './shared/agyBrain'
 import { agyEffortsAModelTakes } from './shared/agyEfforts'
+import { SLOT_FILLS } from './prompts/text'
 
 export const agent = {
   id: 'agy',
@@ -58,13 +59,16 @@ export const agent = {
     'very hard': { model: 'carbon', effort: 'high' }
   },
   ownSettings: {},
+  slotFills: SLOT_FILLS,
   flags: {
     // AGY§5
     resumeCanWaitOnAQuestionBeforeAnySign: false,
     // AGY§8
     conversationStartsAtFirstPrompt: true,
     // AGY§15
-    pasteKeepsItsLastLineFeeds: false
+    pasteKeepsItsLastLineFeeds: false,
+    // AGY§15 AGY§16
+    passedOnMessageShowsAsFromAnotherSession: false
   },
   pureFunctions: { effortsAModelTakes: agyEffortsAModelTakes }
 } as const satisfies AgentManifest

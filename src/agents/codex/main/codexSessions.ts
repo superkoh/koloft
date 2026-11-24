@@ -112,7 +112,6 @@ import {
 } from '../../../main/openShimScript'
 import { aboveItsTools } from '../../../main/agentLift'
 import { AGENT_SHIM_WAITS_MS } from '@core/command'
-import { koloftPrompt } from '@plugins/sessions/api'
 import { codexListedModels, type ListedModel } from '@shared/sessionPicks'
 import { browserControlEnv } from '../../../main/browserControlEnv'
 import { portOffset } from '@shared/worktreeName'
@@ -942,7 +941,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
         : undefined
     )
     const instructions = promptParts(
-      !!agent && !conductor && koloftPrompt('codex', rules),
+      !!agent && !conductor && this.deps.koloftPrompt(this.id, rules),
       role,
       ownerTextFor(ctx, conductor, assist)
     )

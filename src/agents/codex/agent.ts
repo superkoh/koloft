@@ -1,5 +1,6 @@
 import type { AgentManifest } from '@core/agent/manifest'
 import { CRON_EFFORTS } from '@shared/efforts'
+import { SLOT_FILLS } from './prompts/text'
 
 export const agent = {
   id: 'codex',
@@ -44,11 +45,14 @@ export const agent = {
     'very hard': { model: 'astra', effort: 'high' }
   },
   ownSettings: {},
+  slotFills: SLOT_FILLS,
   flags: {
     // CODEX§9
     resumeCanWaitOnAQuestionBeforeAnySign: true,
     conversationStartsAtFirstPrompt: false,
-    pasteKeepsItsLastLineFeeds: true
+    pasteKeepsItsLastLineFeeds: true,
+    // CODEX§17
+    passedOnMessageShowsAsFromAnotherSession: false
   },
   pureFunctions: { effortsAModelTakes: () => CRON_EFFORTS }
 } as const satisfies AgentManifest

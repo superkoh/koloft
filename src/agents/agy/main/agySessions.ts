@@ -12,7 +12,6 @@ import {
 } from '@shared/types'
 import type { Turn } from '@shared/turns'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
-import { koloftPrompt } from '@plugins/sessions/api'
 import { portOffset } from '@shared/worktreeName'
 import { costUsdOf, resolvePricing } from '@shared/pricing'
 import { resolveCliRuntime, type CliRuntime, type CliSpec } from '../../../main/cliRuntime'
@@ -867,7 +866,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const endpoint = this.deps.browserEndpoint(tabId)
     const agent = this.deps.agent.enabled() ? this.deps.agent : undefined
     const instructions = promptParts(
-      !!agent && !conductor && koloftPrompt('agy', rules),
+      !!agent && !conductor && this.deps.koloftPrompt(this.id, rules),
       role,
       ownerTextFor(ctx, conductor, assist)
     ).join('\n\n')
@@ -1039,7 +1038,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       koloftHookEntry(runMachineScript(m, AGY_HOOK_FILE))
     )
     const instructions = promptParts(
-      agentTools && koloftPrompt('agy', rules),
+      agentTools && this.deps.koloftPrompt(this.id, rules),
       opts.role,
       ownerTextFor(ctx, false)
     ).join('\n\n')

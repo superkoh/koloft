@@ -1,5 +1,6 @@
 import type { AgentManifest } from '@core/agent/manifest'
 import { CRON_EFFORTS } from '@shared/efforts'
+import { SLOT_FILLS } from './prompts/text'
 
 export const agent = {
   id: 'claude',
@@ -50,10 +51,13 @@ export const agent = {
     'very hard': { model: 'fable', effort: 'high' }
   },
   ownSettings: { fablePriority: { default: true, keptOnReset: true } },
+  slotFills: SLOT_FILLS,
   flags: {
     resumeCanWaitOnAQuestionBeforeAnySign: false,
     conversationStartsAtFirstPrompt: false,
-    pasteKeepsItsLastLineFeeds: true
+    pasteKeepsItsLastLineFeeds: true,
+    // CC§13
+    passedOnMessageShowsAsFromAnotherSession: true
   },
   pureFunctions: { effortsAModelTakes: () => CRON_EFFORTS }
 } as const satisfies AgentManifest
