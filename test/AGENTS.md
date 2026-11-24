@@ -221,7 +221,9 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   `~/.gemini` settings trust the folder (`trustInAgy`), logs every launch to
   `<home>/fake-agy-calls.jsonl` (the account probe's `-p /usage` and `--version` too),
   and serves agy's local API. On the fake remote machine `installRemoteAgy`
-  (helpers/remote.ts) puts it at `.local/bin/agy` and trusts the remote folder.
+  (helpers/remote.ts) puts it at `.local/bin/agy` and trusts the remote folder. The real
+  agy needs no account on the Docker lab machine: fixtures/fake-gemini.js
+  (`startFakeGeminiOnTarget`, helpers/docker.ts) answers it there in place of Google.
 
 ### Keys, focus and the hidden window
 

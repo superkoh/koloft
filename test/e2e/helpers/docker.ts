@@ -397,6 +397,38 @@ export function startFakeResponsesOnTarget(lab: SshLab, command: string, log: st
   )
 }
 
+export const FAKE_GEMINI_PORT = 8091
+
+export function startFakeGeminiOnTarget(
+  lab: SshLab,
+  says: { title: string; reply: string },
+  log: string,
+  turnTakesMs: number
+): void {
+  const at = '/usr/local/lib/fake-gemini.js'
+  dk(['cp', path.join(FIXTURES, 'fake-gemini.js'), `${lab.target}:${at}`])
+  dk(
+    labExec(
+      lab.target,
+      ['node', at, String(FAKE_GEMINI_PORT), says.title, says.reply, log, String(turnTakesMs)],
+      ['-d', '-u', 'kuser']
+    )
+  )
+}
+
+export function everyLoginOnTargetGets(lab: SshLab, name: string, value: string): void {
+  dk(
+    labExec(lab.target, [
+      'sh',
+      '-c',
+      `printf '%s=%s\\n' "$1" "$2" >> /etc/environment`,
+      'sh',
+      name,
+      value
+    ])
+  )
+}
+
 export function servePageOnTarget(lab: SshLab, port: number, html: string): void {
   const server = `require('http').createServer((q, s) => s.end(${JSON.stringify(html)})).listen(${port}, '127.0.0.1')`
   dk(labExec(lab.target, ['node', '-e', server], ['-d', '-u', 'kuser']))
