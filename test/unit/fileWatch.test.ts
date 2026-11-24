@@ -191,16 +191,17 @@ describe('watchDir (recursive dir watcher)', () => {
   it('reports a change inside a folder named scratch, tasks or .user_uploaded: agents keep folders of those names in their own data, and a workspace may have one of its own', async () => {
     const names = ['scratch', 'tasks', '.user_uploaded']
     for (const name of names) fs.mkdirSync(path.join(dir, name))
-    const roots: string[] = []
-    expect(await watchDir(dir, (r) => roots.push(r))).toBe(true)
+    const reports: (DirChanges | undefined)[] = []
+    expect(await watchDir(dir, (_r, changes) => reports.push(changes))).toBe(true)
     await sleep(700)
+    reports.length = 0
 
-    for (const name of names) {
-      await sleep(400)
-      roots.length = 0
-      fs.writeFileSync(path.join(dir, name, 'notes.md'), 'x')
-      expect(await until(() => roots.length > 0)).toBe(true)
-    }
+    for (const name of names) fs.writeFileSync(path.join(dir, name, 'notes.md'), 'x')
+    const foldersReported = (): string[] => reports.flatMap((r) => r?.listsChanged ?? [])
+    await until(() => foldersReported().length >= names.length)
+    expect(foldersReported()).toEqual(
+      expect.arrayContaining(names.map((name) => path.join(dir, name)))
+    )
   })
 
   it('names the folders whose list of names may have changed, so Browse re-lists only those and not every open folder', async () => {
