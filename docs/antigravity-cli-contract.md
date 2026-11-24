@@ -1947,8 +1947,8 @@ Koloft dependents: the repo's own `.agents/hooks.json` (ADR-0053).
   model's title reached the title script; the text of Koloft's SessionStart hook and of
   its per-prompt hook landed in the transcript as a `SYSTEM_MESSAGE` and an
   `EPHEMERAL_MESSAGE` step before the `PLANNER_RESPONSE`. With the tab's tmux session
-  killed, no agy process was left, and the key was in no file under `~/.koloft` or
-  `~/.gemini`. 2026-11-24, agy 1.5.16 linux-arm64, Docker on an arm64 Mac, network on;
+  killed, the agy that carried `--csrf_token` and its relay were gone (the updater of
+  §3 was not looked at), and the key was in no file under `~/.koloft` or `~/.gemini`. 2026-11-24, agy 1.5.16 linux-arm64, Docker on an arm64 Mac, network on;
   it is the case E-SSH-A6 of `test/e2e/agy-ssh-lab.spec.ts`.
 - Inside that tab `SSH_CONNECTION`, `SSH_TTY` and `SSH_CLIENT` reach agy; its log says
   "Using file-based token storage because SSH session detected". A non-tty `ssh host

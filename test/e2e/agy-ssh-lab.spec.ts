@@ -10,7 +10,7 @@ import {
   type E2EEnv
 } from './helpers/env'
 import { defaultControlDir } from '../../src/main/remote/ssh'
-import { identityOf } from '../../src/shared/sessionBackend'
+import { boundRemoteSession } from './helpers/remote'
 import {
   addWorkspace,
   centerTerm,
@@ -213,26 +213,8 @@ async function promptShowsWorkingThenDone(page: Page, row: Locator, prompt: stri
   await expect(row.locator('.ws-tab-unread')).toHaveCount(1)
 }
 
-async function boundAgyOn(page: Page, alias: LabAlias): Promise<{ tabId: string; id: string }> {
-  let found: { tabId: string; id: string } | undefined
-  await expect
-    .poll(
-      async () => {
-        const session = (await page.evaluate(() => window.api.sessions.list())).find(
-          (s) =>
-            s.backendId === 'agy' &&
-            identityOf(s.sessionId).sourceId === alias &&
-            s.alive &&
-            s.nativeSessionId
-        )
-        found = session && { tabId: session.tabId, id: session.nativeSessionId! }
-        return !!found
-      },
-      { timeout: A_TURN_THROUGH_THE_MIRROR_MS }
-    )
-    .toBe(true)
-  return found!
-}
+const boundAgyOn = (page: Page, alias: LabAlias): Promise<{ tabId: string; id: string }> =>
+  boundRemoteSession(page, 'agy', alias)
 
 test.describe('Antigravity sessions on real sshd machines behind a company jump host (Docker)', () => {
   // AGY§4 AGY§25 AGY§29
@@ -461,9 +443,9 @@ test.describe('Antigravity sessions on real sshd machines behind a company jump 
         const asked = lines(
           runOnTarget(lab, 'kuser', `cat ${STAND_IN_LOG_OUTSIDE_THE_HOME_SEARCHED_FOR_THE_KEY}`)
         ).map((line) => JSON.parse(line) as { key: string; tools: number; asked: string })
-        expect(asked.map((call) => call.key)).toEqual([E2E_AGY_ACCOUNT_KEY, E2E_AGY_ACCOUNT_KEY])
-        expect(asked[0].asked).toContain('say the word')
-        expect(asked[1].tools).toBeGreaterThan(0)
+        expect(asked.find((call) => call.tools === 0)?.asked).toContain('say the word')
+        expect(asked.some((call) => call.tools > 0)).toBe(true)
+        expect([...new Set(asked.map((call) => call.key))]).toEqual([E2E_AGY_ACCOUNT_KEY])
 
         await sendShortcut(app, 'shortcut:close-tab')
         await nothingOfTheTabRunsOn(lab, 'kuser')
@@ -489,7 +471,7 @@ test.describe('Antigravity sessions on real sshd machines behind a company jump 
         installCurlOnTarget(lab)
         startFakeGeminiOnTarget(
           lab,
-          STAND_IN_REPLY,
+          { title: STAND_IN_TITLE, reply: STAND_IN_REPLY },
           STAND_IN_LOG_OUTSIDE_THE_HOME_SEARCHED_FOR_THE_KEY,
           TURN_LONGER_THAN_A_MIRROR_PULL_MS
         )

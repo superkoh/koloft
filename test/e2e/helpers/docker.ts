@@ -401,7 +401,7 @@ export const FAKE_GEMINI_PORT = 8091
 
 export function startFakeGeminiOnTarget(
   lab: SshLab,
-  reply: string,
+  says: { title: string; reply: string },
   log: string,
   turnTakesMs: number
 ): void {
@@ -410,7 +410,7 @@ export function startFakeGeminiOnTarget(
   dk(
     labExec(
       lab.target,
-      ['node', at, String(FAKE_GEMINI_PORT), reply, log, String(turnTakesMs)],
+      ['node', at, String(FAKE_GEMINI_PORT), says.title, says.reply, log, String(turnTakesMs)],
       ['-d', '-u', 'kuser']
     )
   )

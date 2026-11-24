@@ -319,7 +319,8 @@ const itsFirstTurnHasEndedOnItsRow = (page: Page, tabId: string): Promise<void> 
 
 export async function boundRemoteSession(
   page: Page,
-  backend: BackendId
+  backend: BackendId,
+  host = REMOTE_HOST
 ): Promise<{ tabId: string; id: string }> {
   let found: { tabId: string; id: string } | undefined
   await expect
@@ -329,7 +330,7 @@ export async function boundRemoteSession(
         const s = all.find(
           (x) =>
             x.backendId === backend &&
-            identityOf(x.sessionId).sourceId === REMOTE_HOST &&
+            identityOf(x.sessionId).sourceId === host &&
             x.alive &&
             x.nativeSessionId
         )

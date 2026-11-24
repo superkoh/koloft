@@ -2,8 +2,7 @@
 const fs = require('fs')
 const http = require('http')
 
-const [port, reply, log, turnTakesMs] = process.argv.slice(2)
-const TITLE = 'Stand-in title'
+const [port, title, reply, log, turnTakesMs] = process.argv.slice(2)
 const STREAM = /\/models\/([^/:]+):streamGenerateContent/
 
 function lastUserText(request) {
@@ -18,6 +17,10 @@ http
     req.on('data', (d) => (body += d))
     req.on('end', () => {
       const model = STREAM.exec(req.url)?.[1]
+      if (!model) {
+        res.writeHead(404).end()
+        return
+      }
       let request = {}
       try {
         request = JSON.parse(body)
@@ -32,10 +35,6 @@ http
           asked: lastUserText(request)
         }) + '\n'
       )
-      if (!model) {
-        res.writeHead(404).end()
-        return
-      }
       res.writeHead(200, { 'content-type': 'text/event-stream' })
       setTimeout(
         () =>
@@ -43,14 +42,14 @@ http
             `data: ${JSON.stringify({
               candidates: [
                 {
-                  content: { role: 'model', parts: [{ text: tools ? reply : TITLE }] },
+                  content: { role: 'model', parts: [{ text: tools ? reply : title }] },
                   finishReason: 'STOP'
                 }
               ],
               usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 }
             })}\n\n`
           ),
-        tools ? Number(turnTakesMs ?? 0) : 0
+        tools ? Number(turnTakesMs) : 0
       )
     })
   })
