@@ -115,6 +115,7 @@ export function agyTab(s: AgyTabSpec): TabProgram {
     ...(s.start ? [AGY_START_ENV] : [])
   ]
   const run = [
+    ...(s.start ? [`rm -f "$T.start."*.json; mv -f "$T.start.json" ${START_OF_THIS_RUN}`] : []),
     // PLATFORM§35
     ...(s.banner ? [`printf '%s\\n' ${shq(s.banner)}`] : []),
     `A=${remoteAgyHome(s.account)}; G="${REMOTE_GEMINI}"`,
@@ -131,9 +132,7 @@ export function agyTab(s: AgyTabSpec): TabProgram {
     `${NOTICE_ENV}="${remoteNoticeFile(s.tabId)}"`,
     // AGY§10 AGY§29
     `${AGY_STATUS_FRAMES_ENV}=off`,
-    ...(s.start
-      ? [`mv -f "$T.start.json" ${START_OF_THIS_RUN}`, `${AGY_START_ENV}=${START_OF_THIS_RUN}`]
-      : []),
+    ...(s.start ? [`${AGY_START_ENV}=${START_OF_THIS_RUN}`] : []),
     `export ${exported.join(' ')}`,
     `set -- agy --gemini_dir=${remoteAgyHome(s.account)} ${s.args.map(shq).join(' ')}`,
     // AGY§29

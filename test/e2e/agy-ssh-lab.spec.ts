@@ -295,7 +295,9 @@ test.describe('Antigravity sessions on real sshd machines behind a company jump 
 
         await sendShortcut(app, 'shortcut:close-tab')
         await nothingOfTheTabRunsOn(lab, 'kuser')
-        expect(tabFilesOn(lab, 'kuser')).toEqual([`${tabId}.sh`, `${tabId}.tmux`])
+        await expect
+          .poll(() => tabFilesOn(lab, 'kuser'), { timeout: 10_000 })
+          .toEqual([`${tabId}.sh`, `${tabId}.tmux`])
         expect(filesHoldingTheKeyOn(lab, 'kuser')).toEqual([])
 
         const cold = wsRows(page, 'kt-key')
@@ -372,7 +374,9 @@ test.describe('Antigravity sessions on real sshd machines behind a company jump 
         'exited (code 3)'
       )
       await nothingOfTheTabRunsOn(lab, 'kuser')
-      expect(startWordsOn(lab, 'kuser', quitAtOnce)).toEqual([])
+      await expect
+        .poll(() => startWordsOn(lab, 'kuser', quitAtOnce), { timeout: 10_000 })
+        .toEqual([])
     })
   })
 

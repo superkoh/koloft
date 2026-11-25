@@ -981,7 +981,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
     { how: 'exits on its own', hangsUp: false },
     { how: 'is hung up on, as when Koloft ends its tmux session', hangsUp: true }
   ])(
-    "an Antigravity tab's start instructions stay readable on the machine for as long as agy runs, and are gone once it $how, with no exit code written for it",
+    "an Antigravity tab's start instructions stay readable on the machine for as long as agy runs, and are gone once it $how, with no exit code written for it, as is the copy an earlier run of the tab killed outright left behind",
     ({ hangsUp }) => {
       const b = box(
         spec({
@@ -999,6 +999,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
       fs.writeFileSync(path.join(b.home, '.local', 'bin', 'python3'), '#!/bin/sh\nexit 1\n', {
         mode: 0o755
       })
+      fs.writeFileSync(path.join(b.tabs, 'T.start.99999.json'), 'OLD START TEXT')
       fs.writeFileSync(
         path.join(b.home, '.local', 'bin', 'agy'),
         `#!/bin/sh\ncat "$KOLOFT_AGY_START" > ${JSON.stringify(path.join(b.logs, 'start'))}\n${hangsUp ? 'kill -HUP $PPID\nsleep 1\n' : ''}cat "$KOLOFT_AGY_START" >> ${JSON.stringify(path.join(b.logs, 'start'))}\n`,

@@ -108,6 +108,7 @@ if [ "$1" = run ]; then
   trap : INT QUIT
   trap 'rm -f "$T.start.$$.json"; exit 129' HUP
   (
+  rm -f "$T.start."*.json; mv -f "$T.start.json" "$T.start.$$.json"
   A="$HOME/.koloft/agy"/'work'; G="$HOME/.gemini"
   mkdir -p "$A/antigravity-cli/cache" "$A/config" "$HOME/.koloft/hook-sessions" && chmod 700 "$HOME/.koloft/agy"
   mkdir -p "$G/antigravity-cli/conversations"; [ "$(readlink "$A/antigravity-cli/conversations")" = "$G/antigravity-cli/conversations" ] || { rm -rf "$A/antigravity-cli/conversations"; ln -s "$G/antigravity-cli/conversations" "$A/antigravity-cli/conversations"; }
@@ -132,7 +133,6 @@ if [ "$1" = run ]; then
   KOLOFT_AGY_LOG="$HOME/.koloft/hook-sessions/pty-t1.agy.jsonl"
   KOLOFT_NOTICE="$HOME/.koloft/hook-sessions/pty-t1.notice"
   AGY_CLI_OSC7501=off
-  mv -f "$T.start.json" "$T.start.$$.json"
   KOLOFT_AGY_START="$T.start.$$.json"
   export KOLOFT_AGY_LOG KOLOFT_NOTICE AGY_CLI_OSC7501 KOLOFT_AGY_START
   set -- agy --gemini_dir="$HOME/.koloft/agy"/'work' '--csrf_token=<token>' '--model' 'pinned-model' '--effort' 'high' '--mode' 'accept-edits' '-i' 'FIRST PROMPT'
