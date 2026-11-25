@@ -1173,9 +1173,12 @@ export function sessionVerb(d: SessionVerbDeps): {
     if (!session) return false
     const to = openTarget(session)
     const said = `${FROM_KOLOFT}${text}`
+    const cannotHold = textItCannotHold(to.backend, said)
+    if (cannotHold) {
+      d.undelivered(tabId, to, `the message cannot hold the text ${cannotHold}.`)
+      return false
+    }
     try {
-      const cannotHold = textItCannotHold(to.backend, said)
-      if (cannotHold) throw new Error(`the message cannot hold the text ${cannotHold}.`)
       await sendInto(
         to,
         tabId,
