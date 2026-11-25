@@ -246,7 +246,6 @@ import {
   keepsSecretInKeychain,
   takesAnEndpoint,
   BACKEND_OF_SIGN_IN_FOLDER,
-  isSignInFolderKind,
   isAccountKind,
   type SignInFolderKind,
   type GitPlatform,
@@ -267,8 +266,6 @@ import type {
   AccountView,
   ArtifactView,
   BackendId,
-  SignInFailure,
-  SignInProgress,
   SignInStart,
   ScreenAnswer,
   ScreenRequest,
@@ -1312,9 +1309,7 @@ const {
   loginWatchers,
   loginPtys,
   feedLoginWatcher,
-  failLogin,
-  startLogin,
-  cancelLogins
+  failLogin
 } = claudeAccountsOf({
   ptyMgr,
   usageViews,
@@ -1322,7 +1317,6 @@ const {
   accountViews,
   pushAccounts,
   notifyExpired,
-  sendToRenderer,
   signInChanged: (progress) => agentsMain.signInChanged(progress),
   savedUsage,
   tracker: {
@@ -2259,21 +2253,8 @@ const { signInPtys, endHomeSignIn, signInToHome } = terminalSignInsOf({
   forgetHeldSignInFailure: () => agentsMain.forgetHeldSignInFailure()
 })
 
-function asOldSignInFailure(held: SignInProgress | null): SignInFailure | null {
-  return held && isSignInFolderKind(held.kind)
-    ? {
-        backend: BACKEND_OF_SIGN_IN_FOLDER[held.kind],
-        name: held.name,
-        again: held.again,
-        tail: held.tail ?? ''
-      }
-    : null
-}
-
-agentsMain.watchSignIns((news, heldFailureChanged) => {
+agentsMain.watchSignIns((news) => {
   sendToRenderer(CH.accounts.signInProgress, news)
-  if (heldFailureChanged)
-    sendToRenderer(CH.accounts.signInFailure, asOldSignInFailure(news.heldFailure))
 })
 
 function ownersGemini(): string {
@@ -5020,18 +5001,6 @@ function registerIpc(): void {
     pushAccounts()
   })
   ipcMain.handle(CH.accounts.probe, () => probeAllForPanel())
-  ipcMain.handle(CH.accounts.startLogin, (_e, name: string, reauth?: boolean) =>
-    startLogin(name, reauth)
-  )
-  ipcMain.handle(CH.accounts.signIn, async (_e, kind: unknown, name: string, again?: boolean) => {
-    if (!isSignInFolderKind(kind)) return { ok: false, error: 'invalid-name' }
-    const started = await agentsMain.signIn(kind, name, again === true)
-    return started.ok ? { ok: true, ...started.progress.tab } : started
-  })
-  ipcMain.handle(CH.accounts.signInFailure, () =>
-    asOldSignInFailure(agentsMain.heldSignInFailure())
-  )
-  ipcMain.on(CH.accounts.dismissSignInFailure, () => agentsMain.forgetHeldSignInFailure())
   ipcMain.handle(
     CH.accounts.beginSignIn,
     (_e, kind: unknown, name: unknown, again: unknown): Promise<SignInStart> | SignInStart =>
@@ -5044,7 +5013,6 @@ function registerIpc(): void {
     if (isAccountKind(kind) && typeof name === 'string') agentsMain.endSignIn(kind, name)
   })
   ipcMain.handle(CH.accounts.codexUseReset, (_e, name: string) => codexUseReset(name))
-  ipcMain.on(CH.accounts.cancelLogin, () => cancelLogins())
 
   ipcMain.handle(CH.settings.get, () => loadSettings())
   ipcMain.handle(CH.app.version, () => app.getVersion())

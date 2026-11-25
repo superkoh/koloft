@@ -106,7 +106,11 @@ afterEach(async () => {
   fs.rmSync(directory, { recursive: true, force: true })
 })
 
-function sharedFolder(side: (typeof SIDES)[number], unboundIn?: string) {
+function sharedFolder(
+  side: (typeof SIDES)[number],
+  unboundIn?: string,
+  anotherAgentIn: (dir: string) => string | null = () => null
+) {
   const store = new SessionStore(path.join(directory, `other-sessions-${Math.random()}.json`))
   const preparing = new Map<string, Promise<unknown>>()
   let theirs: SessionWorktrees
@@ -138,7 +142,7 @@ function sharedFolder(side: (typeof SIDES)[number], unboundIn?: string) {
       return realHost.gitRun(dir, args)
     }
   }
-  const claude = new ClaudeBackend({
+  const claude: ClaudeBackend = new ClaudeBackend({
     tracker: { list: () => [], remoteOf: () => undefined },
     store: () => ({
       findRow: (id: string) =>
@@ -163,7 +167,7 @@ function sharedFolder(side: (typeof SIDES)[number], unboundIn?: string) {
     hosts: { of: () => host, machineOf: () => side.machine },
     resumeProbes: {
       dirExists: dirExistsSync,
-      occupantOf: () => null,
+      occupantOf: (dir: string) => claude.occupantOf(dir) ?? anotherAgentIn(dir),
       recorded: (dir: string) => records.recorded(dir),
       ...gitProbes(localGitOut)
     },
@@ -175,6 +179,7 @@ function sharedFolder(side: (typeof SIDES)[number], unboundIn?: string) {
     tree,
     launched,
     claudeGit,
+    claudePlan: () => claude.resumePlan(SID),
     claudeResumes: () =>
       claude.resume({ sessionId: SID, cwd: side.at(path.join(tree, unboundIn ?? '')) }),
     claudeResumesRenamed: (worktree: string) =>
@@ -307,6 +312,23 @@ describe.each(SIDES)(
       const other = s.theirs.rebuild(id)
       bothEndInTheFolder(s, at, ...(await Promise.allSettled([claude, other])))
       expect(s.claudeGit).toContain('worktree add')
+    })
+  }
+)
+
+describe.each(SIDES)(
+  'resuming a Claude Code session into its worktree while another agent works there, $where',
+  (side) => {
+    it('asks where to resume, naming that session, and resumes straight in once nobody works there', async () => {
+      let atWork: string | null = 'A Codex session at work'
+      const s = sharedFolder(side, undefined, (dir) => (dir === side.at(s.tree) ? atWork : null))
+      git('worktree', 'add', '-q', '-b', 'worktree-foo', s.tree)
+      await expect(s.claudePlan()).resolves.toMatchObject({
+        action: 'dialog',
+        occupiedBy: 'A Codex session at work'
+      })
+      atWork = null
+      await expect(s.claudePlan()).resolves.toMatchObject({ action: 'direct' })
     })
   }
 )
