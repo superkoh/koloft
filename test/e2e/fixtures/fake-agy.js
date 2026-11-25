@@ -1805,7 +1805,9 @@ function openPanel(name, text, onKey) {
   }
 }
 function usageData() {
-  const custom = readJson(sentinel('fake-agy-usage.json'), null)
+  const custom =
+    readJson(path.join(appDir, 'fake-agy-usage.json'), null) ??
+    readJson(sentinel('fake-agy-usage.json'), null)
   if (custom) return custom
   if (apiKeyRoute()) return { groups: [] }
   return {

@@ -1,0 +1,6 @@
+- dialog "Koloft Assist":
+  - text: "Koloft Assist Koloft runs Claude Code, Codex or Antigravity CLI, and this Mac has none of them yet. Pick one to install: a terminal opens and runs its official installer. Nothing else to set up first."
+  - button "Claude Not on this Mac. Click to install."
+  - button "Codex Not on this Mac. Click to install."
+  - button "Antigravity Not on this Mac. Click to install."
+  - button "Not now"

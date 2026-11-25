@@ -1,0 +1,7 @@
+- contentinfo:
+  - button "Resume “Tidy the release notes” ↩"
+  - img
+  - textbox "Or tell Koloft what to do…"
+  - button "Antigravity tab"
+  - text: Sessions ask you before each step.
+  - button "Don’t ask"

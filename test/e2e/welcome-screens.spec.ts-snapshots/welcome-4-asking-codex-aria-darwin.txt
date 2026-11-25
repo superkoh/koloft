@@ -1,0 +1,7 @@
+- contentinfo:
+  - button "Resume “Tidy the release notes” ↩"
+  - img
+  - textbox "Or tell Koloft what to do…"
+  - button "Codex tab"
+  - text: Codex asks only about some steps, like one that leaves its sandbox.
+  - button "Don’t ask"

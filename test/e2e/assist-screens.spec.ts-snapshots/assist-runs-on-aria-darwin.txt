@@ -1,0 +1,6 @@
+- text: Assist
+
+- text: "Runs on Codex · no account — add one in Settings ▸ Accounts Antigravity · no account — add one in Settings ▸ Accounts Koloft asks an AI for the jobs below, and Alfred runs on it too. Each one uses this unless it has a pick of its own. Each Assist job costs a little of that account’s plan or API balance: about a cent or less."
+- button "Koloft Assist runs on":
+  - text: Claude
+  - img

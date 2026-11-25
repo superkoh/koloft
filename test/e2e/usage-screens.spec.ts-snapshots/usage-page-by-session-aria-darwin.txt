@@ -1,0 +1,3 @@
+- text: By session · most costly first
+
+- text: Tidy the release notes ws-a · claude-opus-5-5 · 1 day 1.10M $6.00 Draft the onboarding copy ws-b · claude-opus-5-5 · 1 day 440k $2.40 Codex session ws-a · gpt-5.5 · 1 day CODEX 400k $2.00 Antigravity CLI session Other · gemini-3.1-pro · 1 day ANTIGRAVITY 500k $1.00

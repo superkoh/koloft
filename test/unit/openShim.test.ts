@@ -13,6 +13,7 @@ vi.mock('electron', async () => {
 })
 
 import { setupShim } from '../../src/main/shim'
+import { everyAgentsShimScripts } from './helpers/agentShims'
 
 let shimDir: string
 let openDir: string
@@ -23,7 +24,11 @@ let fixtures: string
 let deadPid: string
 
 beforeAll(() => {
-  ;({ shimDir, openDir } = setupShim('/nonexistent-git-auth-dir', '/nonexistent-butler-folder'))
+  ;({ shimDir, openDir } = setupShim(
+    '/nonexistent-git-auth-dir',
+    '/nonexistent-butler-folder',
+    everyAgentsShimScripts()
+  ))
   base = path.dirname(shimDir)
   recordingRealOpenDir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-realopen-'))
   fs.writeFileSync(
