@@ -2734,10 +2734,9 @@ app.whenReady().then(() => {
     remoteTargets: () => workspaceMgr?.remoteTargets() ?? [],
     userData: () => app.getPath('userData'),
     machineOfTab,
-    tabOfTmuxSession: (host, name) => sessionBackends.tabOfTmuxSession(host, name)
+    tabOfTmuxSession: (host, name) => sessionBackends.tabOfTmuxSession(host, name),
+    agentReply: (tabId, raw, stillWaiting) => agentRequests.replyFor(tabId, raw, stillWaiting)
   })
-  machineRequests.agentReply = (tabId, raw, stillWaiting) =>
-    agentRequests.replyFor(tabId, raw, stillWaiting)
   claudeBackend.watchShimRegistrations(regDir)
   if (watchOpenRequests(openDir)) ptyMgr.openDir = openDir
   if (watchPickRequests(pickDir)) ptyMgr.pickDir = pickDir
@@ -4967,7 +4966,6 @@ const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
   events: (tabId, event) => sessionBackends.observe(tabId, event),
   messaged: (tabId, fromSessionId) => sessionCommand.messaged(tabId, fromSessionId),
   error: (message) => sendToRenderer(CH.toast.show, message),
-  machineOfTab,
   messages: {
     get writeLineInTurn() {
       return writeLineInTurn

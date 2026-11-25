@@ -81,8 +81,21 @@ function machineBackend(): {
     userData: () => userData,
     events: () => {}
   } as unknown as ClaudeBackendDeps)
+  const callerSeen: (RequestCallerState | undefined)[] = []
+  const callerChecks: string[] = []
+  const waits: (() => boolean)[] = []
+  let release = (): void => {}
+  const held = new Promise<void>((r) => (release = r))
   const requests = new MachineRequests({
     pty,
+    agentReply: async (tabId: string | undefined, _raw: unknown, stillWaiting?: () => boolean) => {
+      answeredFor.push(tabId)
+      if (stillWaiting) {
+        waits.push(stillWaiting)
+        await held
+      }
+      return answered(`for ${tabId}`)
+    },
     hosts: {
       machine: (host: string) => ({
         answerRequest: async (id: string, reply: string | null) =>
@@ -99,19 +112,6 @@ function machineBackend(): {
     tabOfTmuxSession: (host: string, name: string) =>
       backend.tabOfTmuxSession(host, name) ?? agyTabOfTmuxSession(host, name)
   } as unknown as MachineRequestDeps)
-  const callerSeen: (RequestCallerState | undefined)[] = []
-  const callerChecks: string[] = []
-  const waits: (() => boolean)[] = []
-  let release = (): void => {}
-  const held = new Promise<void>((r) => (release = r))
-  requests.agentReply = async (tabId, _raw, stillWaiting) => {
-    answeredFor.push(tabId)
-    if (stillWaiting) {
-      waits.push(stillWaiting)
-      await held
-    }
-    return answered(`for ${tabId}`)
-  }
   backend.watchRemoteHookMirrors()
   requests.watchRemoteHookMirrors()
   const mirrorDir = mirrorHookDir(userData, 'devbox')

@@ -47,6 +47,7 @@ import type { Host } from '../../../main/host/host'
 import type { Machine } from '../../../main/host/machine'
 import type { RemoteSync } from '../../../main/remote/sync'
 import { AGENT_DROP_NAME } from '../../../main/agentRequests'
+import { hookMirrorWatches } from '../../../main/remote/hookMirrorWatches'
 import { errorText } from '@core/errorText'
 import { sessionIdOfTmux, tmuxSessionName } from '../../../main/remote/launch'
 import {
@@ -146,7 +147,6 @@ export interface ClaudeBackendDeps {
   events(tabId: string, event: SessionEvent): void
   messaged(tabId: string, fromSessionId: string): void
   error(message: string): void
-  machineOfTab(tabId: string): string | undefined
   liveRegistryOn(host: string): Promise<string>
   messages: Omit<MessageSocketDeps, 'tracker'> & Pick<ClaudeMessageDeps, 'noteKoloftSent'>
   projectRules?(workspace: string): Promise<string | undefined>
@@ -235,7 +235,11 @@ export class ClaudeBackend implements SessionBackend {
   private hookRegDir = ''
   private statusLogCursors = new Map<string, AppendCursor>()
   private statusLogDraining = new Map<string, boolean>()
-  private watchedHookMirrors = new Map<string, () => void>()
+  private watchedHookMirrors = hookMirrorWatches(
+    () => this.d.userData(),
+    () => this.d.remoteTargets(),
+    (dir, host) => this.watchHookRegistrations(dir, host)
+  )
   private remoteExitWaits = new Set<{ sid: string; settle: (hit: RemoteExitDrop) => void }>()
   private pickedSkipFlag = new Set<string>()
   private launchedBypassing = new Set<string>()
@@ -994,22 +998,7 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   watchRemoteHookMirrors(): void {
-    const userData = this.d.userData()
-    const wanted = new Map(
-      this.d.remoteTargets().map((t) => [mirrorHookDir(userData, t.host), t.host])
-    )
-    for (const [dir, dispose] of this.watchedHookMirrors) {
-      if (wanted.has(dir)) continue
-      dispose()
-      this.watchedHookMirrors.delete(dir)
-    }
-    for (const [dir, host] of wanted) {
-      if (this.watchedHookMirrors.has(dir)) continue
-      try {
-        fs.mkdirSync(dir, { recursive: true })
-      } catch {}
-      this.watchedHookMirrors.set(dir, this.watchHookRegistrations(dir, host))
-    }
+    this.watchedHookMirrors()
   }
 
   async create(opts: CreateTabOptions): Promise<CreateTabResult> {

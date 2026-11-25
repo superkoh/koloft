@@ -1,11 +1,11 @@
-import fs from 'fs'
+import type fs from 'fs'
 import { refused, type AgentReply } from '@core/command'
 import type { PtyManager } from '../ptyManager'
 import type { Machine } from '../host/machine'
 import { NOT_ITS_PASS, REQUEST_NAME, replyJson, tabSpokenFor } from '../agentRequests'
 import { holdsPass, isStartedBeforeTabPasses } from '../tabPass'
 import { oncePerName, watchAndSweepJsonDrops } from '../jsonDrops'
-import { mirrorHookDir } from './paths'
+import { hookMirrorWatches } from './hookMirrorWatches'
 
 export interface MachineRequestDeps {
   pty: Pick<PtyManager, 'get'>
@@ -14,6 +14,11 @@ export interface MachineRequestDeps {
   userData(): string
   machineOfTab(tabId: string): string | undefined
   tabOfTmuxSession(host: string, name: string): string | undefined
+  agentReply(
+    tabId: string | undefined,
+    raw: unknown,
+    stillWaiting?: () => boolean
+  ): Promise<AgentReply>
 }
 
 class CallerOnTheMachine {
@@ -56,33 +61,19 @@ class CallerOnTheMachine {
 }
 
 export class MachineRequests {
-  private watchedHookMirrors = new Map<string, () => void>()
-  agentReply?: (
-    tabId: string | undefined,
-    raw: unknown,
-    stillWaiting?: () => boolean
-  ) => Promise<AgentReply>
+  private watchedHookMirrors = hookMirrorWatches(
+    () => this.d.userData(),
+    () => this.d.remoteTargets(),
+    (dir, host) => {
+      const drops = this.watchMachineDrops(dir, host)
+      return () => drops?.close()
+    }
+  )
 
   constructor(private d: MachineRequestDeps) {}
 
   watchRemoteHookMirrors(): void {
-    const userData = this.d.userData()
-    const wanted = new Map(
-      this.d.remoteTargets().map((t) => [mirrorHookDir(userData, t.host), t.host])
-    )
-    for (const [dir, dispose] of this.watchedHookMirrors) {
-      if (wanted.has(dir)) continue
-      dispose()
-      this.watchedHookMirrors.delete(dir)
-    }
-    for (const [dir, host] of wanted) {
-      if (this.watchedHookMirrors.has(dir)) continue
-      try {
-        fs.mkdirSync(dir, { recursive: true })
-      } catch {}
-      const drops = this.watchMachineDrops(dir, host)
-      this.watchedHookMirrors.set(dir, () => drops?.close())
-    }
+    this.watchedHookMirrors()
   }
 
   private watchMachineDrops(dir: string, machine: string): fs.FSWatcher | null {
@@ -134,7 +125,7 @@ export class MachineRequests {
     const { tabId, refusal } = this.callerOnMachine(machine, raw)
     const host = this.d.hosts.machine(machine)
     const noOneWaits = (raw as { reply?: unknown } | null)?.reply === false
-    if (!this.agentReply || (!tabId && !refusal && !this.fromOwnWorkbenchShell(raw))) {
+    if (!tabId && !refusal && !this.fromOwnWorkbenchShell(raw)) {
       if (noOneWaits) void host.answerRequest(requestId, null)
       return
     }
@@ -145,7 +136,7 @@ export class MachineRequests {
         : new CallerOnTheMachine(host, requestId, pid)
     const replied = refusal
       ? Promise.resolve(refused(refusal))
-      : this.agentReply(tabId, raw, caller?.stillWaiting)
+      : this.d.agentReply(tabId, raw, caller?.stillWaiting)
     void replied.then(async (reply) => {
       const nobodyReads = noOneWaits || !!(await caller?.stoppedWaiting())
       await host.answerRequest(requestId, nobodyReads ? null : replyJson(reply))
