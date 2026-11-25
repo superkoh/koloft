@@ -230,7 +230,11 @@ export function codexHomeAccounts(deps: CodexHomeAccountsDeps) {
     codexProbeRound ??= Promise.all(
       listAccounts()
         .filter((a) => a.kind === 'codex-home' && a.enabled)
-        .map((a) => probeCodexAccount(a.name))
+        .map((a) =>
+          probeCodexAccount(a.name).catch((err) =>
+            console.error(`[koloft] could not probe the Codex account ${a.name}:`, err)
+          )
+        )
     ).then(() => {
       codexProbeRound = null
     })
