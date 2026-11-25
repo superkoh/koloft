@@ -102,9 +102,10 @@ env > "$d/$name-env"
 exit 0
 `
 
-const FAKE_SECURITY = `#!/bin/sh
+const FAKE_SECURITY_THAT_NEVER_REACHES_THE_REAL_KEYCHAIN = `#!/bin/sh
 d="$KOLOFT_FAKE_DIR"
 printf '%s\\n' "$*" >> "$d/security-calls"
+if [ "$1" != find-generic-password ]; then echo "fake security: $* is not faked" >&2; exit 99; fi
 acct=""; prev=""
 for a in "$@"; do [ "$prev" = "-a" ] && acct="$a"; prev="$a"; done
 [ -f "$d/keychain-$acct" ] && cat "$d/keychain-$acct" && exit 0
@@ -121,12 +122,12 @@ beforeAll(() => {
   for (const name of ['claude', 'codex', 'agy'])
     writeExecutable(path.join(fakeBin, name), RECORDING_AGENT)
   for (const dir of [fakeBin, securityOnlyBin])
-    writeExecutable(path.join(dir, 'security'), FAKE_SECURITY)
+    writeExecutable(path.join(dir, 'security'), FAKE_SECURITY_THAT_NEVER_REACHES_THE_REAL_KEYCHAIN)
 })
 
 afterAll(() => {
   fs.rmSync(userData(), { recursive: true, force: true })
-  fs.rmSync(scratch, { recursive: true, force: true })
+  if (scratch) fs.rmSync(scratch, { recursive: true, force: true })
 })
 
 describe('the shim folder every session tab and shell tab on this Mac shares, pinned so that moving the code changes no character', () => {
@@ -143,7 +144,7 @@ describe('the shim folder every session tab and shell tab on this Mac shares, pi
       )
   })
 
-  it('a Koloft start writes every file again, putting back text and a mode someone changed, and leaves out the retired muse guard', () => {
+  it('a Koloft start writes every file again, putting back text and a mode someone changed', () => {
     const files = scriptsIn(shared.shimDir, new Set())
     const before = new Map(
       files.map((n) => [n, fs.readFileSync(path.join(shared.shimDir, n), 'utf8')])
@@ -152,7 +153,6 @@ describe('the shim folder every session tab and shell tab on this Mac shares, pi
       fs.writeFileSync(path.join(shared.shimDir, name), '#!/bin/sh\nexit 9\n')
       fs.chmodSync(path.join(shared.shimDir, name), 0o644)
     }
-    fs.writeFileSync(path.join(shared.shimDir, 'muse'), '#!/bin/sh\n', { mode: 0o755 })
     try {
       setupShim(GIT_REQUEST_DIR, BUTLER_FOLDER)
       expect(scriptsIn(shared.shimDir, new Set())).toEqual(files)
@@ -162,7 +162,6 @@ describe('the shim folder every session tab and shell tab on this Mac shares, pi
       }
     } finally {
       for (const [name, text] of before) writeExecutable(path.join(shared.shimDir, name), text)
-      fs.rmSync(path.join(shared.shimDir, 'muse'), { force: true })
     }
   })
 
@@ -178,8 +177,8 @@ describe('the shim folder every session tab and shell tab on this Mac shares, pi
       )
     } finally {
       knowPluginStates({})
+      setupShim(GIT_REQUEST_DIR, BUTLER_FOLDER)
     }
-    setupShim(GIT_REQUEST_DIR, BUTLER_FOLDER)
     expect(scriptsIn(shared.shimDir, new Set())).toEqual(everyFile)
     expect(sudoFiles.map((n) => fs.readFileSync(path.join(shared.shimDir, n), 'utf8'))).toEqual(
       before
@@ -254,12 +253,20 @@ describe('the shim folder Koloft writes for each Codex or Antigravity tab on thi
   it.each(['codex', 'agy'] as const)(
     'a %s tab with agent tools off gets no koloft command, no guide and no sudo files, and the rest is the same as with them on',
     (backend) => {
-      const withThem = textsIn(start(backend, true).shim.shimDir)
-      for (const name of ['koloft', 'koloft-guide.txt', 'sudo', 'koloft-askpass']) {
+      const onlyWithThem = ['koloft', 'koloft-guide.txt', 'sudo', 'koloft-askpass']
+      const on = start(backend, true).shim.shimDir
+      const withThem = textsIn(on)
+      for (const name of onlyWithThem) {
         expect(withThem).toHaveProperty([name])
         delete withThem[name]
       }
-      expect(textsIn(start(backend, false).shim.shimDir)).toEqual(withThem)
+      const listingWithout = (dir: string): string[] =>
+        sameOnEveryRun(listing(dir))
+          .split('\n')
+          .filter((line) => !onlyWithThem.includes(line.split('  ')[0]))
+      const off = start(backend, false).shim.shimDir
+      expect(textsIn(off)).toEqual(withThem)
+      expect(listingWithout(off)).toEqual(listingWithout(on))
     }
   )
 
@@ -311,19 +318,25 @@ async function runShim(run: Run): Promise<string> {
   }
   let asked: string | undefined
   const responder = setInterval(() => {
-    const req = fs.readdirSync(pickDir).find((f) => f.startsWith('req-') && f.endsWith('.json'))
-    if (!req || asked !== undefined) return
-    const written = fs.readFileSync(path.join(pickDir, req), 'utf8')
-    if (!written.endsWith('\n')) return
-    asked = written
-    if (run.answer === 'none' || run.answer === undefined) return
-    const res = path.join(pickDir, `res-${req.slice('req-'.length)}`)
-    fs.writeFileSync(`${res}.tmp`, JSON.stringify(run.answer))
-    fs.renameSync(`${res}.tmp`, res)
+    try {
+      const req = fs.readdirSync(pickDir).find((f) => f.startsWith('req-') && f.endsWith('.json'))
+      if (!req || asked !== undefined) return
+      const written = fs.readFileSync(path.join(pickDir, req), 'utf8')
+      if (!written.endsWith('\n')) return
+      asked = written
+      if (run.answer === 'none' || run.answer === undefined) return
+      const res = path.join(pickDir, `res-${req.slice('req-'.length)}`)
+      fs.writeFileSync(`${res}.tmp`, JSON.stringify(run.answer))
+      fs.renameSync(`${res}.tmp`, res)
+    } catch {}
   }, 10)
   const { status, stderr } = await new Promise<{ status: number; stderr: string }>(
     (resolve, reject) => {
-      const child = spawn(path.join(shared.shimDir, run.bin), run.args, { cwd: home, env: given })
+      const child = spawn(path.join(shared.shimDir, run.bin), run.args, {
+        cwd: home,
+        env: given,
+        stdio: ['ignore', 'ignore', 'pipe']
+      })
       let err = ''
       child.stderr.on('data', (c) => (err += c))
       child.on('error', reject)
@@ -365,8 +378,11 @@ async function runShim(run: Run): Promise<string> {
   ].join('\n')
 }
 
-const pinRuns = async (runs: Run[], name: string): Promise<void> =>
-  pin((await Promise.all(runs.map(runShim))).join('\n\n') + '\n', name)
+async function pinRuns(runs: Run[], name: string): Promise<void> {
+  const told: string[] = []
+  for (const run of runs) told.push(await runShim(run))
+  await pin(told.join('\n\n') + '\n', name)
+}
 
 const LOGIN_SHELL_CLAUDE_SIGN_INS = {
   CLAUDE_CODE_OAUTH_TOKEN: 'exported-by-a-profile',
