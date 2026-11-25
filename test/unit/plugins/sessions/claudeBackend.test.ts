@@ -110,10 +110,10 @@ const MACHINE_TABS = {
 
 const CODEX_TABS = { 'pty-cx': 'devbox', 'pty-cy': 'otherbox' } as Record<string, string>
 
-const AGY_TABS = { 'pty-g': { host: 'devbox', tmuxName: 'k-sg' } } as Record<
-  string,
-  { host: string; tmuxName: string }
->
+const AGY_TABS = {
+  'pty-g': { host: 'devbox', tmuxName: 'k-sg', alive: true },
+  'pty-g-exited': { host: 'devbox', tmuxName: 'k-sg-exited', alive: false }
+} as Record<string, { host: string; tmuxName: string; alive: boolean }>
 
 const WORKBENCH_SHELLS = {
   'pty-wa': { util: true, ownerTabId: 'pty-a' },
@@ -142,7 +142,9 @@ function machineBackend(): {
     pty: {
       get: (id: string) =>
         WORKBENCH_SHELLS[id] ??
-        (MACHINE_TABS[id] || CODEX_TABS[id] || AGY_TABS[id] ? { alive: true } : undefined),
+        (MACHINE_TABS[id] || CODEX_TABS[id]
+          ? { alive: true }
+          : AGY_TABS[id] && { alive: AGY_TABS[id].alive }),
       clearResumeIntent: () => {}
     },
     machineOfTab: (id: string) => MACHINE_TABS[id]?.host ?? CODEX_TABS[id],
@@ -339,17 +341,20 @@ describe('ClaudeBackend: koloft requests from a session on a remote machine', ()
     expect(m.sent[2]).toEqual(['devbox', 'r16', replyJson(refused(NOT_ITS_PASS))])
   })
 
-  it('a request with no pass is found by the tmux session it runs in, asked of every agent, before the tab id it names: one in an Antigravity tab’s tmux session naming another live tab on that machine counts as the Antigravity tab', async () => {
+  it('a request with no pass is found by the tmux session it runs in, asked of every agent, before the tab id it names: one in an Antigravity tab’s tmux session naming another live tab on that machine counts as the Antigravity tab, and one in the tmux session of an Antigravity tab whose terminal has exited counts as the tab it names', async () => {
     const m = machineBackend()
-    markStartedBeforeTabPasses('pty-a', true)
-    markStartedBeforeTabPasses('pty-g', true)
+    const preTabPasses = ['pty-a', 'pty-g', 'pty-g-exited']
+    for (const id of preTabPasses) markStartedBeforeTabPasses(id, true)
     try {
       m.drop('req-r17.json', keyless('pty-a', 'k-sg'))
-      await vi.waitFor(() => expect(m.sent).toHaveLength(1), { timeout: 5000 })
-      expect(m.sent).toEqual([['devbox', 'r17', replyJson(answered('for pty-g'))]])
+      m.drop('req-r18.json', keyless('pty-a', 'k-sg-exited'))
+      await vi.waitFor(() => expect(m.sent).toHaveLength(2), { timeout: 5000 })
+      expect(Object.fromEntries(m.sent.map(([, id, reply]) => [id, reply]))).toEqual({
+        r17: replyJson(answered('for pty-g')),
+        r18: replyJson(answered('for pty-a'))
+      })
     } finally {
-      markStartedBeforeTabPasses('pty-a', false)
-      markStartedBeforeTabPasses('pty-g', false)
+      for (const id of preTabPasses) markStartedBeforeTabPasses(id, false)
     }
   })
 
