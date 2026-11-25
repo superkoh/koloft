@@ -133,8 +133,8 @@ export function sanitizeCron(
       Number.isFinite(item.waitFrom)
     )
       job.waitFrom = item.waitFrom
-    if (typeof item.backend === 'string') job.backend = item.backend
-    if (!cronBackend(item)) {
+    if (item.backend !== undefined) job.backend = String(item.backend)
+    if (!cronBackend(job)) {
       job.enabled = false
       notes[id] = AGENT_NO_LONGER_SUPPORTED_NOTE
     }

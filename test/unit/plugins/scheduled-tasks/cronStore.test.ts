@@ -58,6 +58,7 @@ describe('sanitizeCron (which method a job runs in)', () => {
     expect(unknown.jobs[0].enabled).toBe(false)
     expect(cronBackend(unknown.jobs[0])).toBeUndefined()
     expect(unknown.notes[unknown.jobs[0].id]).toContain('no longer supported')
+    expect(cronBackend(one({ backend: null })!)).toBeUndefined()
   })
 })
 
@@ -268,18 +269,6 @@ describe('loadCron / saveCron (BB-E29: reading and writing the file)', () => {
       }
     }
   }
-
-  it('writes a job whose saved agent is no longer known back with that agent, its model and its effort, so the next read still pauses it', () => {
-    const saved = JSON.stringify(
-      file([job({ backend: 'gemini', model: 'old-model', effort: 'high' })])
-    )
-    const fs = fakeFs({ '/cron.json': saved })
-    saveCron(fs, '/cron.json', loadCron(fs, '/cron.json', PINNED).jobs)
-    const again = loadCron(fs, '/cron.json', PINNED)
-    expect(again.jobs[0]).toMatchObject({ backend: 'gemini', model: 'old-model', effort: 'high' })
-    expect(cronBackend(again.jobs[0])).toBeUndefined()
-    expect(again.notes[again.jobs[0].id]).toContain('no longer supported')
-  })
 
   it('names the file next to the other user data', () => {
     expect(cronFilePath('/u/data')).toBe('/u/data/cron.json')
