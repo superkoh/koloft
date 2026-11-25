@@ -2,7 +2,7 @@ import fs from 'fs'
 import http from 'http'
 import type { AddressInfo } from 'net'
 import path from 'path'
-import type { ElectronApplication, Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
 import { test, expect, quitAndClose } from './helpers/app'
 import {
   addKeychainEntry,
@@ -37,6 +37,7 @@ import {
   panelTerm,
   runIn,
   sendShortcut,
+  terminalText,
   wsRows,
   type AgentName
 } from './helpers/p1'
@@ -48,6 +49,7 @@ const PINNED = path.join(__dirname, 'account-per-tab')
 const HERE = 'ws-a'
 const THERE = REMOTE_WS_NAME
 const A_LAUNCH_IS_LOGGED_WITHIN_MS = 60_000
+const WRITE_PINNED_FILES = 'KOLOFT_WRITE_PINNED_FILES'
 
 const KEYCHAIN_OF_A_DEV_BUILD = {
   oauth: 'koloft-dev-claude-oauth',
@@ -138,10 +140,6 @@ function onlyTheseAccounts(
   extra: Record<string, unknown> = {}
 ): void {
   seedSettings(env, { accounts, hintsOff: true, ...extra })
-}
-
-async function launch(env: E2EEnv): Promise<{ app: ElectronApplication; page: Page }> {
-  return launchWithRemote(env)
 }
 
 interface ClaudeCall {
@@ -282,10 +280,13 @@ function sameOnEveryRun(env: E2EEnv, text: string): string {
 function pin(rows: string[], name: string): void {
   const file = path.join(PINNED, `${name}.txt`)
   const text = rows.join('\n') + '\n'
-  if (!fs.existsSync(file)) {
+  if (process.env[WRITE_PINNED_FILES] === '1') {
     fs.mkdirSync(PINNED, { recursive: true })
     fs.writeFileSync(file, text)
   }
+  expect(fs.existsSync(file), `${file} is missing; write it with ${WRITE_PINNED_FILES}=1`).toBe(
+    true
+  )
   expect(text).toBe(fs.readFileSync(file, 'utf8'))
 }
 
@@ -306,7 +307,7 @@ test.describe('which account each kind of tab starts on, with which environment 
       ],
       { skipPermissions: true }
     )
-    const { app, page } = await launch(env)
+    const { app, page } = await launchWithRemote(env)
     const t = table(env)
     try {
       for (const ws of [HERE, THERE]) {
@@ -373,7 +374,7 @@ test.describe('which account each kind of tab starts on, with which environment 
       agyKeyAccount(env, 'made-up-gemini-key')
     ])
     fs.writeFileSync(path.join(env.home, '.zprofile'), `export PATH="${env.fakeBin}:$PATH"\n`)
-    const { app, page } = await launch(env)
+    const { app, page } = await launchWithRemote(env)
     const t = table(env)
     try {
       for (const ws of [HERE, THERE]) {
@@ -419,7 +420,8 @@ test.describe('which account each kind of tab starts on, with which environment 
       }
       await wsRows(page, HERE).filter({ hasText: 'Fake session' }).click()
       await openSessionTerminal(app, page)
-      const printCalls = (): AgyCall[] => agyCalls(env).filter((c) => c.argv.includes('-p'))
+      const printCalls = (): AgyCall[] =>
+        agyCalls(env).filter((c) => c.argv.includes('-p') && c.argv.includes('hello'))
       t.cell(
         'agy -p typed in a session’s terminal on this Mac',
         ofAgy(
@@ -445,7 +447,7 @@ test.describe('which account each kind of tab starts on, with which environment 
       onlyTheseAccounts(env, [
         claudeAccount(env, account('made-up-proxy', 'custom', extra), 'made-up-endpoint-token')
       ])
-      const { app, page } = await launch(env)
+      const { app, page } = await launchWithRemote(env)
       const t = table(env)
       try {
         for (const ws of [HERE, THERE])
@@ -466,9 +468,14 @@ test.describe('which account each kind of tab starts on, with which environment 
     }
   })
 
-  test('restarting a session keeps the account it ran on, though two accounts of each agent have equal room and a new session would take the other — Claude Code over SSH, Codex and Antigravity on this Mac', async ({
+  test('restarting a session keeps the account it ran on, though a new session would take the other — Claude Code over SSH (the other account has more room by the time of the restart), Codex and Antigravity on this Mac (two accounts with equal room, taken in turn)', async ({
     env
   }) => {
+    const probe = await startClaudeProbe({
+      'made-up-oauth-token-of-made-up-left': { s5: 'allowed', u5: 0.1, u7: 0.1 },
+      'made-up-oauth-token-of-made-up-right': { s5: 'allowed', u5: 0.1, u7: 0.5 }
+    })
+    env.launchEnv.KOLOFT_PROBE_BASE_URL = probe.base
     withTheAgents(env, true)
     onlyTheseAccounts(env, [
       claudeAccount(env, account('made-up-left', 'oauth'), 'made-up-oauth-token-of-made-up-left'),
@@ -481,7 +488,7 @@ test.describe('which account each kind of tab starts on, with which environment 
     const claudeAccountOf = (c: ClaudeCall): string =>
       `${c.account.ANT_ACCOUNT ?? '(none)'}${c.argv.includes('--resume') ? ', its line resumes the session' : ''}`
     const t = table(env)
-    const { app, page } = await launch(env)
+    const { app, page } = await launchWithRemote(env)
     const startThenResume = async <T>(
       records: () => T[],
       start: () => Promise<void>,
@@ -496,12 +503,18 @@ test.describe('which account each kind of tab starts on, with which environment 
       return [`  started on ${accountOf(started)}`, `  resumed on ${accountOf(resumed)}`]
     }
     try {
+      await expect.poll(() => claudeUsageKnown(page), { timeout: 30_000 }).toBe(2)
       t.cell(
         'Claude Code over SSH, restarted',
         await startThenResume(
           () => claudeCalls(env),
           () => START.claude(page, THERE),
-          () => untilTheActiveTabsTranscriptIsWritten(page),
+          async () => {
+            await untilTheActiveTabsTranscriptIsWritten(page)
+            probe.set('made-up-oauth-token-of-made-up-left', { s5: 'allowed', u5: 0.1, u7: 0.7 })
+            probe.set('made-up-oauth-token-of-made-up-right', { s5: 'allowed', u5: 0.1, u7: 0.1 })
+            await page.evaluate(() => window.api.accounts.probe())
+          },
           claudeAccountOf
         )
       )
@@ -551,7 +564,7 @@ test.describe('which account each kind of tab starts on, with which environment 
       codexAccount(env, 'made-up-full', signedInToCodex('made-up-full', 100)),
       codexAccount(env, 'made-up-roomy', signedInToCodex('made-up-roomy', 10))
     ])
-    const { app, page } = await launch(env)
+    const { app, page } = await launchWithRemote(env)
     const t = table(env)
     try {
       await expect
@@ -585,7 +598,6 @@ test.describe('which account each kind of tab starts on, with which environment 
       )
     } finally {
       await quitAndClose(app)
-      await probe.close()
     }
     pin(t.rows, 'next-account-when-one-is-full')
   })
@@ -595,7 +607,7 @@ test.describe('which account each kind of tab starts on, with which environment 
   }) => {
     withTheAgents(env, true)
     onlyTheseAccounts(env, [])
-    let started = await launch(env)
+    let started = await launchWithRemote(env)
     const t = table(env)
     try {
       for (const ws of [HERE, THERE]) {
@@ -607,7 +619,7 @@ test.describe('which account each kind of tab starts on, with which environment 
             await items.evaluateAll((all) =>
               all.map(
                 (el) =>
-                  `${el.textContent?.trim()}: ${el.classList.contains('disabled') ? 'shut' : 'open'}`
+                  `${el.firstChild?.textContent?.trim()}: ${el.classList.contains('disabled') ? 'shut' : 'open'}`
               )
             )
           ).map((l) => `  ${l}`)
@@ -618,33 +630,37 @@ test.describe('which account each kind of tab starts on, with which environment 
       await quitAndClose(started.app)
     }
     onlyTheseAccounts(env, [account('made-up-gone', 'oauth')])
-    started = await launch(env)
+    started = await launchWithRemote(env)
     try {
       const { page } = started
+      const callsBefore = claudeCalls(env).length
       await newSessionOf(page, HERE, 'Claude')
-      await expect(centerTerm(page)).toContainText('koloft:', { timeout: 30_000 })
-      t.cell(
-        'Claude Code on this Mac, its account’s secret gone from the Keychain',
-        (await centerTerm(page).innerText())
-          .split('\n')
-          .filter((l) => l.startsWith('koloft:'))
-          .map((l) => `  ${l}`)
-      )
-      const notices = new Set<string>()
+      const tabId = (await wsRows(page, HERE).getAttribute('data-tab-id'))!
+      const unwrapped = async (): Promise<string> =>
+        (await terminalText(page, tabId)).replace(/\s*\n\s*/g, ' ')
+      await expect.poll(unwrapped, { timeout: 30_000 }).toContain('koloft: could not read')
+      t.cell('Claude Code on this Mac, its account’s secret gone from the Keychain', [
+        `  claude started: ${claudeCalls(env).length > callsBefore ? 'yes' : 'no'}`,
+        `  the refusal names the account and the Keychain: ${/koloft: could not read [^.]*made-up-gone[^.]*Keychain/.test(await unwrapped()) ? 'yes' : 'no'}`
+      ])
+      let refusal = ''
       await newSessionInWith(page, THERE, 'Claude')
       await expect
         .poll(
           async () => {
-            for (const n of await page.locator('.toast-msg').allInnerTexts()) notices.add(n)
-            return notices.size
+            refusal ||=
+              (await page.locator('.toast-msg').allInnerTexts()).find((n) =>
+                /did not start/.test(n)
+              ) ?? ''
+            return refusal
           },
           { timeout: 30_000 }
         )
-        .toBeGreaterThan(0)
-      t.cell(
-        'Claude Code over SSH, its account’s secret gone from the Keychain',
-        [...notices].map((n) => `  notice: ${n}`)
-      )
+        .not.toBe('')
+      t.cell('Claude Code over SSH, its account’s secret gone from the Keychain', [
+        `  claude started: ${claudeCalls(env).length > callsBefore ? 'yes' : 'no'}`,
+        `  a notice says it did not start for want of an account: ${/account/.test(refusal) ? 'yes' : 'no'}`
+      ])
     } finally {
       await quitAndClose(started.app)
     }
@@ -666,7 +682,7 @@ test.describe('what each kind of account leaves in the Keychain (the test keycha
       'a-key-left-from-before'
     )
     env.launchEnv.KOLOFT_FAKE_SETUP_TOKEN = `sk-ant-oat01-${'made-up-setup-token-'.repeat(5)}`
-    const { app, page } = await launch(env)
+    const { app, page } = await launchWithRemote(env)
     const t = table(env)
     const keychain = (): string[] => {
       const all = JSON.parse(fs.readFileSync(env.keychainFile, 'utf8')) as Record<
@@ -737,18 +753,30 @@ test.describe('what each kind of account leaves in the Keychain (the test keycha
 interface ProbeScript {
   s5: string
   u5: number
+  u7?: number
+}
+
+const probesOpen: (() => Promise<void>)[] = []
+
+test.afterEach(async () => {
+  for (const close of probesOpen.splice(0)) await close()
+})
+
+async function claudeUsageKnown(page: Page): Promise<number> {
+  return (await page.evaluate(() => window.api.accounts.list())).filter((a) => a.usage).length
 }
 
 async function startClaudeProbe(
   byToken: Record<string, ProbeScript>
-): Promise<{ base: string; close(): Promise<void> }> {
+): Promise<{ base: string; set(token: string, s: ProbeScript): void }> {
   const nowSec = Math.floor(Date.now() / 1000)
+  const script = new Map(Object.entries(byToken))
   const server = http.createServer((req, res) => {
     const token = String(req.headers['authorization'] ?? req.headers['x-api-key'] ?? '').replace(
       /^Bearer /,
       ''
     )
-    const s = byToken[token] ?? { s5: 'allowed', u5: 0.1 }
+    const s = script.get(token) ?? { s5: 'allowed', u5: 0.1 }
     req.resume()
     req.on('end', () => {
       res.writeHead(200, {
@@ -756,7 +784,7 @@ async function startClaudeProbe(
         'anthropic-ratelimit-unified-5h-utilization': String(s.u5),
         'anthropic-ratelimit-unified-5h-status': s.s5,
         'anthropic-ratelimit-unified-5h-reset': String(nowSec + 7200),
-        'anthropic-ratelimit-unified-7d-utilization': '0.2',
+        'anthropic-ratelimit-unified-7d-utilization': String(s.u7 ?? 0.2),
         'anthropic-ratelimit-unified-7d-status': 'allowed',
         'anthropic-ratelimit-unified-7d-reset': String(nowSec + 200000),
         'anthropic-ratelimit-unified-7d_oi-utilization': '0.1',
@@ -767,8 +795,9 @@ async function startClaudeProbe(
     })
   })
   await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok))
+  probesOpen.push(() => new Promise((ok) => server.close(() => ok())))
   return {
     base: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
-    close: () => new Promise((ok) => server.close(() => ok()))
+    set: (token, s) => script.set(token, s)
   }
 }
