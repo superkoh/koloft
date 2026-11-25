@@ -386,6 +386,7 @@ import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
 import { TreeRemovals } from './treeRemovals'
 import { removeUntouchedWorktreeWith } from './untouchedWorktreeRemoval'
+import type { WorktreesBeingPrepared } from './worktreesBeingPrepared'
 import { worktreeExitFollow } from './worktreeExitFollow'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import {
@@ -657,7 +658,7 @@ const worktreeExits = worktreeExitFollow({
 })
 const closedTabs = new Map<string, LeftTab | null>()
 const treeRemovals = new TreeRemovals()
-const worktreesBeingPrepared = new Map<string, Promise<unknown>>()
+const worktreesBeingPrepared: WorktreesBeingPrepared = new Map()
 
 const attentionDeps: PluginStartDeps['sessions']['attention'] = {
   onChange: (pending, event) => {
@@ -4931,6 +4932,7 @@ const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
     loadSettings().browserControl ? ownersClaudePlaywrightMcp(cwd) : [],
   ptysChanged: () => writeRelayEnv(ptyTabIds()),
   resumeProbes,
+  worktreesBeingPrepared,
   events: (tabId, event) => sessionBackends.observe(tabId, event),
   messaged: (tabId, fromSessionId) => sessionCommand.messaged(tabId, fromSessionId),
   error: (message) => sendToRenderer(CH.toast.show, message),

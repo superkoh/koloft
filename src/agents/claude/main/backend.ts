@@ -129,6 +129,12 @@ import {
   type ResumeProbes
 } from '../../../main/resumePlan'
 import type { GitOut } from '@core/worktree'
+import {
+  holdingTheFolder,
+  preparedKeyOf,
+  whenNobodyPrepares,
+  type WorktreesBeingPrepared
+} from '../../../main/worktreesBeingPrepared'
 
 export interface ClaudeBackendDeps {
   pty: PtyManager
@@ -151,6 +157,7 @@ export interface ClaudeBackendDeps {
   playwrightMcp(cwd: string): Promise<string[]>
   ptysChanged(): void
   resumeProbes: ResumeProbes
+  worktreesBeingPrepared: WorktreesBeingPrepared
   events(tabId: string, event: SessionEvent): void
   messaged(tabId: string, fromSessionId: string): void
   error(message: string): void
@@ -1078,16 +1085,29 @@ export class ClaudeBackend implements SessionBackend {
       }
       worktree = req.worktree
     }
-    const rebuildable = !home || !!this.d.store()?.findRow(sid)?.worktreeState
+    const bound = this.d.store()?.findRow(sid)?.worktreeState
+    const rebuildable = !home || !!bound
+    const { worktreesBeingPrepared } = this.d
+    await whenNobodyPrepares(
+      worktreesBeingPrepared,
+      preparedKeyOf(host.keyed(bound?.worktreePath ?? cwd))
+    )
     if (await rebuildsTheWorktree(req.mode, async () => !rebuildable || host.dirExists(cwd))) {
       const plan = home
         ? await this.machineResumePlan(host, sid)
         : await this.localWorktreePlan(sid)
       if (plan.action === 'rebuild') {
+        const tree = host.keyed(plan.worktreePath)
         if (
           !GIT_REF_RE.test(plan.branch) ||
           !GIT_REF_RE.test(plan.baseRef) ||
-          !(await rebuildWorktree(plan, host, this.d.hosts.machineOf(home ?? asked)))
+          !(await holdingTheFolder(
+            worktreesBeingPrepared,
+            preparedKeyOf(tree),
+            async () =>
+              (await host.dirExists(tree)) ||
+              rebuildWorktree(plan, host, this.d.hosts.machineOf(home ?? asked))
+          ))
         ) {
           return { ok: false, code: 'rebuild-failed' }
         }
