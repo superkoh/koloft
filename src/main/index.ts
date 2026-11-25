@@ -30,6 +30,7 @@ import {
   agyApiKeyRoute,
   agyHomeOf,
   agySignedIn,
+  endAgyOneShots,
   oneShotAgyHome,
   readAgyModels,
   prepareAgyHome,
@@ -3345,6 +3346,7 @@ app.whenReady().then(() => {
   // PLATFORM§2
   linkOrUnlink(path.join(shimDir, 'git'), gitFirstBin && path.join(gitFirstBin, 'git'))
   removeStaleLoginDirs(app.getPath('userData'))
+  endAgyOneShots(path.join(app.getPath('userData'), 'agy-one-shots'))
   gitAccounts = new GitAccountService({
     userData: app.getPath('userData'),
     requestDir: gitRequestDir,
@@ -4320,6 +4322,7 @@ app.on('before-quit', (e) => {
       finishAfterKoloftQuits(leaving.claudePid, leaving.treeRoot)
   }
   claudeTabExits.clear()
+  endAgyOneShots(path.join(app.getPath('userData'), 'agy-one-shots'))
   stopScheduledTasks()
   discordLink?.stop()
   discordBinding?.flush()

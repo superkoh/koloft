@@ -319,26 +319,43 @@ export function oneShotAgyHome(
   const dir = fs.mkdtempSync(path.join(tmpRoot, 'agy-'))
   const token = agyTokenFile(home)
   const copy = agyTokenFile(dir)
-  fs.mkdirSync(path.dirname(copy), { recursive: true, mode: 0o700 })
   let before: string | undefined
-  if (!apiKey && fs.existsSync(token)) {
-    before = fs.readFileSync(token, 'utf8')
-    fs.writeFileSync(copy, before, { mode: 0o600 })
+  try {
+    fs.mkdirSync(path.dirname(copy), { recursive: true, mode: 0o700 })
+    if (!apiKey && fs.existsSync(token)) {
+      before = fs.readFileSync(token, 'utf8')
+      fs.writeFileSync(copy, before, { mode: 0o600 })
+    }
+    if (apiKey) writeAgyJson(settingsFile(dir), { modelProvider: 'gemini' })
+  } catch (err) {
+    fs.rmSync(dir, { recursive: true, force: true })
+    throw err
   }
-  if (apiKey) writeAgyJson(settingsFile(dir), { modelProvider: 'gemini' })
+  const carryBack = (): void => {
+    agyOneShotTokensToCarryBack.delete(carryBack)
+    try {
+      const after = before !== undefined ? fs.readFileSync(copy, 'utf8') : undefined
+      if (after && after !== before) {
+        writeWholeBeforeVisible(token, after)
+        fs.chmodSync(token, 0o600)
+      }
+    } catch {}
+  }
+  agyOneShotTokensToCarryBack.add(carryBack)
   return {
     dir,
     done: () => {
-      try {
-        const after = before !== undefined ? fs.readFileSync(copy, 'utf8') : undefined
-        if (after && after !== before) {
-          writeWholeBeforeVisible(token, after)
-          fs.chmodSync(token, 0o600)
-        }
-      } catch {}
+      carryBack()
       fs.rm(dir, { recursive: true, force: true }, () => {})
     }
   }
+}
+
+const agyOneShotTokensToCarryBack = new Set<() => void>()
+
+export function endAgyOneShots(tmpRoot: string): void {
+  for (const carryBack of agyOneShotTokensToCarryBack) carryBack()
+  fs.rmSync(tmpRoot, { recursive: true, force: true })
 }
 
 export function trustsIn(dir: string, ...settings: Record<string, unknown>[]): boolean {
