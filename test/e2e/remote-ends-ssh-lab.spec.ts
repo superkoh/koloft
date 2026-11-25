@@ -308,6 +308,7 @@ test.describe('how a Claude Code and a Codex session on a real sshd machine behi
       expect(tmuxSessionsOn(lab, 'kuser')).toEqual([`k-${sessionId}`])
       expect(tmuxPanesOn(lab, 'kuser')).toEqual(panes)
       expect(textFilesOfTabOn(lab, 'kuser', firstTab)).toEqual(WHILE_CLAUDE_RUNS(firstTab))
+      expect(textFilesOfTabOn(lab, 'kuser', reopened.tabId)).toEqual([])
     })
   })
 

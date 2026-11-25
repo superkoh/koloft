@@ -280,6 +280,7 @@ interface ClaudeTabPlace {
   tmuxName: string
   cwd: string
   ownerWords?: string
+  attaches?: boolean
 }
 
 const PROJECT_PROMPT_SUFFIX = '.prompt.md'
@@ -296,11 +297,13 @@ export const claudeTabProgram = (tab: ClaudeTabPlace, c: ClaudeTab): TabProgram 
   beforeTmux: `${c.trustFolder ? trustOnTheMachine(tab.cwd) : ''}${c.pictureFolder ? trustOnTheMachine(c.pictureFolder) : ''}${claudeFirstRun(tab)}`,
   whenItEnds: pushesProjectPrompt(c) ? `rm -f ${projectPromptOfThisRun(tab.tabId)}` : '',
   files: {
-    [`${tab.tabId}.json`]: JSON.stringify(c.settings),
     [`${tab.tabId}.tmux`]: tab.tmuxName,
-    ...(c.agentPlugin &&
-      c.projectPrompt && { [`${tab.tabId}${PROJECT_PROMPT_SUFFIX}`]: c.projectPrompt }),
-    ...(c.ownerText && { [`${tab.tabId}${OWNER_TEXT_SUFFIX}`]: c.ownerText })
+    ...(!tab.attaches && {
+      [`${tab.tabId}.json`]: JSON.stringify(c.settings),
+      ...(c.agentPlugin &&
+        c.projectPrompt && { [`${tab.tabId}${PROJECT_PROMPT_SUFFIX}`]: c.projectPrompt }),
+      ...(c.ownerText && { [`${tab.tabId}${OWNER_TEXT_SUFFIX}`]: c.ownerText })
+    })
   }
 })
 
@@ -390,7 +393,8 @@ export async function launchClaudeOnMachine(
             tabId,
             tmuxName: opened.tmuxName,
             cwd,
-            ownerWords: spec.ownerWords
+            ownerWords: spec.ownerWords,
+            attaches: !starts
           },
           {
             settings: d.hookSettings(tabId, machineDir, agentTools),
