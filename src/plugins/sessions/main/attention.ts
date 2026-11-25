@@ -17,6 +17,7 @@ export function edgeAttention(
 export class AttentionTracker {
   private pending = new Map<string, AttentionEvent>()
   private askKeptThroughWorking = new Set<string>()
+  private readonly marksOfLastRun = new Set<AttentionEvent>()
   asleep: (tabId: string) => boolean = () => false
   waitsOnAnother: (tabId: string) => boolean = () => false
   watching: () => string | null = () => null
@@ -30,7 +31,7 @@ export class AttentionTracker {
   ) {
     for (const { tabId, kind, at, title, sessionId, fyi, wasAsking, stoppedByRestart } of lastRun) {
       const deadKind = kind === 'approval' ? 'turn-done' : kind
-      this.pending.set(tabId, {
+      const mark: AttentionEvent = {
         tabId,
         kind: deadKind,
         at,
@@ -39,7 +40,9 @@ export class AttentionTracker {
         fyi,
         ...((kind === 'approval' || wasAsking) && { wasAsking: true }),
         ...(stoppedByRestart && { stoppedByRestart })
-      })
+      }
+      this.pending.set(tabId, mark)
+      this.marksOfLastRun.add(mark)
     }
   }
 
@@ -145,6 +148,14 @@ export class AttentionTracker {
     const stale = this.list().filter((e) => e.sessionId === sessionId)
     for (const e of stale) this.pending.delete(e.tabId)
     if (stale.length) this.onChange(this.list(), null)
+  }
+
+  forgetLastRunGone(stillThere: (sessionId: string) => boolean): void {
+    const gone = this.list().filter(
+      (e) => this.marksOfLastRun.has(e) && e.sessionId && !stillThere(e.sessionId)
+    )
+    for (const e of gone) this.pending.delete(e.tabId)
+    if (gone.length) this.onChange(this.list(), null)
   }
 
   list(): AttentionEvent[] {

@@ -588,6 +588,8 @@ const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
   },
   bound: (tabId, key, idleCompaction) => {
     forgetClaudeAsk(tabId)
+    const session = sessionOfTab(tabId)
+    if (session) sessionAccounts?.note([session])
     if (!idleCompaction) attention.bound(tabId, key)
     announceNow(SESSION_BOUND, { tabId, key, idleCompaction })
     startedSessions.bound(tabId, key)
@@ -3483,12 +3485,13 @@ app.whenReady().then(() => {
       sent.accountIssue = accountIssue
     sendToRenderer(CH.terminal.exit, unexpected ? { ...sent, unexpected } : sent)
   })
-  tracker.on('update', () => {
-    const all = onSessionsChanged()
-    pushToSessions.sessions(all)
-    workspaceMgr?.onTrackerUpdate()
-    syncAnswerable()
+  const sessionsChanged = sessionsChangedIn({
+    noteSessions: onSessionsChanged,
+    sendSessions: (all) => pushToSessions.sessions(all),
+    workspaces: () => workspaceMgr,
+    syncAnswerable
   })
+  tracker.on('update', sessionsChanged)
   tracker.on('relocated', (e: { tabId: string; dir: string }) => {
     pushToSessions.relocated(e)
   })
@@ -3520,15 +3523,6 @@ app.whenReady().then(() => {
   savedOpenTabs = readOpenTabs(openTabsPath)
   openTabsFile = new OpenTabsFile(openTabsPath, savedOpenTabs)
   sessionAccounts = new SessionAccounts(path.join(userData, 'session-accounts.json'))
-  const rowsKeptInMemoryChanged = rereadWhenRowsInMemoryChange({
-    pinned: () => workspaceMgr?.pinnedPathList() ?? [],
-    rows: (wsPath) =>
-      storedSessions().flatMap((stored) =>
-        stored.rows(wsPath).map((r) => ({ ...r, backendId: stored.id }))
-      ),
-    members: () => new Set(storedSessions().flatMap((stored) => [...stored.members()])),
-    reread: () => workspaceMgr?.refresh()
-  })
   const storedDeps = {
     pty: ptyMgr,
     runtime,
@@ -3538,11 +3532,9 @@ app.whenReady().then(() => {
     remoteDirExists: (dir: string) => hosts.machineOf(dir)!.sessionDirThere(dir),
     remoteTreeIo: machineTreeIo,
     realFilesOn,
-    changed: () => {
-      const all = onSessionsChanged()
-      pushToSessions.sessions(all)
-      if (workspaceMgr) rowsKeptInMemoryChanged()
-    },
+    changed: sessionsChanged,
+    pinnedWorkspaces: () => workspaceMgr?.pinnedPathList() ?? [],
+    rereadRows: () => workspaceMgr?.refresh(),
     replaced: (oldKey: string, newKey: string) => workspaceMgr?.moveResident(oldKey, newKey),
     events: (tabId: string, event: SessionEvent) => sessionBackends.observe(tabId, event),
     error: (message: string) => sendToRenderer(CH.toast.show, message),
@@ -3714,8 +3706,11 @@ app.whenReady().then(() => {
     rereadGrownRows: () => workspaces.rescanForGrowth(),
     runningBindings,
     remoteRunning,
-    sessionsOnDiskOrRunning: (ids) =>
-      butler?.forgetGone((key) => sessionBackends.sessionStillThere(key, ids)),
+    sessionsOnDiskOrRunning: (ids) => {
+      const stillThere = (key: string): boolean => sessionBackends.sessionStillThere(key, ids)
+      butler?.forgetGone(stillThere)
+      attention.forgetLastRunGone(stillThere)
+    },
     memberDropped: (sessionId, why) => droppedSessionsLog(`${sessionId} ${why}`)
   })
   const bindingNow = buildDiscordBinding({
@@ -6383,7 +6378,7 @@ const {
   savedFromTheDialog,
   workspaceBlock,
   scratchRootsAround,
-  rereadWhenRowsInMemoryChange
+  sessionsChangedIn
 } = startedPlugins.sessions
 const { TODO_NEWS } = startedPlugins.todo
 const { koloftInbox, flushInbox } = startedPlugins.inbox

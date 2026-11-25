@@ -1,0 +1,11 @@
+=== Codex ===
+a new session, two subscriptions and a key                             → made-up-second
+resuming a session that ran on the busier subscription                 → made-up-first
+resuming a session whose subscription is at its limit                  → made-up-second
+every subscription at its limit, a key account there                   → made-up-key
+every subscription at its limit, nothing else (the first back)         → made-up-first
+only a key account                                                     → made-up-key
+the only subscription disabled, the other expired                      → none
+no account at all                                                      → none
+only other agents' kinds (oauth, apikey, custom, agy-home)             → none
+only asking twice, then two starts, two accounts with equal room       → asked made-up-left, made-up-left; started made-up-left, made-up-right

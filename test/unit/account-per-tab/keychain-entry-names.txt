@@ -1,0 +1,52 @@
+koloft · oauth: written, read back the same
+koloft · apikey: written, read back the same
+koloft · custom: written, read back the same
+koloft · agy-home: written, read back the same
+=== koloft: the keychain after writing one of each ===
+{
+  "koloft-claude-oauth": {
+    "made-up-oauth": "made-up-secret-of-oauth"
+  },
+  "koloft-anthropic-api": {
+    "made-up-apikey": "made-up-secret-of-apikey"
+  },
+  "koloft-custom-endpoint": {
+    "made-up-custom": "made-up-secret-of-custom"
+  },
+  "koloft-agy-home": {
+    "made-up-agy-home": "made-up-secret-of-agy-home"
+  }
+}
+=== koloft: the keychain after deleting each ===
+{
+  "koloft-claude-oauth": {},
+  "koloft-anthropic-api": {},
+  "koloft-custom-endpoint": {},
+  "koloft-agy-home": {}
+}
+koloft-dev · oauth: written, read back the same
+koloft-dev · apikey: written, read back the same
+koloft-dev · custom: written, read back the same
+koloft-dev · agy-home: written, read back the same
+=== koloft-dev: the keychain after writing one of each ===
+{
+  "koloft-dev-claude-oauth": {
+    "made-up-oauth": "made-up-secret-of-oauth"
+  },
+  "koloft-dev-anthropic-api": {
+    "made-up-apikey": "made-up-secret-of-apikey"
+  },
+  "koloft-dev-custom-endpoint": {
+    "made-up-custom": "made-up-secret-of-custom"
+  },
+  "koloft-dev-agy-home": {
+    "made-up-agy-home": "made-up-secret-of-agy-home"
+  }
+}
+=== koloft-dev: the keychain after deleting each ===
+{
+  "koloft-dev-claude-oauth": {},
+  "koloft-dev-anthropic-api": {},
+  "koloft-dev-custom-endpoint": {},
+  "koloft-dev-agy-home": {}
+}
