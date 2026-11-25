@@ -22,6 +22,7 @@ import {
   TRANSCRIPT_LINES_SEARCHED_FOR_THE_LAST_NOTE
 } from '@plugins/sessions/main/hooks'
 import { UUID } from '@agents/kit/main/sessionStore'
+import { HANDOVER_OPENING } from '@core/handOver'
 
 export const AGY_LOG_ENV = 'KOLOFT_AGY_LOG'
 export const AGY_START_ENV = 'KOLOFT_AGY_START'
@@ -92,7 +93,7 @@ case "$event" in
   SessionStart) [ -f "$${AGY_START_ENV}" ] && cat "$${AGY_START_ENV}" ;;
   PreInvocation)
     tp="$(printf '%s' "$input" | tr -d '\\n' | sed -n 's/.*"transcriptPath" *: *"\\([^"]*\\)".*/\\1/p')"
-    said="$(grep -F '"type":"USER_INPUT"' "$tp" 2>/dev/null | grep -v -F ${NOT_THE_OWNERS_WORDS} | tail -n 1 | sed -n 's/.*"content":"<USER_REQUEST>\\\\n//p' | sed -E 's/\\\\n<\\/USER_REQUEST>.*//; s/^.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//; s/\\\\[nrt]/ /g; s/ +/ /g; s/^ //' | head -c ${QUOTED_PROMPT_BYTES} | ( iconv -c -f UTF-8 -t UTF-8 2>/dev/null || cat ) | sed -E 's/\\\\u[0-9a-fA-F]{0,3}$//; s/\\\\+$//')"
+    said="$(grep -F '"type":"USER_INPUT"' "$tp" 2>/dev/null | grep -v -F ${NOT_THE_OWNERS_WORDS} | tail -n 1 | sed -n 's/.*"content":"<USER_REQUEST>\\\\n//p' | sed -E 's/\\\\n<\\/USER_REQUEST>.*//; s/^${HANDOVER_OPENING}.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//; s/\\\\[nrt]/ /g; s/ +/ /g; s/^ //' | head -c ${QUOTED_PROMPT_BYTES} | ( iconv -c -f UTF-8 -t UTF-8 2>/dev/null || cat ) | sed -E 's/\\\\u[0-9a-fA-F]{0,3}$//; s/\\\\+$//')"
     [ -n "$said" ] && said="$(reply_language_words "$said" last_reply)"
     if [ -n "$turn" ]; then
       case "$(printf '%s' "$input" | tr -d ' \\n')" in *'"invocationNum":0'[,}]*) rm -f "$turn" ;; esac
