@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  agyHomeAccounts,
   agySignedIn,
   agyTokenFile,
   agyTrustsFolder,
@@ -15,6 +16,7 @@ import {
   prepareAgyHome,
   setAgyApiKeyRoute
 } from '../../src/agents/agy/main/agyAccounts'
+import type { AccountMeta } from '../../src/shared/types'
 
 let root: string
 let home: string
@@ -426,5 +428,44 @@ describe("ownersPlaywrightMcp (the owner's MCP entries that run Playwright, AGYÂ
 
   it('names none when the owner has no MCP config', () => {
     expect(ownersPlaywrightMcp(owners)).toEqual([])
+  })
+})
+
+describe('probeAgyAccounts (a probe round of every Antigravity account)', () => {
+  it('probes again on the next call after a round in which one account failed', async () => {
+    const acct: AccountMeta = {
+      name: 'work',
+      kind: 'agy-home',
+      enabled: true,
+      fable: 'unknown',
+      status: 'ok',
+      addedAt: 0
+    }
+    const blocker = path.join(owners, SHARED_FOLDERS[0])
+    fs.mkdirSync(path.dirname(blocker), { recursive: true })
+    fs.writeFileSync(blocker, '')
+    const keychainRead = vi.fn(async () => null)
+    const { probeAgyAccounts } = agyHomeAccounts({
+      app: { getPath: () => path.join(root, 'userData') },
+      accountViews: () => [],
+      allLimitedNotice: () => undefined,
+      findAccount: () => acct,
+      foldHomeSignIn: () => {},
+      listAccounts: () => [acct],
+      pushHomeAccount: () => {},
+      savedHomeUsageOf: () => undefined,
+      usageViews: new Map(),
+      viewKey: (name, kind) => `${kind}:${name}`,
+      sessionAccounts: () => undefined,
+      keychainRead,
+      keychainWrite: async () => true,
+      ownersGemini: () => owners,
+      agySessions: () => null
+    })
+    await probeAgyAccounts().catch(() => {})
+    expect(keychainRead).not.toHaveBeenCalled()
+    fs.rmSync(blocker)
+    await probeAgyAccounts()
+    expect(keychainRead).toHaveBeenCalledWith('agy-home', 'work')
   })
 })
