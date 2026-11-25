@@ -124,7 +124,6 @@
         "src/agents/agy/main/agyAccounts.ts": "D1",
         "src/agents/agy/main/agyStore.ts": "D1",
         "src/agents/agy/main/agyTab.ts": "D1",
-        "src/agents/claude/main/advisorOnFable.ts": "D1",
         "src/agents/claude/main/claudeCommandOutput.ts": "D1",
         "src/agents/claude/main/claudeDialogWatch.ts": "D1",
         "src/agents/claude/main/claudeSessionRegistry.ts": "D1",
@@ -135,6 +134,13 @@
         "src/agents/codex/main/codexTrust.ts": "D1"
       },
       "src/main/mcpServers.ts": { "src/agents/claude/main/claudeTrust.ts": "C7" },
+      "src/main/remote/machinePackageFiles.ts": {
+        "src/agents/agy/main/agyHooks.ts": "C10",
+        "src/agents/agy/main/agyStore.ts": "C10",
+        "src/agents/agy/main/agyTab.ts": "C10",
+        "src/agents/claude/main/advisorOnFable.ts": "C10",
+        "src/agents/codex/main/codexMachine.ts": "C10"
+      },
       "src/main/remote/usageMirror.ts": {
         "src/agents/agy/main/agyStore.ts": "C10",
         "src/agents/codex/main/codexMachine.ts": "C10"
