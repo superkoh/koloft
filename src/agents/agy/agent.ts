@@ -42,6 +42,11 @@ export const agent = {
     internalNameEndings: [AGY_ARTIFACT_SIDECAR],
     foldersMadeEmptyAhead: [AGY_SCRATCH_FOLDER]
   },
+  // AGY§9 AGY§25
+  envOfItsSessionThatMisleadsWhatStartsInside: {
+    named: [],
+    startingWith: ['ANTIGRAVITY_', 'KOLOFT_AGY_']
+  },
   // AGY§21
   normalTaskFamilyEveryAccountHas: 'argon',
   // AGY§21
