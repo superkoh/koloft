@@ -594,7 +594,6 @@ const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
   }
 }
 const backendHooks: PluginStartDeps['sessions']['backendHooks'] = {}
-backendHooks.storedByHand = storedSessions
 backendHooks.isOverseerSession = (id) => !!butler?.isButlerSession(id)
 backendHooks.turnOver = (tabId) => runtime.turnOver(tabId)
 backendHooks.askingOf = (tabId) => {
@@ -4476,8 +4475,7 @@ function agentTabIds(): string[] {
 
 const browserControlOps: PluginStartDeps['browser-control']['cdpOps'] = {
   anotherLiveKoloftOwns: (tabId) => anotherLiveInstanceOwns(tabId, pidAlive),
-  sessionForTab: (tabId) =>
-    claudeBackend.sessionIdOf(tabId) ?? storedOwnerOf(tabId)?.sessionIdOf(tabId) ?? null,
+  sessionForTab: (tabId) => sessionOfTab(tabId)?.sessionId ?? null,
   cameThroughAForward: (guestId, url) => {
     const port = loopbackPortOf(url)
     return port !== null && pageForwards.carries(guestId, port)

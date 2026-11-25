@@ -46,7 +46,6 @@ type BackendHooks = Partial<
     | 'docVerdictsOf'
     | 'noAccountMessage'
     | 'turnedOff'
-    | 'storedByHand'
   >
 >
 
@@ -115,12 +114,6 @@ export const start: PluginStart<
   let claudeStore: ClaudeSessionStore | null = null
   const claudeBackend = new ClaudeBackend({ ...d.claude, tracker, store: () => claudeStore })
   sessionBackends.register(claudeBackend)
-  sessionBackends.tabEndsByHand = {
-    id: claudeBackend.id,
-    onPtyExit: (tabId, crashed) => claudeBackend.onPtyExit(tabId, crashed),
-    setAlive: (tabId, alive) => tracker.setAlive(tabId, alive),
-    launchEnded: (tabId) => claudeBackend.launchEnded(tabId)
-  }
   const startedSessions = new StartedSessions(d.startedSessionsFile)
   const { onVerdict, ...judgeDeps } = d.newsJudge
   const newsJudge = new NewsJudge(judgeDeps)

@@ -26,26 +26,6 @@ export type ModeClass = 'bypass' | 'prompting'
 
 export type TabExit = Pick<TabEnded, 'tabId' | 'exitCode' | 'signal' | 'crashed'>
 
-export interface TabEndsWiredByHand {
-  id: BackendId
-  onPtyExit(tabId: string, crashed: boolean): void
-  setAlive(tabId: string, alive: boolean): void
-  launchEnded(tabId: string): void
-}
-
-export interface StoredWiredByHand {
-  id: BackendId
-  store: { flushSync(): void }
-  rows(workspace: string): BackendSessionRow[]
-  threadGone(key: string): boolean
-  hasProcesses(): boolean
-  stopAll(): Promise<void>
-  hasTab(tabId: string): boolean
-  aliveTabFor(key: string): string | undefined
-  stop(tabId: string, nativeExitCode?: number): Promise<void>
-  showsPromptBeforeBind?(tabId: string): boolean
-}
-
 export interface SessionBackend extends SessionRowsSource {
   id: BackendId
   recoversWorktrees?: true
@@ -73,6 +53,13 @@ export interface SessionBackend extends SessionRowsSource {
   peerNames(): (key: string) => Promise<string | null>
   runningElsewhere(key: string): boolean | Promise<boolean>
   workStillRunning(tabId: string): Promise<boolean>
+  tabExited(exit: TabExit): void | Promise<void>
+  quitWaitsForIt(): boolean
+  endBeforeQuit(): Promise<void>
+  flushSync(): void
+  beforeWorkspaceRemoved(workspace: string): Promise<void>
+  showsPromptBeforeBind(tabId: string): boolean
+  sessionGone(key: string): boolean
 }
 
 export interface SessionLifecycle {
@@ -93,8 +80,6 @@ export class SessionBackends {
   private questionsAsked = 0
   private quitEnding = false
   private quitEnded = false
-  tabEndsByHand: TabEndsWiredByHand | undefined
-  storedByHand: () => readonly StoredWiredByHand[] = () => []
   isOverseerSession: (tabOrSessionId: string) => boolean = () => false
   turnOver: (tabId: string) => boolean = () => false
   askingOf: (tabId: string) => string | undefined = () => undefined
@@ -102,13 +87,17 @@ export class SessionBackends {
   noAccountMessage: (backend: BackendId) => string = (backend) => NO_USABLE_ACCOUNT[backend]
   turnedOff: (backend: BackendId) => string | null = () => null
   readonly rows: RowsOfEveryAgent = rowsOfEveryAgent(() =>
-    SESSION_BACKENDS.flatMap((id) => {
-      const backend = this.adapters.get(id)
-      return backend ? [{ id, rows: backend }] : []
-    })
+    this.builtInListOrder().map((backend) => ({ id: backend.id, rows: backend }))
   )
 
   constructor(private lifecycle: SessionLifecycle) {}
+
+  private builtInListOrder(): SessionBackend[] {
+    return SESSION_BACKENDS.flatMap((id) => {
+      const backend = this.adapters.get(id)
+      return backend ? [backend] : []
+    })
+  }
 
   observe(tabId: string, event: SessionEvent): void {
     switch (event.type) {
@@ -235,21 +224,17 @@ export class SessionBackends {
   }
 
   tabExited(exit: TabExit, endFailed: (error: unknown) => void): void {
-    this.tabEndsByHand?.onPtyExit(exit.tabId, exit.crashed)
-    this.tabEndsByHand?.setAlive(exit.tabId, false)
-    void this.storedByHand()
-      .find((s) => s.hasTab(exit.tabId))
-      ?.stop(exit.tabId, exit.signal ? -1 : exit.exitCode)
-      .catch(endFailed)
-    this.tabEndsByHand?.launchEnded(exit.tabId)
+    const told = this.builtInListOrder().map((backend) => backend.tabExited(exit))
+    for (const ended of told) void Promise.resolve(ended).catch(endFailed)
   }
 
   quitWaits(quit: () => void, endFailed: (backend: BackendId, error: unknown) => void): boolean {
-    if (this.quitEnded || !this.storedByHand().some((s) => s.hasProcesses())) return false
+    const backends = this.builtInListOrder()
+    if (this.quitEnded || !backends.some((b) => b.quitWaitsForIt())) return false
     if (!this.quitEnding) {
       this.quitEnding = true
       void Promise.all(
-        this.storedByHand().map((s) => s.stopAll().catch((error) => endFailed(s.id, error)))
+        backends.map((b) => b.endBeforeQuit().catch((error) => endFailed(b.id, error)))
       ).finally(() => {
         this.quitEnded = true
         quit()
@@ -259,36 +244,21 @@ export class SessionBackends {
   }
 
   flushSync(): void {
-    for (const stored of this.storedByHand()) stored.store.flushSync()
+    for (const backend of this.builtInListOrder()) backend.flushSync()
   }
 
   async beforeWorkspaceRemoved(workspace: string): Promise<void> {
-    await Promise.all(
-      this.storedByHand().flatMap((stored) => {
-        const tabs = new Set(
-          stored
-            .rows(workspace)
-            .filter((r) => r.running || r.pending)
-            .map((r) => (r.pending ? r.id : stored.aliveTabFor(r.id)))
-            .filter((id): id is string => !!id)
-        )
-        return [...tabs].map((id) => stored.stop(id))
-      })
-    )
+    await Promise.all(this.builtInListOrder().map((b) => b.beforeWorkspaceRemoved(workspace)))
   }
 
   showsPromptBeforeBind(tabId: string): boolean {
-    return !!this.storedByHand()
-      .find((s) => s.hasTab(tabId))
-      ?.showsPromptBeforeBind?.(tabId)
+    return this.builtInListOrder().some((backend) => backend.showsPromptBeforeBind(tabId))
   }
 
   sessionStillThere(key: string, foundOrRunning: ReadonlySet<string>): boolean {
-    return (
-      foundOrRunning.has(key) ||
-      (identityOf(key).backendId !== this.tabEndsByHand?.id &&
-        !this.storedByHand().some((s) => s.id === identityOf(key).backendId && s.threadGone(key)))
-    )
+    if (foundOrRunning.has(key)) return true
+    const backend = this.adapters.get(identityOf(key).backendId)
+    return !backend || !backend.sessionGone(key)
   }
 
   async historyRows(

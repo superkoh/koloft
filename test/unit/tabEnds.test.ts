@@ -54,7 +54,11 @@ import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/agents/claude/main/backend'
 import { ClaudeSessionStore } from '../../src/agents/claude/main/claudeSessionStore'
 import { SessionTracker } from '../../src/agents/claude/main/sessionTracker'
+import { agyBackend } from '../../src/agents/agy/main/backend'
+import { codexBackend } from '../../src/agents/codex/main/backend'
+import { agentManifest } from '../../src/core/agent/registry'
 import { SessionBackends } from '../../src/core/agent/sessionBackends'
+import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import { SessionRuntime } from '../../src/core/agent/sessionRuntime'
 import { TAB_TORN_DOWN, type Moment, type TabEnded } from '../../src/core/moment'
 import { BackgroundFile } from '../../src/main/backgroundFile'
@@ -79,6 +83,8 @@ const CLAUDE_TAB_STILL_STARTING = 'pty-claude-starting'
 const CLAUDE_SESSION = '3c4ac765-c402-4d6d-88ac-dca81e2a35f1'
 
 type Sent = [string, SessionEvent]
+
+const NO_RESUME_IS_PLANNED_HERE = {} as Parameters<typeof codexBackend>[1]
 
 function terminalOf(tabId: string): { pty: unknown; killed: string[] } {
   const killed: string[] = []
@@ -193,13 +199,13 @@ async function aTabOfEveryAgent() {
   const whenTornDown: ((exit: TabEnded) => void)[] = []
   const lifecycle = new TabLifecycle()
   const backends = new SessionBackends(nothingListensToTheSessions())
-  backends.tabEndsByHand = {
-    id: claude.id,
-    onPtyExit: (tabId, crashed) => claude.onPtyExit(tabId, crashed),
-    setAlive: (tabId, alive) => tracker.setAlive(tabId, alive),
-    launchEnded: (tabId) => claude.launchEnded(tabId)
-  }
-  backends.storedByHand = () => [codex, agy]
+  const agyAsABackend = agyBackend(agy, NO_RESUME_IS_PLANNED_HERE, () => NO_RESUME_IS_PLANNED_HERE)
+  const codexAsABackend = codexBackend(
+    codex,
+    NO_RESUME_IS_PLANNED_HERE,
+    () => NO_RESUME_IS_PLANNED_HERE
+  )
+  for (const backend of [claude, agyAsABackend, codexAsABackend]) backends.register(backend)
   subscribeTabSubsystems(lifecycle, {
     attention: { clear: () => {}, tabStopping: () => {} },
     backends,
@@ -212,8 +218,19 @@ async function aTabOfEveryAgent() {
   return {
     lifecycle,
     claude: { backend: claude, tracker, store, sent: claudeSent, rowsReread: () => rowsReread },
-    codex: { sessions: codex, sent: codexSent, killed: codexTerminal.killed },
-    agy: { sessions: agy, sent: agySent, killed: agyTerminal.killed, ranOverSsh: ssh.ran },
+    codex: {
+      backend: codexAsABackend,
+      sessions: codex,
+      sent: codexSent,
+      killed: codexTerminal.killed
+    },
+    agy: {
+      backend: agyAsABackend,
+      sessions: agy,
+      sent: agySent,
+      killed: agyTerminal.killed,
+      ranOverSsh: ssh.ran
+    },
     whenTornDown,
     whenRowsReread,
     sentInOrder
@@ -402,8 +419,8 @@ describe('an agent told of the end of a tab that is not its own, as each will be
     async (_name, agent, third) => {
       const a = await aTabOfEveryAgent()
       const before = storedTabNow(a, agent)
-      await a[agent].sessions.stop(CLAUDE_TAB, 1)
-      await a[agent].sessions.stop(TAB_OF[third], 0)
+      await a[agent].backend.tabExited(crashed(CLAUDE_TAB))
+      await a[agent].backend.tabExited(ended(TAB_OF[third]))
       await pastAnyStopStartedByMistake()
       expect(storedTabNow(a, agent)).toEqual(before)
       expect(before).toMatchObject(OPEN_AND_LEFT_ALONE)
@@ -413,10 +430,39 @@ describe('an agent told of the end of a tab that is not its own, as each will be
   it('Antigravity runs nothing on the machine for a tab that is not its own', async () => {
     const a = await aTabOfEveryAgent()
     const ranBefore = a.agy.ranOverSsh.length
-    await a.agy.sessions.stop(CLAUDE_TAB, 1)
-    await a.agy.sessions.stop(CODEX_TAB, 0)
+    await a.agy.backend.tabExited(crashed(CLAUDE_TAB))
+    await a.agy.backend.tabExited(ended(CODEX_TAB))
     await pastAnyStopStartedByMistake()
     expect(a.agy.ranOverSsh.slice(ranBefore)).toEqual([])
+  })
+})
+
+describe('whether a tab that has no session yet already shows its prompt', () => {
+  it('is no, for a tab of its own with no session yet too, from every agent whose manifest says its conversation does not start at the first prompt', async () => {
+    const a = await aTabOfEveryAgent()
+    const CLAUDE_TAB_WITH_NO_SESSION = 'pty-claude-with-no-session'
+    a.claude.tracker.track(CLAUDE_TAB_WITH_NO_SESSION, world.repo)
+    stops.push(() => a.claude.tracker.untrack(CLAUDE_TAB_WITH_NO_SESSION))
+    const itsTabWithNoSession = {
+      claude: CLAUDE_TAB_WITH_NO_SESSION,
+      codex: CODEX_TAB,
+      agy: AGY_TAB
+    }
+    for (const id of SESSION_BACKENDS) {
+      const { backend } = a[id]
+      expect([id, backend.hasTab(itsTabWithNoSession[id])]).toEqual([id, true])
+      const itsSession = backend.list().find((s) => s.tabId === itsTabWithNoSession[id])?.sessionId
+      expect([id, itsSession || 'none yet']).toEqual([id, 'none yet'])
+    }
+    const neverShowItThatEarly = SESSION_BACKENDS.filter(
+      (id) => !agentManifest(id).flags.conversationStartsAtFirstPrompt
+    )
+    expect(neverShowItThatEarly).not.toEqual([])
+    for (const id of neverShowItThatEarly)
+      expect([id, a[id].backend.showsPromptBeforeBind(itsTabWithNoSession[id])]).toEqual([
+        id,
+        false
+      ])
   })
 })
 

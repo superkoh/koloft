@@ -34,6 +34,13 @@ export function stubBackend(
     peerNames: () => async () => null,
     runningElsewhere: () => false,
     workStillRunning: async () => false,
+    tabExited: () => {},
+    quitWaitsForIt: () => false,
+    endBeforeQuit: async () => {},
+    flushSync: () => {},
+    beforeWorkspaceRemoved: async () => {},
+    showsPromptBeforeBind: () => false,
+    sessionGone: () => false,
     ...rowsKeptInMemory({
       rows: () => [],
       members: () => new Set<string>(),

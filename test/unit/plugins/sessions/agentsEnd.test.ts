@@ -1,10 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import { SessionBackends, type StoredWiredByHand } from '../../../../src/core/agent/sessionBackends'
+import { SessionBackends, type SessionBackend } from '../../../../src/core/agent/sessionBackends'
+import { ClaudeBackend, type ClaudeBackendDeps } from '../../../../src/agents/claude/main/backend'
+import { storedBackend } from '../../../../src/agents/kit/main/stored'
 import { sessionKey } from '@shared/sessionBackend'
 import type { BackendId, BackendSessionRow } from '@shared/types'
 import { lifecycle } from '../../helpers/sessionBackendStub'
 
-type SessionsKeptInAStore = StoredWiredByHand
+interface SessionsKeptInAStore {
+  id: BackendId
+  store: { flushSync(): void }
+  rows(workspace: string): BackendSessionRow[]
+  threadGone(key: string): boolean
+  hasProcesses(): boolean
+  stopAll(): Promise<void>
+  hasTab(tabId: string): boolean
+  aliveTabFor(key: string): string | undefined
+  stop(tabId: string, nativeExitCode?: number): Promise<void>
+  showsPromptBeforeBind(tabId: string): boolean
+}
 
 function sessionsOf(id: BackendId, over: Partial<SessionsKeptInAStore> = {}): SessionsKeptInAStore {
   return {
@@ -17,24 +30,41 @@ function sessionsOf(id: BackendId, over: Partial<SessionsKeptInAStore> = {}): Se
     hasTab: () => false,
     aliveTabFor: () => undefined,
     stop: async () => {},
+    showsPromptBeforeBind: () => false,
     ...over
   }
 }
 
 type FirstAgentTold = (tabId: string, crashed: boolean) => void
 
+const NONE_OF_ITS_PARTS_IS_ASKED_HERE = {} as ClaudeBackendDeps
+const NO_RESUME_IS_PLANNED_HERE = {} as Parameters<typeof storedBackend>[1]
+const ITS_OWN_ANSWERS: Parameters<typeof storedBackend>[2] = {
+  accountUsable: () => true,
+  trustsFolder: () => true,
+  turns: async () => [],
+  peerNames: () => async () => null,
+  runningElsewhere: () => false
+}
+
 function backendsOf(
   stored: SessionsKeptInAStore[],
   firstAgentTold: FirstAgentTold = () => {}
 ): SessionBackends {
+  const first = new ClaudeBackend(NONE_OF_ITS_PARTS_IS_ASKED_HERE)
+  first.tabExited = ({ tabId, crashed }) => firstAgentTold(tabId, crashed)
+  const inListOrder: SessionBackend[] = [
+    first,
+    ...stored.map((sessions) =>
+      storedBackend(
+        sessions as unknown as Parameters<typeof storedBackend>[0],
+        NO_RESUME_IS_PLANNED_HERE,
+        ITS_OWN_ANSWERS
+      )
+    )
+  ]
   const backends = new SessionBackends(lifecycle())
-  backends.tabEndsByHand = {
-    id: 'claude',
-    onPtyExit: firstAgentTold,
-    setAlive: () => {},
-    launchEnded: () => {}
-  }
-  backends.storedByHand = () => stored
+  for (const backend of inListOrder.reverse()) backends.register(backend)
   return backends
 }
 
