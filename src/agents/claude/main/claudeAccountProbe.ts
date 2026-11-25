@@ -1,7 +1,6 @@
 import type { AccountKind, AccountMeta, ProbeErrorKind, UsageSnapshot } from '@shared/types'
 import { GRACE, hardLimited } from '@shared/accountUsage'
 import { DW, disc, weekUse, type Score } from '../../../main/usageProbe'
-import { findAccount, upsertAccountMeta } from '../../../main/accounts'
 
 export const OI_WEIGHT = 1.25
 
@@ -204,16 +203,4 @@ export async function probeAccount(
     // PLATFORM§27
     return { ok: false, error: 'network' }
   }
-}
-
-export function recordFableCapability(
-  name: string,
-  kind: AccountKind,
-  fable: 'yes' | 'no',
-  checkedAt: number = Date.now()
-): void {
-  const acct = findAccount(name, kind)
-  if (!acct) return
-  if (fable === 'no') upsertAccountMeta({ ...acct, fable, fableCheckedAt: checkedAt })
-  else if (acct.fable !== 'yes') upsertAccountMeta({ ...acct, fable })
 }

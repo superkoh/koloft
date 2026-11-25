@@ -110,6 +110,8 @@
         "src/agents/agy/main/agyAccounts.ts": "D1",
         "src/agents/agy/main/agyStore.ts": "D1",
         "src/agents/agy/main/agyTab.ts": "D1",
+        "src/agents/claude/main/claudeAccountEnv.ts": "D1",
+        "src/agents/claude/main/claudeAccountProbe.ts": "D1",
         "src/agents/claude/main/claudeAccounts.ts": "D1",
         "src/agents/claude/main/claudeCommandOutput.ts": "D1",
         "src/agents/claude/main/claudeDialogWatch.ts": "D1",

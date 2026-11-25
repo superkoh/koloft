@@ -21,7 +21,7 @@ import {
 } from '../../../main/signInOutput'
 import type { PtyManager } from '../../../main/ptyManager'
 import type { LaunchedSession } from '../../../main/accountPicker'
-import { probeAccount, recordFableCapability, shouldSkipFable } from './claudeAccountProbe'
+import { probeAccount, shouldSkipFable } from './claudeAccountProbe'
 import {
   AccountPicker,
   PROBE_TIMEOUT_MS,
@@ -39,8 +39,6 @@ interface LoginWatch {
   giveUp: NodeJS.Timeout
   installing?: { carry: string }
 }
-const loginWatchers = new Map<string, LoginWatch>()
-const loginPtys = new Set<string>()
 const LOGIN_TIMEOUT_MS = 10 * 60_000
 const LOGIN_TIMED_OUT = 'Sign-in timed out'
 // CC§10
@@ -48,11 +46,23 @@ const INSTALL_SILENCE_LONGER_THAN_EITHER_SILENT_DOWNLOAD_AT_2_MBIT_MS = 30 * 60_
 const INSTALL_STALLED = `The Claude Code install did not finish: it printed nothing for ${INSTALL_SILENCE_LONGER_THAN_EITHER_SILENT_DOWNLOAD_AT_2_MBIT_MS / 60_000} minutes`
 const LOGIN_BUF_MAX = 8192
 const LOGIN_PTY_COLS_WIDER_THAN_TOKEN = 800
-const ACCOUNT_PROBE_TIMEOUT_MS = 10_000
+export const ACCOUNT_PROBE_TIMEOUT_MS = 10_000
 // CC§7
 const AUTH_URL_RE = /https?:\/\/[^\s'"`<>\x00-\x1f\x7f]+(?=[\s'"`<>\x00-\x1f\x7f])/
 // CC§7
 const TOKEN_RE = /sk-ant-[A-Za-z0-9]{2,12}-[A-Za-z0-9_-]{24,}/
+
+export function recordFableCapability(
+  name: string,
+  kind: AccountKind,
+  fable: 'yes' | 'no',
+  checkedAt: number = Date.now()
+): void {
+  const acct = findAccount(name, kind)
+  if (!acct) return
+  if (fable === 'no') upsertAccountMeta({ ...acct, fable, fableCheckedAt: checkedAt })
+  else if (acct.fable !== 'yes') upsertAccountMeta({ ...acct, fable })
+}
 
 export interface ClaudeAccountDeps {
   ptyMgr: Pick<PtyManager, 'create' | 'get' | 'kill'>
@@ -97,6 +107,9 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
     installThen,
     toolInstallPtys
   } = deps
+
+  const loginWatchers = new Map<string, LoginWatch>()
+  const loginPtys = new Set<string>()
 
   function foldProbeResult(
     name: string,
@@ -355,16 +368,11 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
     pickedAccountEnv,
     shimAccountRefusals,
     answerPickRequest,
-    ACCOUNT_PROBE_TIMEOUT_MS,
     loginWatchers,
     loginPtys,
     feedLoginWatcher,
     failLogin,
     cancelGuidedLogin,
-    startGuidedLogin,
-    probeAccount,
-    shouldSkipFable,
-    recordFableCapability,
-    pickMachineAccount
+    startGuidedLogin
   }
 }

@@ -380,7 +380,13 @@ import {
 import type { MainIpc } from '@core/ipc'
 import type { WorktreeResource } from '@core/agent/worktreeRecords'
 import { ClaudeDialogWatch } from '@agents/claude/main/claudeDialogWatch'
-import { claudeAccountsOf } from '@agents/claude/main/claudeAccounts'
+import {
+  ACCOUNT_PROBE_TIMEOUT_MS,
+  claudeAccountsOf,
+  recordFableCapability
+} from '@agents/claude/main/claudeAccounts'
+import { probeAccount, shouldSkipFable } from '@agents/claude/main/claudeAccountProbe'
+import { pickMachineAccount } from '@agents/claude/main/claudeAccountEnv'
 import { docsWritingOn } from '@plugins/docs-writing/api'
 import { koloftPrompt, type SessionsWithStore } from '@plugins/sessions/api'
 import { localFile } from './realFiles'
@@ -1385,17 +1391,12 @@ const {
   pickedAccountEnv,
   shimAccountRefusals,
   answerPickRequest,
-  ACCOUNT_PROBE_TIMEOUT_MS,
   loginWatchers,
   loginPtys,
   feedLoginWatcher,
   failLogin,
   cancelGuidedLogin,
-  startGuidedLogin,
-  probeAccount,
-  shouldSkipFable,
-  recordFableCapability,
-  pickMachineAccount
+  startGuidedLogin
 } = claudeAccountsOf({
   ptyMgr,
   usageViews,
