@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { SessionStatus } from '../../../../src/shared/types'
 import {
-  A_CLAUDE_TURN_ENDS_AFTER_ITS_STOP_WITHIN_MS,
+  A_REPLY_WRITTEN_AFTER_ITS_TURN_ENDED_LANDS_WITHIN_MS,
   AN_ENTER_LANDS_WITHIN_MS,
   MORE_OUTPUT_SETTLES_MS,
   NOTHING_CAME_BACK_MS,
@@ -274,7 +274,7 @@ describe('a slash command typed into a session', () => {
     await slash.typeWhenIdle(child, '/review', CALLER)
     setStatus('working')
     setStatus('waiting')
-    await vi.advanceTimersByTimeAsync(A_CLAUDE_TURN_ENDS_AFTER_ITS_STOP_WITHIN_MS)
+    await vi.advanceTimersByTimeAsync(A_REPLY_WRITTEN_AFTER_ITS_TURN_ENDED_LANDS_WITHIN_MS)
     expect(posts.at(-1)).toBe('⌨️ **fix-login** ran /review:\nDone.')
   })
 

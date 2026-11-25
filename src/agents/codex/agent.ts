@@ -1,6 +1,11 @@
 import type { AgentManifest } from '@core/agent/manifest'
 import { CRON_EFFORTS } from '@shared/efforts'
+import { EMPTY_THE_BOX, ESC } from '@shared/lineEditKeys'
 import { SLOT_ADDITIONS, SLOT_FILLS } from './prompts/text'
+import { codexComposerDraft } from './shared/inputBox'
+
+// CODEX§21
+const CLOSE_PAGER = 'q'
 
 // CODEX§15
 const MODEL_EVERY_ACCOUNT_TAKES = 'gpt-6-luna'
@@ -60,6 +65,12 @@ export const agent = {
   ownSettings: {},
   slotFills: SLOT_FILLS,
   slotAdditions: SLOT_ADDITIONS,
+  // CODEX§21
+  inputBoxKeys: {
+    clearALeftoverCommand: [EMPTY_THE_BOX],
+    makeEnterRunTheTypedText: [ESC],
+    backToAnEmptyBox: [ESC, CLOSE_PAGER, EMPTY_THE_BOX]
+  },
   flags: {
     // CODEX§9
     resumeCanWaitOnAQuestionBeforeAnySign: true,
@@ -72,9 +83,13 @@ export const agent = {
     // CODEX§12
     runsCommandsInASandboxWhereSudoCannotStart: true,
     // CODEX§20
-    questionToolTakesNoOptionDescriptions: false
+    questionToolTakesNoOptionDescriptions: false,
+    turnEndCanComeBeforeItsReplyIsWritten: false
   },
-  pureFunctions: { effortsAModelTakes: () => CRON_EFFORTS },
+  pureFunctions: {
+    effortsAModelTakes: () => CRON_EFFORTS,
+    draftInItsInputBox: codexComposerDraft
+  },
   // CODEX§15
   accountKinds: [
     {
