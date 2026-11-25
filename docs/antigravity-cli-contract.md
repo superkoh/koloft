@@ -1494,6 +1494,12 @@ Koloft dependents: the repo's own `.agents/hooks.json` (ADR-0053).
   `structured_output`.
 - A trivial run takes about 100–200 ms against a fast fake with the updater off; the
   first launch in a fresh folder about 760 ms.
+- **SIGTERM during a `-p` turn.** agy 1.5.10 (Linux arm64, Docker with no network, a
+  temp HOME, the API-key route against a fake server that never answers), 2026-11-25,
+  3 runs: `/proc/<pid>/status` shows SIGTERM caught; a SIGTERM while the model request
+  hangs ends it in 26–48 ms with `error: interrupted` on stderr, exit 1. Each run was
+  one process (no `--bg-updater` beside it), and a `--gemini_dir` removed 1 s after the
+  exit was not made again. The macOS build: not probed.
 
 ## §21 Models and effort
 
