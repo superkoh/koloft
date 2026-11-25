@@ -183,7 +183,10 @@ export function koloftAssist(deps: AssistDeps): Assist {
     const picks = deps.picks()
     for (const backend of assistBackendsFor(job.row, picks)) {
       if (!deps.enabled(backend)) continue
-      const target = await deps.target(backend)
+      const target = await deps.target(backend).catch((err: unknown) => {
+        console.error('[koloft] Assist could not make its one-shot target:', backend, err)
+        return null
+      })
       if (job.signal?.aborted) {
         target?.done()
         return null
