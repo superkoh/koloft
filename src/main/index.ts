@@ -26,14 +26,10 @@ import { sharedProcessTable, type ProcessTable } from './processTable'
 import {
   agyAccountEnv,
   agyApiKeyRoute,
-  agyHomeOf,
-  agySignedIn,
+  agyHomeAccounts,
   endAgyOneShots,
   oneShotAgyHome,
-  readAgyModels,
-  prepareAgyHome,
-  readAgyQuota,
-  setAgyApiKeyRoute
+  readAgyModels
 } from '@agents/agy/main/agyAccounts'
 import { AGY_APP_DIR, ownersGeminiDir } from '@agents/agy/main/agyStore'
 import { AGY_BRAIN_FLAGS, AGY_REMOTE_BRAIN } from '@agents/agy/main/agyTab'
@@ -198,10 +194,9 @@ import {
 import { branchExists, type GitOut, type TidyResult } from '@core/worktree'
 import { codexConfigFile } from '@agents/codex/main/codexTrust'
 import {
-  HomeAccountPicker,
+  codexHomeAccounts,
   codexHomeOf,
   codexHomes,
-  limitsFrom,
   prepareCodexHome
 } from '@agents/codex/main/codexAccounts'
 import { shq } from '@shared/shellQuote'
@@ -274,8 +269,6 @@ import {
 } from '@shared/types'
 import {
   ACCOUNT_KINDS_OF,
-  AUTO_PROBE_MS,
-  launchLine,
   launchUsageProbe,
   noAccountLine,
   noAccountMessage,
@@ -286,12 +279,10 @@ import type {
   AccountAddResult,
   AccountKind,
   ListeningPort,
-  QuotaBucket,
   AccountMeta,
   AccountView,
   ArtifactView,
   BackendId,
-  CodexResetOutcome,
   SignInResult,
   SignInFailure,
   ScreenAnswer,
@@ -425,9 +416,6 @@ type MergedHeads = NonNullable<Parameters<SessionsStarted['whatIsLeft']>[2]>
 type NoticeFile = ReturnType<SessionsStarted['localNotice']>
 type SyncSession = Parameters<SessionsStarted['sessionSync']['observe']>[0][number]
 type ToolCall = Parameters<SessionsStarted['isAskedCall']>[1]
-type AgyHomePick = NonNullable<
-  ReturnType<Parameters<SessionsStarted['buildAgySessions']>[0]['pickHome']>
->
 
 const pluginIpc: MainIpc = {
   handle: (channel, handler) =>
@@ -2529,77 +2517,36 @@ function foldHomeSignIn(name: string, kind: SignInFolderKind, signedIn: boolean)
   if (status === 'expired') notifyExpired(name, BACKEND_LABEL[BACKEND_OF_SIGN_IN_FOLDER[kind]])
 }
 
-const codexPicker = new HomeAccountPicker('codex-home', savedHomeUsageOf)
+const homeAccountsDeps = {
+  app,
+  accountViews,
+  allLimitedNotice,
+  findAccount,
+  foldHomeSignIn,
+  listAccounts,
+  pushHomeAccount,
+  savedHomeUsageOf,
+  usageViews,
+  viewKey,
+  sessionAccounts: () => sessionAccounts
+}
+const codexAccounts = codexHomeAccounts({
+  ...homeAccountsDeps,
+  codexSharedConfig,
+  codexSessions: () => codexSessions
+})
+const { codexPicker, pickCodexHome, codexUseReset, probeCodexAccounts } = codexAccounts
+const agyAccounts = agyHomeAccounts({
+  ...homeAccountsDeps,
+  keychainRead,
+  keychainWrite,
+  ownersGemini,
+  agySessions: () => agySessions
+})
+const { agyPicker, agyHomeFor, agyApiKeyOf, pickAgyHome, agyBinary, probeAgyAccounts } = agyAccounts
 
 function codexSharedConfig(): string {
   return codexConfigFile(codexSessions?.defaultEnv)
-}
-
-// CODEX§15
-function pickCodexHome(
-  resumeSessionId?: string
-): { account: string; home: string; banner: string; notice?: string } | undefined {
-  const views = accountViews()
-  const picked = codexPicker.pick(
-    views,
-    sessionAccounts?.of('codex', resumeSessionId),
-    codexSessions?.launchedSessions()
-  )
-  if (!picked) return undefined
-  const stale = (a: AccountView): boolean =>
-    a.apiKey ? !!a.probeError : !a.limits || Date.now() - a.limits.at > AUTO_PROBE_MS
-  if (views.some((a) => a.kind === 'codex-home' && a.enabled && stale(a))) void probeCodexAccounts()
-  const home = codexHomeOf(app.getPath('userData'), picked.name)
-  prepareCodexHome(home, codexSharedConfig())
-  return {
-    account: picked.name,
-    home,
-    banner: launchLine(picked, Date.now()),
-    notice: allLimitedNotice(picked, 'codex')
-  }
-}
-
-async function probeCodexAccount(name: string): Promise<void> {
-  const acct = findAccount(name, 'codex-home')
-  if (!acct || !codexSessions) return
-  const key = viewKey(name, 'codex-home')
-  try {
-    const r = await codexSessions.readAccount(codexHomeOf(app.getPath('userData'), name))
-    foldHomeSignIn(name, 'codex-home', r.signedIn)
-    usageViews.set(
-      key,
-      r.apiKey
-        ? { apiKey: true }
-        : {
-            limits: (r.signedIn && limitsFrom(r.limits, Date.now())) || usageViews.get(key)?.limits
-          }
-    )
-  } catch {
-    usageViews.set(key, { ...usageViews.get(key), probeError: 'network' })
-  }
-  pushHomeAccount(name, 'codex-home')
-}
-
-async function codexUseReset(name: string): Promise<CodexResetOutcome> {
-  if (!findAccount(name, 'codex-home') || !codexSessions) return 'failed'
-  const outcome = await codexSessions
-    .useResetCredit(codexHomeOf(app.getPath('userData'), name))
-    .catch((): CodexResetOutcome => 'failed')
-  await probeCodexAccount(name)
-  return outcome
-}
-
-let codexProbeRound: Promise<void> | null = null
-
-function probeCodexAccounts(): Promise<void> {
-  codexProbeRound ??= Promise.all(
-    listAccounts()
-      .filter((a) => a.kind === 'codex-home' && a.enabled)
-      .map((a) => probeCodexAccount(a.name))
-  ).then(() => {
-    codexProbeRound = null
-  })
-  return codexProbeRound
 }
 
 interface HomeSignInTab {
@@ -2657,29 +2604,13 @@ const homeLogin: Record<
   SignInFolderKind,
   (name: string) => Promise<{ binary?: string; env: Record<string, string>; args?: string[] }>
 > = {
-  // CODEX§15
-  'codex-home': async (name) => {
-    const available = (await codexSessions?.availability())?.available
-    const home = codexHomeOf(app.getPath('userData'), name)
-    prepareCodexHome(home, codexSharedConfig())
-    return { binary: available ? codexSessions?.cliBinary : undefined, env: { CODEX_HOME: home } }
-  },
-  // AGY§5 AGY§7
-  'agy-home': async (name) => {
-    const binary = await agyBinary()
-    const home = agyHomeFor(name)
-    const apiKey = await agyApiKeyOf(name)
-    setAgyApiKeyRoute(home, !!apiKey)
-    return { binary, env: agyAccountEnv(apiKey), args: [`--gemini_dir=${home}`] }
-  }
+  'codex-home': codexAccounts.homeLogin,
+  'agy-home': agyAccounts.homeLogin
 }
 
 const probeHomeAccount: Record<SignInFolderKind, (name: string) => Promise<void>> = {
-  'codex-home': async (name) => {
-    await codexSessions?.rereadSignIn(codexHomeOf(app.getPath('userData'), name))
-    await probeCodexAccount(name)
-  },
-  'agy-home': (name) => probeAgyAccount(name)
+  'codex-home': codexAccounts.probeHomeAccount,
+  'agy-home': agyAccounts.probeHomeAccount
 }
 
 async function signInToHome(
@@ -2718,93 +2649,8 @@ async function signInToHome(
   return { ok: true, ...tab }
 }
 
-const agyPicker = new HomeAccountPicker('agy-home', savedHomeUsageOf)
-const agyProbedAt = new Map<string, number>()
-const preparedAgyHomes = new Set<string>()
-
 function ownersGemini(): string {
   return ownersGeminiDir(agySessions?.defaultEnv ?? process.env)
-}
-
-// AGY§4
-function agyHomeFor(name: string): string {
-  const home = agyHomeOf(app.getPath('userData'), name)
-  if (preparedAgyHomes.has(home)) return home
-  prepareAgyHome(home, ownersGemini())
-  preparedAgyHomes.add(home)
-  return home
-}
-
-async function agyApiKeyOf(name: string): Promise<string | undefined> {
-  return (await keychainRead('agy-home', name)) ?? undefined
-}
-
-// ADR-0030
-function pickAgyHome(resumeSessionId?: string, onlyAsking?: boolean): AgyHomePick | undefined {
-  const views = accountViews()
-  const picked = onlyAsking
-    ? agyPicker.peek(views)
-    : agyPicker.pick(
-        views,
-        sessionAccounts?.of('agy', resumeSessionId),
-        agySessions?.launchedSessions()
-      )
-  const stale = (a: AccountView): boolean =>
-    Date.now() - (agyProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
-  if (!onlyAsking && views.some((a) => a.kind === 'agy-home' && a.enabled && stale(a)))
-    void probeAgyAccounts()
-  return (
-    picked && {
-      account: picked.name,
-      home: agyHomeFor(picked.name),
-      banner: launchLine(picked, Date.now()),
-      notice: allLimitedNotice(picked, 'agy')
-    }
-  )
-}
-
-// AGY§5 AGY§6
-async function probeAgyAccount(name: string): Promise<void> {
-  const acct = findAccount(name, 'agy-home')
-  if (!acct) return
-  agyProbedAt.set(name, Date.now())
-  const home = agyHomeFor(name)
-  const apiKey = await agyApiKeyOf(name)
-  const signedIn = agySignedIn(home, !!apiKey)
-  foldHomeSignIn(name, 'agy-home', signedIn)
-  const key = viewKey(name, 'agy-home')
-  if (apiKey) usageViews.set(key, { apiKey: true })
-  else if (signedIn) {
-    const quota = await agyUsage(home)
-    usageViews.set(
-      key,
-      quota ? { quota, quotaAt: Date.now() } : { ...usageViews.get(key), probeError: 'network' }
-    )
-  }
-  pushHomeAccount(name, 'agy-home')
-}
-
-async function agyBinary(): Promise<string | undefined> {
-  return ((await agySessions?.availability())?.available && agySessions?.cliBinary) || undefined
-}
-
-async function agyUsage(home: string): Promise<QuotaBucket[] | undefined> {
-  const binary = await agyBinary()
-  if (!binary) return undefined
-  return readAgyQuota(binary, { ...agySessions?.defaultEnv, ...agyAccountEnv() }, home)
-}
-
-let agyProbeRound: Promise<void> | null = null
-
-function probeAgyAccounts(): Promise<void> {
-  agyProbeRound ??= Promise.all(
-    listAccounts()
-      .filter((a) => a.kind === 'agy-home' && a.enabled)
-      .map((a) => probeAgyAccount(a.name))
-  ).then(() => {
-    agyProbeRound = null
-  })
-  return agyProbeRound
 }
 
 function markKeyAccountsSavedOnDisk(): void {
@@ -2814,18 +2660,8 @@ function markKeyAccountsSavedOnDisk(): void {
 }
 
 const storeHomeKey: Record<SignInFolderKind, (name: string, key: string) => Promise<void>> = {
-  // CODEX§15
-  'codex-home': async (name, key) => {
-    if (!codexSessions) throw new Error('Codex is not set up.')
-    const home = codexHomeOf(app.getPath('userData'), name)
-    prepareCodexHome(home, codexSharedConfig())
-    await codexSessions.storeApiKey(home, key)
-  },
-  // AGY§6
-  'agy-home': async (name, key) => {
-    if (!(await keychainWrite('agy-home', name, key))) throw new Error('Keychain write failed.')
-    setAgyApiKeyRoute(agyHomeFor(name), true)
-  }
+  'codex-home': codexAccounts.storeHomeKey,
+  'agy-home': agyAccounts.storeHomeKey
 }
 
 async function addHomeKey(

@@ -15,6 +15,8 @@ export const agent = {
   name: 'Codex',
   productName: 'Codex',
   maker: 'OpenAI',
+  command: 'codex',
+  nodePackageFolderNames: ['codex'],
   wordsThatNameMe: {
     anyCase: ['codex', 'openai', 'gpt'],
     wholeWord: [

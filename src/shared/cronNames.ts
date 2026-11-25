@@ -1,5 +1,6 @@
 import type { BackendId, CronPermission } from './types'
 import { AGENT_OF_UNNAMED_OLD_DATA } from '@core/agent/registry'
+import { SESSION_WORKTREES_FOLDER } from './worktreeName'
 
 export const CRON_PERMISSIONS: CronPermission[] = ['same', 'acceptEdits', 'skipAll']
 
@@ -33,7 +34,7 @@ export function worktreeBase(name: string, at: number): string {
 }
 
 export function worktreeHomeOf(root: string): string {
-  return `${root}/.claude/worktrees`
+  return `${root}/${SESSION_WORKTREES_FOLDER}`
 }
 
 export function isRunFolderOf(slug: string, name: string): boolean {

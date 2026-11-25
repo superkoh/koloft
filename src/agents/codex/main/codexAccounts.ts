@@ -1,16 +1,11 @@
 import fs from 'fs'
 import path from 'path'
-import { homeRoom, usableAccounts, type HomeRoom } from '@shared/accountUsage'
-import type { AccountView, CodexLimits, CodexLimitWindow, SignInFolderKind } from '@shared/types'
+import { AUTO_PROBE_MS, launchLine } from '@shared/accountUsage'
+import type { AccountView, CodexLimits, CodexLimitWindow, CodexResetOutcome } from '@shared/types'
+import { HomeAccountPicker } from '../../kit/main/homeAccountPicker'
+import type { HomeAccountsDeps } from '../../kit/main/homeAccounts'
 import { joinProjectTables } from './codexTrust'
-import {
-  SCORE_PER_LIVE_SESSION,
-  liveSessionsPerAccount,
-  soonest,
-  type LaunchedSession
-} from '../../../main/accountPicker'
-import { leximaxFinalists, weekUse } from '../../../main/usageProbe'
-import { withSavedHomeUsage, type SavedHomeUsageOf } from '../../../main/savedHomeUsage'
+import type { CodexSessions } from './codexSessions'
 
 const CODEX_HOMES = 'codex-homes'
 
@@ -148,69 +143,125 @@ function resetsFrom(value: unknown): CodexLimits['resets'] {
   }
 }
 
-function bindingWeek(room: HomeRoom, nowSec: number): { use: number; resetsAt: number } {
-  return room.longWindows.reduce(
-    (heaviest, w) => {
-      const use = weekUse(w.used, w.resetsAt ?? 0, nowSec)
-      return use > heaviest.use ? { use, resetsAt: w.resetsAt ?? 0 } : heaviest
-    },
-    { use: -1, resetsAt: 0 }
-  )
+export interface CodexHomeAccountsDeps extends HomeAccountsDeps {
+  codexSharedConfig(): string
+  codexSessions(): CodexSessions | null
 }
 
-export class HomeAccountPicker {
-  private turn = 0
+export function codexHomeAccounts(deps: CodexHomeAccountsDeps) {
+  const {
+    app,
+    accountViews,
+    allLimitedNotice,
+    codexSharedConfig,
+    findAccount,
+    foldHomeSignIn,
+    listAccounts,
+    pushHomeAccount,
+    savedHomeUsageOf,
+    usageViews,
+    viewKey
+  } = deps
+  const codexPicker = new HomeAccountPicker('codex-home', savedHomeUsageOf)
 
-  constructor(
-    private kind: SignInFolderKind,
-    private savedUsageOf: SavedHomeUsageOf = () => undefined
-  ) {}
-
-  pick(
-    accounts: AccountView[],
-    resumedOn?: string,
-    launched: LaunchedSession[] = []
-  ): AccountView | undefined {
-    const usable = withSavedHomeUsage(usableAccounts(accounts, [this.kind]), this.savedUsageOf)
-    if (usable.length === 0) return undefined
-    const nowSec = Math.floor(Date.now() / 1000)
-    const all = usable.map((a) => ({ a, room: homeRoom(a, nowSec) }))
-    const subscriptions = all.filter(({ a }) => !a.apiKey)
-    const keys = all.filter(({ a }) => a.apiKey)
-    const everySubscriptionFull = subscriptions.every(({ room }) => room?.walled)
-    const rooms = keys.length > 0 && everySubscriptionFull ? keys : subscriptions
-    const same = rooms.find(({ a }) => a.name === resumedOn)
-    if (same && (!same.room || same.room.keepsResumedSession)) return same.a
-    const live = liveSessionsPerAccount(launched, undefined)
-    const open = rooms.flatMap(({ a, room }) => (room && !room.walled ? [{ a, room }] : []))
-    const fresh = open.filter(({ room }) => room.fiveHourStoppedUntil === undefined)
-    const ranked = (fresh.length > 0 ? fresh : rooms.filter(({ room }) => !room)).map(
-      ({ a, room }) => {
-        const week = room ? bindingWeek(room, nowSec) : { use: 0, resetsAt: 0 }
-        return {
-          a,
-          score: {
-            s1:
-              Math.max(0, week.use) +
-              (live.get(a.name.toLowerCase()) ?? 0) * SCORE_PER_LIVE_SESSION,
-            s2: 0,
-            tiebreak: week.resetsAt > nowSec ? week.resetsAt : 0
-          }
-        }
-      }
+  // CODEX§15
+  function pickCodexHome(
+    resumeSessionId?: string
+  ): { account: string; home: string; banner: string; notice?: string } | undefined {
+    const codexSessions = deps.codexSessions()
+    const sessionAccounts = deps.sessionAccounts()
+    const views = accountViews()
+    const picked = codexPicker.pick(
+      views,
+      sessionAccounts?.of('codex', resumeSessionId),
+      codexSessions?.launchedSessions()
     )
-    if (ranked.length > 0) {
-      const finalists = leximaxFinalists(ranked)
-      return finalists[finalists.length > 1 ? this.turn++ % finalists.length : 0].a
+    if (!picked) return undefined
+    const stale = (a: AccountView): boolean =>
+      a.apiKey ? !!a.probeError : !a.limits || Date.now() - a.limits.at > AUTO_PROBE_MS
+    if (views.some((a) => a.kind === 'codex-home' && a.enabled && stale(a)))
+      void probeCodexAccounts()
+    const home = codexHomeOf(app.getPath('userData'), picked.name)
+    prepareCodexHome(home, codexSharedConfig())
+    return {
+      account: picked.name,
+      home,
+      banner: launchLine(picked, Date.now()),
+      notice: allLimitedNotice(picked, 'codex')
     }
-    if (open.length > 0) return soonest(open, ({ room }) => room.fiveHourStoppedUntil ?? Infinity).a
-    return soonest(rooms, ({ room }) => room?.backAt || Infinity).a
   }
 
-  peek(accounts: AccountView[]): AccountView | undefined {
-    const turn = this.turn
-    const picked = this.pick(accounts)
-    this.turn = turn
-    return picked
+  async function probeCodexAccount(name: string): Promise<void> {
+    const codexSessions = deps.codexSessions()
+    const acct = findAccount(name, 'codex-home')
+    if (!acct || !codexSessions) return
+    const key = viewKey(name, 'codex-home')
+    try {
+      const r = await codexSessions.readAccount(codexHomeOf(app.getPath('userData'), name))
+      foldHomeSignIn(name, 'codex-home', r.signedIn)
+      usageViews.set(
+        key,
+        r.apiKey
+          ? { apiKey: true }
+          : {
+              limits:
+                (r.signedIn && limitsFrom(r.limits, Date.now())) || usageViews.get(key)?.limits
+            }
+      )
+    } catch {
+      usageViews.set(key, { ...usageViews.get(key), probeError: 'network' })
+    }
+    pushHomeAccount(name, 'codex-home')
+  }
+
+  async function codexUseReset(name: string): Promise<CodexResetOutcome> {
+    const codexSessions = deps.codexSessions()
+    if (!findAccount(name, 'codex-home') || !codexSessions) return 'failed'
+    const outcome = await codexSessions
+      .useResetCredit(codexHomeOf(app.getPath('userData'), name))
+      .catch((): CodexResetOutcome => 'failed')
+    await probeCodexAccount(name)
+    return outcome
+  }
+
+  let codexProbeRound: Promise<void> | null = null
+
+  function probeCodexAccounts(): Promise<void> {
+    codexProbeRound ??= Promise.all(
+      listAccounts()
+        .filter((a) => a.kind === 'codex-home' && a.enabled)
+        .map((a) => probeCodexAccount(a.name))
+    ).then(() => {
+      codexProbeRound = null
+    })
+    return codexProbeRound
+  }
+
+  return {
+    codexPicker,
+    pickCodexHome,
+    codexUseReset,
+    probeCodexAccounts,
+    // CODEX§15
+    homeLogin: async (name: string) => {
+      const codexSessions = deps.codexSessions()
+      const available = (await codexSessions?.availability())?.available
+      const home = codexHomeOf(app.getPath('userData'), name)
+      prepareCodexHome(home, codexSharedConfig())
+      return { binary: available ? codexSessions?.cliBinary : undefined, env: { CODEX_HOME: home } }
+    },
+    probeHomeAccount: async (name: string) => {
+      const codexSessions = deps.codexSessions()
+      await codexSessions?.rereadSignIn(codexHomeOf(app.getPath('userData'), name))
+      await probeCodexAccount(name)
+    },
+    // CODEX§15
+    storeHomeKey: async (name: string, key: string) => {
+      const codexSessions = deps.codexSessions()
+      if (!codexSessions) throw new Error('Codex is not set up.')
+      const home = codexHomeOf(app.getPath('userData'), name)
+      prepareCodexHome(home, codexSharedConfig())
+      await codexSessions.storeApiKey(home, key)
+    }
   }
 }

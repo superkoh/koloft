@@ -3,7 +3,7 @@ import os from 'os'
 import path from 'path'
 import type { LeftoverProcess } from '@shared/types'
 import { makeExec, type Exec } from './taskProcs'
-import { sharedProcessTable, type ProcessTable } from './processTable'
+import type { ProcessTable } from './processTable'
 
 const SCAN_DEADLINE_MS = 5000
 const defaultExec = makeExec(SCAN_DEADLINE_MS)
@@ -18,7 +18,7 @@ function sessionOf(commandWithEnv: string): string | undefined {
   return idIn(commandWithEnv, 'CLAUDE_CODE_SESSION_ID')
 }
 
-function orphansByLaunchd(table: ProcessTable | null): Map<number, string> {
+export function orphansByLaunchd(table: ProcessTable | null): Map<number, string> {
   return new Map(
     (table?.rows ?? [])
       .filter((row) => row.ppid === ADOPTED_BY_LAUNCHD)
@@ -35,30 +35,9 @@ export function pidAlive(pid: number): boolean {
   }
 }
 
-const WAIT_FOR_LEFTOVER_EXIT_MS = 3000
-const LEFTOVER_EXIT_POLL_MS = 100
-
-// CODEX§5
-export async function endCodexAppServersLeftByACrash(marker: string): Promise<void> {
-  const leftovers = [...orphansByLaunchd(await sharedProcessTable.fresh())]
-    .filter(([, command]) => command.includes('app-server --stdio') && command.includes(marker))
-    .map(([pid]) => pid)
-  for (const pid of leftovers) {
-    try {
-      process.kill(pid, 'SIGKILL')
-    } catch {}
-  }
-  const until = Date.now() + WAIT_FOR_LEFTOVER_EXIT_MS
-  while (leftovers.some(pidAlive) && Date.now() < until)
-    await new Promise((r) => setTimeout(r, LEFTOVER_EXIT_POLL_MS))
-}
-
 // PLATFORM§3
 export const CODEX_TMP_DIR = process.platform === 'darwin' ? '/tmp' : os.tmpdir()
-const MACOS_PID_AT_MOST_FIVE_DIGITS = '\\d{1,5}'
-export const CODEX_TMP_FOLDER = new RegExp(
-  `^koloft-cx-(?:open-)?(${MACOS_PID_AT_MOST_FIVE_DIGITS})-`
-)
+export const MACOS_PID_AT_MOST_FIVE_DIGITS = '\\d{1,5}'
 const OPEN_SHIM_TOKEN = `(${MACOS_PID_AT_MOST_FIVE_DIGITS})-[0-9a-f-]{36}$`
 export const OPEN_SHIM_FOLDER = new RegExp(`^${OPEN_SHIM_TOKEN}`)
 export const OPEN_REQUEST_FOLDER = new RegExp(`^koloft-cx-open-${OPEN_SHIM_TOKEN}`)
