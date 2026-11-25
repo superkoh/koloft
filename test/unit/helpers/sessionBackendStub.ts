@@ -45,6 +45,7 @@ export function stubBackend(
     sessionGone: () => false,
     noticeRemoteExits: () => {},
     mirrorPulled: () => {},
+    foldersToMirrorFrom: () => [],
     tmuxOfTab: () => undefined,
     tabOfTmuxSession: () => undefined,
     showsAPanel: async () => undefined,

@@ -1,0 +1,8 @@
+heartbeat arguments: set -- '0' '-home-me-api' '0' '0' '/home/me/api'
+copies, in the order they start:
+1. .claude/projects -> /ud/remote/box/projects
+   flags: --inplace -m --delete --include=/-home-me-api*/ --include=/-home-me-api*/*.jsonl --include=/-home-me-api*/*.title --include=/-home-me-api*/*/ --include=/-home-me-api*/*/** --exclude=*
+   a failed copy shows a sync problem: yes
+2. .koloft/hook-sessions -> /ud/remote/box/hook-sessions
+   flags: -I --inplace --delete
+   a failed copy shows a sync problem: yes

@@ -20,6 +20,7 @@ import type { TranscriptPlaces } from '@core/transcriptPlaces'
 import type { SessionPlace } from '../../../main/usageCache'
 import type { CodexApproval, CodexQuestion, SentAnswer } from '@plugins/sessions/main/dialog'
 import type { WorktreeResource } from '@core/agent/worktreeRecords'
+import type { MirrorFolder } from '@core/agent/mirrorFolders'
 import { SessionStore, hostOfPath, type KeyOf } from './sessionStore'
 import { SessionWorktrees, type WorktreesOfEveryAgent } from './sessionWorktrees'
 import type { TreeIo } from '../../../main/sessionWorktrees'
@@ -330,6 +331,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   abstract showsPromptBeforeBind(tabId: string): boolean
   abstract noticeRemoteExits(host: string, sessionIds: string[]): void
   abstract mirrorPulled(host: string): void
+  abstract foldersToMirrorFrom(host: string, landing: string): MirrorFolder[]
   abstract tmuxOfTab(tabId: string): string | undefined
   abstract tabOfTmuxSession(host: string, name: string): string | undefined
   abstract answer(tabId: string, reply: string): Promise<SentAnswer | false>

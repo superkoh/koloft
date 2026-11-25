@@ -50,13 +50,9 @@ import { AGENT_DROP_NAME } from '../../../main/agentRequests'
 import { hookMirrorWatches } from '../../../main/remote/hookMirrorWatches'
 import { errorText } from '@core/errorText'
 import { sessionIdOfTmux, tmuxSessionName } from '../../../main/remote/launch'
-import {
-  dq,
-  mirrorHookDir,
-  mirrorProjectsRoot,
-  REMOTE_HOOK_DIR,
-  tabPackageDir
-} from '../../../main/remote/paths'
+import { dq, mirrorHookDir, REMOTE_HOOK_DIR, tabPackageDir } from '../../../main/remote/paths'
+import { claudeRecordsFolder, mirrorProjectsRoot } from './claudeMirror'
+import type { MirrorFolder } from '@core/agent/mirrorFolders'
 import {
   hookSettings,
   FROM_SESSION_FIELD,
@@ -333,6 +329,10 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   mirrorPulled(): void {}
+
+  foldersToMirrorFrom(_host: string, landing: string): MirrorFolder[] {
+    return [claudeRecordsFolder(landing)]
+  }
 
   tmuxOfTab(tabId: string): string | undefined {
     return this.d.tracker.remoteOf(tabId)?.tmuxName
