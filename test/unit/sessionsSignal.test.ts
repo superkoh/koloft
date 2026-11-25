@@ -68,6 +68,7 @@ import { SessionTracker } from '../../src/agents/claude/main/sessionTracker'
 import type { CodexSessions } from '../../src/agents/codex/main/codexSessions'
 import { rowsKeptInMemory } from '../../src/agents/kit/main/rowsKeptInMemory'
 import { agySessionKey, codexSessionKey } from '../../src/agents/kit/main/sessionStore'
+import { EMIT_THROTTLE_MS } from '../../src/agents/kit/main/storedSessions'
 import { rowsOfEveryAgent } from '../../src/core/agent/sessionRows'
 import { SessionRuntime } from '../../src/core/agent/sessionRuntime'
 import { wireRunState } from '../../src/plugins/sessions/main/runState'
@@ -83,6 +84,8 @@ const SAVED_SESSION = '33333333-3333-4333-8333-333333333333'
 
 const A_THROTTLED_SIGNAL_AND_THE_RESCAN_IT_ASKS_FOR_ARE_OVER_AFTER_MS = 1000
 const QUIET_IS_LOOKED_FOR_EVERY_MS = 50
+const CHANGES_WHILE_A_TAB_STARTS = 3
+const A_SEND_IS_OVER_AFTER_MS = 100
 
 const STILL_RUNNING: BackgroundItem[] = [
   { id: 'bg-1', kind: 'command', label: 'npm run dev', state: 'working' }
@@ -265,10 +268,13 @@ async function theSessionsOfTheApp() {
     })
   }
   const sessionsOf = { codex, agy } as const
+  const binds = (agent: Stored, tabId: string, session: string, cwd: string): void => {
+    if (agent === 'codex') bindCodex(session, cwd)
+    else bindAgy(tabId, session)
+  }
   const aBoundTab = async (agent: Stored, session: string, cwd: string): Promise<string> => {
     const { id } = await sessionsOf[agent].launch({ kind: agent, cwd })
-    if (agent === 'codex') bindCodex(session, cwd)
-    else bindAgy(id, session)
+    binds(agent, id, session, cwd)
     expect(sessionsOf[agent].sessionIdOf(id)).toBe(keyOf[agent](session))
     return id
   }
@@ -368,6 +374,7 @@ async function theSessionsOfTheApp() {
     aRescanAskedForByAnythingElse: () => during(() => started.refresh()),
     rowOf,
     aBoundTab,
+    binds,
     statusOf: (agent: Agent): string | undefined => runtime.statusOf(tabOf[agent]),
     startsATurn: (agent: Agent): void => {
       if (agent === 'claude') tracker.setStatus(CLAUDE_TAB, 'working')
@@ -450,6 +457,30 @@ describe('a change of a Codex or Antigravity session that is no edge of a turn',
       await app.sessionsOf[other].launch({ kind: other, cwd: world.repo })
       const seen = await app.during(() => app.changesWithNoTurnEdge(agent))
       expect(seen).toEqual(SENT_ONCE_THROUGH_ALL_FOUR_STEPS)
+    }
+  )
+
+  it.each(STORED)(
+    '%s: a tab of its own that is still starting in a pinned workspace makes each of its changes rescan nothing, and that tab binding rescans once',
+    async (_name, agent) => {
+      const app = await theSessionsOfTheApp()
+      const { id } = await app.sessionsOf[agent].launch({ kind: agent, cwd: world.repo })
+      await app.quiet()
+      expect(app.rowOf(world.repo, id)?.pending).toBe(true)
+      const changes = await app.during(async () => {
+        for (let i = 0; i < CHANGES_WHILE_A_TAB_STARTS; i++) {
+          app.changesWithNoTurnEdge(agent)
+          await new Promise((resolve) =>
+            setTimeout(resolve, EMIT_THROTTLE_MS + A_SEND_IS_OVER_AFTER_MS)
+          )
+        }
+      })
+      expect(changes.list).toBe(CHANGES_WHILE_A_TAB_STARTS)
+      expect(changes.rescan).toBeUndefined()
+      const binding = await app.during(() => app.binds(agent, id, SECOND_SESSION, world.repo))
+      expect(binding.rescan).toBe(1)
+      expect(app.rowOf(world.repo, id)).toBeUndefined()
+      expect(app.rowOf(world.repo, keyOf[agent](SECOND_SESSION))?.running).toBe(true)
     }
   )
 
