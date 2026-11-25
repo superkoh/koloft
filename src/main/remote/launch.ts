@@ -25,6 +25,7 @@ import { docsWritingOn } from '@plugins/docs-writing/api'
 import { saidFile, seedHandedOverOwnerWords, STATUS_LOG_SUFFIX } from '@plugins/sessions/main/hooks'
 import { STATUS_RELAY_FILE } from './statusRelay'
 import { TRUST_CWD_JS } from '@agents/claude/main/claudeTrustJs'
+import type { TabContent } from '../host/machine'
 
 export const CLAUDE_AUTH_ENV_VARS = [
   'CLAUDE_CODE_OAUTH_TOKEN',
@@ -136,26 +137,10 @@ export function sessionIdOfTmux(name: string): string | null {
   return name.startsWith('k-') ? name.slice(2) : null
 }
 
-export interface TabSpec {
+export interface TabSpec extends TabContent {
   tabId: string
   tmuxName: string
   machineName: string
-  cwd: string
-  fallbackCwd?: string
-  banner: string
-  env?: Record<string, string>
-  portOffset?: number
-  ownerWords?: string
-  loginPath?: string
-  program: TabProgram
-}
-
-export interface TabProgram {
-  run: string
-  beforeEnsure: string
-  ensureTool?: 'agy'
-  beforeTmux: string
-  files: Record<string, string>
 }
 
 export interface ClaudeTab {
@@ -194,18 +179,6 @@ export const claudeTabSpec = (tab: Omit<TabSpec, 'program'>, c: ClaudeTab): TabS
       ...(c.ownerText && { [`${tab.tabId}${OWNER_TEXT_SUFFIX}`]: c.ownerText })
     }
   }
-})
-
-export const machineToolProgram = (
-  name: 'agy',
-  run: string,
-  files: Record<string, string>
-): TabProgram => ({
-  run,
-  beforeEnsure: `trap 'rm -f "$T.auth.json"' EXIT\n`,
-  ensureTool: name,
-  beforeTmux: '',
-  files
 })
 
 export const POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE = '/bin/zsh'
@@ -263,10 +236,11 @@ fi
 const AGENT_EXIT_255_PASSED_AS = SSH_LINK_BROKE_EXIT - 1
 
 export function tabScript(spec: TabSpec): string {
-  assertSafeNames(spec.tabId, spec.tmuxName, spec.machineName)
+  const program = spec.program
+  const pastedUnquoted = [spec.tabId, spec.tmuxName, spec.machineName, program.ensureTool]
+  assertSafeNames(...pastedUnquoted.filter((name) => name !== undefined))
   const T = tabPath(spec.tabId)
   const H = `$HOME/.koloft/hook-sessions/${spec.tabId}`
-  const program = spec.program
   // PLATFORM§35
   const attachTo = `"$(cat "${T}.tmux" 2>/dev/null || echo '${spec.tmuxName}')"`
   // PLATFORM§33 CC§3 AGY§25
