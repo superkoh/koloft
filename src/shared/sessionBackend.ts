@@ -211,7 +211,7 @@ export function sessionKey(ref: SessionIdentity): string {
 export function identityOf(key: string): SessionIdentity | undefined {
   const parts = key.split(':')
   const named = backendIdOf(parts[0])
-  if (parts.length > 1 && !named) return undefined
+  if (parts.length > 1 && (!named || parts.length !== 3)) return undefined
   if (named && parts.length === 3) {
     return {
       backendId: named,
