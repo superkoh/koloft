@@ -30,6 +30,12 @@ told to the sender later: to Target: Target stayed busy. It runs on another mach
 ran on the machine: script 1 with set -- 'k-<session id>' '<session id>'
   its stdin: "(From the session \"Sender\", id <session id>:) Please check the build."
 
+=== koloft session send from a session, the target idle but with no conversation yet, its own API not answering ===
+the sender sees: exit 0: Typed into Target, but it has not started a conversation yet.
+ran on the machine: script 1 with set -- 'k-<session id>' '<session id>'
+  its stdin: "(From the session \"Sender\", id <session id>:) Please check the build."
+typed into the tab's terminal: "(From the session \"Sender\", id <session id>:) Please check the build." then "\r"
+
 === koloft session send from a session, the target closed (resumed first) ===
 the sender sees: exit 0: Will deliver when Target is ready.
 ran on the machine: script 1 with set -- 'k-<session id>' '<session id>'

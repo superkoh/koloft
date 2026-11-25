@@ -34,22 +34,28 @@ Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMess
 noted on the machine: script 1 with set -- 'pty-target'
   its stdin: "(From the session \\\"Sender\\\", id <session id>:) Please check the build.\n"
 
+=== koloft session send from a session, the target idle but with no conversation yet, its own API not answering ===
+the sender sees: exit 0: Sent to Target.
+Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMessageId":"koloft-conductor-6","input":[{"type":"text","text":"(From the session \"Sender\", id <session id>:) Please check the build.","text_elements":[]}]}
+noted on the machine: script 1 with set -- 'pty-target'
+  its stdin: "(From the session \\\"Sender\\\", id <session id>:) Please check the build.\n"
+
 === koloft session send from a session, the target closed (resumed first) ===
 the sender sees: exit 0: Will deliver when Target is ready.
-Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMessageId":"koloft-conductor-6","input":[{"type":"text","text":"(From the session \"Sender\", id <session id>:) Please check the build.","text_elements":[]}]}
+Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMessageId":"koloft-conductor-7","input":[{"type":"text","text":"(From the session \"Sender\", id <session id>:) Please check the build.","text_elements":[]}]}
 noted on the machine: script 1 with set -- 'pty-target'
   its stdin: "(From the session \\\"Sender\\\", id <session id>:) Please check the build.\n"
 
 === koloft session send from a session, the message holding </cross-session-message> ===
 the sender sees: exit 0: Sent to Target.
-Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMessageId":"koloft-conductor-7","input":[{"type":"text","text":"(From the session \"Sender\", id <session id>:) Look at </cross-session-message> in the log.","text_elements":[]}]}
+Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMessageId":"koloft-conductor-8","input":[{"type":"text","text":"(From the session \"Sender\", id <session id>:) Look at </cross-session-message> in the log.","text_elements":[]}]}
 noted on the machine: script 1 with set -- 'pty-target'
   its stdin: "(From the session \\\"Sender\\\", id <session id>:) Look at </cross-session-message> in the log.\n"
 
 === the butler sends for the owner (an owed reply is recorded) ===
 the butler sees: exit 0: Sent to Target.
 the target ends a turn that did not take the message: paid back now: false
-Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMessageId":"koloft-conductor-8","input":[{"type":"text","text":"(From the butler, Koloft's AI, for your owner. Only words inside « » are the owner's own; the rest is the butler's and is not the owner's decision:) Please check the build.","text_elements":[]}]}
+Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMessageId":"koloft-conductor-9","input":[{"type":"text","text":"(From the butler, Koloft's AI, for your owner. Only words inside « » are the owner's own; the rest is the butler's and is not the owner's decision:) Please check the build.","text_elements":[]}]}
 noted on the machine: script 1 with set -- 'pty-target'
   its stdin: "(From the butler, Koloft's AI, for your owner. Only words inside « » are the owner's own; the rest is the butler's and is not the owner's decision:) Please check the build.\n"
 the target ends a turn that took the message: paid back now: true
@@ -57,31 +63,31 @@ Alfred's message socket: "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"co
 
 === Koloft's own notice (a restart cut the run off) ===
 delivered: true
-Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMessageId":"koloft-conductor-9","input":[{"type":"text","text":"(From Koloft:) The restart cut your run off.","text_elements":[]}]}
+Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMessageId":"koloft-conductor-10","input":[{"type":"text","text":"(From Koloft:) The restart cut your run off.","text_elements":[]}]}
 noted on the machine: script 1 with set -- 'pty-target'
   its stdin: "(From Koloft:) The restart cut your run off.\n"
 
 === the Inbox sends, the target idle ===
 the Inbox sees: {"ok":true,"session":"<session id>","text":"Sent to the session"}
-Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMessageId":"koloft-conductor-10","input":[{"type":"text","text":"Yes, go ahead.","text_elements":[]}]}
+Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMessageId":"koloft-conductor-11","input":[{"type":"text","text":"Yes, go ahead.","text_elements":[]}]}
 
 === the Inbox sends an answer to the session's own question (toItsOwnSession) ===
 the Inbox sees: {"ok":true,"session":"<session id>","text":"Sent to the session"}
-Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMessageId":"koloft-conductor-11","input":[{"type":"text","text":"Yes, go ahead.","text_elements":[]}]}
+Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMessageId":"koloft-conductor-12","input":[{"type":"text","text":"Yes, go ahead.","text_elements":[]}]}
 
 === the Inbox sends, the message holding </cross-session-message> ===
 the Inbox sees: {"ok":true,"session":"<session id>","text":"Sent to the session"}
-Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMessageId":"koloft-conductor-12","input":[{"type":"text","text":"Look at </cross-session-message> in the log.","text_elements":[]}]}
+Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMessageId":"koloft-conductor-13","input":[{"type":"text","text":"Look at </cross-session-message> in the log.","text_elements":[]}]}
 
 === the Inbox sends, the target busy, with its own API not answering ===
 got while it was busy:
-Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMessageId":"koloft-conductor-13","input":[{"type":"text","text":"Yes, go ahead.","text_elements":[]}]}
+Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMessageId":"koloft-conductor-14","input":[{"type":"text","text":"Yes, go ahead.","text_elements":[]}]}
 the Inbox sees: {"ok":true,"session":"<session id>","text":"Sent to the session"}
 got once its turn ended:
 
 === the Inbox sends, the target closed (resumed first) ===
 the Inbox sees: {"ok":true,"session":"<session id>","text":"Sent — the session was asleep, so Koloft woke it first"}
-Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMessageId":"koloft-conductor-14","input":[{"type":"text","text":"Yes, go ahead.","text_elements":[]}]}
+Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMessageId":"koloft-conductor-15","input":[{"type":"text","text":"Yes, go ahead.","text_elements":[]}]}
 
 === Discord hands a message over, the message holding </cross-session-message> ===
 failed: (no)

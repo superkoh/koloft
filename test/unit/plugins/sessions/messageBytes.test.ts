@@ -148,7 +148,7 @@ const WITH_THE_CLOSING_TAG = 'Look at </cross-session-message> in the log.'
 const THE_BUTLER = 'Alfred'
 const ESC = '\x1b'
 const THE_SHELL_STARTS_READING = `${ESC}[?2004h`
-const BUSY_TURN_ENDS_AFTER_MS = 200
+const TURNS_OF_THE_EVENT_LOOP_WITH_NOTHING_IN_FLIGHT = 5
 const API = '/exa.language_server_pb.LanguageServerService/'
 const REAL_PATH = process.env.PATH
 
@@ -180,6 +180,27 @@ let apiPort = 0
 let apiAnswers = true
 let listening: net.Server[]
 let stops: (() => Promise<void>)[]
+let inFlight = 0
+
+function tracked<A extends unknown[], R>(
+  f: (...args: A) => Promise<R>
+): (...args: A) => Promise<R> {
+  return async (...args) => {
+    inFlight++
+    try {
+      return await f(...args)
+    } finally {
+      inFlight--
+    }
+  }
+}
+
+async function nothingInFlight(): Promise<void> {
+  for (let quiet = 0; quiet < TURNS_OF_THE_EVENT_LOOP_WITH_NOTHING_IN_FLIGHT;) {
+    await new Promise((resolve) => setImmediate(resolve))
+    quiet = inFlight === 0 ? quiet + 1 : 0
+  }
+}
 
 beforeAll(async () => {
   apiServer = http.createServer((req, res) => {
@@ -220,6 +241,7 @@ beforeEach(() => {
   listening = []
   stops = []
   apiAnswers = true
+  inFlight = 0
   appServer.transports.length = 0
   appServer.asked.length = 0
   appServer.refuses = false
@@ -256,11 +278,13 @@ function shown(text: string): string {
 
 function listenAt(socket: string, whose: string): void {
   const server = net.createServer((conn) => {
+    inFlight++
     const chunks: Buffer[] = []
     conn.on('data', (c: Buffer) => chunks.push(c))
-    conn.on('end', () =>
+    conn.on('end', () => {
       got.push(`${whose}'s message socket: ${shown(Buffer.concat(chunks).toString('utf8'))}`)
-    )
+      inFlight--
+    })
   })
   server.listen(socket)
   listening.push(server)
@@ -359,7 +383,9 @@ interface Stage {
   handOver: HandOver
   recipient: Recipient
   undelivered: string[]
-  busy: { now: boolean; dies: boolean }
+  setBusy(busy: boolean): void
+  turn: { dies: boolean }
+  conversation: { started: boolean }
   open: { now: boolean }
   shut(): void
   drain(): Promise<string[]>
@@ -485,7 +511,16 @@ async function stage(kind: Kind): Promise<Stage> {
     open: async () => BUTLER_TAB
   }
   const open = { now: true }
-  const busy = { now: false, dies: false }
+  const turn = { busy: false, dies: false, waiting: [] as (() => void)[] }
+  const setBusy = (busy: boolean): void => {
+    turn.busy = busy
+    if (busy) return
+    for (const wake of turn.waiting.splice(0)) {
+      inFlight++
+      wake()
+    }
+  }
+  const conversation = { started: true }
   const undelivered: string[] = []
   const everyone = (): SessionInfo[] => [sender, claudeSender, ...(open.now ? [target] : [])]
   const sessionOfTab = (tab: string): SessionInfo | undefined =>
@@ -514,7 +549,15 @@ async function stage(kind: Kind): Promise<Stage> {
     writeLineInTurn,
     noteOfWhatKoloftSends,
     noteSent,
-    buildHandOver: (d) => new HandOver(d),
+    buildHandOver: (d) =>
+      new HandOver({
+        ...d,
+        ready: tracked(d.ready),
+        type: tracked(d.type),
+        queue: tracked(d.queue),
+        sendLine: tracked(d.sendLine),
+        noteSent: tracked(d.noteSent)
+      }),
     ptyMgr,
     startupErrors: { codex: '<why Codex could not start>' },
     remoteControlDir: world.controlDir,
@@ -579,20 +622,25 @@ async function stage(kind: Kind): Promise<Stage> {
     readTurns: async () => [],
     transcriptPlaces: () => undefined,
     quotedPrompt: () => undefined,
-    resume: async () => {
+    resume: tracked(async () => {
       open.now = true
       return TARGET_TAB
-    },
-    ready: async (tab, ms, turnEnded) => {
-      if (tab !== TARGET_TAB || !turnEnded) return true
-      if (!busy.now) return true
-      if (ms <= 0 || busy.dies) return false
-      await vi.waitFor(() => expect(busy.now).toBe(false), { timeout: ms })
+    }),
+    ready: tracked(async (tab, ms, turnEnded) => {
+      if (tab !== TARGET_TAB || !turnEnded || !turn.busy) return true
+      if (ms <= 0 || turn.dies) return false
+      inFlight--
+      await new Promise<void>((wake) => turn.waiting.push(wake))
       return true
-    },
-    bound: async () => true,
+    }),
+    bound: async (tab) => tab !== TARGET_TAB || conversation.started,
     asking: () => false,
-    ...messaging.forSessionVerbs,
+    queue: tracked(messaging.forSessionVerbs.queue),
+    sendLine: tracked(messaging.forSessionVerbs.sendLine),
+    press: tracked(messaging.forSessionVerbs.press),
+    deliver: tracked(messaging.forSessionVerbs.deliver),
+    noteSent: tracked(messaging.forSessionVerbs.noteSent),
+    modeOf: messaging.forSessionVerbs.modeOf,
     stop: () => {},
     answer: async () => undefined,
     undelivered: (_callerTab, t, why) => void undelivered.push(`to ${t.name}: ${why}`),
@@ -656,7 +704,9 @@ async function stage(kind: Kind): Promise<Stage> {
       ownerIsWhere: () => '<where the owner is>'
     },
     undelivered,
-    busy,
+    setBusy,
+    turn,
+    conversation,
     open,
     shut: () => {
       open.now = false
@@ -668,15 +718,11 @@ async function stage(kind: Kind): Promise<Stage> {
       machineAnswers.code = answers ? 0 : 1
     },
     drain: async () => {
-      await new Promise((resolve) => setTimeout(resolve, 50))
+      await nothingInFlight()
       const lines = [...got]
       got.length = 0
       for (const asked of appServer.asked.splice(0))
         lines.push(`Codex's app-server, ${asked.method}: ${JSON.stringify(asked.params)}`)
-      const typed = tabWrote(proc, typedFrom)
-      typedFrom = proc.written.length
-      if (typed.length)
-        lines.push(`typed into the tab's terminal: ${typed.map(shown).join(' then ')}`)
       const sshW = path.join(world.home, 'ssh-W.log')
       if (fs.existsSync(sshW)) {
         lines.push(`ssh -W wrote: ${shown(fs.readFileSync(sshW, 'utf8'))}`)
@@ -685,16 +731,16 @@ async function stage(kind: Kind): Promise<Stage> {
       for (const ran of onTheMachine.ran.slice(ranBefore.n))
         if (ran.includes('--- its stdin ---')) lines.push(`ran on the machine: ${scripts.of(ran)}`)
       ranBefore.n = onTheMachine.ran.length
+      const typed = tabWrote(proc, typedFrom)
+      typedFrom = proc.written.length
+      if (typed.length)
+        lines.push(`typed into the tab's terminal: ${typed.map(shown).join(' then ')}`)
       for (const ran of noteSsh.ran.splice(0))
         lines.push(`noted on the machine: ${scripts.of(ran)}`)
       lines.push(...sentNotes())
       return lines
     }
   }
-}
-
-async function settled(s: Stage, until: () => boolean, ms = 5000): Promise<void> {
-  await vi.waitFor(() => expect(until()).toBe(true), { timeout: ms })
 }
 
 function section(title: string, lines: string[]): string {
@@ -704,7 +750,6 @@ function section(title: string, lines: string[]): string {
 async function everyCase(kind: Kind): Promise<string> {
   const s = await stage(kind)
   const out: string[] = []
-  const typedRoute = kind.backend === 'agy'
 
   out.push(
     section('koloft session send from a Claude Code session on this Mac, the target idle', [
@@ -721,11 +766,10 @@ async function everyCase(kind: Kind): Promise<string> {
     ])
   )
 
-  s.busy.now = true
+  s.setBusy(true)
   const busyReply = await s.verb(['send', 'Target', MESSAGE], SENDER_TAB)
   const busyNow = await s.drain()
-  s.busy.now = false
-  await new Promise((resolve) => setTimeout(resolve, BUSY_TURN_ENDS_AFTER_MS))
+  s.setBusy(false)
   out.push(
     section('koloft session send from a session, the target busy, with its own API answering', [
       `the sender sees: ${busyReply}`,
@@ -737,13 +781,10 @@ async function everyCase(kind: Kind): Promise<string> {
   )
 
   s.setApi(false)
-  s.busy.now = true
+  s.setBusy(true)
   const busyNoApi = await s.verb(['send', 'Target', MESSAGE], SENDER_TAB)
   const busyNoApiNow = await s.drain()
-  s.busy.now = false
-  if (typedRoute)
-    await settled(s, () => terminal.procs.some((p) => p.written.some((w) => w === '\r')))
-  else await new Promise((resolve) => setTimeout(resolve, BUSY_TURN_ENDS_AFTER_MS))
+  s.setBusy(false)
   out.push(
     section('koloft session send from a session, the target busy, with its own API not answering', [
       `the sender sees: ${busyNoApi}`,
@@ -754,27 +795,38 @@ async function everyCase(kind: Kind): Promise<string> {
     ])
   )
 
-  s.busy.now = true
-  s.busy.dies = true
+  s.setBusy(true)
+  s.turn.dies = true
   const dying = await s.verb(['send', 'Target', MESSAGE], SENDER_TAB)
-  if (typedRoute) await settled(s, () => s.undelivered.length > 0)
+  const dyingGot = await s.drain()
   out.push(
     section(
       'koloft session send from a session, the target busy and its tab ends before its turn does, its own API not answering',
       [
         `the sender sees: ${dying}`,
         `told to the sender later: ${s.undelivered.splice(0).join(' | ') || '(nothing)'}`,
+        ...dyingGot
+      ]
+    )
+  )
+  s.setBusy(false)
+  s.turn.dies = false
+
+  s.conversation.started = false
+  out.push(
+    section(
+      'koloft session send from a session, the target idle but with no conversation yet, its own API not answering',
+      [
+        `the sender sees: ${await s.verb(['send', 'Target', MESSAGE], SENDER_TAB)}`,
         ...(await s.drain())
       ]
     )
   )
-  s.busy.now = false
-  s.busy.dies = false
+  s.conversation.started = true
   s.setApi(true)
 
   s.shut()
   const closed = await s.verb(['send', 'Target', MESSAGE], SENDER_TAB)
-  await settled(s, () => s.open.now)
   out.push(
     section('koloft session send from a session, the target closed (resumed first)', [
       `the sender sees: ${closed}`,
@@ -828,11 +880,10 @@ async function everyCase(kind: Kind): Promise<string> {
   )
 
   s.setApi(false)
-  s.busy.now = true
+  s.setBusy(true)
   const inboxBusy = s.sendFrom(INBOX_SENDER, TARGET_SESSION, 'Yes, go ahead.', false)
-  await new Promise((resolve) => setTimeout(resolve, BUSY_TURN_ENDS_AFTER_MS))
   const inboxBusyNow = await s.drain()
-  s.busy.now = false
+  s.setBusy(false)
   out.push(
     section('the Inbox sends, the target busy, with its own API not answering', [
       'got while it was busy:',
@@ -917,10 +968,9 @@ async function everyCase(kind: Kind): Promise<string> {
   }
 
   if (kind.backend === 'claude' && !kind.remote) {
-    listening.at(-1)!.close()
-    await new Promise((resolve) => setTimeout(resolve, 50))
+    await new Promise((closed) => listening.at(-1)!.close(closed))
     out.push(
-      section('the message socket no longer takes connections', [
+      section('the message socket file is gone (its server closed it)', [
         `the sender sees: ${await s.verb(['send', 'Target', MESSAGE], SENDER_TAB)}`,
         ...(await s.drain())
       ])
