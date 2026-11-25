@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { execFileSync, spawn, spawnSync } from 'child_process'
+import { execFileSync, spawnSync } from 'child_process'
 import { machineClaudeArgs, SshHost, type MachineClaudeDeps } from '../../src/main/host/sshHost'
 import { killSessionCmd, renameSessionCmd } from '../../src/main/remote/launch'
 import { tabPackageDir } from '../../src/main/remote/paths'
@@ -10,9 +10,10 @@ import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { localHost } from '../../src/main/host/localHost'
 import { GithubRepos } from '../../src/main/githubRepos'
 import { utilTerminalGuard } from '../../src/main/shim'
-import { answerOf, type BytesResult } from '../../src/main/remote/ssh'
+import type { BytesResult } from '../../src/main/remote/ssh'
 import { AccountPicker, type LaunchedSession } from '../../src/main/accountPicker'
 import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
+import { shellOnThisMacAsTheMachine } from './helpers/agentTabs'
 import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
 import { barePath } from '../../src/shared/remoteKey'
 import { removeTree } from '../../src/plugins/sessions/main/sessionClose'
@@ -24,23 +25,10 @@ let repo: string
 
 let loginShell = '/bin/sh'
 
-function runOnMachine(cmd: string, opts?: { input?: Buffer }): Promise<BytesResult> {
-  return new Promise((resolve) => {
-    const c = spawn(loginShell, ['-c', cmd], {
-      env: { HOME: home, PATH: '/usr/bin:/bin' },
-      stdio: ['pipe', 'pipe', 'pipe']
-    })
-    const out: Buffer[] = []
-    let err = ''
-    c.stdout.on('data', (d: Buffer) => out.push(d))
-    c.stderr.on('data', (d: Buffer) => (err += String(d)))
-    c.on('close', (code) =>
-      resolve({ code, stdout: answerOf(cmd, Buffer.concat(out)), stderr: err })
-    )
-    c.stdin.on('error', () => {})
-    c.stdin.end(opts?.input)
-  })
-}
+const runOnMachine = shellOnThisMacAsTheMachine(
+  () => home,
+  () => loginShell
+)
 
 const machine = (run = runOnMachine, claude: Partial<MachineClaudeDeps> = {}): SshHost =>
   new SshHost(MACHINE, {
@@ -966,6 +954,26 @@ describe('ending a session that runs on the machine', () => {
     )
     return { host, pickAccount }
   }
+  const openedNext = async (host: SshHost, sessionId: string): Promise<'start' | 'attach'> =>
+    (await host.tmux.open({ session: sessionId })).mode
+
+  it('a kill ssh could not deliver says why, and the session, opened next, is attached to: it is still running there', async () => {
+    const { host } = killAnswering(255, 'ssh: connect to host devbox: Connection refused\n')
+    expect(await host.tmux.end(tmux)).toBe('ssh: connect to host devbox: Connection refused')
+    expect(await openedNext(host, live)).toBe('attach')
+  })
+
+  it('a kill that timed out says so, and the session opened next is attached to', async () => {
+    const { host } = killAnswering(null)
+    expect(await host.tmux.end(tmux)).toBe('ssh timed out')
+    expect(await openedNext(host, live)).toBe('attach')
+  })
+
+  it('a kill of a session already gone (tmux exits 1) is no failure, and the session opened next starts afresh', async () => {
+    const { host } = killAnswering(1, "can't find session: " + tmux + '\n')
+    expect(await host.tmux.end(tmux)).toBeUndefined()
+    expect(await openedNext(host, live)).toBe('start')
+  })
 
   it('a kill ssh could not deliver says why, and the next launch attaches to the session still running there', async () => {
     const { host, pickAccount } = killAnswering(
@@ -1016,6 +1024,17 @@ printf '%s\\n' "\${5:-the session tmux picked}" >> ${JSON.stringify(killed)}
   describe("while a /clear's rename by the hook on the machine has not yet come back to Koloft", () => {
     const cleared = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
 
+    it("a kill under the name before the /clear ends the session under the name in the tab's name file, and the cleared conversation, opened right after, starts afresh", async () => {
+      const killed = tmuxWhoseOnlySessionIs(`k-${cleared}`)
+      tabNameFile('pty-1', `k-${cleared}`)
+      const host = machine(runOnMachine, { alive: () => new Set([cleared]) })
+
+      const kill = host.tmux.end(tmux, 'pty-1')
+      expect(await openedNext(host, cleared)).toBe('start')
+      expect(await kill).toBeUndefined()
+      expect(fs.readFileSync(killed, 'utf8')).toBe(`k-${cleared}\n`)
+    })
+
     it("a kill under the name before the /clear ends the session under the name in the tab's name file, and a launch of the cleared conversation sent right after starts afresh", async () => {
       const killed = tmuxWhoseOnlySessionIs(`k-${cleared}`)
       tabNameFile('pty-1', `k-${cleared}`)
@@ -1042,6 +1061,27 @@ printf '%s\\n' "\${5:-the session tmux picked}" >> ${JSON.stringify(killed)}
   describe('while the rename that follows a moved conversation is still on its way to the machine', () => {
     const moved = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
     const renamed = `k-${moved}`
+
+    it.each([
+      ['has not reached the machine yet', tmux],
+      ['has already renamed the session there', renamed]
+    ])(
+      'a kill under the old name, sent when the rename %s, ends the session, and the moved conversation opened next starts afresh',
+      async (_when, nameOnTheMachine) => {
+        const killed = tmuxWhoseOnlySessionIs(nameOnTheMachine)
+        const neverBack = new Promise<BytesResult>(() => {})
+        const host = machine(
+          (cmd, opts) =>
+            cmd === renameSessionCmd('pty-1', tmux, renamed) ? neverBack : runOnMachine(cmd, opts),
+          { alive: () => new Set([moved]) }
+        )
+        void host.tmux.rename('pty-1', tmux, renamed)
+
+        expect(await host.tmux.end(tmux)).toBeUndefined()
+        expect(fs.readFileSync(killed, 'utf8')).toBe(`${nameOnTheMachine}\n`)
+        expect(await openedNext(host, moved)).toBe('start')
+      }
+    )
 
     it.each([
       ['has not reached the machine yet', tmux],

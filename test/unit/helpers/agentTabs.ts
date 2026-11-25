@@ -1,3 +1,4 @@
+import { spawn } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
@@ -17,7 +18,7 @@ import {
   SshHost,
   type MachineAccount
 } from '../../../src/main/host/sshHost'
-import type { BytesResult } from '../../../src/main/remote/ssh'
+import { answerOf, type BytesResult } from '../../../src/main/remote/ssh'
 
 export const MACHINE = 'devbox'
 export const MACHINE_PACKAGE = 'm-0000000000000000'
@@ -100,6 +101,28 @@ function readableCommand(cmd: string, input?: Buffer): string {
     ? `${cmd.slice(0, script.index)} <base64 of the script below>\n${Buffer.from(script[1], 'base64').toString('utf8')}`
     : cmd
   return input ? `${text}\n--- its stdin ---\n${input.toString('utf8')}` : text
+}
+
+export function shellOnThisMacAsTheMachine(
+  machineHome: () => string,
+  loginShell: () => string = () => '/bin/sh'
+): SshRun {
+  return (cmd, opts) =>
+    new Promise((resolve) => {
+      const c = spawn(loginShell(), ['-c', cmd], {
+        env: { HOME: machineHome(), PATH: '/usr/bin:/bin' },
+        stdio: ['pipe', 'pipe', 'pipe']
+      })
+      const out: Buffer[] = []
+      let err = ''
+      c.stdout.on('data', (d: Buffer) => out.push(d))
+      c.stderr.on('data', (d: Buffer) => (err += String(d)))
+      c.on('close', (code) =>
+        resolve({ code, stdout: answerOf(cmd, Buffer.concat(out)), stderr: err })
+      )
+      c.stdin.on('error', () => {})
+      c.stdin.end(opts?.input)
+    })
 }
 
 export interface RecordedSsh {
@@ -186,10 +209,11 @@ export interface MachineSetup {
   run: SshRun
   alive?: () => ReadonlySet<string>
   firstHeartbeatDone?: () => Promise<void>
-  pickAccount?: () => Promise<MachineAccount | undefined>
+  pickAccount?: (launchKey: string, resumeSessionId?: string) => Promise<MachineAccount | undefined>
   noAccountMessage?: () => string
   loginPath?: () => Promise<string>
   agentTools?: boolean
+  skipPermissions?: boolean
   machinePackageName?: () => string
   hookSettings?: (
     tabId: string,
@@ -215,7 +239,7 @@ export function machineIn(world: World, name: string, m: MachineSetup): SshHost 
       alive: m.alive ?? (() => new Set()),
       firstHeartbeatDone: m.firstHeartbeatDone ?? (async () => {}),
       realPath: (p) => p,
-      settings: () => ({ skipPermissions: false }),
+      settings: () => ({ skipPermissions: m.skipPermissions ?? false }),
       agentTools: () => m.agentTools ?? true,
       pickAccount: m.pickAccount ?? (async () => ({ env: {}, banner: '' })),
       noAccountMessage: m.noAccountMessage ?? (() => NO_USABLE_ACCOUNT.claude),
@@ -230,6 +254,8 @@ export interface ClaudeSetup {
   withPlugin?: boolean
   projectRules?: string
   remoteTab?: RemoteTab
+  workspaceOfEverySession?: string
+  tracker?: Partial<Pick<ClaudeBackendDeps['tracker'], 'track' | 'movePick' | 'bindSession'>>
 }
 
 export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): ClaudeBackend {
@@ -242,7 +268,8 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
       untrack: () => {},
       list: () => [],
       infoOf: () => undefined,
-      remoteOf: () => c.remoteTab
+      remoteOf: () => c.remoteTab,
+      ...c.tracker
     },
     hosts: new Hosts(
       localHost(new GithubRepos(), {
@@ -256,7 +283,8 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
       }),
       (machine) => machineIn(world, machine, c.machine)
     ),
-    store: () => null,
+    store: () =>
+      c.workspaceOfEverySession ? { workspaceOf: () => c.workspaceOfEverySession } : null,
     remoteSync: () => null,
     userData: () => world.userData,
     setupLine: () => undefined,
