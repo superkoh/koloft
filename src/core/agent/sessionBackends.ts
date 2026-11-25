@@ -15,6 +15,11 @@ import type {
 } from '@shared/types'
 import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
+import {
+  worktreeRecordsOfEveryAgent,
+  type KeepsWorktreeRecords,
+  type WorktreeRecordsOfEveryAgent
+} from './worktreeRecords'
 import { identityOf, sourceOf, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { hostOf } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
@@ -68,6 +73,10 @@ export class SessionBackends {
   private adapters = new Map<BackendId, SessionBackend>()
   private cleanExitAt = new Map<string, number>()
   private questionsAsked = 0
+  keepersOfWorktreeRecords: () => readonly KeepsWorktreeRecords[] = () => []
+  readonly worktreeRecords: WorktreeRecordsOfEveryAgent = worktreeRecordsOfEveryAgent(() =>
+    this.keepersOfWorktreeRecords()
+  )
   isOverseerSession: (tabOrSessionId: string) => boolean = () => false
   turnOver: (tabId: string) => boolean = () => false
   askingOf: (tabId: string) => string | undefined = () => undefined

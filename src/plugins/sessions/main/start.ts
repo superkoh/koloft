@@ -46,6 +46,7 @@ type BackendHooks = Partial<
     | 'docVerdictsOf'
     | 'noAccountMessage'
     | 'turnedOff'
+    | 'keepersOfWorktreeRecords'
   >
 >
 

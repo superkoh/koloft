@@ -173,7 +173,6 @@
       "src/main/index.ts": { "src/agents/kit/main/storedSessions.ts": "B3" },
       "src/main/sessionWorktrees.ts": { "src/agents/kit/main/sessionStore.ts": "B3" },
       "src/plugins/sessions/api.ts": { "src/agents/kit/main/storedSessions.ts": "B3" },
-      "src/plugins/sessions/main/channels.ts": { "src/agents/kit/main/storedSessions.ts": "B3" },
       "src/plugins/sessions/main/tabLifecycle.ts": { "src/agents/kit/main/storedSessions.ts": "B3" }
     },
     "plugin-into-agent": {
