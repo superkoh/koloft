@@ -9,6 +9,7 @@ import {
 import { AGENT_IDS, agentManifest, type AgentId } from '../../src/core/agent/registry'
 import { ACCOUNT_KINDS_OF } from '../../src/shared/accountUsage'
 import { accountsThatAreNeverAsked } from './helpers/agentAccounts'
+import { NOTHING_TO_READ_OR_SEARCH } from './helpers/agentMainParts'
 
 const targetOf = (binary: string): OneShotTarget => ({ binary, env: {}, done: () => {} })
 
@@ -46,7 +47,8 @@ const agentsWithAccounts = (ids: readonly AgentId[], asked: string[] = []): Agen
       oneShotTarget: async () => null,
       catalog: catalogOf(id),
       tools: toolsOf(id),
-      accounts: accountsThatSayWhoTheyAre(id, asked)
+      accounts: accountsThatSayWhoTheyAre(id, asked),
+      ...NOTHING_TO_READ_OR_SEARCH
     })
   return agents
 }
@@ -60,7 +62,8 @@ describe('the agents registered with their main-process side', () => {
         oneShotTarget: async () => targetOf(`the ${id} program`),
         catalog: catalogOf(id),
         tools: toolsOf(id),
-        accounts: accountsThatAreNeverAsked
+        accounts: accountsThatAreNeverAsked,
+        ...NOTHING_TO_READ_OR_SEARCH
       })
 
     for (const id of AGENT_IDS)
@@ -74,7 +77,8 @@ describe('the agents registered with their main-process side', () => {
       oneShotTarget: async () => targetOf('built'),
       catalog: catalogOf(AGENT_IDS[0]),
       tools: toolsOf(AGENT_IDS[0]),
-      accounts: accountsThatAreNeverAsked
+      accounts: accountsThatAreNeverAsked,
+      ...NOTHING_TO_READ_OR_SEARCH
     })
 
     expect(await agents.oneShotTarget(AGENT_IDS[1])).toBeNull()
@@ -93,7 +97,8 @@ describe('the agents registered with their main-process side', () => {
         oneShotTarget: async () => null,
         catalog: catalogOf(id),
         tools: toolsOf(id),
-        accounts: accountsThatAreNeverAsked
+        accounts: accountsThatAreNeverAsked,
+        ...NOTHING_TO_READ_OR_SEARCH
       })
 
     expect((await agents.mcpServersOn(['/w'])).map((s) => s.backend)).toEqual(built)
@@ -108,7 +113,8 @@ describe('the agents registered with their main-process side', () => {
         oneShotTarget: async () => null,
         catalog: catalogOf(id),
         tools: toolsOf(id),
-        accounts: accountsThatAreNeverAsked
+        accounts: accountsThatAreNeverAsked,
+        ...NOTHING_TO_READ_OR_SEARCH
       })
 
     expect(agents.shimScripts()).toEqual(
