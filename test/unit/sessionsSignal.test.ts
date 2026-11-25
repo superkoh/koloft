@@ -70,7 +70,6 @@ import { rowsKeptInMemory } from '../../src/agents/kit/main/rowsKeptInMemory'
 import { agySessionKey, codexSessionKey } from '../../src/agents/kit/main/sessionStore'
 import { rowsOfEveryAgent } from '../../src/core/agent/sessionRows'
 import { SessionRuntime } from '../../src/core/agent/sessionRuntime'
-import { BackgroundFile } from '../../src/main/backgroundFile'
 import { wireRunState } from '../../src/plugins/sessions/main/runState'
 import { sessionsChangedIn } from '../../src/plugins/sessions/main/sessionsChanged'
 import { WorkspaceManager } from '../../src/plugins/sessions/main/workspaces'
@@ -118,9 +117,8 @@ beforeEach(() => {
 afterEach(async () => {
   try {
     for (const stop of stops.reverse()) await stop()
-    await BackgroundFile.whenAllWritten()
   } finally {
-    world.gone()
+    await world.gone()
   }
 })
 

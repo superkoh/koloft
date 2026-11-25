@@ -39,11 +39,7 @@
       "type CodexQuestion,"
     ],
     "src/agents/codex/main/codexTransport.ts": [
-      "'CLAUDECODE',",
-      "'CLAUDE_EFFORT',",
-      "'GEMINI_API_KEY',",
-      "key.startsWith('ANTIGRAVITY_')",
-      "key.startsWith('CLAUDE_CODE_') ||"
+      "const runtime = new Set(['TERM_SESSION_ID', 'ANT_ACCOUNT', 'GEMINI_API_KEY', ...BROWSER_TAB_ENV])"
     ],
     "src/agents/kit/main/sessionStore.ts": [
       "(backend: 'codex' | 'agy', label: string) =>",

@@ -291,6 +291,7 @@ describe('GithubLookup.target', () => {
     const started = Date.now()
     expect(await gh.target(root, 'pr')).toBe('https://github.com/acme/widgets/pull/265')
     expect(Date.now() - started).toBeLessThan(500)
+    await settled(gh, root)
   })
 
   it('falls back to the repository when the branch turns out to have none', async () => {
