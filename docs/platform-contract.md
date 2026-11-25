@@ -246,6 +246,16 @@ method. A recheck adds its date, version and command to the bullet.
   leaves the headers out, and the same package then unpacked whole with no output on
   `debian:bookworm-slim` (GNU tar 1.34) and `alpine:3` (BusyBox). (2026-11-09, bsdtar
   3.5.3 on macOS 27, piped into `docker run -i <image> tar xzf -`.)
+- **GNU tar unpacking into a folder the login cannot write exits 2**, after printing
+  `tar: <file>: Cannot open: Permission denied` and `tar: Exiting with failure status due
+  to previous errors`, so an `&& echo <marker>` after it prints nothing. (2026-11-24, GNU
+  tar 1.34 on Debian bookworm, the e2e Docker ssh lab image, as uid 1000:
+  `tar cf - f | tar xmf - -C <folder with mode 555>`.) **When the archive holds its top
+  folder (`tar cf - -C <dir> .`), that failed unpack still sets the target folder's mode
+  to the archived folder's**: a `555` folder the login owns was `700` afterwards, with no
+  file in it, and the exit code was still 2 — so the same unpack run again succeeds. (Same
+  day and image: `tar cf - -C <dir with mode 700> . | tar xmf - -C <folder with mode
+  555>`, then `stat -c %a`.)
 - **A copy of a signed system binary saved under another name is SIGKILLed** when run.
 - **A file downloaded by Node has no `com.apple.quarantine` flag**, so an app installed
   from it opens without Gatekeeper.
@@ -2248,6 +2258,19 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   on macOS 27 to OpenSSH_9.2p1 on Debian bookworm through a ProxyJump bastion, Koloft's
   `sshOptions` with BatchMode, the e2e Docker ssh lab image, a scratch node script timing
   `spawnSync`.)
+- **Ending every sshd process of one login on the machine drops the Mac's connections
+  there, and what was started over them fares three ways.** After
+  `pkill -u <user> -f '^sshd(-session)?: <user>'` on the machine:
+  - a program run in the foreground of an `ssh` (Codex's `app-server proxy`) is gone;
+  - a program started over ssh with `setsid nohup … &` keeps running under the same pid
+    (Codex's `app-server --listen`);
+  - the tmux server and its pane keep running under the same pane pid, and a later
+    `tmux attach` over a new connection lands in that pane, also after the session was
+    renamed.
+
+  (2026-11-24, OpenSSH_10.5p1 on macOS 27 to OpenSSH_9.2p1 on Debian bookworm through a
+  ProxyJump bastion, tmux 3.3a, the e2e Docker ssh lab image; e2e E-SSH-E2, E-SSH-E5,
+  E-SSH-E8.)
 
 ## §34 rsync
 
