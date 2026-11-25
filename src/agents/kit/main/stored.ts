@@ -16,6 +16,7 @@ export function storedBackend<R extends StoredRun, H extends HistoryEntry, P>(
     | 'turns'
     | 'peerNames'
     | 'runningElsewhere'
+    | 'worktreeExitWatch'
     | 'send'
     | 'mightNotTakeAMessageNow'
     | 'showsAPanel'

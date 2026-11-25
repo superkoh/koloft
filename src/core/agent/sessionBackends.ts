@@ -7,6 +7,7 @@ import type {
   CreateTabOptions,
   CreateTabResult,
   DocVerdict,
+  HostId,
   ResumePlan,
   SessionInfo,
   SessionResumeRequest,
@@ -50,6 +51,12 @@ export interface SessionMessages {
 
 export type TabExit = Pick<TabEnded, 'tabId' | 'exitCode' | 'signal' | 'crashed'>
 
+export interface WorktreeExitWatch {
+  startedRemoving(printed: string): boolean
+  terminalEnded(): string | undefined
+  koloftQuits(): void
+}
+
 export interface SessionBackend extends SessionRowsSource, SessionMessages {
   id: BackendId
   recoversWorktrees?: true
@@ -78,6 +85,7 @@ export interface SessionBackend extends SessionRowsSource, SessionMessages {
   runningElsewhere(key: string): boolean | Promise<boolean>
   workStillRunning(tabId: string): Promise<boolean>
   worktreeRecords: WorktreeRecords
+  worktreeExitWatch(tabId: string, hostOfTab: () => HostId): WorktreeExitWatch | undefined
   tabExited(exit: TabExit): void | Promise<void>
   quitWaitsForIt(): boolean
   endBeforeQuit(): Promise<void>

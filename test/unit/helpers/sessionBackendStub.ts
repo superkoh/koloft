@@ -48,6 +48,7 @@ export function stubBackend(
     foldersToMirrorFrom: () => [],
     tmuxOfTab: () => undefined,
     tabOfTmuxSession: () => undefined,
+    worktreeExitWatch: () => undefined,
     showsAPanel: async () => undefined,
     send: async () => 'taken' as const,
     mightNotTakeAMessageNow: async () => false,

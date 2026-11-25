@@ -20,6 +20,8 @@ export function agyBackend(
       turns: (key, n) => sessions.readTurns(key, n),
       peerNames: () => async () => null,
       runningElsewhere: () => false,
+      // AGY§35
+      worktreeExitWatch: () => undefined,
       showsAPanel: async () => undefined,
       ...agyMessages((tabId, text) => sessions.deliver(tabId, text))
     },

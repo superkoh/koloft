@@ -21,6 +21,7 @@ import {
   type MachineLogin
 } from '../../../../src/agents/codex/main/codexMachine'
 import { CODEX_ASKS_AND_WAITS } from '../../../../src/agents/codex/main/codexLaunchConfig'
+import { trustCodexFolder } from '../../../../src/agents/codex/main/codexTrust'
 import { SessionRuntime } from '../../../../src/core/agent/sessionRuntime'
 import {
   CODEX_REPLY_LANGUAGE_HOOKS,
@@ -55,6 +56,10 @@ vi.mock('../../../../src/agents/codex/main/codexLeftovers', async (importOrigina
   endCodexAppServersLeftByACrash: async (marker: string) => {
     mocks.crashLeftoverMarkers.push(marker)
   }
+}))
+vi.mock('../../../../src/agents/codex/main/codexTrust', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../src/agents/codex/main/codexTrust')>()),
+  trustCodexFolder: vi.fn()
 }))
 vi.mock('../../../../src/agents/codex/main/codexRuntime', async (importOriginal) => ({
   resolveCodexRuntime: mocks.runtime,
@@ -234,7 +239,6 @@ beforeEach(() => {
     error: vi.fn(),
     noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],
     koloftPrompt,
-    trustFolder: vi.fn(),
     pickHome: vi.fn(() => ({ account: 'work', home: '/homes/work' })),
     homeOf: vi.fn(() => undefined),
     assistOf: () => undefined,
@@ -1461,15 +1465,15 @@ describe('CodexSessions', () => {
     } as WorktreeResource)
     vi.mocked(deps.pickHome).mockReturnValue({ account: 'work', home: '/homes/work' })
     await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1', permission: 'bypass' })
-    expect(vi.mocked(deps.trustFolder).mock.calls.map(([dir]) => dir)).toEqual([repo, worktree])
-    for (const [, env] of vi.mocked(deps.trustFolder).mock.calls)
+    expect(vi.mocked(trustCodexFolder).mock.calls.map(([dir]) => dir)).toEqual([repo, worktree])
+    for (const [, env] of vi.mocked(trustCodexFolder).mock.calls)
       expect(env?.CODEX_HOME).toBeUndefined()
     expect(vi.mocked(deps.pty.create).mock.calls[0][0].processEnv?.CODEX_HOME).toBe('/homes/work')
     const argv = vi.mocked(deps.pty.create).mock.calls[0][0].argv!
     expect(argv.slice(-4)).toEqual(['-a', 'never', '-s', 'danger-full-access'])
 
     await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1', scheduled: true })
-    expect(deps.trustFolder).toHaveBeenCalledTimes(2)
+    expect(trustCodexFolder).toHaveBeenCalledTimes(2)
 
     fs.mkdirSync(path.join(directory, '.codex'))
     fs.writeFileSync(
@@ -1479,7 +1483,7 @@ describe('CodexSessions', () => {
     await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1', scheduled: true })
     expect(
       vi
-        .mocked(deps.trustFolder)
+        .mocked(trustCodexFolder)
         .mock.calls.slice(2)
         .map(([dir]) => dir)
     ).toEqual([worktree])
