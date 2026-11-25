@@ -18,7 +18,7 @@ IFS=:
 set -f
 for d in $PATH; do
   [ "$d" = "$self" ] && continue
-  [ -x "$d/sudo" ] || continue
+  [ -f "$d/sudo" ] && [ -x "$d/sudo" ] || continue
   head -n 2 "$d/sudo" 2>/dev/null | grep -q "koloft sudo wrapper" && continue
   real="$d/sudo"
   break

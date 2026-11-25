@@ -14,7 +14,7 @@ import {
   TAB_PASS_FILE_SUFFIX,
   tmuxHoldsATabPass
 } from './install'
-import { remotePtsFile, remoteTabPath, REMOTE_TABS_DIR } from './paths'
+import { remotePtsFile, remoteTabPath, REMOTE_TABS_DIR, tabPackagesBase } from './paths'
 import { passOf, TAB_PASS_ENV } from '../tabPass'
 import { OWNING_TAB_ENV } from '../owningTabEnv'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
@@ -198,6 +198,27 @@ export function writeTabPackage(dir: string, spec: TabSpec): void {
     fs.writeFileSync(path.join(dir, `${spec.tabId}.env`), lines.join('\n') + '\n', { mode: 0o600 })
   }
   writeTabPassFile(dir, spec.tabId)
+}
+
+export function removeTabPackagesNoTabNeeds(
+  userData: string,
+  aTabStillNeeds: (name: string) => boolean
+): void {
+  const base = tabPackagesBase(userData)
+  let names: string[]
+  try {
+    names = fs.readdirSync(base)
+  } catch {
+    return
+  }
+  for (const tabId of names) {
+    if (aTabStillNeeds(tabId)) continue
+    try {
+      fs.rmSync(path.join(base, tabId), { recursive: true, force: true })
+    } catch (err) {
+      console.error('[koloft] could not remove the files of a remote tab that has ended:', err)
+    }
+  }
 }
 
 export function writeTabPassFile(dir: string, tabId: string): void {
