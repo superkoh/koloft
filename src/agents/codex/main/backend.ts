@@ -5,6 +5,7 @@ import type { CodexSessions } from './codexSessions'
 import { acceptCodexTrust, codexConfigFile } from './codexTrust'
 import type { ResumeProbes } from '../../../main/resumePlan'
 import { storedBackend } from '@agents/kit/main/stored'
+import { codexShowsAPanelOnItsScreen } from '../shared/inputBox'
 
 export function trustCodexFolder(root: string, env: NodeJS.ProcessEnv | undefined): void {
   try {
@@ -17,7 +18,8 @@ export function trustCodexFolder(root: string, env: NodeJS.ProcessEnv | undefine
 export function codexBackend(
   sessions: CodexSessions,
   resumeProbes: ResumeProbes,
-  machineProbes: (cwd: string) => ResumeProbes
+  machineProbes: (cwd: string) => ResumeProbes,
+  screenLines: (tabId: string) => Promise<string[] | undefined>
 ): SessionBackend {
   return storedBackend(
     sessions,
@@ -27,7 +29,8 @@ export function codexBackend(
       trustsFolder: (dir) => sessions.trustsFolder(dir),
       turns: async (key, n) => sessions.turnsOf(key, n) ?? sessions.readTurns(key, n),
       peerNames: () => async () => null,
-      runningElsewhere: () => false
+      runningElsewhere: () => false,
+      showsAPanel: codexShowsAPanelOnItsScreen(screenLines)
     },
     machineProbes
   )

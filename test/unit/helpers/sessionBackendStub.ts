@@ -46,6 +46,7 @@ export function stubBackend(
     noticeRemoteExits: () => {},
     mirrorPulled: () => {},
     tmuxOfTab: () => undefined,
+    showsAPanel: async () => undefined,
     ...rowsKeptInMemory({
       rows: () => [],
       members: () => new Set<string>(),

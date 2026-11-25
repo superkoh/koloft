@@ -21,7 +21,6 @@ import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { TerminalOutput } from './flowControl'
 import type { CommandOutput } from '@core/agent/commandOutput'
-import { codexShowsAPanelOnItsScreen } from '@agents/codex/shared/inputBox'
 import type { TreeIo } from './sessionWorktrees'
 import { sharedProcessTable, type ProcessTable } from './processTable'
 import {
@@ -365,7 +364,6 @@ import {
 import type { McpServer } from '@shared/types'
 import {
   LIVE_REGISTRY_ON_A_MACHINE_SH,
-  claudeShowsAPanelInTab,
   whenMessagingSocket,
   whenMessagingSocketOnMachine
 } from '@agents/claude/main/claudeSessionRegistry'
@@ -588,35 +586,13 @@ function asksTheOwner(tabId: string): boolean {
   return runtime.statusOf(tabId) === 'approval' || !!sessionAsks?.dialogOpen(tabId)
 }
 
-type PanelOpen = (
-  tabId: string,
-  sessionId: string,
-  screen?: string[]
-) => Promise<boolean | undefined>
-
-const codexPanelOpen = codexShowsAPanelOnItsScreen(screenLines)
-
-const panelOpenOn: Record<BackendId, PanelOpen> = {
-  claude: (tabId, sessionId) =>
-    claudeShowsAPanelInTab(tabId, sessionId, {
-      remoteHostOf: (tab) => tracker.remoteOf(tab)?.host,
-      liveRegistryOn: liveClaudeRegistryOn
-    }),
-  codex: (tabId, _sessionId, screen) => codexPanelOpen(tabId, screen),
-  agy: async () => undefined
-}
-
 const slashDeps: PluginStartDeps['sessions']['slash'] = {
   backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
   keyOf: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
   turnOver: (tabId) => runtime.turnOver(tabId),
   asking: asksTheOwner,
   takesTyping: (tabId) => !!sessionAsks?.takesCommand(tabId),
-  panelOpen: async (tabId, screen) => {
-    const s = sessionOfTab(tabId)
-    if (!s || capabilitiesFor(s.backendId, s.host).panelSeen !== true) return undefined
-    return panelOpenOn[s.backendId](tabId, s.sessionId, screen)
-  },
+  panelOpen: (tabId, screen) => sessionBackends.showsAPanel(tabId, screen),
   screen: screenLines,
   nextMirrorPull: (tabId) => {
     const host = remoteHostOfTab(tabId)
@@ -3536,7 +3512,7 @@ app.whenReady().then(() => {
       .catch((error) => sendToRenderer(CH.toast.show, String(error)))
   }
   if (codexSessions) {
-    sessionBackends.register(codexBackend(codexSessions, resumeProbes, machineProbes))
+    sessionBackends.register(codexBackend(codexSessions, resumeProbes, machineProbes, screenLines))
     void codexSessions
       .availability()
       .then((codex) => {
@@ -5393,6 +5369,7 @@ const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
     hookSettings: (tabId, dir, allowKoloft) =>
       machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)
   },
+  liveRegistryOn: liveClaudeRegistryOn,
   remoteTargets: () => workspaceMgr?.remoteTargets() ?? [],
   sessionRebound: (prevId, nextId, source) => workspaceMgr?.onSessionRebind(prevId, nextId, source),
   remoteSync: () => remoteSync,
