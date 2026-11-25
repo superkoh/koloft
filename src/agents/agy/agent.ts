@@ -6,6 +6,7 @@ import {
   AGY_UPLOADS_FOLDER
 } from './shared/agyBrain'
 import { agyEffortsAModelTakes } from './shared/agyEfforts'
+import { AGY_INSTALLER_URL } from './shared/agyInstaller'
 import { agyInputBoxDraft } from './shared/inputBox'
 import { EMPTY_THE_BOX, ESC } from '@shared/lineEditKeys'
 import { SLOT_ADDITIONS, SLOT_FILLS } from './prompts/text'
@@ -16,6 +17,8 @@ export const agent = {
   productName: 'Antigravity CLI',
   maker: 'Google',
   command: 'agy',
+  // AGY§3
+  installCommand: `curl -fsSL ${AGY_INSTALLER_URL} | bash`,
   nodePackageFolderNames: [],
   wordsThatNameMe: {
     anyCase: ['agy', 'antigravity', 'google', 'gemini'],

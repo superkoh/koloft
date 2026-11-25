@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto'
 import { execFile } from 'child_process'
 import os from 'os'
 import { promisify } from 'util'
+import { AGENT_COMMANDS, type AgentCommand } from '@core/agent/registry'
 
 const exec = promisify(execFile)
 const LOGIN_SHELL_TIMEOUT_MS = 8000
@@ -58,9 +59,6 @@ export async function readLoginShell(opts: {
   }
   return { probed, env }
 }
-
-const AGENT_COMMANDS = ['claude', 'codex', 'agy'] as const
-export type AgentCommand = (typeof AGENT_COMMANDS)[number]
 
 interface AgentsInLoginShell {
   env: NodeJS.ProcessEnv
