@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { AttentionTracker, type SavedMark } from '../../../../src/plugins/sessions/main/attention'
 import type { AttentionEvent } from '../../../../src/shared/types'
+import { SessionBackends } from '../../../../src/core/agent/sessionBackends'
+import { lifecycle, stubBackend } from '../../helpers/sessionBackendStub'
 
 function makeTracker(lastRun?: SavedMark[]): {
   t: AttentionTracker
@@ -248,6 +250,40 @@ describe('attention — unread marks outlive a Koloft restart', () => {
     t.onStatusChange('tab-new', 'waiting', 'working')
     t.onStatusChange('tab-new', 'working', 'waiting', { sessionId: 'sid-2' })
     expect(changes.at(-1)?.event).toMatchObject({ tabId: 'tab-new', kind: 'turn-done' })
+  })
+})
+
+describe('attention — a mark of last run whose session no row can show goes once the sessions are listed', () => {
+  const UUID = '00000000-0000-4000-8000-000000000001'
+  const OF_A_REMOVED_AGENT = `muse:local:${UUID}`
+  const LISTED = `codex:local:${UUID}`
+  const NO_AGENT_LISTS = `codex:local:00000000-0000-4000-8000-000000000002`
+  const lastRun: SavedMark[] = [
+    { tabId: 'old-1', kind: 'turn-done', at: 1, sessionId: OF_A_REMOVED_AGENT },
+    { tabId: 'old-2', kind: 'turn-done', at: 2, sessionId: NO_AGENT_LISTS },
+    { tabId: 'old-3', kind: 'turn-done', at: 3, sessionId: LISTED }
+  ]
+  const listedNow = new Set([LISTED])
+  function backends(): SessionBackends {
+    const b = new SessionBackends(lifecycle())
+    b.register({ ...stubBackend('codex'), sessionGone: (key) => !listedNow.has(key) })
+    return b
+  }
+
+  it('drops the mark of an agent Koloft no longer has and of a session no agent lists, keeps the rest, and says nothing', () => {
+    const { t, changes } = makeTracker(lastRun)
+    const b = backends()
+    t.forgetLastRunGone((key) => b.sessionStillThere(key, listedNow))
+    expect(t.list()).toEqual([expect.objectContaining({ sessionId: LISTED })])
+    expect(changes).toEqual([{ pending: t.list(), event: null }])
+  })
+
+  it('a mark raised in this run is never dropped, even when its session is not listed yet and its tab id is one a mark of last run had', () => {
+    const { t } = makeTracker(lastRun)
+    t.onExited('old-2', { sessionId: NO_AGENT_LISTS })
+    const b = backends()
+    t.forgetLastRunGone((key) => b.sessionStillThere(key, listedNow))
+    expect(t.list().map((e) => e.tabId)).toEqual(['old-2', 'old-3'])
   })
 })
 
