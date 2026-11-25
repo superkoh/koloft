@@ -1188,7 +1188,7 @@ export class ClaudeBackend implements SessionBackend {
       row,
       {
         dirExists: (p) => host.dirExists(host.keyed(p)),
-        occupantOf: (dir) => this.machineOccupantOf(host.keyed(dir)),
+        occupantOf: (dir) => this.d.resumeProbes.occupantOf(host.keyed(dir)),
         ...gitProbes(hostGit(host))
       },
       this.d.store()?.bucketDirOf(sessionId)

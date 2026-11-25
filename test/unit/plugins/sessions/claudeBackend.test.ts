@@ -285,8 +285,8 @@ describe('ClaudeBackend: resuming a session on a remote machine into a worktree 
   const SID = '0d7c1f40-1a5e-4b8e-9a51-6f0d2c3e4b5a'
   const TREE = '/srv/repo/.claude/worktrees/w1'
 
-  function planWith(other: { cwd: string; treeRoot: string; alive: boolean }) {
-    const backend = new ClaudeBackend({
+  function planWith(other: { cwd: string; treeRoot: string; alive: boolean; sessionId?: string }) {
+    const backend: ClaudeBackend = new ClaudeBackend({
       tracker: {
         list: () => [
           {
@@ -299,6 +299,7 @@ describe('ClaudeBackend: resuming a session on a remote machine into a worktree 
         ],
         remoteOf: () => undefined
       },
+      resumeProbes: { occupantOf: (dir: string) => backend.occupantOf(dir) },
       store: () => ({
         findRow: (id: string) =>
           id === SID
@@ -336,6 +337,12 @@ describe('ClaudeBackend: resuming a session on a remote machine into a worktree 
     ).resolves.toMatchObject({ action: 'dialog', occupiedBy: 'Other session at work' })
     await expect(
       planWith({ cwd: `${TREE}/src`, treeRoot: TREE, alive: false })
+    ).resolves.toMatchObject({ action: 'direct' })
+  })
+
+  it('does not count its own exited tab in the worktree', async () => {
+    await expect(
+      planWith({ cwd: TREE, treeRoot: TREE, alive: false, sessionId: SID })
     ).resolves.toMatchObject({ action: 'direct' })
   })
 })
