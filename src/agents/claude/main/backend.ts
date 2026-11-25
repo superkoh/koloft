@@ -1039,7 +1039,7 @@ export class ClaudeBackend implements SessionBackend {
   async create(opts: CreateTabOptions): Promise<CreateTabResult> {
     const asked = typeof opts.cwd === 'string' ? opts.cwd : ''
     const root = hostOf(asked) === 'ssh' ? asked : (this.homeOf(opts.resumeSessionId) ?? asked)
-    if (opts.worktree) this.refuseANameAnotherAgentRecords(root, opts.worktree)
+    if (opts.worktree) await this.refuseANameAnotherAgentRecords(root, opts.worktree)
     return this.createTab({
       tabId: opts.tabId,
       root,
@@ -1089,7 +1089,7 @@ export class ClaudeBackend implements SessionBackend {
         return { ok: false, code: 'invalid-args' }
       }
       worktree = req.worktree
-      this.refuseANameAnotherAgentRecords(cwd, worktree)
+      await this.refuseANameAnotherAgentRecords(cwd, worktree)
     }
     const bound = this.d.store()?.findRow(sid)?.worktreeState
     const rebuildable = !home || !!bound
@@ -1147,11 +1147,20 @@ export class ClaudeBackend implements SessionBackend {
     return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
   }
 
-  private refuseANameAnotherAgentRecords(where: string, name: string): void {
+  private async refuseANameAnotherAgentRecords(where: string, name: string): Promise<void> {
     const home = `/${SESSION_WORKTREES_FOLDER}/`
-    const root = isRemoteKey(where) ? where.split(home)[0] : projectInfoFor(where).root
+    const root = isRemoteKey(where) ? await this.mainCheckoutOn(where) : projectInfoFor(where).root
     if (this.d.resumeProbes.recorded?.(`${root}${home}${name}`))
       throw new Error(A_NAME_WITH_A_RECOVERY_RECORD)
+  }
+
+  private async mainCheckoutOn(where: string): Promise<string> {
+    const host = this.d.hosts.of(where)
+    const listed = await host.gitOut(where, ['worktree', 'list', '--porcelain'])
+    const first = listed?.split('\n')[0]
+    return first?.startsWith('worktree ')
+      ? host.keyed(first.slice('worktree '.length))
+      : where.split(`/${SESSION_WORKTREES_FOLDER}/`)[0]
   }
 
   resumePlan(key: string): Promise<ResumePlan> {

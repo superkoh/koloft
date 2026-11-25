@@ -1,12 +1,21 @@
 import path from 'path'
-import { isRemoteKey } from '@shared/remoteKey'
+import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { realpathSafe } from './projectInfo'
+import { worktreeHomeRoot } from './resumePlan'
 import type { TreeRemovals } from './treeRemovals'
 
 export type WorktreesBeingPrepared = Map<string, Promise<unknown>>
 
-export function preparedKeyOf(tree: string): string {
-  return isRemoteKey(tree) ? tree : `${realpathSafe(path.dirname(tree))}/${path.basename(tree)}`
+function worktreeFolderAround(dir: string): string {
+  for (let d = dir; path.dirname(d) !== d; d = path.dirname(d)) if (worktreeHomeRoot(d)) return d
+  return dir
+}
+
+export function preparedKeyOf(dir: string): string {
+  const remote = parseRemoteKey(dir)
+  const tree = worktreeFolderAround(remote ? remote.path : dir)
+  if (remote) return formatRemoteKey(remote.host, tree)
+  return `${realpathSafe(path.dirname(tree))}/${path.basename(tree)}`
 }
 
 export async function whenNobodyPrepares(

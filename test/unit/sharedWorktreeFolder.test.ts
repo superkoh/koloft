@@ -106,7 +106,7 @@ afterEach(async () => {
   fs.rmSync(directory, { recursive: true, force: true })
 })
 
-function sharedFolder(side: (typeof SIDES)[number]) {
+function sharedFolder(side: (typeof SIDES)[number], unboundIn?: string) {
   const store = new SessionStore(path.join(directory, `other-sessions-${Math.random()}.json`))
   const preparing = new Map<string, Promise<unknown>>()
   let theirs: SessionWorktrees
@@ -142,19 +142,21 @@ function sharedFolder(side: (typeof SIDES)[number]) {
     tracker: { list: () => [], remoteOf: () => undefined },
     store: () => ({
       findRow: (id: string) =>
-        id === SID
-          ? {
-              id: SID,
-              cwd: tree,
-              worktreeState: {
-                worktreePath: tree,
-                worktreeName: 'foo',
-                originalCwd: claudeRepo,
-                worktreeBranch: 'worktree-foo',
-                originalHeadCommit: git('rev-parse', 'HEAD')
-              }
-            }
-          : undefined,
+        id !== SID
+          ? undefined
+          : unboundIn
+            ? { id: SID, cwd: path.join(tree, unboundIn) }
+            : {
+                id: SID,
+                cwd: tree,
+                worktreeState: {
+                  worktreePath: tree,
+                  worktreeName: 'foo',
+                  originalCwd: claudeRepo,
+                  worktreeBranch: 'worktree-foo',
+                  originalHeadCommit: git('rev-parse', 'HEAD')
+                }
+              },
       workspaceOf: () => side.workspaceOf(claudeRepo),
       bucketDirOf: () => undefined
     }),
@@ -173,11 +175,12 @@ function sharedFolder(side: (typeof SIDES)[number]) {
     tree,
     launched,
     claudeGit,
-    claudeResumes: () => claude.resume({ sessionId: SID, cwd: side.at(tree) }),
+    claudeResumes: () =>
+      claude.resume({ sessionId: SID, cwd: side.at(path.join(tree, unboundIn ?? '')) }),
     claudeResumesRenamed: (worktree: string) =>
       claude.resume({ sessionId: SID, cwd: side.at(tree), mode: 'renamed', worktree }),
-    claudeStartsIn: (worktree: string) =>
-      claude.create({ kind: 'claude', cwd: side.at(claudeRepo), worktree })
+    claudeStartsIn: (worktree: string, workspace = claudeRepo) =>
+      claude.create({ kind: 'claude', cwd: side.at(workspace), worktree })
   }
 }
 
@@ -195,6 +198,18 @@ describe.each(SIDES)(
       expect(s.launched).toEqual([])
       await expect(s.claudeStartsIn('bar')).resolves.toMatchObject({ ok: true })
       expect(s.launched).toEqual([expect.objectContaining({ worktree: 'bar' })])
+    })
+
+    it('is refused the same way when the workspace is a subfolder of the repository', async () => {
+      const s = sharedFolder(side)
+      const made = await s.theirs.create(side.at(repo), 'foo')
+      git('worktree', 'remove', '--force', barePath(made.worktreePath))
+      git('branch', '-D', 'worktree-foo')
+      fs.mkdirSync(path.join(repo, 'app'))
+      await expect(s.claudeStartsIn('foo', path.join(repo, 'app'))).rejects.toThrow(
+        'This worktree name has a recovery record; recover it or choose a different name'
+      )
+      expect(s.launched).toEqual([])
     })
 
     it('a Claude Code resume into a new worktree of that name is refused the same way', async () => {
@@ -341,5 +356,17 @@ describe('a session closed for good while another agent wants its worktree, on t
     expect(resumed).toMatchObject({ status: 'fulfilled', value: { ok: true } })
     expect(s.launched).toEqual([expect.objectContaining({ folderThere: true })])
     expect(fs.existsSync(path.join(s.tree, 'file.txt'))).toBe(true)
+  })
+
+  it('a Claude Code resume of a session with no worktree record, last in a subfolder of the folder, waits for the removal and does not start in the deleted folder', async () => {
+    const s = sharedFolder(side, 'src')
+    await s.theirs.create(side.at(repo), 'foo')
+    fs.mkdirSync(path.join(s.tree, 'src'))
+    const resumed = await whileTheCloseRemovesIt(s, s.claudeResumes)
+    expect(resumed).toMatchObject({
+      status: 'fulfilled',
+      value: { ok: false, code: 'cwd-missing' }
+    })
+    expect(s.launched).toEqual([])
   })
 })

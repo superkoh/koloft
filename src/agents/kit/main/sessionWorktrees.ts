@@ -14,6 +14,7 @@ import {
   type TreeIo
 } from '../../../main/sessionWorktrees'
 import { worktreeHomeRoot } from '../../../main/resumePlan'
+import { preparedKeyOf, whenNobodyPrepares } from '../../../main/worktreesBeingPrepared'
 import type { SessionStore } from './sessionStore'
 
 interface Checkout {
@@ -136,23 +137,22 @@ export class SessionWorktrees {
     return this.createAt(root, name, await io.git(originalCwd, ['rev-parse', 'HEAD']))
   }
 
-  async whenSettled(worktreePath: string): Promise<void> {
-    const { preparing } = this.everyAgent
-    for (let p = preparing.get(worktreePath); p; p = preparing.get(worktreePath))
-      await p.catch(() => undefined)
+  whenSettled(worktreePath: string): Promise<void> {
+    return whenNobodyPrepares(this.everyAgent.preparing, preparedKeyOf(worktreePath))
   }
 
   async adopt(originalCwd: string, checkoutPath: string): Promise<WorktreeResource> {
     const { preparing } = this.everyAgent
     const target = this.io(originalCwd).real(checkoutPath)
-    for (let p = preparing.get(target); p; p = preparing.get(target)) await p.catch(() => undefined)
+    const key = preparedKeyOf(target)
+    for (let p = preparing.get(key); p; p = preparing.get(key)) await p.catch(() => undefined)
     const work = this.adoptSettled(originalCwd, target)
     const held = work.catch(() => null)
-    preparing.set(target, held)
+    preparing.set(key, held)
     try {
       return await work
     } finally {
-      if (preparing.get(target) === held) preparing.delete(target)
+      if (preparing.get(key) === held) preparing.delete(key)
     }
   }
 
@@ -261,7 +261,7 @@ export class SessionWorktrees {
   private async afterOtherAgentsPreparing(worktreePath: string): Promise<void> {
     if (this.preparingHere.has(worktreePath))
       throw new Error('Worktree preparation is already in progress')
-    await this.everyAgent.preparing.get(worktreePath)
+    await this.everyAgent.preparing.get(preparedKeyOf(worktreePath))
   }
 
   private requiredResource(id: string): WorktreeResource {
@@ -273,7 +273,7 @@ export class SessionWorktrees {
   private async createAt(root: string, name: string, base: string): Promise<WorktreeResource> {
     const io = this.io(root)
     const target = `${root}/${SESSION_WORKTREES_FOLDER}/${name}`
-    if (this.everyAgent.preparing.has(target))
+    if (this.everyAgent.preparing.has(preparedKeyOf(target)))
       throw new Error('Worktree preparation is already in progress')
     if (await io.exists(target)) throw new Error('Worktree directory already exists')
     const branch = `worktree-${name}`
@@ -298,8 +298,9 @@ export class SessionWorktrees {
   ): Promise<WorktreeResource> {
     const { preparing } = this.everyAgent
     const at = resource.worktreePath
+    const key = preparedKeyOf(at)
     if (this.preparingHere.has(at)) throw new Error('Worktree preparation is already in progress')
-    const running = preparing.get(at)
+    const running = preparing.get(key)
     if (running) {
       if (!reuseBranch) throw new Error('Worktree preparation is already in progress')
       await running
@@ -310,12 +311,12 @@ export class SessionWorktrees {
       this.store.putResource(pending)
       return this.materializeRecorded(pending, reuseBranch)
     })()
-    preparing.set(at, work)
+    preparing.set(key, work)
     this.preparingHere.add(at)
     try {
       return await work
     } finally {
-      if (preparing.get(at) === work) preparing.delete(at)
+      if (preparing.get(key) === work) preparing.delete(key)
       this.preparingHere.delete(at)
     }
   }
