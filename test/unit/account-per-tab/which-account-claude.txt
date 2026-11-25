@@ -1,0 +1,14 @@
+=== Claude Code ===
+a new session, two subscriptions and a key                             → made-up-max [oauth] banner "koloft: → made-up-max · 5h 10% · 7d 20%"
+resuming a session that ran on the busier subscription                 → made-up-pro [oauth] banner "koloft: → made-up-pro · 5h 30% · 7d 60%"
+resuming a session whose subscription is at its limit                  → made-up-max [oauth] banner "koloft: → made-up-max · 5h 10% · 7d 20%"
+every subscription at its limit, a key account there                   → made-up-key [apikey] banner "koloft: every subscription rate-limited → made-up-key (API key, metered)"
+every subscription at its limit, a custom endpoint there               → made-up-proxy [custom] banner "koloft: every subscription rate-limited → made-up-proxy (custom endpoint · made-up-model-7b)"
+every subscription at its limit, nothing else                          → made-up-pro [oauth] banner "koloft: every account rate-limited → made-up-pro (00:13)"
+the only subscription has no fable allowance left                      → made-up-max [oauth] banner "koloft: → made-up-max · 5h 10% · 7d 20%" warning "koloft: this account has no fable allowance left -- running fable now will be billed to usage credits"
+only a key account                                                     → made-up-key [apikey] banner "koloft: → made-up-key (API key, metered)"
+only a custom endpoint                                                 → made-up-proxy [custom] banner "koloft: → made-up-proxy (custom endpoint · made-up-model-7b)"
+the only subscription disabled, the other expired                      → none (no-accounts)
+no account at all                                                      → none (no-accounts)
+only other agents' kinds (codex-home, agy-home)                        → none (no-accounts)
+only asking, not starting                                              → no such path: every ask is a start

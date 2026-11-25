@@ -1,0 +1,12 @@
+=== the new-session items of a workspace on this Mac ===
+  New Claude session⌘N: shut
+  New Codex session: shut
+  New Antigravity session: shut
+=== the new-session items of a workspace over SSH ===
+  New Claude session⌘N: shut
+  New Codex session: shut
+  New Antigravity session: shut
+=== Claude Code on this Mac, its account’s secret gone from the Keychain ===
+  koloft: could not read the sign-in of made-up-gone from the Keychain. Try again, or sign it in again in Set
+=== Claude Code over SSH, its account’s secret gone from the Keychain ===
+  notice: Claude did not start: Koloft could not use an account for it. Check Settings ▸ Accounts, then try again.
