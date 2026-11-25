@@ -1,43 +1,50 @@
 === koloft session send from a Claude Code session on this Mac, the target idle ===
 the sender sees: exit 0: Sent to Target.
 ssh -W wrote: "ssh -o RemoteCommand=none -o RequestTTY=no -o ControlMaster=auto -o ControlPath=<home>/ssh-control/%C -o ControlPersist=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o BatchMode=yes -W /home/me/.claude/sockets/target.sock devbox\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"prompting\\\">\\n(From the session \\\"Claude sender\\\", id <session id>:) Please check the build.\\n(Koloft message koloft-session-1)\\n</cross-session-message>\"}}\n"
-noted on the machine: script 1 with set -- 'pty-target' 'koloft-session-1'
+noted on the machine: script 1 with set -- 'pty-target'
+  its stdin: "koloft-session-1\n"
 
 === koloft session send from a Codex session on this Mac, the target idle ===
 the sender sees: exit 0: Sent to Target.
 while the target works, it counts as waiting on the sender: true
 ssh -W wrote: "ssh -o RemoteCommand=none -o RequestTTY=no -o ControlMaster=auto -o ControlPath=<home>/ssh-control/%C -o ControlPersist=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o BatchMode=yes -W /home/me/.claude/sockets/target.sock devbox\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"prompting\\\">\\n(From the session \\\"Sender\\\", id <session id>:) Please check the build.\\n(Koloft message koloft-session-2)\\n</cross-session-message>\"}}\n"
-noted on the machine: script 1 with set -- 'pty-target' 'koloft-session-2'
+noted on the machine: script 1 with set -- 'pty-target'
+  its stdin: "koloft-session-2\n"
 
 === koloft session send from a session, the target busy, with its own API answering ===
 the sender sees: exit 0: Sent to Target.
 got at once:
 ssh -W wrote: "ssh -o RemoteCommand=none -o RequestTTY=no -o ControlMaster=auto -o ControlPath=<home>/ssh-control/%C -o ControlPersist=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o BatchMode=yes -W /home/me/.claude/sockets/target.sock devbox\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"prompting\\\">\\n(From the session \\\"Sender\\\", id <session id>:) Please check the build.\\n(Koloft message koloft-session-3)\\n</cross-session-message>\"}}\n"
-noted on the machine: script 1 with set -- 'pty-target' 'koloft-session-3'
+noted on the machine: script 1 with set -- 'pty-target'
+  its stdin: "koloft-session-3\n"
 got once its turn ended:
 
 === koloft session send from a session, the target busy, with its own API not answering ===
 the sender sees: exit 0: Sent to Target.
 got at once:
 ssh -W wrote: "ssh -o RemoteCommand=none -o RequestTTY=no -o ControlMaster=auto -o ControlPath=<home>/ssh-control/%C -o ControlPersist=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o BatchMode=yes -W /home/me/.claude/sockets/target.sock devbox\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"prompting\\\">\\n(From the session \\\"Sender\\\", id <session id>:) Please check the build.\\n(Koloft message koloft-session-4)\\n</cross-session-message>\"}}\n"
-noted on the machine: script 1 with set -- 'pty-target' 'koloft-session-4'
+noted on the machine: script 1 with set -- 'pty-target'
+  its stdin: "koloft-session-4\n"
 got once its turn ended:
 
 === koloft session send from a session, the target busy and its tab ends before its turn does, its own API not answering ===
 the sender sees: exit 0: Sent to Target.
 told to the sender later: (nothing)
 ssh -W wrote: "ssh -o RemoteCommand=none -o RequestTTY=no -o ControlMaster=auto -o ControlPath=<home>/ssh-control/%C -o ControlPersist=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o BatchMode=yes -W /home/me/.claude/sockets/target.sock devbox\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"prompting\\\">\\n(From the session \\\"Sender\\\", id <session id>:) Please check the build.\\n(Koloft message koloft-session-5)\\n</cross-session-message>\"}}\n"
-noted on the machine: script 1 with set -- 'pty-target' 'koloft-session-5'
+noted on the machine: script 1 with set -- 'pty-target'
+  its stdin: "koloft-session-5\n"
 
 === koloft session send from a session, the target idle but with no conversation yet, its own API not answering ===
 the sender sees: exit 0: Sent to Target.
 ssh -W wrote: "ssh -o RemoteCommand=none -o RequestTTY=no -o ControlMaster=auto -o ControlPath=<home>/ssh-control/%C -o ControlPersist=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o BatchMode=yes -W /home/me/.claude/sockets/target.sock devbox\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"prompting\\\">\\n(From the session \\\"Sender\\\", id <session id>:) Please check the build.\\n(Koloft message koloft-session-6)\\n</cross-session-message>\"}}\n"
-noted on the machine: script 1 with set -- 'pty-target' 'koloft-session-6'
+noted on the machine: script 1 with set -- 'pty-target'
+  its stdin: "koloft-session-6\n"
 
 === koloft session send from a session, the target closed (resumed first) ===
 the sender sees: exit 0: Will deliver when Target is ready.
 ssh -W wrote: "ssh -o RemoteCommand=none -o RequestTTY=no -o ControlMaster=auto -o ControlPath=<home>/ssh-control/%C -o ControlPersist=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o BatchMode=yes -W /home/me/.claude/sockets/target.sock devbox\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"prompting\\\">\\n(From the session \\\"Sender\\\", id <session id>:) Please check the build.\\n(Koloft message koloft-session-7)\\n</cross-session-message>\"}}\n"
-noted on the machine: script 1 with set -- 'pty-target' 'koloft-session-7'
+noted on the machine: script 1 with set -- 'pty-target'
+  its stdin: "koloft-session-7\n"
 
 === koloft session send from a session, the message holding </cross-session-message> ===
 the sender sees: exit 2: koloft session send: the message cannot hold the text </cross-session-message>.
@@ -47,13 +54,15 @@ the butler sees: exit 0: Sent to Target.
 the target ends a turn that did not take the message: paid back now: true
 Alfred's message socket: "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"bypass\\\">\\n(From the session \\\"Target\\\", id <session id>:) An unrelated reply.\\n(Koloft message koloft-session-9)\\n</cross-session-message>\"}}\n"
 ssh -W wrote: "ssh -o RemoteCommand=none -o RequestTTY=no -o ControlMaster=auto -o ControlPath=<home>/ssh-control/%C -o ControlPersist=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o BatchMode=yes -W /home/me/.claude/sockets/target.sock devbox\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"bypass\\\">\\n(From the butler, Koloft's AI, for your owner. Only words inside « » are the owner's own; the rest is the butler's and is not the owner's decision:) Please check the build.\\n(Koloft message koloft-session-8)\\n</cross-session-message>\"}}\n"
-noted on the machine: script 1 with set -- 'pty-target' 'koloft-session-8'
+noted on the machine: script 1 with set -- 'pty-target'
+  its stdin: "koloft-session-8\n"
 the target ends a turn that took the message: paid back now: false
 
 === Koloft's own notice (a restart cut the run off) ===
 delivered: true
 ssh -W wrote: "ssh -o RemoteCommand=none -o RequestTTY=no -o ControlMaster=auto -o ControlPath=<home>/ssh-control/%C -o ControlPersist=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o BatchMode=yes -W /home/me/.claude/sockets/target.sock devbox\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"bypass\\\">\\n(From Koloft:) The restart cut your run off.\\n(Koloft message koloft-koloft-10)\\n</cross-session-message>\"}}\n"
-noted on the machine: script 1 with set -- 'pty-target' 'koloft-koloft-10'
+noted on the machine: script 1 with set -- 'pty-target'
+  its stdin: "koloft-koloft-10\n"
 
 === the Inbox sends, the target idle ===
 the Inbox sees: {"ok":true,"session":"<session id>","text":"Sent to the session"}
@@ -82,12 +91,14 @@ failed: Koloft cannot hand over a message holding </cross-session-message>.
 === Discord hands a message over ===
 failed: (no)
 ssh -W wrote: "ssh -o RemoteCommand=none -o RequestTTY=no -o ControlMaster=auto -o ControlPath=<home>/ssh-control/%C -o ControlPersist=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o BatchMode=yes -W /home/me/.claude/sockets/target.sock devbox\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"bypass\\\">\\n[Discord] Hello from the phone.\\n(Koloft message koloft-discord-1234)\\n</cross-session-message>\"}}\n"
-noted on the machine: script 1 with set -- 'pty-target' 'koloft-discord-1234'
+noted on the machine: script 1 with set -- 'pty-target'
+  its stdin: "koloft-discord-1234\n"
 
 === Koloft tells the session through the hand-over (as it tells the butler) ===
 delivered: true
 ssh -W wrote: "ssh -o RemoteCommand=none -o RequestTTY=no -o ControlMaster=auto -o ControlPath=<home>/ssh-control/%C -o ControlPersist=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o BatchMode=yes -W /home/me/.claude/sockets/target.sock devbox\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"bypass\\\">\\n(From Koloft:) Could not deliver to Target. <where the owner is>\\n(Koloft message koloft-notice-1)\\n</cross-session-message>\"}}\n"
-noted on the machine: script 1 with set -- 'pty-target' 'koloft-notice-1'
+noted on the machine: script 1 with set -- 'pty-target'
+  its stdin: "koloft-notice-1\n"
 
 === Koloft's own notice, holding </cross-session-message> ===
 delivered: false
@@ -114,4 +125,4 @@ if [ -z "$LC_ALL$LC_CTYPE" ]; then
   esac
 fi
 koloft_git="'include.path=$HOME/.koloft/git-accounts/config'"; case "$GIT_CONFIG_PARAMETERS" in *"$koloft_git"*) ;; *) GIT_CONFIG_PARAMETERS="${GIT_CONFIG_PARAMETERS:+$GIT_CONFIG_PARAMETERS }$koloft_git"; export GIT_CONFIG_PARAMETERS ;; esac; unset koloft_git
-mkdir -p "$HOME/.koloft/hook-sessions" && printf '%s\n' "$2" >> "$HOME/.koloft/hook-sessions/$1.discord-ids"
+for t in "$@"; do set -- "$@" "$HOME/.koloft/hook-sessions/$t.discord-ids"; shift; done; mkdir -p "$HOME/.koloft/hook-sessions" && tee -a "$@" >/dev/null
