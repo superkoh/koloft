@@ -56,7 +56,9 @@ const ITS_OWN_ANSWERS: Parameters<typeof storedBackend>[2] = {
   showsAPanel: async () => undefined,
   send: async () => 'taken',
   mightNotTakeAMessageNow: async () => false,
-  handOverLaunch: (_handOver, task) => ({ firstPrompt: task })
+  handOverLaunch: () => {
+    throw new Error('no session is handed over in this test')
+  }
 }
 
 function backendsOf(
