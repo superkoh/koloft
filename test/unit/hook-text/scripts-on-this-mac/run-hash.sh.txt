@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# koloft-exec: <the program Koloft runs as>
+export ELECTRON_RUN_AS_NODE=1
+# PLATFORM§36
+export NODE_COMPILE_CACHE='<userData>/statusline/vcache'
+[ -d "$(pwd -P 2>/dev/null)" ] || cd / 2>/dev/null
+# CC§6 PLATFORM§36
+[ -n "$COLUMNS" ] && export CCSTATUSLINE_WIDTH="$COLUMNS"
+# CC§6 PLATFORM§2 PLATFORM§36
+'<the program Koloft runs as>' '<Koloft's own folder>/node_modules/ccstatusline/dist/ccstatusline.js' --config '<userData>/statusline/settings.json' <&0 &
+pid=$!
+( sleep 10; kill "$pid" 2>/dev/null ) >/dev/null 2>&1 & wd=$!
+wait "$pid"; rc=$?
+kill "$wd" 2>/dev/null
+exit $rc

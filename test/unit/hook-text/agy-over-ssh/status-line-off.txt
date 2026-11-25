@@ -1,0 +1,2 @@
+=== the status line in file pty-t1.settings.json (its hooks file is pinned in remote-launch-text) ===
+null
