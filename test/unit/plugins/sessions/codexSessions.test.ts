@@ -14,7 +14,8 @@ import { ClaudeBackend, type ClaudeBackendDeps } from '../../../../src/agents/cl
 import { removeUntouchedWorktreeWith } from '../../../../src/main/untouchedWorktreeRemoval'
 import { worktreeRecordsOfEveryAgent } from '../../../../src/core/agent/worktreeRecords'
 import { TreeRemovals } from '../../../../src/main/treeRemovals'
-import { removeTree } from '../../../../src/plugins/sessions/main/sessionClose'
+import { anotherSessionIn, removeTree } from '../../../../src/plugins/sessions/main/sessionClose'
+import { removingTheWorktree } from '../../../../src/main/worktreesBeingPrepared'
 import { codexSessionKey } from '../../../../src/agents/kit/main/sessionStore'
 import type { WorktreeResource } from '../../../../src/core/agent/worktreeRecords'
 import type {
@@ -1137,6 +1138,40 @@ describe('CodexSessions', () => {
       { id: 'codex' },
       made
     )
+
+  it('closing a session for good a moment after a Codex session began taking its worktree over waits for that, then keeps the folder and names the starting session', async () => {
+    gitIn(repo, 'init', '-q', '--initial-branch=main')
+    fs.writeFileSync(path.join(repo, 'file.txt'), 'initial\n')
+    gitIn(repo, 'add', 'file.txt')
+    gitIn(repo, 'commit', '-q', '-m', 'base')
+    deps.projectInfo = (p) => ({ root: repo, treeRoot: p, worktreeName: path.basename(p) })
+    const { preparing } = deps.worktreesOfEveryAgent
+    for (let round = 0; round < 6; round++) {
+      const tree = path.join(repo, '.claude', 'worktrees', `foo-${round}`)
+      gitIn(repo, 'worktree', 'add', '-q', '-b', `worktree-foo-${round}`, tree)
+      const starting = sessions.launch({ kind: 'codex', cwd: tree })
+      while (!preparing.has(tree)) await new Promise((r) => setImmediate(r))
+      const left = await removingTheWorktree(
+        { preparing, treeRemovals: new TreeRemovals() },
+        tree,
+        async () => {
+          const someoneIn = anotherSessionIn((dir) => sessions.occupantOf(dir), tree)
+          if (!someoneIn.length)
+            await removeTree(localGitOut, {
+              root: repo,
+              treeRoot: tree,
+              worktreeName: `foo-${round}`,
+              branches: []
+            })
+          return someoneIn
+        }
+      )
+      expect(left).toEqual([`The session "a starting Codex session" is still open in ${tree}.`])
+      await expect(starting).resolves.toMatchObject({ cwd: tree })
+      expect(sessions.worktrees.records.at(tree)).toMatchObject({ state: 'ready' })
+      expect(fs.existsSync(path.join(tree, 'file.txt'))).toBe(true)
+    }
+  })
 
   it('a resume sent to the main folder does not keep its old untouched worktree while it starts, so closing the other tab there removes it', async () => {
     const made = await untouchedWorktreeFoo()

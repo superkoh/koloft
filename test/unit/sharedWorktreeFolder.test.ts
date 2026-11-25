@@ -21,8 +21,11 @@ import {
 } from '../../src/agents/kit/main/sessionWorktrees'
 import type { TreeIo } from '../../src/main/sessionWorktrees'
 import { worktreeRecordsOfEveryAgent } from '../../src/core/agent/worktreeRecords'
+import { TreeRemovals } from '../../src/main/treeRemovals'
 import { localGitOut, localGitRun, localHost } from '../../src/main/host/localHost'
 import { GithubRepos } from '../../src/main/githubRepos'
+import { removeTree } from '../../src/plugins/sessions/main/sessionClose'
+import { removingTheWorktree } from '../../src/main/worktreesBeingPrepared'
 import { dirExistsSync, gitProbes } from '../../src/main/resumePlan'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/agents/claude/main/backend'
 import { barePath, formatRemoteKey, isRemoteKey } from '../../src/shared/remoteKey'
@@ -31,6 +34,7 @@ import type { BackendId } from '../../src/shared/types'
 const MACHINE = 'lab'
 const SID = '5b0c7a52-3f1e-4d2a-9c8b-7e6f5d4c3b2a'
 const OTHER = 'other-agent' as unknown as BackendId
+const LONG_ENOUGH_TO_TAKE_A_FOLDER_MS = 1000
 const ROUNDS = 4
 
 function shOnMachine(script: string, args: string[]): Promise<string | null> {
@@ -240,3 +244,63 @@ describe.each(SIDES)(
     })
   }
 )
+
+describe('a session closed for good while another agent wants its worktree, on this Mac', () => {
+  const side = SIDES[0]
+
+  async function whileTheCloseRemovesIt<T>(
+    s: ReturnType<typeof sharedFolder>,
+    meanwhile: () => Promise<T>
+  ): Promise<PromiseSettledResult<T>> {
+    let release = (): void => {}
+    const removalHeld = new Promise<void>((r) => (release = r))
+    let reached = (): void => {}
+    const removalReached = new Promise<void>((r) => (reached = r))
+    const closing = removingTheWorktree(
+      { preparing: s.preparing, treeRemovals: new TreeRemovals() },
+      s.tree,
+      async () => {
+        reached()
+        await removalHeld
+        return removeTree(localGitOut, {
+          root: repo,
+          treeRoot: s.tree,
+          worktreeName: 'foo',
+          branches: []
+        })
+      }
+    )
+    await removalReached
+    const other = meanwhile()
+    await Promise.race([
+      other.catch(() => undefined),
+      new Promise((r) => setTimeout(r, LONG_ENOUGH_TO_TAKE_A_FOLDER_MS))
+    ])
+    release()
+    await closing
+    const [settled] = await Promise.allSettled([other])
+    return settled
+  }
+
+  it('another agent that starts a session in the folder while the close removes it waits, and is refused instead of taking a folder that is then deleted', async () => {
+    const s = sharedFolder(side)
+    const made = await s.theirs.create(side.at(repo), 'foo')
+    const taking = await whileTheCloseRemovesIt(s, () =>
+      s.theirs.adopt(side.at(repo), made.worktreePath)
+    )
+    expect(taking).toMatchObject({
+      status: 'rejected',
+      reason: new Error('The checkout is not a worktree of this repository')
+    })
+    expect(fs.existsSync(s.tree)).toBe(false)
+  })
+
+  it('a Claude Code resume into the folder while the close removes it waits for the removal, then makes the folder again and starts in it', async () => {
+    const s = sharedFolder(side)
+    await s.theirs.create(side.at(repo), 'foo')
+    const resumed = await whileTheCloseRemovesIt(s, s.claudeResumes)
+    expect(resumed).toMatchObject({ status: 'fulfilled', value: { ok: true } })
+    expect(s.launched).toEqual([expect.objectContaining({ folderThere: true })])
+    expect(fs.existsSync(path.join(s.tree, 'file.txt'))).toBe(true)
+  })
+})

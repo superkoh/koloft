@@ -1,6 +1,7 @@
 import path from 'path'
 import { isRemoteKey } from '@shared/remoteKey'
 import { realpathSafe } from './projectInfo'
+import type { TreeRemovals } from './treeRemovals'
 
 export type WorktreesBeingPrepared = Map<string, Promise<unknown>>
 
@@ -30,4 +31,12 @@ export async function holdingTheFolder<T>(
     if (preparing.get(key) === held) preparing.delete(key)
     release()
   }
+}
+
+export function removingTheWorktree<T>(
+  d: { preparing: WorktreesBeingPrepared; treeRemovals: Pick<TreeRemovals, 'run'> },
+  tree: string,
+  work: () => Promise<T>
+): Promise<T> {
+  return holdingTheFolder(d.preparing, preparedKeyOf(tree), () => d.treeRemovals.run(tree, work))
 }
