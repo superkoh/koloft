@@ -36,6 +36,11 @@ export const agent = {
   // CODEX§10 CODEX§38
   envOfItsSessionThatMisleadsWhatStartsInside: {
     named: [
+      'CODEX_APP_TOOLS_PIPE_PATH',
+      'CODEX_INTERNAL_ORIGINATOR_OVERRIDE',
+      'CODEX_MCP_NODE_PATH',
+      'CODEX_PERMISSION_PROFILE',
+      'CODEX_SAGE_BACKFILL_TRACKER_TAB_REUSE',
       'CODEX_THREAD_ID',
       'CODEX_SESSION_ID',
       'CODEX_SHELL',

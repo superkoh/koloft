@@ -64,31 +64,12 @@ export const TUI_STALLED_AFTER_MS = 30_000
 // CODEX§10
 export function codexEnvironment(overrides?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env = { ...process.env, ...overrides }
-  const runtime = new Set([
-    'CODEX_APP_TOOLS_PIPE_PATH',
-    'CODEX_INTERNAL_ORIGINATOR_OVERRIDE',
-    'CODEX_MCP_NODE_PATH',
-    'CODEX_PERMISSION_PROFILE',
-    'CODEX_SAGE_BACKFILL_TRACKER_TAB_REUSE',
-    'CODEX_SESSION_ID',
-    'CODEX_THREAD_ID',
-    'CODEX_SHELL',
-    'CODEX_CI',
-    'CLAUDECODE',
-    'CLAUDE_EFFORT',
-    'AI_AGENT',
-    'TERM_SESSION_ID',
-    'ANT_ACCOUNT',
-    'GEMINI_API_KEY',
-    ...BROWSER_TAB_ENV
-  ])
+  const runtime = new Set(['TERM_SESSION_ID', 'ANT_ACCOUNT', 'GEMINI_API_KEY', ...BROWSER_TAB_ENV])
   for (const key of Object.keys(env)) {
     if (
       runtime.has(key) ||
       misleadsWhatStartsInsideAnAgentsSession(key) ||
-      key.startsWith('KOLOFT_') ||
-      key.startsWith('CLAUDE_CODE_') ||
-      key.startsWith('ANTIGRAVITY_')
+      key.startsWith('KOLOFT_')
     )
       delete env[key]
   }
