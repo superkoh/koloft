@@ -1,0 +1,38 @@
+runs: 2
+--- run 1
+argv:
+  "exec"
+  "--skip-git-repo-check"
+  "--ephemeral"
+  "--ignore-user-config"
+  "--ignore-rules"
+  "-s"
+  "read-only"
+  "-m"
+  "gpt-6.1-sol"
+  "-c"
+  "model_reasoning_effort=\"medium\""
+  "-C"
+  "<tmp>"
+  "-"
+stdin: "You write short titles.\nOne line only.\n\nTask:\nfix the login crash\n\nand the logout one"
+cwd: <tmp>
+env: {"PIN_ACCOUNT":"codex-work","PIN_KEPT":"handed over as it is"}
+--- run 2
+argv:
+  "exec"
+  "--skip-git-repo-check"
+  "--ephemeral"
+  "--ignore-user-config"
+  "--ignore-rules"
+  "-s"
+  "read-only"
+  "-m"
+  "gpt-6-luna"
+  "-C"
+  "<tmp>"
+  "-"
+stdin: "You write short titles.\nOne line only.\n\nTask:\nfix the login crash\n\nand the logout one"
+cwd: <tmp>
+env: {"PIN_ACCOUNT":"codex-work","PIN_KEPT":"handed over as it is"}
+answer: "Fix Login Crash\n"

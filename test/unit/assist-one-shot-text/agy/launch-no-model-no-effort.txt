@@ -1,0 +1,12 @@
+runs: 1
+--- run 1
+argv:
+  "--gemini_dir=/fixture/one-shot"
+  "-p"
+  "You write short titles.\nOne line only.\n\nTask:\nfix the login crash\n\nand the logout one"
+  "--output-format"
+  "json"
+stdin: ""
+cwd: <tmp>
+env: {"PIN_ACCOUNT":"agy-work","PIN_KEPT":"handed over as it is"}
+answer: "Fix Login Crash"
