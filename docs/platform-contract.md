@@ -3784,8 +3784,8 @@ call twice on one home, the second time over the link the first one made.
 
 Koloft dependents: `signInToHome` in `src/main/index.ts`, which types a Codex or
 Antigravity sign-in into the user's login shell with an account's environment,
-`MARK_OUTPUT_START` in `src/main/signInOutput.ts`, and `launchClaude` in
-`src/main/host/localHost.ts`, whose `exec /usr/sbin/taskpolicy -a claude …` (ADR-0042)
+`MARK_OUTPUT_START` in `src/main/signInOutput.ts`, and `launchClaudeHere` in
+`src/agents/claude/main/claudeLaunch.ts`, whose `exec /usr/sbin/taskpolicy -a claude …` (ADR-0042)
 no longer runs a zsh function or `hash` entry named `claude`.
 
 ## §64 What a phone copy can be: a Markdown file in a hidden view, a diff on Discord's phone app

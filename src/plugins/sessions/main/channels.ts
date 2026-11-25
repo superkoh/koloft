@@ -19,7 +19,7 @@ import type {
 import { CHANNELS, type InstructionsSaveResult } from '../shared/ipc'
 import type { InstructionAskView } from '../shared/instructionAsks'
 import type { InstructionAsks } from './instructionAsks'
-import type { SessionsWithStore } from '@agents/kit/main/storedSessions'
+import type { WorktreeRecordsOfEveryAgent } from '@core/agent/worktreeRecords'
 
 interface SessionBackend {
   id: BackendId
@@ -33,6 +33,7 @@ export interface Backends {
   forSession(key: string): SessionBackend
   noUsableAccount(kind: BackendId): string | null
   forgetAvailability(): void
+  worktreeRecords: Pick<WorktreeRecordsOfEveryAgent, 'of'>
 }
 
 export interface ChannelDeps {
@@ -59,7 +60,6 @@ export interface ChannelDeps {
   saveEveryWorkspace(text: string, opened: string): InstructionsSaveResult
   instructionAsks(): Pick<InstructionAsks, 'views' | 'answer'>
   worktrees(workspacePath: string): Promise<WorktreeInfo[]>
-  storedSessions(): Pick<SessionsWithStore, 'id' | 'store'>[]
   dirExists(dir: string): Promise<boolean>
 }
 
@@ -171,26 +171,24 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
   })
   ipc.handle(CHANNELS.worktrees, async (p: string) => {
     const trees = await deps.worktrees(p)
-    for (const stored of deps.storedSessions()) {
-      const mine = stored.store.listResources().filter((r) => r.originalCwd === p)
-      const there = await Promise.all(
-        mine.map((r) => r.state === 'ready' && deps.dirExists(r.worktreePath))
-      )
-      for (const [i, resource] of mine.entries()) {
-        if (there[i]) continue
-        const existing = trees.find((t) => t.dir === resource.worktreePath)
-        if (existing) {
-          existing.recoveryResourceId = resource.id
-          existing.recoveryBackend = stored.id
-        } else
-          trees.push({
-            name: resource.worktreeName,
-            dir: resource.worktreePath,
-            branch: resource.worktreeBranch ?? undefined,
-            recoveryResourceId: resource.id,
-            recoveryBackend: stored.id
-          })
-      }
+    const recorded = backends.worktreeRecords.of(p)
+    const there = await Promise.all(
+      recorded.map(({ record }) => record.state === 'ready' && deps.dirExists(record.worktreePath))
+    )
+    for (const [i, { backendId, record }] of recorded.entries()) {
+      if (there[i]) continue
+      const existing = trees.find((t) => t.dir === record.worktreePath)
+      if (existing) {
+        existing.recoveryResourceId = record.id
+        existing.recoveryBackend = backendId
+      } else
+        trees.push({
+          name: record.worktreeName,
+          dir: record.worktreePath,
+          branch: record.worktreeBranch ?? undefined,
+          recoveryResourceId: record.id,
+          recoveryBackend: backendId
+        })
     }
     return trees
   })

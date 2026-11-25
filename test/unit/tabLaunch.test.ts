@@ -50,6 +50,12 @@ vi.mock('../../src/agents/codex/main/codexTransport', () => ({
 import { barePath } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import { koloftPrompt } from '@plugins/sessions/api'
+import { docsWritingOn } from '@plugins/docs-writing/api'
+import {
+  saidFile,
+  seedHandedOverOwnerWords,
+  writeConductorMarker
+} from '@plugins/sessions/main/hooks'
 import type { CreateTabOptions } from '@shared/types'
 import { portOffset } from '@shared/worktreeName'
 import { ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE } from '../../src/main/agentLift'
@@ -58,11 +64,13 @@ import { trustCodexFolder } from '../../src/agents/codex/main/backend'
 import { BackgroundFile } from '../../src/main/backgroundFile'
 import { CodexSessions, type CodexSessionDeps } from '../../src/agents/codex/main/codexSessions'
 import { GithubRepos } from '../../src/main/githubRepos'
-import type { ClaudeLaunch } from '../../src/main/host/host'
+import type { ClaudeLaunch } from '../../src/agents/claude/main/claudeLaunch'
 import { Hosts } from '../../src/main/host/hosts'
 import { localHost } from '../../src/main/host/localHost'
 import type { LaunchIdentity } from '../../src/main/launchPrompt'
 import { SshHost } from '../../src/main/host/sshHost'
+import { tabPushed } from '../../src/main/remote/launch'
+import { standInMachine } from './helpers/standInMachine'
 import { SessionRuntime } from '../../src/core/agent/sessionRuntime'
 import type { TreeIo } from '../../src/main/sessionWorktrees'
 
@@ -127,14 +135,7 @@ async function claudeTab(
     },
     tracker: { track: () => {}, movePick: () => {}, list: () => [] },
     hosts: new Hosts(
-      localHost(new GithubRepos(), {
-        hookRegDir: () => regDir,
-        agentPlugin: () => (withPlugin ? '/koloft/agent-plugin' : undefined),
-        docsPlugin: () => '/koloft/docs-plugin',
-        assistOf: () => assist,
-        agentHomes: () => ({ codexHome: '/nowhere' }),
-        pastedPicturesDir: () => path.join(userData, 'palette-pictures')
-      }),
+      localHost(new GithubRepos(), { agentHomes: () => ({ codexHome: '/nowhere' }) }),
       (machine) =>
         new SshHost(machine, {
           run: async () => ({ code: 0, stdout: Buffer.from(''), stderr: '' }),
@@ -142,22 +143,35 @@ async function claudeTab(
           watch: () => {},
           unwatch: () => {},
           github: {},
-          claude: {
+          tabs: {
             userData,
             controlDir: path.join(home, 'ssh-control'),
             machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
             alive: () => new Set(),
             firstHeartbeatDone: async () => {},
-            realPath: (p) => p,
-            settings: () => ({ skipPermissions: false }),
-            agentTools: () => true,
-            pickAccount: async () => ({ env: {}, banner: '' }),
-            noAccountMessage: () => NO_USABLE_ACCOUNT.claude,
-            hookSettings: () => ({}),
             loginPath: async () => ''
           }
         })
     ),
+    launchHere: {
+      writeConductorMarker: (tabId: string, role: string) =>
+        writeConductorMarker(regDir, tabId, role),
+      handOverOwnerWords: (tabId: string, words: string) =>
+        seedHandedOverOwnerWords(saidFile(regDir, tabId), words),
+      agentPlugin: () => (withPlugin ? '/koloft/agent-plugin' : undefined),
+      docsPlugin: () => '/koloft/docs-plugin',
+      assistOf: () => assist,
+      pastedPicturesDir: () => path.join(userData, 'palette-pictures')
+    },
+    launchOnMachine: {
+      realPath: (_machine: string, p: string) => p,
+      settings: () => ({ skipPermissions: false }),
+      agentTools: () => true,
+      docsWritingOn,
+      pickAccount: async () => ({ env: {}, banner: '' }),
+      noAccountMessage: () => NO_USABLE_ACCOUNT.claude,
+      hookSettings: () => ({})
+    },
     store: () => null,
     remoteSync: () => null,
     userData: () => userData,
@@ -211,16 +225,23 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
     remoteTreeIo: () => machineTreeIo,
     machine: {
       instance: 'table-instance',
-      ready: async () => {},
-      run: async () => ({ code: 1, stdout: '', stderr: '' }),
-      sshArgs: () => [],
-      machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
-      tabDir: (tabId) => path.join(tabDirs, tabId),
-      fileExists: async () => false,
+      machine: (name) =>
+        standInMachine(name, {
+          run: () => ({ code: 1 }),
+          tabFiles: (tabId) => {
+            const dir = path.join(tabDirs, tabId)
+            const machine = { dir: home, name: 'm-0000000000000000' }
+            return {
+              dir,
+              pushedLine: () =>
+                tabPushed({ host: name, sshOptions: [], machine, tabId, tabDir: dir })
+            }
+          },
+          loginPath: async () => MACHINE_LOGIN_PATH_FOLDERS
+        }),
       keyed: (machine, p) => `ssh://${machine}${p}`,
       mirrorDir: () => tabDirs,
-      nextPull: async () => {},
-      loginPath: async () => MACHINE_LOGIN_PATH_FOLDERS
+      nextPull: async () => {}
     },
     changed: () => {},
     events: () => {},

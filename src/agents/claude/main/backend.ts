@@ -17,7 +17,8 @@ import { formatRemoteKey, hostOf, isAbsoluteOnHost, parseRemoteKey } from '@shar
 import { hasUsableAccount } from '@shared/accountUsage'
 import type { Turn } from '@shared/turns'
 import { isValidWorktreeName } from '@shared/worktreeName'
-import type { ModeClass, SessionBackend } from '@core/agent/sessionBackends'
+import type { ModeClass, SessionBackend, TabExit } from '@core/agent/sessionBackends'
+import { KEEPS_NO_WORKTREE_RECORDS } from '@core/agent/worktreeRecords'
 import {
   A_PASS_WITH_NO_ROWS,
   type RowsPass,
@@ -29,9 +30,8 @@ import type { PtyManager } from '../../../main/ptyManager'
 import type { SessionTracker } from './sessionTracker'
 import type { ClaudeSessionStore } from './claudeSessionStore'
 import type { Hosts } from '../../../main/host/hosts'
-import { publicClaudeSession } from '../../../main/host/hosts'
-import type { MachineAccount, SshHost } from '../../../main/host/sshHost'
-import type { ClaudeLaunch, Host } from '../../../main/host/host'
+import type { Host } from '../../../main/host/host'
+import type { Machine } from '../../../main/host/machine'
 import type { RemoteSync } from '../../../main/remote/sync'
 import {
   AGENT_DROP_NAME,
@@ -67,6 +67,17 @@ import type { StatusLineSetting } from '../../../main/statusline'
 import { keychainRead, listAccounts } from '../../../main/accounts'
 import type { PickResponse } from '../../../main/accountPicker'
 import { SESSION_ID_RE } from './claudeArgs'
+import {
+  claudeTrustsFolderHere,
+  claudeTrustsFolderOnMachine,
+  launchClaudeHere,
+  launchClaudeOnMachine,
+  type ClaudeHereDeps,
+  type ClaudeLaunch,
+  type ClaudeOnMachineDeps,
+  type MachineAccount
+} from './claudeLaunch'
+import { publicClaudeSession } from './publicClaudeSession'
 import { forgetClaudeProbe, probeClaude } from './claudeProbe'
 import {
   OLD_CLAUDE_GOES_WITHIN_MS,
@@ -110,7 +121,9 @@ import type { GitOut } from '@core/worktree'
 export interface ClaudeBackendDeps {
   pty: PtyManager
   tracker: SessionTracker
-  hosts: Hosts<SshHost>
+  hosts: Hosts<Host & Machine>
+  launchHere: ClaudeHereDeps
+  launchOnMachine: ClaudeOnMachineDeps
   store(): ClaudeSessionStore | null
   remoteTargets(): { host: string; paths: string[] }[]
   sessionRebound(prevId: string, nextId: string, source: string): void
@@ -217,7 +230,7 @@ class CallerOnTheMachine {
   private checking?: Promise<void>
 
   constructor(
-    private host: SshHost,
+    private host: Machine,
     private requestId: string,
     private pid: number
   ) {}
@@ -252,6 +265,7 @@ class CallerOnTheMachine {
 
 export class ClaudeBackend implements SessionBackend {
   readonly id = 'claude'
+  readonly worktreeRecords = KEEPS_NO_WORKTREE_RECORDS
   private hookRegDir = ''
   private statusLogCursors = new Map<string, AppendCursor>()
   private statusLogDraining = new Map<string, boolean>()
@@ -310,8 +324,28 @@ export class ClaudeBackend implements SessionBackend {
     return this.d.store()?.liveKey() ?? ''
   }
 
-  launchEnded(tabId: string): void {
+  tabExited({ tabId, crashed }: TabExit): void {
+    this.onPtyExit(tabId, crashed)
+    this.d.tracker.setAlive(tabId, false)
     this.d.store()?.launchEnded(tabId)
+  }
+
+  quitWaitsForIt(): boolean {
+    return false
+  }
+
+  async endBeforeQuit(): Promise<void> {}
+
+  flushSync(): void {}
+
+  async beforeWorkspaceRemoved(): Promise<void> {}
+
+  showsPromptBeforeBind(): boolean {
+    return false
+  }
+
+  sessionGone(): boolean {
+    return true
   }
 
   hasTab(tabId: string): boolean {
@@ -359,8 +393,9 @@ export class ClaudeBackend implements SessionBackend {
     return this.d.tracker.workStillRunning(tabId)
   }
 
-  trustsFolder(dir: string): Promise<boolean> {
-    return this.d.hosts.of(dir).trustsFolder(dir)
+  async trustsFolder(dir: string): Promise<boolean> {
+    const machine = this.d.hosts.machineOf(dir)
+    return machine ? claudeTrustsFolderOnMachine(machine, dir) : claudeTrustsFolderHere(dir)
   }
 
   archive(key: string): boolean {
@@ -1055,8 +1090,7 @@ export class ClaudeBackend implements SessionBackend {
   async create(opts: CreateTabOptions): Promise<CreateTabResult> {
     const asked = typeof opts.cwd === 'string' ? opts.cwd : ''
     const root = hostOf(asked) === 'ssh' ? asked : (this.homeOf(opts.resumeSessionId) ?? asked)
-    const host = this.d.hosts.of(root)
-    return this.createTab(host, {
+    return this.createTab({
       tabId: opts.tabId,
       root,
       resumeSessionId: opts.resumeSessionId,
@@ -1132,7 +1166,7 @@ export class ClaudeBackend implements SessionBackend {
       }
       if (!dirExistsSync(cwd)) return { ok: false, code: 'cwd-missing' }
     }
-    const r = await this.createTab(host, {
+    const r = await this.createTab({
       root: home ?? cwd,
       cwd,
       resumeSessionId: sid,
@@ -1201,18 +1235,21 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   private async createTab(
-    host: Host,
     spec: ClaudeLaunch & { tabId?: string; cols?: number; rows?: number }
   ): Promise<CreateTabResult> {
     const { tracker } = this.d
     const store = this.d.store()
+    const onMachine = this.d.hosts.machineOf(spec.root)
     const ws = spec.resumeSessionId ? store?.workspaceOf(spec.resumeSessionId) : undefined
-    const plan = await host.launch({
+    const launch: ClaudeLaunch = {
       ...spec,
-      fallbackCwd: ws && this.d.hosts.of(ws) === host ? ws : undefined,
+      fallbackCwd: ws && this.d.hosts.machineOf(ws) === onMachine ? ws : undefined,
       projectRules: await this.d.projectRules?.(spec.root),
       workspaceParts: await this.d.workspaceInstructions?.(spec.root)
-    })
+    }
+    const plan = onMachine
+      ? await launchClaudeOnMachine(onMachine, this.d.launchOnMachine, this.d.userData(), launch)
+      : await launchClaudeHere(this.d.launchHere, launch)
     if (!plan.ok) return plan
     const machine = plan.machine
     const playwrightServers = machine ? [] : await this.d.playwrightMcp(plan.spawnCwd)

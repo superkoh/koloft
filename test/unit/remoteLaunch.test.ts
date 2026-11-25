@@ -10,7 +10,6 @@ import {
   accountEnv,
   claudeCodeGuessesWindowOf,
   buildMachinePackage,
-  claudeTabSpec,
   killSessionCmd,
   launchLine,
   skillsFromMachineLine,
@@ -18,9 +17,9 @@ import {
   utilShellLine,
   writeTabPassFile,
   writeTabPackage,
-  type ClaudeTab,
   type TabSpec
 } from '../../src/main/remote/launch'
+import { claudeTabProgram, type ClaudeTab } from '../../src/agents/claude/main/claudeLaunch'
 import { TMUX_CONF, heartbeatCmd } from '../../src/main/remote/install'
 import { MACHINE_CLAUDE } from '../../src/agents/claude/main/advisorOnFable'
 import { utilTerminalGuard } from '../../src/main/shim'
@@ -159,9 +158,11 @@ const spec = ({
     banner: 'koloft: bravo',
     ...over
   }
-  return program
-    ? { ...tab, program }
-    : claudeTabSpec(tab, {
+  return {
+    ...tab,
+    program:
+      program ??
+      claudeTabProgram(tab, {
         settings,
         claudeArgs,
         agentPlugin,
@@ -169,6 +170,7 @@ const spec = ({
         trustFolder,
         pictureFolder
       })
+  }
 }
 
 function stage(r: Remote, files: Record<string, string | Buffer>, s: TabSpec) {

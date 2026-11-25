@@ -52,7 +52,7 @@ vi.mock('../../src/agents/codex/main/codexTransport', async (importOriginal) => 
 import type { CreateTabOptions } from '@shared/types'
 import { agySessionKey } from '../../src/agents/kit/main/sessionStore'
 import { BackgroundFile } from '../../src/main/backgroundFile'
-import type { MachineAccount } from '../../src/main/host/sshHost'
+import type { MachineAccount } from '../../src/agents/claude/main/claudeLaunch'
 import { tabPackageDir } from '../../src/main/remote/paths'
 import {
   isStartedBeforeTabPasses,
@@ -66,6 +66,7 @@ import {
   filesUnder,
   LOGIN_PATH_ON_THE_MACHINE,
   MACHINE,
+  MACHINE_FOLDER,
   makeWorld,
   ON_THE_MACHINE,
   recordingPty,
@@ -424,6 +425,28 @@ describe('the order a launch on another machine keeps', () => {
     expect(pickAccount).not.toHaveBeenCalled()
   })
 
+  // ADR-0044
+  it("a Claude Code session Koloft just ended on the machine, resumed while the machine's last heartbeat still lists it, starts anew and so asks for an account; refused for having none, that resume has already used up the note that Koloft ended the session, so the next one attaches to what the heartbeat lists and asks for no account", async () => {
+    const why = '"me" is not signed in — sign in again in Settings ▸ Accounts.'
+    const pickAccount = vi.fn(async () => undefined)
+    const tab = claudeWith(
+      { pickAccount, noAccountMessage: () => why, alive: () => new Set([RUNNING_THERE]) },
+      {
+        remoteTab: {
+          host: MACHINE,
+          projectsRoot: path.join(world.userData, 'projects'),
+          tmuxName: `k-${RUNNING_THERE}`
+        }
+      }
+    )
+    tab.backend.stop(TAB)
+    await expect(claudeTabOn(tab, { resumeSessionId: RUNNING_THERE })).rejects.toThrow(why)
+    expect(pickAccount).toHaveBeenCalledTimes(1)
+    expect((await claudeTabOn(tab, { resumeSessionId: RUNNING_THERE })).ok).toBe(true)
+    expect(pickAccount).toHaveBeenCalledTimes(1)
+    expect(tab.started[0].typedLine).toContain('a=attach')
+  })
+
   it("a Claude Code session on a machine that cannot be reached is refused with ssh's own reason before anything else is decided: no account is picked, and a launch whose arguments are wrong gets that reason too", async () => {
     const pickAccount = vi.fn(async () => ACCOUNT)
     const outOfReach = claudeWith(
@@ -460,7 +483,7 @@ describe('the order a launch on another machine keeps', () => {
     expect(scriptOfTheTab()).not.toContain(handed)
   })
 
-  it('a Claude Code launch asks for no account and reads no login PATH result until the machine has said whether the session still runs there, which waits for the first heartbeat of this run — for a new session too; a new Antigravity session does not wait for it, a resumed one does', async () => {
+  it('a Claude Code launch asks for no account and reads no login PATH result until the machine has said whether the session still runs there, which waits for the first heartbeat of this run — for a new session too, and a resumed one that heartbeat lists is then attached to, not started again; a new Antigravity session does not wait for it, a resumed one does', async () => {
     const heartbeat = (): {
       machine: Partial<MachineSetup>
       asked: () => boolean
@@ -514,6 +537,17 @@ describe('the order a launch on another machine keeps', () => {
     resumedAgy.answer()
     await agyLaunching
     expect(agy.started[0].typedLine).toContain('a=attach')
+
+    const resumedClaude = heartbeat()
+    const aliveForClaude = new Set<string>()
+    const claude = claudeWith({ ...resumedClaude.machine, alive: () => aliveForClaude })
+    const claudeResuming = claudeTabOn(claude, { resumeSessionId: RUNNING_THERE })
+    await vi.waitFor(() => expect(resumedClaude.asked()).toBe(true))
+    expect(await settled(claudeResuming)).toBe(false)
+    aliveForClaude.add(RUNNING_THERE)
+    resumedClaude.answer()
+    await claudeResuming
+    expect(claude.started[0].typedLine).toContain('a=attach')
   })
 
   it('attaching to a session still running there, Claude Code sends its settings file again and Antigravity sends none of its own files, only the script and the pass, and neither sends the account', async () => {
@@ -567,6 +601,18 @@ describe('the order a launch on another machine keeps', () => {
     heldElsewhere = false
     await agyTabOn(tab, resume)
     expect(tab.started[1].typedLine).toContain('a=start')
+  })
+
+  it('a Claude Code session resumed in a folder of the machine that is not its workspace folder, as a worktree is, starts there, or in the workspace folder when that folder is gone; one resumed in the workspace folder itself is handed no second folder', async () => {
+    const worktree = `${MACHINE_FOLDER}/.claude/worktrees/wt`
+    const inItsWorkspace = { workspaceOfEverySession: ON_THE_MACHINE }
+    await claudeTabOn(claudeWith({}, inItsWorkspace), {
+      cwd: `ssh://${MACHINE}${worktree}`,
+      resumeSessionId: RUNNING_THERE
+    })
+    expect(scriptOfTheTab()).toContain(`\ncd '${worktree}' || cd '${MACHINE_FOLDER}' || exit 3\n`)
+    await claudeTabOn(claudeWith({}, inItsWorkspace), { resumeSessionId: RUNNING_THERE })
+    expect(scriptOfTheTab()).toContain(`\ncd '${MACHINE_FOLDER}' || exit 3\n`)
   })
 
   it("one Claude Code launch names one machine package everywhere — its script, its hook settings and the line that pushes it — though Koloft's package is rebuilt under a new name while it launches", async () => {

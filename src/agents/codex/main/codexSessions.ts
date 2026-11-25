@@ -45,8 +45,9 @@ import {
   type MachineLogin,
   type MachineUpstreamOptions
 } from './codexMachine'
-import { writeTabPassFile, type MachinePackage } from '../../../main/remote/launch'
-import { problemOf, sshLinkBroke, type RunResult } from '../../../main/remote/ssh'
+import { writeTabPassFile } from '../../../main/remote/launch'
+import { problemOf, sshLinkBroke } from '../../../main/remote/ssh'
+import type { Machine } from '../../../main/host/machine'
 import {
   CODEX_ASKS_AND_WAITS,
   developerInstructions,
@@ -126,6 +127,7 @@ import {
   type StoredSessionDeps
 } from '@agents/kit/main/storedSessions'
 import { promptParts, type LaunchIdentity } from '../../../main/launchPrompt'
+import type { HistoryStore } from '../../../main/historyWatch'
 
 const MACHINE_HISTORY_FRESH_MS = 15_000
 
@@ -139,6 +141,16 @@ export const CODEX_TAB_ENV = {
 } as const
 
 const sourceKinds = ['cli', 'vscode', 'appServer']
+
+// CODEX§15
+const CODEX_LISTS_A_NEW_ROLLOUT_WITHIN_MS = 1000
+
+// CODEX§15
+export const CODEX_HISTORY_STORE: HistoryStore = {
+  dir: (env) => path.join(path.dirname(codexConfigFile(env)), 'sessions'),
+  holdsASession: () => true,
+  settleMs: CODEX_LISTS_A_NEW_ROLLOUT_WITHIN_MS
+}
 
 // CODEX§15
 const rolloutFiles = (listedPath: string): string[] => [listedPath, listedPath + '.zst']
@@ -239,16 +251,10 @@ class MachineOutOfReach extends Error {}
 
 export interface CodexMachineDeps {
   instance: string
-  ready(): Promise<void>
-  run(machine: string, cmd: string): Promise<RunResult>
-  sshArgs(machine: string, background: boolean): string[]
-  machinePackage(): MachinePackage
-  tabDir(tabId: string): string
-  fileExists(file: string): Promise<boolean>
+  machine(name: string): Machine
   keyed(machine: string, onMachine: string): string
   mirrorDir(machine: string): string
   nextPull(machine: string): Promise<void>
-  loginPath(machine: string): Promise<string>
 }
 
 function shellWritesFrom(file: string, pulled: () => Promise<void>): () => Promise<string[]> {
@@ -322,6 +328,7 @@ interface CodexLaunch {
 
 export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLaunch> {
   readonly id = 'codex'
+  readonly historyStore = CODEX_HISTORY_STORE
   private crashLeftoversEnded?: Promise<void>
   private listedHooks = new Map<string, ListedHook>()
   private resumedInDefaultHome = new Map<string, Promise<void>>()
@@ -354,6 +361,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   private machineDeps(): CodexMachineDeps {
     if (!this.deps.machine) throw new Error('Codex cannot reach remote machines here.')
     return this.deps.machine
+  }
+
+  private machine(name: string): Machine {
+    return this.machineDeps().machine(name)
   }
 
   machineOfTab(tabId: string): string | undefined {
@@ -457,17 +468,20 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
 
   // CODEX§16
   private machineRpc(machine: string): CodexRpc {
-    const m = this.machineDeps()
     return new CodexRpc({
       binary: 'ssh',
-      args: [...m.sshArgs(machine, true), machine, machineAppServerCmd(m.instance)],
+      args: [
+        ...this.machine(machine).sshArgs(true),
+        machine,
+        machineAppServerCmd(this.machineDeps().instance)
+      ],
       cwd: os.homedir()
     })
   }
 
   // ADR-0039
   private async withMachineRpc<T>(machine: string, use: (rpc: CodexRpc) => Promise<T>): Promise<T> {
-    await this.machineDeps().ready()
+    await this.machine(machine).ready()
     await this.sweptOnce(machine)
     return this.machineSideServers.ask(machine, use)
   }
@@ -548,6 +562,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
 
   hasProcesses(): boolean {
     return super.hasProcesses() || this.sideServers.anyOpen || this.machineSideServers.anyOpen
+  }
+
+  showsPromptBeforeBind(): boolean {
+    return false
   }
 
   async stopAll(deadlineMs?: number): Promise<void> {
@@ -671,7 +689,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     let threads = onOpenLine ?? []
     let homeThere = threads.length > 0
     if (!homeThere) {
-      const home = await this.machineDeps().run(machine, HAS_CODEX_HOME_CMD)
+      const home = await this.machine(machine).run(HAS_CODEX_HOME_CMD)
       if (sshLinkBroke(home)) throw new MachineOutOfReach(problemOf(home))
       homeThere = home.code === 0
       threads = homeThere ? (onOpenLine ?? (await list())) : []
@@ -766,9 +784,9 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     })
     if (!file) return false
     if (!machine) return rolloutOnThisMac(file)
-    const m = this.machineDeps()
+    const there = this.machine(machine)
     const found = await Promise.all(
-      rolloutFiles(file).map((f) => m.fileExists(keyedOn(machine, f)!))
+      rolloutFiles(file).map(async (f) => (await there.sh('test -f "$1"', [f])).code === 0)
     )
     return found.includes(true)
   }
@@ -988,8 +1006,8 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
               (trustedOnMachine.includes(barePath(cwd)) ||
                 this.machineTrusts(parseRemoteKey(cwd)!)),
             askMachineTrust ? this.ownConfig(home) : {},
-            this.machineDeps()
-              .loginPath(machine)
+            this.machine(machine)
+              .loginPath()
               .catch(() => '')
           ])
         : [[], undefined, false, {}, '']
@@ -1102,7 +1120,8 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     } catch (error) {
       await transport?.stop()
       openShim?.release()
-      if (machine) fs.rmSync(this.machineDeps().tabDir(tabId), { recursive: true, force: true })
+      if (machine)
+        fs.rmSync(this.machine(machine).tabFiles(tabId).dir, { recursive: true, force: true })
       throw error
     }
   }
@@ -1117,21 +1136,23 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
 
   // CODEX§11
   async machineTrusts(dir: RemoteKey): Promise<boolean> {
-    const r = await this.machineDeps().run(dir.host, realDirAndConfigCmd(dir.path))
+    const r = await this.machine(dir.host).run(realDirAndConfigCmd(dir.path))
     if (r.code !== 0) return false
-    const newline = r.stdout.indexOf('\n')
-    return configTrusts(r.stdout.slice(newline + 1), r.stdout.slice(0, newline).trim())
+    const said = r.stdout.toString('utf8')
+    const newline = said.indexOf('\n')
+    return configTrusts(said.slice(newline + 1), said.slice(0, newline).trim())
   }
 
   // ADR-0039
   private sweptOnce(machine: string): Promise<void> {
-    const m = this.machineDeps()
     let swept = this.machinesSwept.get(machine)
     if (!swept) {
-      swept = m.run(machine, sweepCodexServersCmd(m.instance)).then(
-        () => {},
-        () => {}
-      )
+      swept = this.machine(machine)
+        .run(sweepCodexServersCmd(this.machineDeps().instance))
+        .then(
+          () => {},
+          () => {}
+        )
       this.machinesSwept.set(machine, swept)
     }
     return swept
@@ -1144,10 +1165,11 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     home: string,
     cwdNow: () => string
   ): MachineUpstreamOptions {
-    const m = this.machineDeps()
+    const there = this.machine(machine)
+    const { instance } = this.machineDeps()
     return {
       connect: () =>
-        spawn('ssh', [...m.sshArgs(machine, true), machine, proxyCmd(m.instance, tabId)], {
+        spawn('ssh', [...there.sshArgs(true), machine, proxyCmd(instance, tabId)], {
           stdio: 'pipe'
         }),
       login: this.machineLogin(home),
@@ -1155,7 +1177,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
       machineCwd: () => barePath(cwdNow()),
       stopServer: async () => {
         if (this.shuttingDown && this.runs.get(tabId)?.observer.turnRunning()) return
-        const r = await m.run(machine, stopCodexServerCmd(m.instance, tabId))
+        const r = await there.run(stopCodexServerCmd(instance, tabId))
         const sessionStartedThere = !!this.runs.get(tabId)?.info
         if (sshLinkBroke(r) && sessionStartedThere && !this.shuttingDown)
           this.deps.error(
@@ -1173,21 +1195,24 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     tui: string[],
     spec: Omit<CodexTabSpec, 'tabId' | 'instance' | 'machineName'>
   ): string {
-    const m = this.machineDeps()
-    const pkg = m.machinePackage()
-    const tabDir = m.tabDir(tabId)
-    fs.mkdirSync(tabDir, { recursive: true, mode: 0o700 })
+    const there = this.machine(machine)
+    const tabFiles = there.tabFiles(tabId)
+    fs.mkdirSync(tabFiles.dir, { recursive: true, mode: 0o700 })
     fs.writeFileSync(
-      path.join(tabDir, `${tabId}.sh`),
-      codexTabScript({ ...spec, tabId, instance: m.instance, machineName: pkg.name }),
+      path.join(tabFiles.dir, `${tabId}.sh`),
+      codexTabScript({
+        ...spec,
+        tabId,
+        instance: this.machineDeps().instance,
+        machineName: there.packageName()
+      }),
       { mode: 0o700 }
     )
-    writeTabPassFile(tabDir, tabId)
+    writeTabPassFile(tabFiles.dir, tabId)
     return codexLaunchLine({
       host: machine,
-      sshOptions: m.sshArgs(machine, false),
-      machine: pkg,
-      tabDir,
+      sshOptions: there.sshArgs(false),
+      tabFilesPushed: tabFiles.pushedLine(),
       tabId,
       tui
     })

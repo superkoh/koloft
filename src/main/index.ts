@@ -102,7 +102,6 @@ import {
   ensureControlDir,
   rsyncPull,
   listenOverSsh,
-  backgroundOptions,
   masterCommandOutlivingKoloft,
   runMasterCommand,
   runSsh,
@@ -433,6 +432,7 @@ import {
   type TurnOver
 } from '@core/moment'
 import type { MainIpc } from '@core/ipc'
+import type { WorktreeResource } from '@core/agent/worktreeRecords'
 import { ClaudeDialogWatch } from '@agents/claude/main/claudeDialogWatch'
 import { docsWritingOn } from '@plugins/docs-writing/api'
 import { koloftPrompt, type SessionsWithStore } from '@plugins/sessions/api'
@@ -467,7 +467,6 @@ type SlashTarget = Parameters<SessionsStarted['slash']['typeWhenIdle']>[0]
 type SlashReplyTo = Parameters<SessionsStarted['slash']['typeWhenIdle']>[2]
 type Recipient = Parameters<ReturnType<SessionsStarted['buildHandOver']>['tell']>[0]
 type MergedHeads = NonNullable<Parameters<SessionsStarted['whatIsLeft']>[2]>
-type WorktreeResource = Parameters<SessionsWithStore['worktrees']['untouched']>[0]
 type NoticeFile = ReturnType<SessionsStarted['localNotice']>
 type SyncSession = Parameters<SessionsStarted['sessionSync']['observe']>[0][number]
 type CodexAsk = Parameters<SessionsStarted['codexDialog']>[0]
@@ -594,7 +593,7 @@ const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
   }
 }
 const backendHooks: PluginStartDeps['sessions']['backendHooks'] = {}
-backendHooks.isOverseerSession = (id) => !!butler?.isButlerSession(id)
+backendHooks.isKoloftsOwnSession = (id) => !!butler?.isButlerSession(id)
 backendHooks.turnOver = (tabId) => runtime.turnOver(tabId)
 backendHooks.askingOf = (tabId) => {
   if (runtime.statusOf(tabId) !== 'approval') return undefined
@@ -607,7 +606,7 @@ backendHooks.askingOf = (tabId) => {
 function showAskOnItsRow(tabId: string): void {
   if (runtime.statusOf(tabId) === 'approval') pushToSessions.sessions(onSessionsChanged())
 }
-backendHooks.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
+backendHooks.verdictsOnFilesOf = (sessionId) => readerDocs.of(sessionId)
 const noAccountNow = (backend: BackendId): string => noAccountMessage(listAccounts(), backend)
 backendHooks.noAccountMessage = noAccountNow
 backendHooks.turnedOff = turnedOffNow
@@ -3414,7 +3413,6 @@ app.whenReady().then(() => {
     sendToRenderer(CH.terminal.cwd, c)
   })
   subscribeTabSubsystems({
-    storedOwnerOf,
     toast: (message) => sendToRenderer(CH.toast.show, message),
     workspaces: () => workspaceMgr,
     announce: announceNow
@@ -3570,22 +3568,10 @@ app.whenReady().then(() => {
       ...storedDeps,
       machine: {
         instance: codexMachineInstance(userData),
-        ready: loginEnvReady,
-        run: (host, cmd) =>
-          loginEnvReady().then(() => runSsh(host, cmd, { controlDir: remoteControlDir })),
-        sshArgs: (machine, background) => {
-          ensureControlDir(remoteControlDir)
-          return background
-            ? backgroundOptions(machine, remoteControlDir)
-            : sshOptions(remoteControlDir, false)
-        },
-        machinePackage,
-        tabDir: (tabId) => tabPackageDir(userData, tabId),
-        fileExists: (file) => hosts.machine(parseRemoteKey(file)!.host).fileExists(file),
+        machine: (host) => hosts.machine(host),
         keyed: pinnedKeyOn,
         mirrorDir: (host) => mirrorHookDir(userData, host),
-        nextPull: (host) => remoteSync?.nextPullDone(host) ?? Promise.resolve(),
-        loginPath: (host) => gitAccounts?.machineLoginPath(host) ?? Promise.resolve('')
+        nextPull: (host) => remoteSync?.nextPullDone(host) ?? Promise.resolve()
       },
       leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),
       trustFolder: trustCodexFolder,
@@ -3722,7 +3708,7 @@ app.whenReady().then(() => {
     remoteOrphansOf: (wsPath) => claudeStore?.remoteOrphansOf(wsPath) ?? [],
     killRemoteSession: (host, sessionId) =>
       claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
-    hiddenRow: (id) => sessionBackends.isOverseerSession(id),
+    hiddenRow: (id) => sessionBackends.isKoloftsOwnSession(id),
     parentOf: (rowId) => startedSessions.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
     scratchRoots: scratchRootsAround(os.homedir(), os.tmpdir()),
@@ -3741,12 +3727,7 @@ app.whenReady().then(() => {
     runningBindings,
     remoteRunning,
     sessionsOnDiskOrRunning: (ids) =>
-      butler?.forgetGone(
-        (key) =>
-          ids.has(key) ||
-          (identityOf(key).backendId !== 'claude' &&
-            !storedSessions().some((s) => s.id === identityOf(key).backendId && s.threadGone(key)))
-      ),
+      butler?.forgetGone((key) => sessionBackends.sessionStillThere(key, ids)),
     memberDropped: (sessionId, why) => droppedSessionsLog(`${sessionId} ${why}`)
   })
   const bindingNow = buildDiscordBinding({
@@ -4175,9 +4156,7 @@ app.whenReady().then(() => {
     gitDirExists: (root) => hosts.of(root).dirExists(`${root}/.git`),
     worktreeDirExists: (root, name) => hosts.of(root).dirExists(`${worktreeHomeOf(root)}/${name}`),
     worktreeRecorded: (root, name) =>
-      storedSessions().some((s) =>
-        s.worktrees.recorded(`${worktreeHomeOf(realpathSafe(root))}/${name}`)
-      ),
+      sessionBackends.worktreeRecords.recorded(`${worktreeHomeOf(realpathSafe(root))}/${name}`),
     branchExists: (root, branch) => branchExists(hostGitOut, root, branch),
     listRunFolders,
     runLeftovers,
@@ -4303,8 +4282,6 @@ function askQuit(): boolean {
 }
 setQuitAsk(askQuit)
 
-let storedQuitPending = false
-let storedQuitStopped = false
 app.on('before-quit', (e) => {
   const decision = quitDecision(Date.now())
   if (decision === 'wait') {
@@ -4326,23 +4303,13 @@ app.on('before-quit', (e) => {
   }
   quitCommitted = true
   guard?.liftAllBeforeQuitting()
-  if (!storedQuitStopped && storedSessions().some((s) => s.hasProcesses())) {
+  const waitsForAnAgent = sessionBackends.holdsQuitUntilAgentsEnded(
+    () => app.quit(),
+    (backend, error) =>
+      console.error(`[koloft] ${BACKEND_LABEL[backend]} did not stop cleanly:`, error)
+  )
+  if (waitsForAnAgent) {
     e.preventDefault()
-    if (!storedQuitPending) {
-      storedQuitPending = true
-      void Promise.all(
-        storedSessions().map((s) =>
-          s
-            .stopAll()
-            .catch((error) =>
-              console.error(`[koloft] ${BACKEND_LABEL[s.id]} did not stop cleanly:`, error)
-            )
-        )
-      ).finally(() => {
-        storedQuitStopped = true
-        app.quit()
-      })
-    }
     return
   }
   for (const { leaving } of claudeTabExits.values()) {
@@ -4361,7 +4328,7 @@ app.on('before-quit', (e) => {
   sessionAccounts?.flushSync()
   savedUsage.flushSync()
   savedHomeUsage.flushSync()
-  for (const stored of storedSessions()) stored.store.flushSync()
+  sessionBackends.flushSync()
   flushAttention()
   flushInbox()
   freshness?.stop()
@@ -4493,8 +4460,7 @@ function agentTabIds(): string[] {
 
 const browserControlOps: PluginStartDeps['browser-control']['cdpOps'] = {
   anotherLiveKoloftOwns: (tabId) => anotherLiveInstanceOwns(tabId, pidAlive),
-  sessionForTab: (tabId) =>
-    claudeBackend.sessionIdOf(tabId) ?? storedOwnerOf(tabId)?.sessionIdOf(tabId) ?? null,
+  sessionForTab: (tabId) => sessionOfTab(tabId)?.sessionId ?? null,
   cameThroughAForward: (guestId, url) => {
     const port = loopbackPortOf(url)
     return port !== null && pageForwards.carries(guestId, port)
@@ -4734,12 +4700,11 @@ function killTabPty(tabId: string, restarting = false): Promise<boolean> {
   if (sleeper) {
     forgetSleeper(tabId)
     const tree = projectInfoFor(sleeper.cwd).treeRoot
-    const owner = restarting ? undefined : storedSessions().find((s) => s.id === sleeper.kind)
-    const resource = owner?.store.listResources().find((r) => r.worktreePath === tree)
+    const resource = restarting ? undefined : sessionBackends.worktreeRecords.at(sleeper.kind, tree)
     if (!restarting) cronRunner?.onTabGone({ treeRoot: tree, sessionId: sleeper.sessionId })
-    return (resource ? removeUntouchedWorktree(owner, resource) : Promise.resolve()).then(
-      () => true
-    )
+    return (
+      resource ? removeUntouchedWorktree({ id: sleeper.kind }, resource) : Promise.resolve()
+    ).then(() => true)
   }
   return stopTabProcess(tabId, restarting)
 }
@@ -4901,7 +4866,7 @@ async function endAndRemove(
     return false
   }
   archiveSession(target.sessionId)
-  for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
+  sessionBackends.worktreeRecords.forgetUnusedAt(info.treeRoot)
   // CC§9
   closedSessionsStoppedUntil.set(
     target.sessionId,
@@ -4912,12 +4877,13 @@ async function endAndRemove(
 }
 
 async function removeUntouchedWorktree(
-  owner: SessionsWithStore | null | undefined,
+  owner: { readonly id: BackendId } | null | undefined,
   resource: WorktreeResource
 ): Promise<void> {
   const tree = resource.worktreePath
   if (sleeperTrees().includes(tree) || cronRunner?.tidiesFolder(tree)) return
-  if (sessionBackends.occupantOf(tree) || !(await owner?.worktrees.untouched(resource))) return
+  if (sessionBackends.occupantOf(tree)) return
+  if (!owner || !(await sessionBackends.worktreeRecords.untouched(owner.id, resource))) return
   if (treeRemovals.has(tree)) return
   const problem = await treeRemovals.run(tree, () =>
     removeTree(hostGitOut, {
@@ -5035,8 +5001,7 @@ async function tidyRun(root: string, worktree: string, sessionId?: string): Prom
   const result = await treeRemovals.run(info.treeRoot, () =>
     tidyTree(hostGitOut, info, (d) => hosts.of(d).dirExistsOrThrow(d), mergedHeads)
   )
-  if (result.removed)
-    for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
+  if (result.removed) sessionBackends.worktreeRecords.forgetUnusedAt(info.treeRoot)
   return result
 }
 
@@ -5162,7 +5127,7 @@ async function resumeRow(
 }
 
 function showsPromptBeforeBind(tabId: string): boolean {
-  return !!storedOwnerOf(tabId)?.showsPromptBeforeBind?.(tabId)
+  return sessionBackends.showsPromptBeforeBind(tabId)
 }
 
 function boundAndSettled(tabId: string, turnEnded: boolean): boolean {
@@ -5464,7 +5429,7 @@ function cronBindDeadlineMs(): number {
 const resumeProbes: ResumeProbes = {
   dirExists: dirExistsSync,
   occupantOf: (dir) => sessionBackends.occupantOf(dir),
-  recorded: (dir) => storedSessions().some((s) => s.worktrees.recorded(dir)),
+  recorded: (dir) => sessionBackends.worktreeRecords.recorded(dir),
   ...gitProbes(localGitOut)
 }
 
@@ -5496,14 +5461,9 @@ const githubOptions: GithubReposOptions = {
 
 const hosts = new Hosts(
   localHost(new GithubRepos(githubOptions), {
-    hookRegDir: () => hookRegDir ?? '',
-    agentPlugin: () => (agentToolsOn() ? claudeAgentPlugin : undefined),
-    docsPlugin: docsPluginWhileOn,
-    assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
     agentHomes: () => ({
       codexHome: path.dirname(codexSharedConfig())
-    }),
-    pastedPicturesDir
+    })
   }),
   (machine) =>
     new SshHost(machine, {
@@ -5535,20 +5495,12 @@ const hosts = new Hosts(
         }
       },
       github: githubOptions,
-      claude: {
+      tabs: {
         userData: app.getPath('userData'),
         controlDir: remoteControlDir,
         machinePackage,
         alive: () => remoteSync?.alive(machine) ?? new Set(),
         firstHeartbeatDone: () => remoteSync?.firstRoundDone(machine) ?? Promise.resolve(),
-        realPath: (p) => workspaceMgr?.realRemotePath({ host: machine, path: p }) ?? p,
-        settings: loadSettings,
-        pickAccount: (launchKey, resumeSessionId) =>
-          pickMachineAccount(() => pickForLaunch(launchKey, resumeSessionId)),
-        noAccountMessage: () => noAccountNow('claude'),
-        agentTools: agentToolsOn,
-        hookSettings: (tabId, dir, allowKoloft) =>
-          machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft),
         loginPath: () => gitAccounts?.machineLoginPath(machine) ?? Promise.resolve('')
       }
     })
@@ -5557,6 +5509,26 @@ const hosts = new Hosts(
 const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
   pty: ptyMgr,
   hosts,
+  launchHere: {
+    writeConductorMarker: (tabId, role) => writeConductorMarker(hookRegDir ?? '', tabId, role),
+    handOverOwnerWords: (tabId, words) =>
+      seedHandedOverOwnerWords(saidFile(hookRegDir ?? '', tabId), words),
+    agentPlugin: () => (agentToolsOn() ? claudeAgentPlugin : undefined),
+    docsPlugin: docsPluginWhileOn,
+    assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
+    pastedPicturesDir
+  },
+  launchOnMachine: {
+    realPath: (machine, p) => workspaceMgr?.realRemotePath({ host: machine, path: p }) ?? p,
+    settings: loadSettings,
+    pickAccount: (launchKey, resumeSessionId) =>
+      pickMachineAccount(() => pickForLaunch(launchKey, resumeSessionId)),
+    noAccountMessage: () => noAccountNow('claude'),
+    agentTools: agentToolsOn,
+    docsWritingOn,
+    hookSettings: (tabId, dir, allowKoloft) =>
+      machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)
+  },
   remoteTargets: () => workspaceMgr?.remoteTargets() ?? [],
   sessionRebound: (prevId, nextId, source) => workspaceMgr?.onSessionRebind(prevId, nextId, source),
   remoteSync: () => remoteSync,
@@ -5903,18 +5875,7 @@ function registerIpc(): void {
     return r
   })
   ipcMain.handle(CH.workspace.removeConfirmed, async (_e, p: string) => {
-    await Promise.all(
-      storedSessions().flatMap((stored) => {
-        const tabs = new Set(
-          stored
-            .rows(p)
-            .filter((r) => r.running || r.pending)
-            .map((r) => (r.pending ? r.id : stored.aliveTabFor(r.id)))
-            .filter((id): id is string => !!id)
-        )
-        return [...tabs].map((id) => stored.stop(id))
-      })
-    )
+    await sessionBackends.beforeWorkspaceRemoved(p)
     const marked = markedSessionsOf(p)
     workspaceMgr?.removeConfirmed(p)
     cronRunner?.removeWorkspace(p)
@@ -6062,7 +6023,7 @@ const sessionSearch = new SessionSearch({
   },
   backendSnippets: async (term, signal) =>
     (await Promise.all(storedSessions().map((s) => s.searchSnippets(term, signal)))).flat(),
-  hidden: (id) => sessionBackends.isOverseerSession(id),
+  hidden: (id) => sessionBackends.isKoloftsOwnSession(id),
   scan: (files, term, found) => {
     // PLATFORM§4
     const worker = createTranscriptSearchWorker({ workerData: { files, term } })
@@ -6196,7 +6157,6 @@ const startedPlugins: PluginsStarted = startPlugins(
           return { ok: true }
         },
         worktrees: async (p) => (await workspaceMgr?.worktrees(p)) ?? [],
-        storedSessions,
         dirExists: (dir) => hosts.of(dir).dirExists(dir)
       }
     },
@@ -6423,7 +6383,10 @@ const {
   noticeFile,
   pruneStale,
   quotedPrompt,
+  saidFile,
+  seedHandedOverOwnerWords,
   setupHooks,
+  writeConductorMarker,
   writeTabHookSettings,
   resolveWorkspace,
   closingTree,

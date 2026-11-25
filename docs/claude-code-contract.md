@@ -2702,7 +2702,7 @@ on 2.1.322 and 359.1 MB on 2.1.323 for darwin-x64 without `zstd` by the manifest
 22.6 and 24 minutes at 2 Mbit/s; up to 2.1.322 a second, shorter one follows it (the
 measured arm64 one 112 MB over the wire)),
 and
-`launchClaude` in `src/main/host/localHost.ts` writes only the onboarding flag (no
+`launchClaudeHere` in `src/agents/claude/main/claudeLaunch.ts` writes only the onboarding flag (no
 warm-up, per the 2.1.296 bullet above).
 
 ## §11 Session registry (`~/.claude/sessions/`)

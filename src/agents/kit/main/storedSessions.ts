@@ -19,8 +19,10 @@ import type { SearchCandidate } from '../../../main/sessionSearch'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
 import type { SessionPlace } from '../../../main/usageCache'
 import type { CodexApproval, CodexQuestion, SentAnswer } from '@plugins/sessions/main/dialog'
-import { SessionStore, hostOfPath, type KeyOf, type WorktreeResource } from './sessionStore'
-import { SessionWorktrees, type TreeIo } from '../../../main/sessionWorktrees'
+import type { WorktreeResource } from '@core/agent/worktreeRecords'
+import { SessionStore, hostOfPath, type KeyOf } from './sessionStore'
+import { SessionWorktrees } from './sessionWorktrees'
+import type { TreeIo } from '../../../main/sessionWorktrees'
 import type { PtyManager } from '../../../main/ptyManager'
 import {
   MACHINE_ASKS_AT_MOST_EVERY_MS,
@@ -153,18 +155,13 @@ export const ownerTextApart = (
 export interface SessionsWithStore {
   readonly id: BackendId
   readonly store: SessionStore
-  readonly worktrees: SessionWorktrees
   rows(workspace: string): BackendSessionRow[]
   workspacesFor(cwds: string[]): string[]
   sessionPlaces(): (id: string, host?: string) => SessionPlace | undefined
   adopt(keys: string[]): void
   members(): Set<string>
   runningBindings(): Map<string, string>
-  threadGone(key: string): boolean
-  hasProcesses(): boolean
-  stopAll(deadlineMs?: number): Promise<void>
   hasTab(tabId: string): boolean
-  sessionIdOf(tabId: string): string | undefined
   aliveTabFor(key: string): string | undefined
   stop(tabId: string, nativeExitCode?: number, restarting?: boolean): Promise<void>
   searchable(workspaces: string[]): SearchCandidate[]
@@ -174,7 +171,6 @@ export interface SessionsWithStore {
   answerable?(tabId: string): Promise<void>
   answer?(tabId: string, reply: string): Promise<SentAnswer | false>
   deliver?(tabId: string, text: string): Promise<boolean>
-  showsPromptBeforeBind?(tabId: string): boolean
   noticeRemoteExits?(host: string, sessionIds: string[]): void
   followMirrors?(host: string): void
   tabOnMachine?(host: string, tmuxName: string, launchTab: string): string | undefined
@@ -321,6 +317,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   abstract transcriptExists(key: string): Promise<boolean>
   abstract readTurns(key: string, n: number): Promise<Turn[]>
   abstract transcriptPlaces(key: string): TranscriptPlaces | undefined
+  abstract showsPromptBeforeBind(tabId: string): boolean
 
   protected get label(): string {
     return BACKEND_LABEL[this.id]

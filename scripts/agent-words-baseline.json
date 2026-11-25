@@ -51,10 +51,10 @@
       "export const codexSessionKey = sessionKeyOn('codex', 'Codex')",
       "private keyOf: KeyOf = codexSessionKey"
     ],
-    "src/agents/kit/main/stored.ts": [
-      "import type { AgySessions } from '@agents/agy/main/agySessions'",
-      "import type { CodexSessions } from '@agents/codex/main/codexSessions'",
-      "sessions: CodexSessions | AgySessions,"
+    "src/agents/kit/main/sessionWorktrees.ts": [
+      "const target = `${root}/.claude/worktrees/${name}`",
+      "const worktreePath = `${root}/.claude/worktrees/${name}`",
+      "if (!listedRoot) throw new Error('Not a .claude/worktrees folder')"
     ],
     "src/agents/kit/main/storedSessions.ts": [
       "import type { CodexApproval, CodexQuestion, SentAnswer } from '@plugins/sessions/main/dialog'",
@@ -153,20 +153,6 @@
     "src/main/cliRuntime.ts": ["command: Exclude<AgentCommand, 'claude'>"],
     "src/main/gitStatus.ts": ["const SESSION_WORKTREES_DIR = '.claude/worktrees/'"],
     "src/main/gitSteps.ts": ["const dir = `${top.stdout.trim()}/.claude/worktrees/pr-${pr}`"],
-    "src/main/historyWatch.ts": [
-      "agy: {",
-      "codex: {",
-      "const AGY_LISTS_A_NEW_CONVERSATION_WITHIN_MS = 1500",
-      "const CODEX_LISTS_A_NEW_ROLLOUT_WITHIN_MS = 1000",
-      "dir: (env) => path.join(ownersGeminiDir(env), AGY_APP_DIR, 'conversations'),",
-      "dir: (env) => path.join(path.dirname(codexConfigFile(env)), 'sessions'),",
-      "export const HISTORY_STORES: Record<Exclude<BackendId, 'claude'>, HistoryStore> = {",
-      "import { AGY_APP_DIR, ownersGeminiDir } from '@agents/agy/main/agyStore'",
-      "import { codexConfigFile } from '@agents/codex/main/codexTrust'",
-      "readonly id: Exclude<BackendId, 'claude'>",
-      "settleMs: AGY_LISTS_A_NEW_CONVERSATION_WITHIN_MS",
-      "settleMs: CODEX_LISTS_A_NEW_ROLLOUT_WITHIN_MS"
-    ],
     "src/main/homeKeyOnDisk.ts": [
       "'agy-home': (userData, name) => agyApiKeyRoute(agyHomeOf(userData, name))",
       "'codex-home': (userData, name) =>",
@@ -174,70 +160,9 @@
       "import { codexHomeOf } from '@agents/codex/main/codexAccounts'",
       "readJson(path.join(codexHomeOf(userData, name), 'auth.json')).auth_mode === 'apikey',"
     ],
-    "src/main/host/host.ts": [
-      "export interface ClaudeLaunch {",
-      "export type ClaudeLaunchPlan =",
-      "launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan>"
-    ],
-    "src/main/host/hosts.ts": [
-      "export function publicClaudeSession({",
-      "import type { BackendSessionInfo, ClaudeSessionInfo } from '@shared/types'",
-      "}: ClaudeSessionInfo): BackendSessionInfo {"
-    ],
-    "src/main/host/localHost.ts": [
-      "CLAUDE_CODE_DECSTBM: '1'",
-      "CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1',",
-      "acceptClaudeTrust(claudeJsonPath(), dir)",
-      "acceptClaudeTrust,",
-      "agentHomes(): { codexHome: string }",
-      "async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {",
-      "claudeJsonPath,",
-      "claudeTrustsFolder,",
-      "console.error('[koloft] could not mark Claude onboarding done', err)",
-      "console.error('[koloft] could not record Claude trust for', dir, err)",
-      "const args = claudeArgv(process.env.KOLOFT_CLAUDE_CMD || 'claude', {",
-      "export function localHost(github: GithubRepos, claude: LocalClaudeDeps): Host {",
-      "export interface LocalClaudeDeps {",
-      "import type { ClaudeLaunch, ClaudeLaunchPlan, Host } from './host'",
-      "import { claudeArgv } from '@agents/claude/main/claudeArgs'",
-      "launch: (spec) => launchClaude(claude, spec),",
-      "listSkills(skillFs, backend, { workspace: root, home: os.homedir(), ...claude.agentHomes() }),",
-      "markClaudeOnboarded",
-      "markClaudeOnboarded(claudeJsonPath())",
-      "trustsFolder: async (dir) => claudeTrustsFolder(claudeJsonPath(), dir),",
-      "} from '@agents/claude/main/claudeTrust'"
-    ],
+    "src/main/host/localHost.ts": ["agentHomes(): { codexHome: string }"],
     "src/main/host/sshHost.ts": [
-      "'This machine wants a password or a new host key first, and an Antigravity tab cannot ask for it yet: sign in through a Claude Code or Codex session there first'",
-      "): ClaudeLaunch['permission'] {",
-      "alive: this.deps.claude.alive(),",
-      "async launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {",
-      "await this.deps.claude.firstHeartbeatDone()",
-      "claude: MachineClaudeDeps",
-      "claudeArgs,",
-      "claudeTabSpec(",
-      "claudeTabSpec,",
-      "const args = machineClaudeArgs(spec, sid, settings.skipPermissions)",
-      "const argv = claudeArgv('claude', {",
-      "const claudeArgs = args.args.filter((_, i) => model < 0 || (i !== model && i !== model + 1))",
-      "const d = this.deps.claude",
-      "const model = spec.model && account?.env.ANTHROPIC_MODEL ? args.args.indexOf('--model') : -1",
-      "const picturesHandedTo = (spec: ClaudeLaunch): string | undefined =>",
-      "const projectPrompt = spec.projectRules && claudeProjectPrompt(spec.projectRules)",
-      "ensureControlDir(this.deps.claude.controlDir)",
-      "export function machineClaudeArgs(",
-      "export interface MachineClaudeDeps {",
-      "import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'",
-      "import { TRUSTED_JS } from '@agents/claude/main/claudeTrustJs'",
-      "import { claudeArgv } from '@agents/claude/main/claudeArgs'",
-      "import { claudeProjectPrompt } from '../agentPlugin'",
-      "node -e \"$2\" \"$HOME/.claude.json\" \"$(pwd -P)\"`",
-      "return this.deps.claude",
-      "return this.deps.claude.loginPath().catch(() => '')",
-      "spec: ClaudeLaunch,",
-      "spec: ClaudeLaunch,",
-      "sshOptions: sshOptions(this.deps.claude.controlDir, false),",
-      "while (this.kills.size && this.deps.claude.alive().has(sid))"
+      "'This machine wants a password or a new host key first, and an Antigravity tab cannot ask for it yet: sign in through a Claude Code or Codex session there first'"
     ],
     "src/main/index.ts": [
       "'agy-home': (name) => probeAgyAccount(name)",
@@ -249,7 +174,6 @@
       "'codex-home': async (name, key) => {",
       "(a) => a.enabled && ACCOUNT_KINDS_OF.claude.includes(a.kind)",
       "(claude) => `${MARK_OUTPUT_START}; exec ${claude} setup-token`,",
-      "(identityOf(key).backendId !== 'claude' &&",
       "...(agySessions?.usesHost(t.host)",
       "...(claudeStore?.searchableRows() ?? []),",
       "...(codexSessions?.machinesWithTabs() ?? [])",
@@ -348,7 +272,6 @@
       "claude: async () => {",
       "claude: async (tabId, sessionId) => {",
       "claude: claudeBackendDeps,",
-      "claude: {",
       "claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))",
       "claudeAskEnded(tabId)",
       "claudeAskOf: (tabId) => claudeAsks.get(tabId),",
@@ -363,7 +286,6 @@
       "claudeBackend.forgetAvailability()",
       "claudeBackend.noticeRemoteExits(host, ids)",
       "claudeBackend.picked(obj.tabId, payload.skipFlag === true)",
-      "claudeBackend.sessionIdOf(tabId) ?? storedOwnerOf(tabId)?.sessionIdOf(tabId) ?? null,",
       "claudeBackend.watchLocalHooks(hookPaths.regDir)",
       "claudeBackend.watchRemoteHookMirrors()",
       "claudeBackend.watchShimRegistrations(regDir)",
@@ -759,32 +681,17 @@
       "'ANTHROPIC_MODEL',",
       "'CLAUDE_CODE_OAUTH_TOKEN',",
       "'CLAUDE_CODE_SUBAGENT_MODEL'",
-      "CJ=\"$HOME/.claude.json\"",
       "[UTIL_BIN_DIR, SESSION_BIN_DIR, CLAUDE_BIN_DIR].some((bin) => rel.startsWith(bin))",
-      "`( cd ${shq(folder)} 2>/dev/null && node -e ${shq(TRUST_CWD_JS)} \"$HOME/.claude.json\" \"$(pwd -P)\" ) >/dev/null 2>&1\\n`",
-      "beforeTmux: `${c.trustFolder ? trustOnTheMachine(tab.cwd) : ''}${c.pictureFolder ? trustOnTheMachine(c.pictureFolder) : ''}${claudeFirstRun(tab)}`,",
-      "claudeArgs: string[]",
-      "const ownerText = c.ownerText ? ` --append-system-prompt \"$(cat \"${T}${OWNER_TEXT_SUFFIX}\")\"` : ''",
-      "echo '[Koloft] first run on this machine: fetching Claude settings (a few seconds)'",
       "else if (kind === 'custom') {",
       "env.ANTHROPIC_AUTH_TOKEN = secret",
       "env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE = '1'",
       "export const CLAUDE_AUTH_ENV_VARS = [",
       "export const CLAUDE_BIN_DIR = 'claude-bin/'",
-      "export const claudeTabSpec = (tab: Omit<TabSpec, 'program'>, c: ClaudeTab): TabSpec => ({",
       "export function claudeCodeGuessesWindowOf(model: string): boolean {",
-      "export interface ClaudeTab {",
-      "function claudeFirstRun(spec: Omit<TabSpec, 'program'>): string {",
-      "function claudeRun(tabId: string, c: ClaudeTab): string {",
       "if (claudeCodeGuessesWindowOf(endpoint.model)) env.CLAUDE_CODE_DISABLE_1M_CONTEXT = '1'",
       "if (endpoint?.baseUrl) env.ANTHROPIC_BASE_URL = endpoint.baseUrl",
       "if (kind === 'apikey') env.ANTHROPIC_API_KEY = secret",
-      "if command -v timeout >/dev/null 2>&1; then timeout 60 claude -p ok --max-turns 1; else claude -p ok --max-turns 1; fi ) >/dev/null 2>&1",
-      "import { TRUST_CWD_JS } from '@agents/claude/main/claudeTrustJs'",
       "return !/claude/i.test(model) && !/\\[1m\\]$/i.test(model)",
-      "return ` PATH=\"$M/${CLAUDE_BIN_DIR}:$PATH\"; export PATH",
-      "run: claudeRun(tab.tabId, c),",
-      "set -- claude --settings \"${T}.json\"${c.docsPlugin ? ` --plugin-dir \"$M/${DOCS_PLUGIN_DIR}\"` : ''}${c.agentPlugin ? ` --plugin-dir \"$M/${AGENT_PLUGIN_DIR}\" --append-system-prompt-file \"${prompt}\"` : ''}${ownerText} ${c.claudeArgs.map(shq).join(' ')}",
       "unset ${CLAUDE_AUTH_ENV_VARS.join(' ')} ${TAB_PASS_ENV}",
       "} else env.CLAUDE_CODE_OAUTH_TOKEN = secret"
     ],
@@ -844,11 +751,6 @@
       "return startedAHelper(codexTaskName(item.agentPath) ?? 'helper')",
       "type CodexApproval,",
       "type CodexQuestion"
-    ],
-    "src/main/sessionWorktrees.ts": [
-      "const target = `${root}/.claude/worktrees/${name}`",
-      "const worktreePath = `${root}/.claude/worktrees/${name}`",
-      "if (!listedRoot) throw new Error('Not a .claude/worktrees folder')"
     ],
     "src/main/shim.ts": [
       "${ADVISOR_OFF_ON_FABLE_FN}",
@@ -1307,7 +1209,6 @@
       "buildCodexSessions: ({ file, ...deps }) => new CodexSessions(file, deps),",
       "buildCodexSessions: BuildLater<CodexSessionDeps & { file: string }, CodexSessions>",
       "claude: Omit<ClaudeBackendDeps, 'tracker' | 'store'>",
-      "claude: claudeBackend,",
       "claudeBackend,",
       "claudeBackend: ClaudeBackend",
       "const claudeBackend = new ClaudeBackend({ ...d.claude, tracker, store: () => claudeStore })",
@@ -1317,16 +1218,8 @@
       "import { SessionTracker } from '@agents/claude/main/sessionTracker'",
       "let claudeStore: ClaudeSessionStore | null = null",
       "sessionBackends.register(claudeBackend)",
-      "subscribeTabSubsystems: BuildLater<Omit<TabSubsystems, 'attention' | 'claude' | 'tracker'>>",
       "type ClaudeSessionStoreDeps",
       "} from '@agents/claude/main/claudeSessionStore'"
-    ],
-    "src/plugins/sessions/main/tabLifecycle.ts": [
-      "claude: Pick<ClaudeBackend, 'onPtyExit' | 'launchEnded'>",
-      "import type { ClaudeBackend } from '@agents/claude/main/backend'",
-      "import type { SessionTracker } from '@agents/claude/main/sessionTracker'",
-      "lifecycle.on('teardown', ({ tabId }) => s.claude.launchEnded(tabId))",
-      "lifecycle.on('teardown', ({ tabId, crashed }) => s.claude.onPtyExit(tabId, crashed))"
     ],
     "src/plugins/sessions/main/workspaces.ts": [
       "const wtMark = `${path.sep}.claude${path.sep}worktrees${path.sep}`"
