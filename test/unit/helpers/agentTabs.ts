@@ -254,7 +254,8 @@ export interface ClaudeSetup {
   projectRules?: string
   remoteTab?: RemoteTab
   workspaceOfEverySession?: string
-  tracker?: Partial<Pick<ClaudeBackendDeps['tracker'], 'track' | 'movePick' | 'bindSession'>>
+  tracker?: Partial<ClaudeBackendDeps['tracker']>
+  events?: ClaudeBackendDeps['events']
 }
 
 export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): ClaudeBackend {
@@ -302,7 +303,7 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
     hookSettings: () => undefined,
     playwrightMcp: async () => [],
     ptysChanged: () => {},
-    events: () => {},
+    events: c.events ?? (() => {}),
     error: () => {},
     projectRules: async () => c.projectRules
   } as unknown as ClaudeBackendDeps)
@@ -314,6 +315,7 @@ export interface AgySetup {
   apiKey?: string
   signedInOnTheWeb?: boolean
   events?: (tabId: string, event: SessionEvent) => void
+  runtime?: SessionRuntime
 }
 
 export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessions {
@@ -338,7 +340,7 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
   let sessions: AgySessions | undefined
   const deps: AgySessionDeps = {
     pty: pty as AgySessionDeps['pty'],
-    runtime: new SessionRuntime(),
+    runtime: a.runtime ?? new SessionRuntime(),
     projectInfo: (p) => ({
       root: p.startsWith('ssh://') ? ON_THE_MACHINE : world.repo,
       treeRoot: p
@@ -388,6 +390,7 @@ export interface CodexSetup {
   ranOnTheMachine: string[]
   agentTools?: boolean
   events?: (tabId: string, event: SessionEvent) => void
+  runtime?: SessionRuntime
 }
 
 export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): CodexSessions {
@@ -401,7 +404,7 @@ export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): Code
     ].filter(Boolean)
   return new CodexSessions(path.join(world.home, 'sessions.json'), {
     pty: pty as CodexSessionDeps['pty'],
-    runtime: new SessionRuntime(),
+    runtime: c.runtime ?? new SessionRuntime(),
     projectInfo: (p) => ({
       root: p.startsWith('ssh://') ? ON_THE_MACHINE : world.repo,
       treeRoot: p

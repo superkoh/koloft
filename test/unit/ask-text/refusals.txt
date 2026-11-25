@@ -1,0 +1,57 @@
+# Refusals that no single situation above shows: an answer on its way, one never taken, an old card, someone else, nothing to answer, nothing readable, the owner already at the keys
+
+## Claude Code, its ask held by its hook (a tab on this Mac that Discord or the owner-asleep butler answers)
+a second "yes" while the first goes in: It is waiting for an answer Koloft cannot read from here. The butler can still answer it by pressing its keys.
+the first, once the agent never took it: (taken)
+its card’s button, pressed by someone else: privately, under the button: Only the owner Koloft is paired with can answer here.
+answered "yes" elsewhere: (taken)
+then its card’s button pressed: privately, under the button: This question is no longer open.
+then answered "yes" again: It is waiting for an answer Koloft cannot read from here. The butler can still answer it by pressing its keys.
+its state back to waiting on the owner, with nothing Koloft can read, then "yes": It is waiting for an answer Koloft cannot read from here. The butler can still answer it by pressing its keys.
+"1, 3" to asks one question that takes several picks, after the owner pressed keys in its terminal: (taken)
+
+## Claude Code, its ask not held (a tab on this Mac nobody answers from elsewhere, or any tab on another machine, whose hook only records): Koloft answers by keys
+a second "yes" while the first goes in: It is waiting for an answer Koloft cannot read from here. The butler can still answer it by pressing its keys.
+the first, once the agent never took it: (taken)
+a second "1, 3" while the first goes in: Koloft sent it an answer a moment ago and is waiting to see the session take it. Try again in a few seconds.
+the first, once the agent never took it: Koloft sent your answer, but the session still waits for it.
+"1, 3" once more, after that: Koloft sent your answer, but the session still waits for it.
+its card’s button, pressed by someone else: privately, under the button: Only the owner Koloft is paired with can answer here.
+answered "yes" elsewhere: (taken)
+then its card’s button pressed: privately, under the button: This question is no longer open.
+then answered "yes" again: Koloft sees no question or approval in it right now.
+its state back to waiting on the owner, with nothing Koloft can read, then "yes": It is waiting for an answer Koloft cannot read from here. The butler can still answer it by pressing its keys.
+"1, 3" to asks one question that takes several picks, after the owner pressed keys in its terminal: You already started on this question in the terminal, so Koloft leaves it to you there.
+
+## Codex (its app-server's request, read on the TUI's connection)
+a second "yes" while the first goes in: Koloft sent it an answer a moment ago and is waiting to see the session take it. Try again in a few seconds.
+the first, once the agent never took it: Koloft sent your answer, but the session still waits for it.
+its card’s button, pressed by someone else: privately, under the button: Only the owner Koloft is paired with can answer here.
+answered "yes" elsewhere: (taken)
+then its card’s button pressed: privately, under the button: This question is no longer open.
+then answered "yes" again: Koloft sees no question or approval in it right now.
+its state back to waiting on the owner, with nothing Koloft can read, then "yes": Koloft sees no question or approval in it right now.
+"1" to asks one question that takes one pick, and takes own words, after the owner pressed keys in its terminal: You already started on this question in the terminal, so Koloft leaves it to you there.
+
+## Antigravity, read through its API (a tab on this Mac)
+a second "yes" while the first goes in: Koloft sees no question or approval in it right now.
+the first, once the agent never took it: (taken)
+its card’s button, pressed by someone else: privately, under the button: Only the owner Koloft is paired with can answer here.
+answered "yes" elsewhere: (taken)
+then its card’s button pressed: privately, under the button: This question is no longer open.
+then answered "yes" again: Koloft sees no question or approval in it right now.
+its state back to waiting on the owner, with nothing Koloft can read, then "yes": Koloft sees no question or approval in it right now.
+"1, 3" to asks one question that takes several picks, after the owner pressed keys in its terminal: (taken)
+
+## Antigravity, read from its tool call and 7501 status only (its API not answering, as on another machine): Koloft answers by keys
+a second "yes" while the first goes in: Koloft sees no question or approval in it right now.
+the first, once the agent never took it: Koloft sent your answer, but the session still waits for it.
+a second "1, 3" while the first goes in: Koloft sent it an answer a moment ago and is waiting to see the session take it. Try again in a few seconds.
+the first, once the agent never took it: Koloft sent your answer, but the session still waits for it.
+"1, 3" once more, after that: Koloft already pressed picks into this question and the session did not take them, so some may still be ticked. Koloft leaves it to you in the terminal.
+its card’s button, pressed by someone else: privately, under the button: Only the owner Koloft is paired with can answer here.
+answered "yes" elsewhere: (taken)
+then its card’s button pressed: privately, under the button: This question is no longer open.
+then answered "yes" again: Koloft sees no question or approval in it right now.
+its state back to waiting on the owner, with nothing Koloft can read, then "yes": Koloft sees no question or approval in it right now.
+"1, 3" to asks one question that takes several picks, after the owner pressed keys in its terminal: You already started on this question in the terminal, so Koloft leaves it to you there.
