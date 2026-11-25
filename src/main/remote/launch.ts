@@ -90,7 +90,8 @@ export function buildMachinePackage(
   return { dir, name }
 }
 
-const NEEDS_NO_QUOTING_RE = /^[A-Za-z0-9._=-]+$/
+const A_CHARACTER_NEEDING_NO_QUOTING = '[A-Za-z0-9._=-]'
+const NEEDS_NO_QUOTING_RE = new RegExp(`^${A_CHARACTER_NEEDING_NO_QUOTING}+$`)
 
 export function tmuxSessionName(sessionId: string): string {
   return `k-${sessionId}`
@@ -131,6 +132,10 @@ export const EXEC_ARGS_THROUGH_THE_STATUS_RELAY = [
   'exec "$@"'
 ]
 
+const TAB_SCRIPT_DIR_RE = REMOTE_TABS_DIR.replace(/^\$HOME/, '').replace(
+  /[\\^$.*+?()[\]{}|]/g,
+  '\\$&'
+)
 const AGENT_EXIT_255_PASSED_AS = SSH_LINK_BROKE_EXIT - 1
 const EXIT_OF_A_SHELL_HUNG_UP_ON = 129
 
@@ -167,21 +172,29 @@ fi
 trap 'rm -f "${T}${TAB_PASS_FILE_SUFFIX}"' EXIT
 ${sourceTabPass(spec.tabId)}
 ${onATerminalEvenWhenSshGaveNone('$2', '$3', spec.tabId, `sh '${T}.sh' $1`)}
+E="${T}"
+endsUnderTheTabThatStarted() {
+  s=$(tmux -L koloft list-panes -s -t "=$1:" -F '#{pane_start_command}' 2>/dev/null | sed -n 's|.*${TAB_SCRIPT_DIR_RE}/\\(${A_CHARACTER_NEEDING_NO_QUOTING}*\\)\\.sh[\\\\"]* run.*|\\1|p' | head -n 1)
+  [ -n "$s" ] && printf %s "$s" > "${T}.started-by"
+  [ -s "${T}.started-by" ] && E="${REMOTE_TABS_DIR}/$(cat "${T}.started-by")"
+}
 exited() {
-  c=$?; [ -s "${T}.exit" ] && c=$(cat "${T}.exit")
+  c=$?; [ -s "${T}.exit" ] && E="${T}"
+  [ -s "$E.exit" ] && c=$(cat "$E.exit")
   [ "$c" = ${SSH_LINK_BROKE_EXIT} ] && c=${AGENT_EXIT_255_PASSED_AS}
-  [ -f "${T}.screen" ] && awk 'NF { if (seen) for (; n; n--) print ""; seen = 1; n = 0; print; next } { n++ }' "${T}.screen"
+  [ -f "$E.screen" ] && awk 'NF { if (seen) for (; n; n--) print ""; seen = 1; n = 0; print; next } { n++ }' "$E.screen"
   rm -f "${T}.env"; exit $c
 }
-[ "$1" = attach ] && { n=${attachTo}; ${passIntoATmuxThatHoldsOne(T, '$n', spec.tabId)}; unset ${TAB_PASS_ENV}; ${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u attach -d -t "$n"; exited; }
+[ "$1" = attach ] && { n=${attachTo}; endsUnderTheTabThatStarted "$n"; ${passIntoATmuxThatHoldsOne(T, '$n', spec.tabId)}; unset ${TAB_PASS_ENV}; ${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u attach -d -t "$n"; exited; }
 unset ${ACCOUNT_ENV_HELD_IN_MEMORY}; ${ACCOUNT_ENV_HELD_IN_MEMORY}=$(cat "${T}.env" 2>/dev/null); rm -f "${T}.env"
 sh "$M/ensure.sh"${program.ensureTool ? ` ${program.ensureTool}` : ''} || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
 echo ${shq(spec.banner)}
-rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}" "${T}.exit" "${T}.screen" "${T}.tmux"
+rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}" "${T}.exit" "${T}.screen" "${T}.tmux" "${T}.started-by"
 ${program.beforeTmux}${passIntoATmuxThatHoldsOne(T, spec.tmuxName, spec.tabId)}
 [ -n "$${TAB_PASS_ENV}" ] && ( umask 077; printf '${TAB_PASS_ENV}=%s\\n' "$${TAB_PASS_ENV}" > "${T}${TAB_PASS_FILE_SUFFIX}" ); unset ${TAB_PASS_ENV}
 [ -n "$${ACCOUNT_ENV_HELD_IN_MEMORY}" ] && ( umask 077; printf '%s\\n' "$${ACCOUNT_ENV_HELD_IN_MEMORY}" > "${T}.env" ); unset ${ACCOUNT_ENV_HELD_IN_MEMORY}
+endsUnderTheTabThatStarted '${spec.tmuxName}'
 ${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
 exited
 `

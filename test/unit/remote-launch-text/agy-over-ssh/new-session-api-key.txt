@@ -141,21 +141,29 @@ if [ -n "$2" ] && [ ! -t 0 ]; then
   TERM=xterm-256color; export TERM
   exec script -qfec "stty cols $2 rows $3; tty > '$HOME/.koloft/tabs/pty-t1.pts'; exec sh '$HOME/.koloft/tabs/pty-t1.sh' $1" /dev/null
 fi
+E="$HOME/.koloft/tabs/pty-t1"
+endsUnderTheTabThatStarted() {
+  s=$(tmux -L koloft list-panes -s -t "=$1:" -F '#{pane_start_command}' 2>/dev/null | sed -n 's|.*/\.koloft/tabs/\([A-Za-z0-9._=-]*\)\.sh[\\"]* run.*|\1|p' | head -n 1)
+  [ -n "$s" ] && printf %s "$s" > "$HOME/.koloft/tabs/pty-t1.started-by"
+  [ -s "$HOME/.koloft/tabs/pty-t1.started-by" ] && E="$HOME/.koloft/tabs/$(cat "$HOME/.koloft/tabs/pty-t1.started-by")"
+}
 exited() {
-  c=$?; [ -s "$HOME/.koloft/tabs/pty-t1.exit" ] && c=$(cat "$HOME/.koloft/tabs/pty-t1.exit")
+  c=$?; [ -s "$HOME/.koloft/tabs/pty-t1.exit" ] && E="$HOME/.koloft/tabs/pty-t1"
+  [ -s "$E.exit" ] && c=$(cat "$E.exit")
   [ "$c" = 255 ] && c=254
-  [ -f "$HOME/.koloft/tabs/pty-t1.screen" ] && awk 'NF { if (seen) for (; n; n--) print ""; seen = 1; n = 0; print; next } { n++ }' "$HOME/.koloft/tabs/pty-t1.screen"
+  [ -f "$E.screen" ] && awk 'NF { if (seen) for (; n; n--) print ""; seen = 1; n = 0; print; next } { n++ }' "$E.screen"
   rm -f "$HOME/.koloft/tabs/pty-t1.env"; exit $c
 }
-[ "$1" = attach ] && { n="$(cat "$HOME/.koloft/tabs/pty-t1.tmux" 2>/dev/null || echo 'm-pty-t1-t')"; if tmux -L koloft show-environment -t "$n" KOLOFT_TAB_PASS >/dev/null 2>&1; then [ -n "$KOLOFT_TAB_PASS" ] && ( umask 077; printf 'set-environment -t %s KOLOFT_TAB_ID %s\nset-environment -t %s KOLOFT_TAB_PASS %s\n' "$n" pty-t1 "$n" "$KOLOFT_TAB_PASS" > "$HOME/.koloft/tabs/pty-t1.keys" ) && tmux -L koloft source-file "$HOME/.koloft/tabs/pty-t1.keys"; rm -f "$HOME/.koloft/tabs/pty-t1.keys"; fi; unset KOLOFT_TAB_PASS; tmux -L koloft set -gq set-titles on \; set -gq set-titles-string '#{pane_title}' \; set -gq allow-passthrough on 2>/dev/null; tmux -L koloft -u attach -d -t "$n"; exited; }
+[ "$1" = attach ] && { n="$(cat "$HOME/.koloft/tabs/pty-t1.tmux" 2>/dev/null || echo 'm-pty-t1-t')"; endsUnderTheTabThatStarted "$n"; if tmux -L koloft show-environment -t "$n" KOLOFT_TAB_PASS >/dev/null 2>&1; then [ -n "$KOLOFT_TAB_PASS" ] && ( umask 077; printf 'set-environment -t %s KOLOFT_TAB_ID %s\nset-environment -t %s KOLOFT_TAB_PASS %s\n' "$n" pty-t1 "$n" "$KOLOFT_TAB_PASS" > "$HOME/.koloft/tabs/pty-t1.keys" ) && tmux -L koloft source-file "$HOME/.koloft/tabs/pty-t1.keys"; rm -f "$HOME/.koloft/tabs/pty-t1.keys"; fi; unset KOLOFT_TAB_PASS; tmux -L koloft set -gq set-titles on \; set -gq set-titles-string '#{pane_title}' \; set -gq allow-passthrough on 2>/dev/null; tmux -L koloft -u attach -d -t "$n"; exited; }
 unset account_env; account_env=$(cat "$HOME/.koloft/tabs/pty-t1.env" 2>/dev/null); rm -f "$HOME/.koloft/tabs/pty-t1.env"
 sh "$M/ensure.sh" agy || exit $?
 cd '/home/me/proj' || exit 3
 echo ''
-rm -f "$HOME/.koloft/hook-sessions/pty-t1.json" "$HOME/.koloft/hook-sessions/pty-t1.status.jsonl" "$HOME/.koloft/tabs/pty-t1.exit" "$HOME/.koloft/tabs/pty-t1.screen" "$HOME/.koloft/tabs/pty-t1.tmux"
+rm -f "$HOME/.koloft/hook-sessions/pty-t1.json" "$HOME/.koloft/hook-sessions/pty-t1.status.jsonl" "$HOME/.koloft/tabs/pty-t1.exit" "$HOME/.koloft/tabs/pty-t1.screen" "$HOME/.koloft/tabs/pty-t1.tmux" "$HOME/.koloft/tabs/pty-t1.started-by"
 if tmux -L koloft show-environment -t "m-pty-t1-t" KOLOFT_TAB_PASS >/dev/null 2>&1; then [ -n "$KOLOFT_TAB_PASS" ] && ( umask 077; printf 'set-environment -t %s KOLOFT_TAB_ID %s\nset-environment -t %s KOLOFT_TAB_PASS %s\n' "m-pty-t1-t" pty-t1 "m-pty-t1-t" "$KOLOFT_TAB_PASS" > "$HOME/.koloft/tabs/pty-t1.keys" ) && tmux -L koloft source-file "$HOME/.koloft/tabs/pty-t1.keys"; rm -f "$HOME/.koloft/tabs/pty-t1.keys"; fi
 [ -n "$KOLOFT_TAB_PASS" ] && ( umask 077; printf 'KOLOFT_TAB_PASS=%s\n' "$KOLOFT_TAB_PASS" > "$HOME/.koloft/tabs/pty-t1.pass" ); unset KOLOFT_TAB_PASS
 [ -n "$account_env" ] && ( umask 077; printf '%s\n' "$account_env" > "$HOME/.koloft/tabs/pty-t1.env" ); unset account_env
+endsUnderTheTabThatStarted 'm-pty-t1-t'
 tmux -L koloft set -gq set-titles on \; set -gq set-titles-string '#{pane_title}' \; set -gq allow-passthrough on 2>/dev/null; tmux -L koloft -u -f "$M/tmux.conf" new-session -A -D -s 'm-pty-t1-t' 'sh "$HOME/.koloft/tabs/pty-t1.sh" run'
 exited
 
