@@ -1124,17 +1124,21 @@ file with the field kept carries on both builds.
   `ExitWorktree` and the worktree exit dialog deleting a worktree that another running
   Claude Code session was working in". Not probed: Keep on 2.1.330, a second session
   started with `-w` or `-p`, a remote (Linux, tmux) tab. Koloft dependent:
-  `src/agents/claude/main/claudeWorktreeExit.ts` reads the kept line as a removal that did not happen
-  (the row comes back, the line shows in the "did not remove" toast), but the removal it
-  finishes after Koloft quits does not check for another session (issue #2343).
+  `src/agents/claude/main/claudeWorktreeExit.ts` and `claudeWorktreeExitWatch.ts` read the kept
+  line as a removal that did not happen (the row comes back, the line shows in the "did not
+  remove" toast), but the removal they finish after Koloft quits does not check for another
+  session (issue #2343).
 
 Evidence: experiments E2/E8, 2026-08-10, claude 2.1.227; four live worktree exits on
 2026-09-03, claude 2.1.259 (`-w n5/n6/n7/n8/n9` in a throwaway repo, driven in a pty,
 checked with `git worktree list`, `git branch` and `ls ~/.claude/projects/<slug>`); the
 unchanged-tree removal on 2026-09-08, claude 2.1.265.
 Koloft dependents: the §1 whitelist eviction path; `fake-claude.js`'s dirty-tree exit
-prompt and removal emulation; `src/agents/claude/main/claudeWorktreeExit.ts`, which hides a tab, on this Mac or on a machine, the
-moment its CC starts removing, and on this Mac finishes the removal if Koloft quits first.
+prompt and removal emulation; `removesItsWorktreeAsItExits` in `src/agents/claude/agent.ts`,
+which makes `src/main/worktreeExitFollow.ts` hide a tab, on this Mac or on a machine, the
+moment its CC starts removing; `src/agents/claude/main/claudeWorktreeExit.ts`, which sees that
+moment, and `src/agents/claude/main/claudeWorktreeExitWatch.ts`, which on this Mac finishes
+the removal if Koloft quits first.
 
 ## §5 fork and background sessions (claude daemon)
 
