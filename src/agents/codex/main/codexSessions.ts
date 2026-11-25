@@ -7,10 +7,9 @@ import type {
   BackendSessionInfo,
   BackendSessionRow,
   CreateTabOptions,
-  CodexResetOutcome,
   LaunchPermission
 } from '@shared/types'
-import { CODEX_RESET_OUTCOMES } from '@shared/types'
+import { CODEX_RESET_OUTCOMES, type CodexResetOutcome } from '../shared/savedResets'
 import { barePath, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import type { Turn } from '@shared/turns'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'

@@ -50,6 +50,8 @@ export interface AgentShimScript {
   script: string
 }
 
+export const NO_SUCH_ACTION = 'noSuchAction'
+
 export interface StartAsk {
   tabId: string
   resumeSessionId?: string
@@ -68,6 +70,7 @@ export interface AgentAccounts {
   folderSaysItRunsOnAKey(kind: AccountKindId, name: string): boolean
   signIn(kind: AccountKindId, name: string, again: boolean): Promise<SignInStart>
   cancelSignIn(kind: AccountKindId, name: string): void
+  act(kind: AccountKindId, name: string, action: string): Promise<string>
 }
 
 type SignInListener = (news: SignInNews, heldFailureChanged: boolean) => void
@@ -154,6 +157,10 @@ export class AgentsMain {
 
   folderSaysItRunsOnAKey(kind: AccountKindId, name: string): boolean {
     return this.ownerOf(kind)?.accounts.folderSaysItRunsOnAKey(kind, name) ?? false
+  }
+
+  async act(kind: AccountKindId, name: string, action: string): Promise<string> {
+    return (await this.ownerOf(kind)?.accounts.act(kind, name, action)) ?? NO_SUCH_ACTION
   }
 
   private heldFailure: SignInProgress | null = null

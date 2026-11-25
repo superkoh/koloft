@@ -11,5 +11,6 @@ export const accountsThatAreNeverAsked: AgentAccounts = {
   forget: asked,
   folderSaysItRunsOnAKey: asked,
   signIn: asked,
-  cancelSignIn: asked
+  cancelSignIn: asked,
+  act: asked
 }

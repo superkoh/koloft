@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
+process.env.TZ = 'UTC'
+
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { render, cleanup, act, fireEvent } from '@testing-library/react'
 import type { AccountView } from '../../src/shared/types'
-import { ACCOUNT_SETS, NOW } from './helpers/usageMatrix'
 
 vi.mock('../../src/renderer/src/components/settings/GitAccountsSection', () => ({
   GitAccountsSection: () => null
 }))
+
+const PINNED = './usage-drawn'
 
 function anyApi(): unknown {
   return new Proxy(function () {}, {
@@ -20,7 +23,6 @@ function anyApi(): unknown {
 }
 
 let shown: AccountView[] = []
-let fromShape = false
 let answerReset: () => Promise<string> = () => Promise.resolve('reset')
 let pushAccounts: (next: AccountView[]) => void = () => {}
 const accounts = {
@@ -32,17 +34,17 @@ const accounts = {
   probe: () => Promise.resolve(shown),
   heldSignInFailure: () => Promise.resolve(null),
   onSignInProgress: () => () => {},
-  codexUseReset: () => answerReset()
+  act: () => answerReset()
 }
 const rest = anyApi() as Record<string, unknown>
 ;(window as unknown as { api: unknown }).api = new Proxy(
   {},
   {
-    get: (_t, k) =>
-      k === 'accounts' ? accounts : k === 'usageFromShape' ? fromShape : rest[k as string]
+    get: (_t, k) => (k === 'accounts' ? accounts : rest[k as string])
   }
 )
 
+const { ACCOUNT_SETS, NOW } = await import('./helpers/usageMatrix')
 const { TopbarUsage } = await import('../../src/renderer/src/components/TopbarUsage')
 const { AccountsPane } = await import('../../src/renderer/src/components/settings/AccountsPane')
 
@@ -60,21 +62,16 @@ async function settle(): Promise<void> {
   for (let i = 0; i < 3; i++) await act(() => new Promise<void>((r) => setTimeout(r, 0)))
 }
 
-function withTextPiecesMarked(el: Element): string {
+function withTextPiecesMarked(el: Element | null): string {
+  if (!el) return '(none)'
   const copy = el.cloneNode(true) as Element
   const walk = document.createTreeWalker(copy, NodeFilter.SHOW_TEXT)
   for (let n = walk.nextNode(); n; n = walk.nextNode()) n.textContent = `⟨${n.textContent}⟩`
-  return copy.outerHTML
+  return copy.outerHTML.replaceAll('><', '>\n<')
 }
 
-function html(selector: string): string {
-  const el = document.querySelector(selector)
-  return el ? withTextPiecesMarked(el) : ''
-}
-
-async function openTopBar(set: AccountView[], shape: boolean): Promise<boolean> {
+async function openTopBar(set: AccountView[]): Promise<boolean> {
   shown = set
-  fromShape = shape
   render(<TopbarUsage />)
   await settle()
   const pill = document.querySelector('button.tbu')
@@ -84,9 +81,16 @@ async function openTopBar(set: AccountView[], shape: boolean): Promise<boolean> 
   return true
 }
 
-async function topBar(set: AccountView[], shape: boolean): Promise<string[]> {
-  const open = await openTopBar(set, shape)
-  const out = open ? [html('button.tbu'), html('.tbu-pop')] : []
+async function topBar(set: AccountView[]): Promise<string[]> {
+  const open = await openTopBar(set)
+  const out = open
+    ? [
+        '== the pill',
+        withTextPiecesMarked(document.querySelector('button.tbu')),
+        '== its panel',
+        withTextPiecesMarked(document.querySelector('.tbu-pop'))
+      ]
+    : ['== no pill']
   cleanup()
   return out
 }
@@ -106,69 +110,69 @@ function readAgainAfterTheReset(a: AccountView): AccountView {
   }
 }
 
-async function resetFlow(
-  set: AccountView[],
-  shape: boolean,
-  row: number,
-  outcome: string
-): Promise<string[]> {
-  await openTopBar(set, shape)
+function rowAt(index: number): Element | null {
+  return document.querySelectorAll('.tbu-pop .tbu-row')[index] ?? null
+}
+
+async function resetFlow(set: AccountView[], offered: number, outcome: string): Promise<string[]> {
+  await openTopBar(set)
   let answer: (v: string) => void = () => {}
   answerReset = () => new Promise<string>((r) => (answer = r))
-  const shots: string[] = []
-  fireEvent.click(document.querySelectorAll('.tbu-pop button.acct-relogin')[row])
-  shots.push(html('.tbu-pop'))
+  const button = document.querySelectorAll('.tbu-pop button.acct-relogin')[offered]
+  const index = [...document.querySelectorAll('.tbu-pop .tbu-row')].indexOf(
+    button.closest('.tbu-row')!
+  )
+  const shots = [`== reset offered on row ${index}, answered ${outcome}`]
+  fireEvent.click(button)
+  shots.push('-- asked', withTextPiecesMarked(rowAt(index)))
   fireEvent.click(document.querySelector('.tbu-pop .acct-confirm button.danger')!)
-  shots.push(html('.tbu-pop'))
+  shots.push('-- using', withTextPiecesMarked(rowAt(index)))
   act(() => pushAccounts(set.map(readAgainAfterTheReset)))
   await settle()
-  shots.push(html('.tbu-pop'))
+  shots.push('-- read again while using', withTextPiecesMarked(rowAt(index)))
   answer(outcome)
   await settle()
-  shots.push(html('.tbu-pop'))
+  shots.push('-- answered', withTextPiecesMarked(rowAt(index)))
   cleanup()
   return shots
 }
 
-async function pane(set: AccountView[], shape: boolean): Promise<string> {
-  shown = set
-  fromShape = shape
-  const { container } = render(<AccountsPane />)
-  await settle()
-  const out = withTextPiecesMarked(container)
+async function resetFlows(set: AccountView[]): Promise<string[]> {
+  const offered = (await openTopBar(set))
+    ? document.querySelectorAll('.tbu-pop button.acct-relogin').length
+    : 0
   cleanup()
-  return out
+  const shots: string[] = []
+  for (let row = 0; row < offered; row++)
+    for (const outcome of OUTCOMES) shots.push(...(await resetFlow(set, row, outcome)))
+  return shots
 }
 
-describe('usage drawn from each agent’s shape is the same page as the drawing it replaces', () => {
-  for (const [name, set] of Object.entries(ACCOUNT_SETS)) {
-    it(`top bar pill and panel: ${name}`, async () => {
-      const before = await topBar(set, false)
-      expect(await topBar(set, true)).toEqual(before)
-    })
+async function accountRows(set: AccountView[]): Promise<string[]> {
+  shown = set
+  const { container } = render(<AccountsPane />)
+  await settle()
+  const rows = [...container.querySelectorAll('.acct-row')].map(withTextPiecesMarked)
+  cleanup()
+  return ['== account rows on the accounts page', ...rows]
+}
 
-    it(`accounts page rows: ${name}`, async () => {
-      const before = await pane(set, false)
-      expect(await pane(set, true)).toBe(before)
+async function drawn(set: AccountView[]): Promise<string> {
+  return (
+    [...(await topBar(set)), ...(await accountRows(set)), ...(await resetFlows(set))].join('\n') +
+    '\n'
+  )
+}
+
+describe('usage drawn from each agent’s shape is the page pinned from the drawing it replaced', () => {
+  for (const [name, set] of Object.entries(ACCOUNT_SETS)) {
+    it(`top bar pill and panel, account rows, every answer to a saved reset: ${name}`, async () => {
+      await expect(await drawn(set)).toMatchFileSnapshot(`${PINNED}/${name}.txt`)
     })
   }
 
-  for (const [name, set] of Object.entries(ACCOUNT_SETS)) {
-    it(`every answer to a saved reset, asked, running and answered: ${name}`, async () => {
-      const offered = (await openTopBar(set, false))
-        ? document.querySelectorAll('.tbu-pop button.acct-relogin').length
-        : 0
-      cleanup()
-      for (let row = 0; row < offered; row++)
-        for (const outcome of OUTCOMES) {
-          const before = await resetFlow(set, false, row, outcome)
-          expect(await resetFlow(set, true, row, outcome)).toEqual(before)
-        }
-    })
-  }
-
-  it('the sets reach every state the comparison is meant to cover', async () => {
-    await openTopBar(ACCOUNT_SETS.everyAgent, false)
+  it('the sets reach every state the pinned pages are meant to cover', async () => {
+    await openTopBar(ACCOUNT_SETS.everyAgent)
     const pop = document.querySelector('.tbu-pop')!.outerHTML
     for (const seen of [
       'no 5-hour limit',
@@ -183,7 +187,7 @@ describe('usage drawn from each agent’s shape is the same page as the drawing 
     ])
       expect(pop).toContain(seen)
     cleanup()
-    expect((await topBar(ACCOUNT_SETS.claudeFallback, false)).join('')).toContain(
+    expect((await topBar(ACCOUNT_SETS.claudeFallback)).join('')).toContain(
       'metered fallback active'
     )
   })

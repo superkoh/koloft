@@ -46,7 +46,6 @@ const api: KoloftApi = {
   isDev: ipcRenderer.sendSync(CH.app.isDev) as boolean,
   domRenderer: process.env.KOLOFT_DOM_RENDERER === '1',
   testMode: process.env.KOLOFT_TEST_BACKGROUND === '1',
-  usageFromShape: process.env.KOLOFT_TEST_USAGE_FROM_SHAPE === '1',
   home: ipcRenderer.sendSync(CH.app.home) as string,
   app: {
     onQuitRequested: (cb) => {
@@ -191,7 +190,7 @@ const api: KoloftApi = {
     remove: (name, kind) => ipcRenderer.invoke(CH.accounts.remove, name, kind),
     toggle: (name, kind, enabled) => ipcRenderer.invoke(CH.accounts.toggle, name, kind, enabled),
     probe: () => ipcRenderer.invoke(CH.accounts.probe),
-    codexUseReset: (name) => ipcRenderer.invoke(CH.accounts.codexUseReset, name),
+    act: (kind, name, action) => ipcRenderer.invoke(CH.accounts.act, kind, name, action),
     beginSignIn: (kind, name, again) =>
       ipcRenderer.invoke(CH.accounts.beginSignIn, kind, name, again),
     heldSignInFailure: () => ipcRenderer.invoke(CH.accounts.signInProgress),

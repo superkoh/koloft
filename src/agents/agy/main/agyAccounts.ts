@@ -10,7 +10,7 @@ import {
   type QuotaBucket,
   type SignInCommand
 } from '@shared/types'
-import type { AgentAccounts } from '@core/agent/agentsMain'
+import { NO_SUCH_ACTION, type AgentAccounts } from '@core/agent/agentsMain'
 import {
   AUTO_PROBE_MS,
   FIVE_HOUR_MINUTES,
@@ -559,6 +559,7 @@ export function agyHomeAccounts(deps: AgyHomeAccountsDeps) {
           probeHomeAccount: probeAgyAccount
         }),
       cancelSignIn: () => {},
+      act: async () => NO_SUCH_ACTION,
       pickForThisStart: () =>
         answerOfTerminalPick('agy', () => {
           const picked = terminalPickOf(pickAgyHome())

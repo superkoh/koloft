@@ -376,6 +376,7 @@ import { koloftAssist } from './assist'
 import { endOneShots, oneShotsEnded } from './oneShotsAtQuit'
 import {
   AgentsMain,
+  NO_SUCH_ACTION,
   type AgentAccounts,
   type AgentCatalog,
   type AgentMain,
@@ -1373,7 +1374,7 @@ const codexAccounts = codexHomeAccounts({
   codexSharedConfig,
   codexSessions: () => codexSessions
 })
-const { pickCodexHome, codexUseReset, probeCodexAccounts } = codexAccounts
+const { pickCodexHome, probeCodexAccounts } = codexAccounts
 const agyAccounts = agyHomeAccounts({
   ...homeAccountsDeps,
   keychainRead,
@@ -5013,7 +5014,13 @@ function registerIpc(): void {
   ipcMain.on(CH.accounts.endSignIn, (_e, kind: unknown, name: unknown) => {
     if (isAccountKind(kind) && typeof name === 'string') agentsMain.endSignIn(kind, name)
   })
-  ipcMain.handle(CH.accounts.codexUseReset, (_e, name: string) => codexUseReset(name))
+  ipcMain.handle(
+    CH.accounts.act,
+    (_e, kind: unknown, name: unknown, action: unknown): Promise<string> | string =>
+      isAccountKind(kind) && typeof name === 'string' && typeof action === 'string'
+        ? agentsMain.act(kind, name, action)
+        : NO_SUCH_ACTION
+  )
 
   ipcMain.handle(CH.settings.get, () => loadSettings())
   ipcMain.handle(CH.app.version, () => app.getVersion())

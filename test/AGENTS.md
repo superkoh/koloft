@@ -284,9 +284,7 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   structure and screen-reader text, which every Mac compares. After a change meant to show,
   remake them with `npm run build`, then
   `npx playwright test test/e2e/*-screens.spec.ts --update-snapshots`, and look at the
-  changed files before committing them. With `KOLOFT_TEST_USAGE_FROM_SHAPE=1` in the
-  runner's env, the app draws every account's usage from its agent's shape
-  (`src/core/agent/usageShape.ts`); the same baselines must still match.
+  changed files before committing them.
 
 ### Selectors
 

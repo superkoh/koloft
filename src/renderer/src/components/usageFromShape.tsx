@@ -357,7 +357,7 @@ function TopBarRow({
   const act = async (action: UsageAction): Promise<void> => {
     setConfirm({ using: true })
     const outcome = await onAct(a, action.id)
-    const said = outcome in action.outcomes ? action.outcomes[outcome] : ''
+    const said = Object.hasOwn(action.outcomes, outcome) ? action.outcomes[outcome] : ''
     setConfirm(said === null ? null : { said })
   }
   const grid = u.bars.some((b) => b.column !== '')
