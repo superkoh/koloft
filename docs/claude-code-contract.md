@@ -113,7 +113,14 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   `daemon` sessions (`strings`, 2026-10-30, not run). Its changelog says it now also runs
   for subscribers with telemetry off. So every interactive session past the floor on a
   one-hour cache can compact while idle (inferred from those strings, not watched in a
-  session on 2.1.314).
+  session on 2.1.314). On 2.1.332, darwin-arm64 and linux-arm64 (`strings` beside
+  2.1.331, 2026-11-25, not run), the floor, the `1h` TTL, the 0.9 fraction, the 60 s
+  skips, `"idleCompaction": false` and `CLAUDE_CODE_SLEEP_COMPACT` read the same; only
+  the near-limit skip changed: 2.1.331 skipped whenever the rate-limit status was not
+  `allowed`, 2.1.332 no longer skips for `allowed_warning` when no threshold was passed
+  and utilization is under 0.7 (its changelog: "Fixed idle compaction being skipped for
+  subscribers still well under their weekly limit"). Koloft does not depend on when it
+  fires.
 - **Every compaction ends by writing a summary record**, at about the moment SessionStart
   `compact` fires (2026-10-09, CC 2.1.295, manual and automatic): `type: "user"`, string
   content "This session is being continued from a previous conversation that ran out of
@@ -257,6 +264,14 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   two new constants 1024 and 16384 on the skill-hook path). Hooks from a settings file
   are not counted; Koloft's hooks all come from `--settings` and its `SKILL.md` declares
   none.
+- **2.1.332 adds a 34th hook event, `PreSkillShellCommand`**, last in the list after the
+  same 33 in the same order; its changelog says a settings file naming it opens a dialog
+  at start on 2.1.331 and older. No Koloft settings file names it. The same build,
+  darwin-arm64 and linux-arm64 (`strings` beside 2.1.331, 2026-11-25), has the same
+  SessionEnd reasons and SessionStart sources, no `ANTHROPIC_*` name new or gone, six
+  `CLAUDE_CODE_*` names new and `CLAUDE_CODE_MCP_SERVE_MEMORY_WALKS_DEADLINE_MS` gone,
+  none of which `src/` spells, and the same slash command names; `--help` and every
+  subcommand's `--help` (darwin-arm64 only) are byte-identical to 2.1.331's.
 - **A session's SessionStart hook has exited before its first UserPromptSubmit hook
   starts, even when the prompt was given or typed earlier.** So a hook that appends both
   to one file writes the start first. Measured 2026-10-22 on CC 2.1.308 linux-arm64 in a
@@ -2535,6 +2550,12 @@ other bullets of §9 were not re-measured on this build.
   (`CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT` still turns it off). Koloft runs the TUI
   in a pty and sets no `CLAUDE_CODE_ENTRYPOINT`, so its tabs are never taken for the
   Desktop app or VS Code.
+- **A folder entry written by Koloft's own `TRUST_CWD_JS` still skips the trust question
+  on 2.1.331 and 2.1.332** (2026-11-25, darwin-arm64, a python pty with `pyte`, a
+  scratch `HOME`, a stand-in Messages API, 1 run per build): with only
+  `hasCompletedOnboarding` the launch drew "Quick safety check"; after the script wrote
+  the folder's entry it opened on the main screen, also for a `git init` folder on
+  2.1.332.
 
 Koloft dependents: the scheduled-jobs runner's launch line and the shim's new-session
 branch (`src/main/shim.ts`), `src/agents/claude/main/claudeArgs.ts`, `src/main/skillList.ts`,
@@ -2664,7 +2685,14 @@ rechecks against real installs of 2.1.322 on macOS (darwin-arm64) and Linux
   backups are still `<name>.backup.<ms>` in the backups folder, at most 5 and at most one
   a minute; the copy that makes one now deletes its half-written file when the copy
   fails (the changelog's "incomplete backups … when the disk was full"). No new lock or
-  temporary file name for `.claude.json` or `settings.json` appears.
+  temporary file name for `.claude.json` or `settings.json` appears. Still so on 2.1.331
+  and 2.1.332 (2026-11-25, `claude -p ok --max-turns 1` against a stand-in Messages API,
+  a scratch `HOME`, 1 run each): `{broken` exits 1 with the file left as it was and a
+  copy left as `backups/.claude.json.corrupted.<ms>`; an empty file exits 0 with the
+  same "…was empty and no backup holds anything" line, gets a full file without
+  `hasCompletedOnboarding`, and leaves a `.claude.json.backup.<ms>`. 2.1.332's fix for a
+  file "reported as corrupted when another session was in the middle of saving it" was
+  not reproduced; Koloft's local writers save through a temporary file and a rename.
 - **A home can hold two config files, and the legacy one wins; since 2.1.319 claude says
   so on stderr.** The legacy file is `.config.json` in the config folder
   (`$CLAUDE_CONFIG_DIR`, else `~/.claude/`); the current one is `.claude.json` in
@@ -2849,6 +2877,12 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   cached `.claude.json`), and an `xterm.js` reply changes the pacing, not whether the
   scroll region is used — the 2.1.319 `xterm.js` condition did not hold here, on either
   build.
+- **Fullscreen scrolling still does not tear on 2.1.332.** 2026-11-25, the same
+  hidden-window measurement as the tear bullet above (a resumed 600-turn fullscreen
+  session at 72×49, wheel and trackpad-speed reports, one tab and one of 14 flooding
+  tabs): `CLAUDE_CODE_FORCE_SYNC_OUTPUT` is still in its `strings`; with Koloft's launch
+  as it ships 0 paints tore and claude opened a median 38 synchronized frames per
+  one-tab wheel run; with the switch taken out 27 tore and none came synchronized.
 - **The `tui` setting still takes only `default` and `fullscreen` on 2.1.327**, though
   that release names the non-fullscreen renderer `/tui classic`: `"tui": "classic"` in
   `settings.json` opens a blocking "Settings Error … tui: Invalid value. Expected one of:
@@ -3359,6 +3393,21 @@ sessions.
     field beside `message`: held — "Held peer message … The sending session's permission
     mode class doesn't match this session's", and a "Held message from another session"
     dialog with two choices, "Deny" (selected) and "Deliver this message to Claude".
+    On 2.1.331 and 2.1.332 (2026-11-25, darwin-arm64, an interactive
+    `--dangerously-skip-permissions` receiver in a python pty, a scratch `HOME`, a
+    stand-in Messages API, Koloft's own `crossSessionLine` written to its
+    `messagingSocketPath`, one run each) the two choices read `Deny — drop it and tell the
+    sender it was declined` (selected) and `Deliver this message to Claude`, under
+    "Deliver by default: /config → Messaging → Messages from your other sessions" and
+    above `ctrl+x a to always deliver ›`. `ctrl+x a` opens "Always deliver held
+    messages?" with `No, go back` (selected), `Yes, in this session, from any sender` and
+    `Yes, in every session on this computer, from any sender`; the middle choice released
+    the held line and let the next mismatched line from that sender through with no
+    dialog, and wrote nothing to the scratch `HOME`'s json files. The screens were the
+    same on both builds, so the 2.1.332 changelog's "Added "Always deliver" to the prompt
+    for held messages" was not seen as a change here. The code lists the always rows
+    among the choices, in place of the `ctrl+x a` line, when a check this setup answered
+    no is true; what that check is (a logged-in session, a server flag) is not probed yet.
   - The two classes are `bypass` and `prompting`. The 2.1.288 binary counts a session as
     `bypass` when its mode is `bypassPermissions`, or when a second check passes that
     takes the mode and whether bypass mode is available
@@ -3381,7 +3430,16 @@ sessions.
     as in 2.1.327, and `-p`'s init event still lists both tools (`strings` and one `-p`
     run, 2026-11-19; no message was delivered live). New in 2.1.328: `/list-agents`
     shows its list to the person only, and `-p` writes `Held a message from … Claude
-    has not seen it.` to stderr.
+    has not seen it.` to stderr. In 2.1.332, darwin-arm64 and linux-arm64 (`strings`
+    beside 2.1.331, 2026-11-25), the envelope pattern and its attribute order,
+    `tengu_harbor_kite_mode_emit` defaulting on, the receiver's limits, the sender's
+    `maxLocalRelays:1e5, maxDesktopForwards:1e5, countLocalHops:!1` with the
+    `{20, 20, true}` fallback, `Held peer message`, "permission mode class doesn't match
+    this session's", "Deliver this message to Claude" and the `ListAgents` and
+    `SendMessage` names are unchanged. Live on darwin-arm64, a `bypass` line from Koloft's
+    writer was delivered, its UserPromptSubmit `prompt` the whole envelope and its
+    transcript record `origin: {kind:"peer", from:"unknown", verifiedPeerPid, fromMode,
+    body}`, the same as on 2.1.331.
   - **The sender's side has a cap, raised in 2.1.323.** Its changelog: "Changed how
     many messages each of your sessions on the same machine can send the others without
     a prompt from you, from about 20 to 100,000". The 2.1.323 binary holds
@@ -3859,8 +3917,13 @@ below was one run.
     space, a focus-out/in report pair and a resize to 90×30 and back left it on option 1.
   - Down stops at `Chat about this`, the bottom row; Up from option 1 goes to `Type
     something` (not to the bottom row); Up from `Chat about this` goes to the row above
-    it, from the field (even holding text) to option N. Home (`ESC[H`, `ESC[1~`) and
-    PageUp (`ESC[5~`) do nothing. Four Ups in one write moved the highlight one row.
+    it, from the field (even holding text) to option N. On 2.1.318 Home (`ESC[H`,
+    `ESC[1~`) and PageUp (`ESC[5~`) did nothing. On 2.1.331 and 2.1.332 (2026-11-25, a
+    python pty with `pyte`, a stand-in API, a three-option question, the pick read off
+    the next request, 1 run each) `ESC[H` moves the highlight to option 1 (Down Down Home
+    Enter sent option 1; Down Down Home Down Enter sent option 2 on 2.1.332), while
+    `ESC[5~` still does nothing; `ESC[1~` alone was not run. Koloft sends neither key.
+    Four Ups in one write moved the highlight one row.
   - So Down N+2 times, then Up N+1 times (N+3 and N+2 for a many-pick question), each
     its own write, leaves the highlight on option 1 from any start: from the start, after
     two or three Downs, after a paste, after a fullscreen click on the field, and on a
@@ -4342,7 +4405,22 @@ Both passed again on 2.1.296 (Mac, and linux-arm64 in the lab), 2026-10-11, on
   "Text inside <pasted_content> tags was pasted into the message by the user from
   somewhere else …". Under `claude -p` against the same kind of stand-in, every 2.1.328
   request held that line and no 2.1.327 request did (1 run each); a request with no
-  paste in the interactive TUI was not checked.
+  paste in the interactive TUI was not checked. Still so on 2.1.332 (2026-11-25, a
+  python pty with `pyte` against a stand-in API, 2 runs): an 8-line paste in Koloft's
+  shape whose last line was `Picture: shots/a.png` showed `[Pasted text #1 +9 lines]`,
+  no request came in 5 s, and the CR sent one message with the paste in
+  `<pasted_content>` tags.
+- **A paste that is only a relative picture path or a picture link swallowed an Enter
+  sent right after it on 2.1.331, not on 2.1.332.** 2026-11-25, a python pty with
+  `pyte`, a stand-in Messages API, a scratch `HOME`: a bracketed paste holding only
+  `shots/x.png` (present or missing) or `https://example.com/u.png`, with or without a
+  leading `\n\n`, then CR 0.02 s later: on 2.1.331 the first CR left the path in the box
+  and a second CR sent it (12 of 12); on 2.1.332 the first CR sent it (12 of 12). With
+  CR 0.3 s later (`SUBMIT_AFTER_TEXT_MS`) both builds sent at the first CR (10 of 10
+  each), and a path inside a sentence never held the CR (15 of 15 each). On both builds
+  a paste holding only an absolute path to an existing PNG became `[Image #N]` plus an
+  image block, even with the leading `\n\n` (4 of 4); relative paths and links stayed
+  text. A paste Koloft makes never holds a path alone.
 - **The model may not take words inside a paste as the person's own.** Asked inside the
   paste to reply with one word, it did in 4 of 7 runs; in the other 3 it said the line
   "came from the pasted text and not from you" and did not act on it.
@@ -4396,7 +4474,9 @@ Both passed again on 2.1.296 (Mac, and linux-arm64 in the lab), 2026-10-11, on
   Picture: <userData>/palette-pictures/<uuid>.png"` in a fresh worktree. The input box
   showed the path as typed (no `[Image #1]`), claude ran `Read` on the PNG and answered
   `ZEBRA`; the row's title was the one claude made ("Word identification from picture"),
-  not the path. Bypass-permissions mode.
+  not the path. Bypass-permissions mode. On 2.1.332 (2026-11-25, a python pty, a
+  stand-in API, `--add-dir` on a trusted pictures folder, 1 run) such a first prompt was
+  sent at once with the path as text and no image block.
 - **Without bypass, reading that picture asks first, and `--add-dir <its folder>` takes
   the ask away.** Measured 2026-11-15, CC 2.1.325, the same sandbox with Skip permission
   prompts off (the status line read "auto mode on"), the same prompt:
