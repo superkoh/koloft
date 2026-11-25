@@ -509,6 +509,9 @@ export class SessionTracker extends EventEmitter<{
   constructor(private runtime: SessionRuntime) {
     super()
     runtime.on('status', ({ tabId, next }) => this.statusChanged(tabId, next))
+    runtime.on('turn-over', ({ tabId }) => {
+      if (this.tracked.has(tabId)) this.updateSoon()
+    })
   }
 
   pidOf?: (tabId: string) => number | undefined

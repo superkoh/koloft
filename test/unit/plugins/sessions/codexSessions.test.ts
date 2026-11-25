@@ -226,6 +226,8 @@ beforeEach(() => {
     runtime: new SessionRuntime(),
     projectInfo: (p) => ({ root: p.startsWith(repo) ? repo : other, treeRoot: p }),
     changed: vi.fn(),
+    pinnedWorkspaces: () => [],
+    rereadRows: () => {},
     events: vi.fn((tabId, event) => sessions.observe(tabId, event)),
     error: vi.fn(),
     noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],

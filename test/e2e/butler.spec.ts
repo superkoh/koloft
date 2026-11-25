@@ -350,6 +350,28 @@ test.describe('The butler: one global session at the top of the sessions list, k
     }
   })
 
+  test('a Codex helper in the butler’s folder whose tab is closed shows as closed under the butler row, though that folder is no pinned workspace', async ({
+    env
+  }) => {
+    installCodex(env)
+    const { app, page, close } = await launched(env)
+    try {
+      await openButler(page)
+      const start = {
+        tabId: await butlerTabId(page, env),
+        line: `/koloft session new ${picksFor('codex')} --backend codex -- look into the logs\r`
+      }
+      await page.evaluate(({ tabId, line }) => window.api.terminal.write(tabId, line), start)
+      const helperRow = butlerHelperRows(page)
+      await expect(helperRow).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+      await switchToRow(page, helperRow)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(helperRow).toHaveClass(/\bcold\b/)
+    } finally {
+      await close()
+    }
+  })
+
   test('a to-do helper in the butler’s folder ends the way the to-do method says: it reports to the butler, then koloft session close takes its tab and row away for good', async ({
     env
   }) => {
