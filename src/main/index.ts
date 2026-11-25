@@ -400,7 +400,13 @@ import {
   WorktreeRemovalWatch
 } from '@agents/claude/main/claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
-import { checkSkillsAgain, pluginSkills, writeAgentPlugin, writeDocsPlugin } from './agentPlugin'
+import {
+  checkSkillsAgain,
+  keepSkillsIn,
+  pluginSkills,
+  writeAgentPlugin,
+  writeDocsPlugin
+} from './agentPlugin'
 import { installThen, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
 
 type SessionsStarted = PluginsStarted['sessions']
@@ -3473,6 +3479,7 @@ app.whenReady().then(() => {
       openShimRoot: path.join(userData, 'agy-open'),
       scriptsDir: path.join(userData, 'agy-scripts'),
       ownersGemini,
+      keepSkillsIn,
       pickHome: pickAgyHome,
       apiKeyOf: agyApiKeyOf,
       builtInStatusLine: () => (loadSettings().statuslineBuiltin ? agyStatusline : undefined),

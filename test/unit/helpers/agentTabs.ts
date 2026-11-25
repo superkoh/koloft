@@ -24,6 +24,7 @@ import { localHost } from '../../../src/main/host/localHost'
 import { SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST, SshHost } from '../../../src/main/host/sshHost'
 import { answerOf, type BytesResult } from '../../../src/main/remote/ssh'
 import { tabPushed } from '../../../src/main/remote/launch'
+import { keepSkillsIn } from '../../../src/main/agentPlugin'
 import { standInMachine, type MachineSaid } from './standInMachine'
 
 export const MACHINE = 'devbox'
@@ -375,6 +376,7 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
     openShimRoot: path.join(world.home, 'agy-open'),
     scriptsDir: path.join(world.home, 'scripts'),
     ownersGemini: () => path.join(world.home, '.gemini'),
+    keepSkillsIn,
     pickHome: () => ({ account: 'work', home: accountHome }),
     apiKeyOf: async () => a.apiKey,
     playwrightBin: tools,
