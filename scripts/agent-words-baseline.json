@@ -89,27 +89,6 @@
       "return { question: questions > 0, questions, text: codexDialog(stored).text }",
       "type CodexAsk = CodexApproval | CodexQuestion"
     ],
-    "src/main/assist.ts": [
-      "'--ephemeral',",
-      "'--ignore-rules',",
-      "'--ignore-user-config',",
-      "'--mcp-config',",
-      "'--no-session-persistence',",
-      "'--setting-sources',",
-      "'--skip-git-repo-check',",
-      "'--strict-mcp-config',",
-      "agy: {",
-      "answer: agyResponse,",
-      "argv: (_job, launch) => CODEX_ONE_SHOT(launch),",
-      "argv: (job, launch) => AGY_ONE_SHOT(withSystemFirst(job), launch),",
-      "argv: (job, launch) => CLAUDE_ONE_SHOT(job.system, launch),",
-      "claude: {",
-      "codex: {",
-      "const AGY_ONE_SHOT = (task: string, launch: ModelAndEffort): string[] => [",
-      "const CLAUDE_ONE_SHOT = (system: string, launch: ModelAndEffort): string[] => [",
-      "const CODEX_ONE_SHOT = (launch: ModelAndEffort): string[] => [",
-      "function agyResponse(out: string): string | null {"
-    ],
     "src/main/host/sshHost.ts": [
       "'This machine wants a password or a new host key first, and an Antigravity tab cannot ask for it yet: sign in through a Claude Code or Codex session there first'"
     ],
@@ -132,7 +111,7 @@
       "agentPlugin: () => (agentToolsOn() ? claudeAgentPlugin : undefined),",
       "agy: () => agyOneShotTarget()",
       "agy: agyAccounts.accounts",
-      "agy: agyCatalog(ownersGemini, isGitCheckoutAsync)",
+      "agy: agyCatalog(ownersGemini, isGitCheckoutAsync, agyOneShotTarget)",
       "agy: agyTools",
       "agyAccountEnv,",
       "agyBackend,",
@@ -178,7 +157,7 @@
       "claudeStore?.dispose()",
       "codex: async () => {",
       "codex: codexAccounts.accounts,",
-      "codex: codexCatalog(codexSharedConfig),",
+      "codex: codexCatalog(codexSharedConfig, codexAccounts.listedModels),",
       "codex: codexTools,",
       "codexBackend(",
       "codexBackend,",
@@ -211,11 +190,10 @@
       "const live = new Set(codexMachines)",
       "const name = sessionAccounts?.of('codex', sessionId)",
       "const picked = agyPicker.pick(accountViews())",
-      "const picked = codexPicker.peek(accountViews())",
       "const picked = pickCodexHome()",
       "const shot = oneShotAgyHome(",
       "const { agyPicker, agyHomeFor, agyApiKeyOf, pickAgyHome, agyBinary, probeAgyAccounts } = agyAccounts",
-      "const { codexPicker, pickCodexHome, codexUseReset, probeCodexAccounts } = codexAccounts",
+      "const { pickCodexHome, codexUseReset, probeCodexAccounts } = codexAccounts",
       "endAgyOneShots(path.join(app.getPath('userData'), 'agy-one-shots'))",
       "endAgyOneShots(path.join(app.getPath('userData'), 'agy-one-shots'))",
       "endAgyOneShots,",
@@ -241,7 +219,6 @@
       "if (!exited?.alive) claudeDialogs.forget(e.id)",
       "if (!picked || !codexSessions || !(await codexSessions.availability()).available) return null",
       "if (agySessions) {",
-      "if (backend === 'codex') {",
       "if (before && s.backendId === 'codex')",
       "if (claudeAgentPlugin) claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))",
       "if (codexSessions) {",
@@ -277,7 +254,7 @@
       "loadSettings().sessionMethods.enabled.agy",
       "mirrorGemini: (host) => mirrorAgyGemini(userData, host),",
       "noAccountMessage: () => noAccountNow('claude'),",
-      "oneShotAgyHome,",
+      "oneShotAgyHome",
       "openShimRoot: path.join(userData, 'agy-open'),",
       "openShimRoot: path.join(userData, 'codex-open'),",
       "ownersGemini,",
@@ -289,7 +266,6 @@
       "projectPrompt: claudeProjectPrompt,",
       "projectsRoot: path.join(os.homedir(), '.claude', 'projects'),",
       "queueDrained: (tabId) => codexSessions?.queueDrained(tabId) ?? true,",
-      "readAgyModels",
       "readers: () => ({ claudeDialog, codexDialog, questionsOf, isAskedCall }),",
       "remoteOrphansOf: (wsPath) => claudeStore?.remoteOrphansOf(wsPath) ?? [],",
       "replyLanguageScript: hookPaths.codexReplyLanguage,",
@@ -299,12 +275,10 @@
       "return clicksTheMouse(data) && backendIdOf(ptyMgr.get(tabId)?.kind) === 'claude'",
       "return codexConfigFile(codexSessions?.defaultEnv)",
       "return codexSessions!.refreshHistory()",
-      "return codexSessions?.listedModels(picked && codexHomeOf(app.getPath('userData'), picked.name))",
       "return listUsageFiles(claudeStore?.transcriptFiles() ?? [], [",
       "return name && codexHomeOf(userData, name)",
       "return name && findAccount(name, 'custom')?.model ? name : undefined",
       "return ownersGeminiDir(agySessions?.defaultEnv ?? process.env)",
-      "return readAgyModels(target.binary, target.env, target.args ?? []).finally(() => target.done())",
       "return remoteHostOfTab(tabId) ?? codexSessions?.machineOfTab(tabId)",
       "return { defaults, familyEfforts: familyEfforts('agy', listed) }",
       "scriptsDir: path.join(userData, 'agy-scripts'),",
@@ -982,11 +956,6 @@
       "tfable,",
       "tfable: number | null"
     ],
-    "src/shared/assistPicks.ts": [
-      "? [HAIKU, ...NAMED_MODELS.claude]",
-      "const HAIKU: NamedModel = { id: 'haiku', label: 'Haiku' }",
-      "return row !== 'butler' && backend === 'claude'"
-    ],
     "src/shared/butlerStart.ts": [
       "if (backend !== 'claude' && !backendAvailable(inputs.installed, backend))"
     ],
@@ -1073,17 +1042,12 @@
       "return host === 'local' || backend !== 'claude'",
       "return session?.details?.codex?.observation === 'degraded'"
     ],
-    "src/shared/sessionDefaults.ts": ["if (backend === 'claude') return NAMED_MODELS.claude"],
     "src/shared/sessionPicks.ts": [
       "const WITHOUT_FABLE: Pick = { model: 'opus', effort: 'xhigh' }",
-      "export const listsModels = (backend: BackendId): boolean => backend === 'codex' || backend === 'agy'",
-      "export function agyListedModels(stdout: string): ListedModel[] {",
-      "export function codexListedModels(reply: unknown): ListedModel[] {",
       "fableLeft: boolean",
-      "if (backend === 'claude')",
+      "if (backend === 'claude' && asked.model === hard.model && !facts.fableLeft)",
       "note: `No Claude account has ${hard.model} allowance left, so it runs on ${pickFlags(WITHOUT_FABLE)}.`",
-      "pick: WITHOUT_FABLE,",
-      "return asked.model === hard.model && !facts.fableLeft"
+      "pick: WITHOUT_FABLE,"
     ],
     "src/shared/types.ts": [
       "...(typeof a.fableCheckedAt === 'number' && Number.isFinite(a.fableCheckedAt)",

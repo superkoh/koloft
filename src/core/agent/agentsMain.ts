@@ -1,5 +1,6 @@
 // ADR-0054
 import type { AccountAddResult, McpServer } from '@shared/types'
+import type { ListedModel } from '@shared/sessionPicks'
 import type { AssistJob, ModelAndEffort } from '../assistModels'
 import {
   AGENT_IDS,
@@ -19,14 +20,16 @@ export interface OneShotTarget {
 export interface AgentOneShot {
   argv(job: AssistJob, launch: ModelAndEffort): string[]
   stdin(job: AssistJob): string
-  answer(out: string): string | null
-  secondTryWhenLate?: true
-  saysItHasNoSuchModel?: RegExp
+  answerFrom(stdout: string): string | null
+  sometimesAnswersLate: boolean
+  saysItHasNoSuchModel: RegExp
 }
 
 export interface AgentCatalog {
   moreSkillFoldersEveryAccountReadsOnThisMac(): readonly string[]
   mcpServersOn(folders: readonly string[]): Promise<McpServer[]>
+  listedModels(): Promise<ListedModel[] | undefined>
+  oneShot: AgentOneShot
 }
 
 export interface AgentTools {
@@ -77,6 +80,16 @@ export class AgentsMain {
 
   async oneShotTarget(id: AgentId): Promise<OneShotTarget | null> {
     return (await this.built.get(id)?.oneShotTarget()) ?? null
+  }
+
+  oneShot(id: AgentId): AgentOneShot {
+    const agent = this.built.get(id)
+    if (!agent) throw new Error(`The agent ${id} was not built.`)
+    return agent.catalog.oneShot
+  }
+
+  async listedModels(id: AgentId): Promise<ListedModel[] | undefined> {
+    return this.built.get(id)?.catalog.listedModels()
   }
 
   moreSkillFoldersEveryAccountReadsOnThisMac(id: AgentId): readonly string[] {

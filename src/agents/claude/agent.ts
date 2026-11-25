@@ -112,7 +112,9 @@ export const agent = {
     // CC§9
     typesASkillOnlyByTheNameInItsFile: false,
     // CC§20
-    refusesATypedSkillMarkedNotUserInvocable: true
+    refusesATypedSkillMarkedNotUserInvocable: true,
+    // CC§31
+    listsTheModelsAnAccountCanRun: false
   },
   pureFunctions: { effortsAModelTakes: () => CRON_EFFORTS, draftInItsInputBox: inputBoxDraft },
   // CC§7

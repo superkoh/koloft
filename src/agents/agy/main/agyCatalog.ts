@@ -1,5 +1,7 @@
 import path from 'path'
-import type { AgentCatalog, AgentOneShot } from '@core/agent/agentsMain'
+import type { AgentCatalog, AgentOneShot, OneShotTarget } from '@core/agent/agentsMain'
+import type { ListedModel } from '@shared/sessionPicks'
+import { readAgyModels } from './agyAccounts'
 import { withSystemFirst, type ModelAndEffort } from '@core/assistModels'
 import { foldersUpToRoot, jsonServers, textOrNull, textsIn } from '../../../main/mcpServers'
 
@@ -28,9 +30,18 @@ function agyResponse(out: string): string | null {
 export const agyOneShot: AgentOneShot = {
   argv: (job, launch) => AGY_ONE_SHOT(withSystemFirst(job), launch),
   stdin: () => '',
-  answer: agyResponse,
+  answerFrom: agyResponse,
+  sometimesAnswersLate: false,
   // AGY§21
   saysItHasNoSuchModel: /invalid model selection/
+}
+
+async function listedModelsWith(
+  oneShotTarget: () => Promise<OneShotTarget | null>
+): Promise<ListedModel[] | undefined> {
+  const target = await oneShotTarget()
+  if (!target) return undefined
+  return readAgyModels(target.binary, target.env, target.args ?? []).finally(() => target.done())
 }
 
 // AGY§30
@@ -48,8 +59,12 @@ export async function foldersUpToRepoTop(
 
 export const agyCatalog = (
   ownersGemini: () => string,
-  holdsGit: (folder: string) => Promise<boolean>
+  holdsGit: (folder: string) => Promise<boolean>,
+  oneShotTarget: () => Promise<OneShotTarget | null>
 ): AgentCatalog => ({
+  // AGY§21
+  listedModels: () => listedModelsWith(oneShotTarget),
+  oneShot: agyOneShot,
   // AGY§4 AGY§31
   moreSkillFoldersEveryAccountReadsOnThisMac: () => [],
   // AGY§30

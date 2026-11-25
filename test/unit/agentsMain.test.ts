@@ -9,13 +9,16 @@ import {
 import { AGENT_IDS, agentManifest, type AgentId } from '../../src/core/agent/registry'
 import { ACCOUNT_KINDS_OF } from '../../src/shared/accountUsage'
 import { accountsThatAreNeverAsked } from './helpers/agentAccounts'
+import { EVERY_AGENTS_ONE_SHOT } from './helpers/agentOneShots'
 
 const targetOf = (binary: string): OneShotTarget => ({ binary, env: {}, done: () => {} })
 
 const catalogOf = (id: AgentId): AgentCatalog => ({
   moreSkillFoldersEveryAccountReadsOnThisMac: () => [`/${id}/skills`],
   mcpServersOn: async (folders) =>
-    folders.map((onlyIn) => ({ name: `${id}'s`, backend: id, onlyIn }))
+    folders.map((onlyIn) => ({ name: `${id}'s`, backend: id, onlyIn })),
+  listedModels: async () => [{ id: `${id}'s model`, efforts: [] }],
+  oneShot: EVERY_AGENTS_ONE_SHOT[id]
 })
 
 const toolsOf = (id: AgentId): AgentTools => ({ shimScript: () => `the ${id} shim` })
@@ -52,7 +55,7 @@ const agentsWithAccounts = (ids: readonly AgentId[], asked: string[] = []): Agen
 }
 
 describe('the agents registered with their main-process side', () => {
-  it('asks the agent that was named, and no other, for its one-shot target', async () => {
+  it('asks the agent that was named, and no other, for its one-shot target, its one-shot command and its model list', async () => {
     const agents = new AgentsMain()
     for (const id of AGENT_IDS)
       agents.register({
@@ -63,11 +66,14 @@ describe('the agents registered with their main-process side', () => {
         accounts: accountsThatAreNeverAsked
       })
 
-    for (const id of AGENT_IDS)
+    for (const id of AGENT_IDS) {
       expect((await agents.oneShotTarget(id))?.binary).toBe(`the ${id} program`)
+      expect(agents.oneShot(id)).toBe(EVERY_AGENTS_ONE_SHOT[id])
+      expect(await agents.listedModels(id)).toEqual([{ id: `${id}'s model`, efforts: [] }])
+    }
   })
 
-  it('answers that an agent that was not built has no one-shot target and no skill folders, without an error', async () => {
+  it('answers that an agent that was not built has no one-shot target, no model list and no skill folders, without an error', async () => {
     const agents = new AgentsMain()
     agents.register({
       id: AGENT_IDS[0],
@@ -78,6 +84,7 @@ describe('the agents registered with their main-process side', () => {
     })
 
     expect(await agents.oneShotTarget(AGENT_IDS[1])).toBeNull()
+    expect(await agents.listedModels(AGENT_IDS[1])).toBeUndefined()
     expect(agents.moreSkillFoldersEveryAccountReadsOnThisMac(AGENT_IDS[0])).toEqual([
       `/${AGENT_IDS[0]}/skills`
     ])

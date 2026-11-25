@@ -9,6 +9,7 @@ import type { ModelAndEffort } from '../../src/core/assistModels'
 import { AGENT_IDS, type AgentId } from '../../src/core/agent/registry'
 import type { AssistRowId } from '../../src/shared/types'
 import { DEFAULT_SETTINGS } from '../../src/shared/settingsOps'
+import { EVERY_AGENTS_ONE_SHOT } from './helpers/agentOneShots'
 
 const PINNED = './assist-one-shot-text'
 const ONE_SHOT_FOLDER_ARG = '--gemini_dir=/fixture/one-shot'
@@ -116,6 +117,7 @@ async function assistOn(
       accounts: []
     }),
     enabled: () => true,
+    oneShot: (backend) => EVERY_AGENTS_ONE_SHOT[backend],
     target: async (backend) =>
       backend === id
         ? {

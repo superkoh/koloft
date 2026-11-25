@@ -6,23 +6,15 @@ import { EVERY_ACCOUNT_TAKES, type Assist, type ModelAndEffort } from '@core/ass
 import { takenEffort } from '@shared/cronModels'
 import { envMs } from '@core/agent/sessionRuntime'
 import type { AgentOneShot, OneShotTarget } from '@core/agent/agentsMain'
-import { claudeOneShot } from '@agents/claude/main/claudeCatalog'
-import { codexOneShot } from '@agents/codex/main/codexCatalog'
-import { agyOneShot } from '@agents/agy/main/agyCatalog'
 
 const ASSIST_TIMEOUT_MS = envMs('KOLOFT_ASSIST_TIMEOUT_MS', 15_000)
 export const ASSIST_ANSWERS_WITHIN_MS = 2 * ASSIST_TIMEOUT_MS
-
-const ONE_SHOT: Record<BackendId, AgentOneShot> = {
-  claude: claudeOneShot,
-  codex: codexOneShot,
-  agy: agyOneShot
-}
 
 export interface AssistDeps {
   picks(): Parameters<typeof assistBackendsFor>[1]
   enabled(backend: BackendId): boolean
   target(backend: BackendId): Promise<OneShotTarget | null>
+  oneShot(backend: BackendId): AgentOneShot
   onThisAccount(backend: BackendId, asked: ModelAndEffort): Promise<ModelAndEffort>
 }
 
@@ -105,9 +97,9 @@ export function koloftAssist(deps: AssistDeps): Assist {
         return null
       }
       if (!target) continue
-      const shot = ONE_SHOT[backend]
+      const shot = deps.oneShot(backend)
       const launch = assistLaunchOn(job.row, backend, picks)
-      const limitMs = shot.secondTryWhenLate ? ASSIST_ANSWERS_WITHIN_MS : ASSIST_TIMEOUT_MS
+      const limitMs = shot.sometimesAnswersLate ? ASSIST_ANSWERS_WITHIN_MS : ASSIST_TIMEOUT_MS
       const started = Date.now()
       const spentMs = (): number => Date.now() - started
       const safe = EVERY_ACCOUNT_TAKES[backend]
@@ -121,12 +113,12 @@ export function koloftAssist(deps: AssistDeps): Assist {
             shot.stdin(job),
             signal,
             timeoutMs,
-            (said) => (modelRefused ||= !!shot.saysItHasNoSuchModel?.test(said))
+            (said) => (modelRefused ||= shot.saysItHasNoSuchModel.test(said))
           )
       const answered = async (): Promise<string | null> => {
         const theAccountHas = await deps.onThisAccount(backend, launch)
         if (job.signal?.aborted) return null
-        const first = await (shot.secondTryWhenLate
+        const first = await (shot.sometimesAnswersLate
           ? withASecondTryWhenLate(runWith(theAccountHas), job.signal)
           : runWith(theAccountHas)(job.signal, Math.max(1, ASSIST_TIMEOUT_MS - spentMs())))
         const leftMs = limitMs - spentMs()
@@ -139,7 +131,7 @@ export function koloftAssist(deps: AssistDeps): Assist {
         return runWith({ ...safe, ...(effort && { effort }) })(job.signal, leftMs)
       }
       const out = await answered().finally(() => target.done())
-      return out === null ? null : shot.answer(out)
+      return out === null ? null : shot.answerFrom(out)
     }
     return null
   }

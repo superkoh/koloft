@@ -13,6 +13,7 @@ import {
 import { readJson } from '../../../main/jsonDrops'
 import { joinProjectTables } from './codexTrust'
 import type { CodexSessions } from './codexSessions'
+import type { ListedModel } from '@shared/sessionPicks'
 
 const CODEX_HOMES = 'codex-homes'
 
@@ -267,9 +268,17 @@ export function codexHomeAccounts(deps: CodexHomeAccountsDeps) {
     await codexSessions.storeApiKey(home, key)
   }
 
+  // CODEX§14
+  async function listedModels(): Promise<ListedModel[] | undefined> {
+    const picked = codexPicker.peek(accountViews())
+    return deps
+      .codexSessions()
+      ?.listedModels(picked && codexHomeOf(app.getPath('userData'), picked.name))
+  }
+
   return {
-    codexPicker,
     pickCodexHome,
+    listedModels,
     codexUseReset,
     probeCodexAccounts,
     // CODEX§15

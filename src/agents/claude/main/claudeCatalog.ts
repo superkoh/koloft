@@ -88,16 +88,20 @@ const CLAUDE_ONE_SHOT = (system: string, launch: ModelAndEffort): string[] => [
   ''
 ]
 
-// CC§9
 export const claudeOneShot: AgentOneShot = {
   argv: (job, launch) => CLAUDE_ONE_SHOT(job.system, launch),
   stdin: (job) => job.prompt,
-  answer: (out) => out,
+  answerFrom: (stdout) => stdout,
+  sometimesAnswersLate: false,
+  // CC§9
   saysItHasNoSuchModel: /issue with the selected model/
 }
 
 export const claudeCatalog: AgentCatalog = {
   moreSkillFoldersEveryAccountReadsOnThisMac: () => [],
+  // CC§31
+  listedModels: async () => undefined,
+  oneShot: claudeOneShot,
   // CC§22
   mcpServersOn: async (folders) => {
     const walks = folders.map((onlyIn) => ({ onlyIn, folders: foldersUpToRoot(onlyIn) }))

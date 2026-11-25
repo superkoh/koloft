@@ -50,6 +50,7 @@ export interface AgentFlags {
   turnEndCanComeBeforeItsReplyIsWritten: boolean
   typesASkillOnlyByTheNameInItsFile: boolean
   refusesATypedSkillMarkedNotUserInvocable: boolean
+  listsTheModelsAnAccountCanRun: boolean
 }
 
 export interface SkillFolderNames {

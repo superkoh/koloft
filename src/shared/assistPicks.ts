@@ -14,14 +14,22 @@ import { ACCOUNT_KINDS_OF, usableAccounts } from './accountUsage'
 import { effortsFor, NAMED_MODELS, takenEffort, type NamedModel } from './cronModels'
 import { isValidModelName } from './cronNames'
 import { backendIdOf, SESSION_BACKENDS } from './sessionBackend'
+import { capitalized } from './sessionDefaults'
+import { agentManifest } from '@core/agent/registry'
 
 export const ASSIST_ROWS: readonly AssistRowId[] = [...ASSIST_JOBS.map((j) => j.id), 'butler']
 
-const HAIKU: NamedModel = { id: 'haiku', label: 'Haiku' }
+function smallJobModelsNotNamed(backend: BackendId): NamedModel[] {
+  const named = new Set(NAMED_MODELS[backend].map((m) => m.id))
+  const ids = Object.values(agentManifest(backend).smallJobModels).flatMap((m) =>
+    m.model && !named.has(m.model) ? [m.model] : []
+  )
+  return [...new Set(ids)].map((id) => ({ id, label: capitalized(id) }))
+}
 
 export function assistModels(row: AssistRowId, backend: BackendId): NamedModel[] {
-  return row !== 'butler' && backend === 'claude'
-    ? [HAIKU, ...NAMED_MODELS.claude]
+  return row !== 'butler'
+    ? [...smallJobModelsNotNamed(backend), ...NAMED_MODELS[backend]]
     : NAMED_MODELS[backend]
 }
 
