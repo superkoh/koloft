@@ -120,7 +120,7 @@ IFS=:
 set -f
 for d in $PATH; do
   [ "$d" = "$self" ] && continue
-  [ -x "$d/gh" ] || continue
+  [ -f "$d/gh" ] && [ -x "$d/gh" ] || continue
   head -n 2 "$d/gh" 2>/dev/null | grep -q "koloft gh wrapper" && continue
   real="$d/gh"
   break
