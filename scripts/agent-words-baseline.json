@@ -47,11 +47,6 @@
       "export const codexSessionKey = sessionKeyOn('codex', 'Codex')",
       "private keyOf: KeyOf = codexSessionKey"
     ],
-    "src/agents/kit/main/sessionWorktrees.ts": [
-      "const target = `${root}/.claude/worktrees/${name}`",
-      "const worktreePath = `${root}/.claude/worktrees/${name}`",
-      "if (!listedRoot) throw new Error('Not a .claude/worktrees folder')"
-    ],
     "src/agents/kit/main/storedSessions.ts": [
       "import type { CodexApproval, CodexQuestion, SentAnswer } from '@plugins/sessions/main/dialog'",
       "openApproval(tabId: string): CodexApproval | undefined",
@@ -178,8 +173,6 @@
       "update: `if command -v timeout >/dev/null 2>&1; then timeout ${AGY_UPDATE_TIMEOUT_MS / 1000} \"$1\" update; else \"$1\" update; fi`,"
     ],
     "src/main/cliRuntime.ts": ["command: Exclude<AgentCommand, 'claude'>"],
-    "src/main/gitStatus.ts": ["const SESSION_WORKTREES_DIR = '.claude/worktrees/'"],
-    "src/main/gitSteps.ts": ["const dir = `${top.stdout.trim()}/.claude/worktrees/pr-${pr}`"],
     "src/main/homeKeyOnDisk.ts": [
       "'agy-home': (userData, name) => agyApiKeyRoute(agyHomeOf(userData, name))",
       "'codex-home': (userData, name) =>",
@@ -494,15 +487,10 @@
       "return claudeKeysBecomeMembers(toV4(raw, deps))"
     ],
     "src/main/leftovers.ts": [
-      "export async function endCodexAppServersLeftByACrash(marker: string): Promise<void> {",
       "export const CODEX_TMP_DIR = process.platform === 'darwin' ? '/tmp' : os.tmpdir()",
-      "export const CODEX_TMP_FOLDER = new RegExp(",
       "return idIn(commandWithEnv, 'CLAUDE_CODE_SESSION_ID')"
     ],
     "src/main/loginShell.ts": ["const AGENT_COMMANDS = ['claude', 'codex', 'agy'] as const"],
-    "src/main/machineTrees.ts": [
-      "/^(?:\\S*\\/)?(?:node\\s+\\S*\\/(?:claude|codex|agy)(?:\\.js)?\\s|node\\s+\\S*\\/(?:claude-code|codex)\\/\\S*\\s|(?:claude|codex|agy)(?:\\s|$))/"
-    ],
     "src/main/mcpServers.ts": [
       "...jsonServers('claude', projectFiles)",
       "...listed('claude', doc.mcpServers),",
@@ -647,9 +635,6 @@
       "to: path.join(dirs.codexHome, folder),",
       "to: path.join(dirs.geminiDir, AGY_APP_DIR, 'conversations'),",
       "uses: { codex: boolean; agy: boolean }"
-    ],
-    "src/main/resumePlan.ts": [
-      "return path.join(root, '.claude', 'worktrees') === home ? root : null"
     ],
     "src/main/rowActivity.ts": [
       "case 'AskUserQuestion':",
@@ -800,16 +785,6 @@
       "export function setupAgyStatusline(paths: StatuslinePaths): string {",
       "fs.writeFileSync(script, AGY_STATUSLINE_JS)",
       "import { AGY_COST_ENV } from '@agents/agy/main/agyHooks'"
-    ],
-    "src/main/taskProcs.ts": [
-      ".filter((row) => looksLikeClaude(row.command))",
-      "async function readClaudeShells(table: ProcessTable, exec: Exec): Promise<ClaudeShells | null> {",
-      "const claudeShellsOf = new WeakMap<ProcessTable, Promise<ClaudeShells | null>>()",
-      "if (!looksLikeClaude(table.byPid.get(rootPid)?.command ?? '')) return null",
-      "if (!read) claudeShellsOf.set(table, (read = readClaudeShells(table, exec)))",
-      "import { looksLikeClaude } from '@agents/claude/main/claudeLiveness'",
-      "interface ClaudeShells {",
-      "let read = claudeShellsOf.get(table)"
     ],
     "src/main/toolInstall.ts": [
       "agy: `curl -fsSL ${AGY_INSTALLER_URL} | bash`",
@@ -1000,9 +975,6 @@
       "pendingAskOf(tabId: string): Promise<Parameters<typeof askFromCodex>[0] | undefined>",
       "return other && askFromCodex(other)"
     ],
-    "src/plugins/scheduled-tasks/renderer/CronJobsDialog.tsx": [
-      "<span className=\"m\">{`.claude/worktrees/${slug}-<date>-<time>`}</span>, branch{' '}"
-    ],
     "src/plugins/sessions/api.ts": ["type CodexApproval,", "type CodexQuestion,"],
     "src/plugins/sessions/main/appHelpers.ts": [
       "export { agyBackend } from '@agents/agy/main/backend'",
@@ -1154,9 +1126,6 @@
       "sessionBackends.register(claudeBackend)",
       "type ClaudeSessionStoreDeps",
       "} from '@agents/claude/main/claudeSessionStore'"
-    ],
-    "src/plugins/sessions/main/workspaces.ts": [
-      "const wtMark = `${path.sep}.claude${path.sep}worktrees${path.sep}`"
     ],
     "src/plugins/todo/main/todoVerb.ts": [
       "'koloft todo file: give a workspace and one of the files koloft todo listed for it, like: koloft todo file koloft CLAUDE.md'"
@@ -1483,7 +1452,6 @@
     "src/shared/butlerStart.ts": [
       "if (backend !== 'claude' && !backendAvailable(inputs.installed, backend))"
     ],
-    "src/shared/cronNames.ts": ["return `${root}/.claude/worktrees`"],
     "src/shared/ipcChannels.ts": ["codexUseReset: 'accounts:codex-use-reset',"],
     "src/shared/preview.ts": [
       "/\\/(CLAUDE|AGENTS|SKILL)\\.md$/,",
@@ -1596,6 +1564,7 @@
       "fableCheckedAt?: number",
       "limits?: CodexLimits",
       "windows: CodexLimitWindow[]"
-    ]
+    ],
+    "src/shared/worktreeName.ts": ["export const SESSION_WORKTREES_FOLDER = '.claude/worktrees'"]
   }
 }

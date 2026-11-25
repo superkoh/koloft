@@ -1,4 +1,5 @@
 import { execFile } from 'child_process'
+import { AGENT_MANIFESTS } from '@core/agent/registry'
 import { psEnvironment } from './processTable'
 
 export interface TaggedProcess {
@@ -13,8 +14,13 @@ export interface TaggedProcess {
 // PLATFORM§3
 const ROW = /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\w{3}\s+\w{3}\s+\d{1,2}\s+\d\d:\d\d:\d\d\s+\d{4})\s+(.*)$/
 const TAB_TAG = /(?:^|\s)KOLOFT_TAB_ID=(\S+)/
-export const AGENT_PROGRAM =
-  /^(?:\S*\/)?(?:node\s+\S*\/(?:claude|codex|agy)(?:\.js)?\s|node\s+\S*\/(?:claude-code|codex)\/\S*\s|(?:claude|codex|agy)(?:\s|$))/
+const AGENT_COMMANDS = AGENT_MANIFESTS.map((agent) => agent.command).join('|')
+const AGENT_NODE_PACKAGES = AGENT_MANIFESTS.flatMap((agent) => agent.nodePackageFolderNames).join(
+  '|'
+)
+export const AGENT_PROGRAM = new RegExp(
+  String.raw`^(?:\S*\/)?(?:node\s+\S*\/(?:${AGENT_COMMANDS})(?:\.js)?\s|node\s+\S*\/(?:${AGENT_NODE_PACKAGES})\/\S*\s|(?:${AGENT_COMMANDS})(?:\s|$))`
+)
 const PS_DEADLINE_MS = 5_000
 
 export function parseTaggedTable(stdout: string): TaggedProcess[] {

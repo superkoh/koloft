@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { isPlaceholderSessionTitle } from '@shared/types'
+import { SESSION_WORKTREES_FOLDER } from '@shared/worktreeName'
 import { branchExists, type GitOut } from '@core/worktree'
 import type {
   BackendSessionRow,
@@ -58,7 +59,7 @@ export function worktreeHomeRoot(worktreePath: string): string | null {
   if (!path.isAbsolute(worktreePath)) return null
   const home = path.dirname(worktreePath)
   const root = path.dirname(path.dirname(home))
-  return path.join(root, '.claude', 'worktrees') === home ? root : null
+  return path.join(root, SESSION_WORKTREES_FOLDER) === home ? root : null
 }
 
 export function worktreeNameAround(dir: string): string | undefined {
