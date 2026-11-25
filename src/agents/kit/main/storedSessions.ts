@@ -204,6 +204,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   private relaunchingKeys = new Set<string>()
   private pendingLaunches = new Set<Promise<{ id: string; cwd: string }>>()
   private starting = new Set<LaunchedSession>()
+  private startingIn = new Set<{ folder?: string }>()
   protected shuttingDown = false
   private emitTimer?: ReturnType<typeof setTimeout>
   private lastEmitMs = 0
@@ -432,14 +433,20 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     for (const run of this.runs.values()) {
       const info = run.info
       if (!info) {
-        if (samePlace(run.cwd, dir)) return `a starting ${this.label} session`
+        if (samePlace(run.cwd, dir)) return this.startingSessionName()
         continue
       }
       if (samePlace(info.treeRoot, dir)) return occupantName(info)
       const bound = this.findRow(info.sessionId)?.worktreeState
       if (bound && samePlace(bound.worktreePath, dir)) return occupantName(info)
     }
+    for (const { folder } of this.startingIn)
+      if (folder && samePlace(folder, dir)) return this.startingSessionName()
     return null
+  }
+
+  private startingSessionName(): string {
+    return `a starting ${this.label} session`
   }
 
   runningBindings(): Map<string, string> {
@@ -817,6 +824,29 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     resource?: WorktreeResource
   ): Promise<{ id: string; cwd: string }> {
     if (opts.kind !== this.id) throw new Error(`A ${this.label} launch is required.`)
+    return this.inFolder(resource?.worktreePath ?? opts.cwd, (place) =>
+      this.launchRunIn(place, opts, resource)
+    )
+  }
+
+  private async inFolder<T>(
+    folder: string | undefined,
+    start: (place: { folder?: string }) => Promise<T>
+  ): Promise<T> {
+    const place = { folder }
+    this.startingIn.add(place)
+    try {
+      return await start(place)
+    } finally {
+      this.startingIn.delete(place)
+    }
+  }
+
+  private async launchRunIn(
+    place: { folder?: string },
+    opts: CreateTabOptions,
+    resource?: WorktreeResource
+  ): Promise<{ id: string; cwd: string }> {
     await this.waitForPrevious(opts.resumeSessionId)
     const available = await this.availability()
     this.assertStarting()
@@ -846,6 +876,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       } else if (!resource && this.deps.projectInfo(cwd).worktreeName) {
         resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
       }
+      place.folder = resource?.worktreePath ?? cwd
       const rules = await this.deps.projectRules?.(workspace)
       const workspaceParts = await this.deps.workspaceInstructions?.(workspace)
       this.assertStarting()
@@ -1020,44 +1051,47 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       ? this.store.getResource(m.worktreeResourceId)
       : this.store.listResources().find((r) => r.worktreePath === t?.cwd)
     let cwd = m?.cwd ?? t!.cwd
-    await this.worktrees.whenSettled(resource?.worktreePath ?? cwd)
-    if (
-      await rebuildsTheWorktree(
-        req.mode,
-        async () => !resource || this.dirThere(resource.worktreePath)
+    return this.inFolder(resource?.worktreePath ?? cwd, async (place) => {
+      await this.worktrees.whenSettled(resource?.worktreePath ?? cwd)
+      if (
+        await rebuildsTheWorktree(
+          req.mode,
+          async () => !resource || this.dirThere(resource.worktreePath)
+        )
+      ) {
+        resource = await (
+          resource ? this.worktrees.rebuild(resource.id) : this.worktrees.recover(cwd)
+        ).catch(() => {
+          throw new ResumeRefused('rebuild-failed')
+        })
+        cwd = resource.worktreePath
+      } else if (req.mode === 'renamed') {
+        if (!resource || !req.worktree) throw new ResumeRefused('invalid-args')
+        resource = await this.worktrees.prepareRenamed(resource.id, req.worktree)
+        cwd = resource.worktreePath
+      } else if (req.mode === 'main') {
+        cwd = resource?.originalCwd ?? this.workspaceFor(cwd)
+        resource = undefined
+      }
+      place.folder = resource?.worktreePath ?? cwd
+      this.assertStarting()
+      return this.launchRun(
+        {
+          kind: this.id,
+          cwd,
+          resumeSessionId: req.sessionId,
+          cols: req.cols,
+          rows: req.rows,
+          role: req.role,
+          conductor: req.conductor,
+          permission: req.permission ?? m?.permission,
+          trustFolder: req.trustFolder,
+          model: req.model,
+          effort: req.effort
+        },
+        resource
       )
-    ) {
-      resource = await (
-        resource ? this.worktrees.rebuild(resource.id) : this.worktrees.recover(cwd)
-      ).catch(() => {
-        throw new ResumeRefused('rebuild-failed')
-      })
-      cwd = resource.worktreePath
-    } else if (req.mode === 'renamed') {
-      if (!resource || !req.worktree) throw new ResumeRefused('invalid-args')
-      resource = await this.worktrees.prepareRenamed(resource.id, req.worktree)
-      cwd = resource.worktreePath
-    } else if (req.mode === 'main') {
-      cwd = resource?.originalCwd ?? this.workspaceFor(cwd)
-      resource = undefined
-    }
-    this.assertStarting()
-    return this.launchRun(
-      {
-        kind: this.id,
-        cwd,
-        resumeSessionId: req.sessionId,
-        cols: req.cols,
-        rows: req.rows,
-        role: req.role,
-        conductor: req.conductor,
-        permission: req.permission ?? m?.permission,
-        trustFolder: req.trustFolder,
-        model: req.model,
-        effort: req.effort
-      },
-      resource
-    )
+    })
   }
 
   stop(tabId: string, nativeExitCode?: number, restarting = false): Promise<void> {
