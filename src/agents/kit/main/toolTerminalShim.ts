@@ -1,4 +1,6 @@
-import { SHIM_FOUND_NO_ACCOUNT_EXIT } from '@shared/accountUsage'
+import type { BackendId } from '@shared/types'
+import { NO_USABLE_ACCOUNT, SHIM_FOUND_NO_ACCOUNT_EXIT } from '@shared/accountUsage'
+import { NEWID_FN } from '../../../main/openShimScript'
 
 export function utilTerminalRefusal(agent: string, nonInteractiveExamples: string): string {
   return `    printf '⛔ Koloft — this is a Koloft terminal, not an agent surface.\\n' >&2
@@ -7,7 +9,7 @@ export function utilTerminalRefusal(agent: string, nonInteractiveExamples: strin
     exit 1`
 }
 
-export const HELP_OR_VERSION = '-h|--help|-V|--version'
+const HELP_OR_VERSION = '-h|--help|-V|--version'
 
 export function utilTerminalRefusesInteractive(
   label: string,
@@ -74,3 +76,31 @@ read_keychain() {
   ptok="$(cat "$ptokf" 2>/dev/null)"
   rm -f "$ptokf" 2>/dev/null
 }`
+
+export interface ToolTerminalAccount {
+  reachesTheModel: string
+  useIt: string
+}
+
+export function utilTerminalAccountPick(
+  bin: BackendId,
+  { reachesTheModel, useIt }: ToolTerminalAccount
+): string {
+  return `if [ "$KOLOFT_UTIL" = "1" ]; then
+  pick=0
+  ${reachesTheModel}
+  for a in "$@"; do case "$a" in ${HELP_OR_VERSION}) pick=0 ;; esac; done
+  if [ "$pick" = "1" ]; then
+${NEWID_FN}
+${PICK_ACCOUNT_FNS}
+    pick_account ${bin} "${NO_USABLE_ACCOUNT[bin]}"
+    phome="$(pick_field home)"
+    ${useIt}
+    pbanner="$(pick_field banner)"
+    pwarn="$(pick_field warning)"
+    [ -n "$pbanner" ] && printf '%s\\n' "$pbanner" >&2
+    [ -n "$pwarn" ] && printf '%s\\n' "$pwarn" >&2
+  fi
+fi
+`
+}

@@ -7,6 +7,7 @@ import { spawn } from 'child_process'
 vi.mock('node-pty', () => ({ spawn: vi.fn() }))
 
 import { CLAUDE_AGENT_SHIM, REMOTE_AGENT_SHIM, writeAgentShim } from '../../src/main/agentShim'
+import { CANNOT_WRITE_THE_REQUEST } from './helpers/agentShims'
 import { AGENT_SHIM_WAITS_MS, answered, refused } from '../../src/core/command'
 import { AgentRequests, replyJson, REQUEST_NAME } from '../../src/main/agentRequests'
 import { passOf } from '../../src/main/tabPass'
@@ -269,7 +270,7 @@ describe('koloft command in a Codex session', () => {
   beforeEach(() => {
     requestDir = path.join(base, 'codex-requests')
     fs.mkdirSync(requestDir)
-    writeAgentShim(shimDir, requestDir, 'codex')
+    writeAgentShim(shimDir, requestDir, 'codex', CANNOT_WRITE_THE_REQUEST.codex)
   })
 
   afterEach(() => {
@@ -313,7 +314,7 @@ describe('koloft command in a Codex session', () => {
 
   it("prints the guide with its project's own rules for picking a model, quotes and $ kept as written", async () => {
     const rules = 'Code: "opus", high — not $HOME or `whoami`.'
-    writeAgentShim(shimDir, requestDir, 'codex', rules)
+    writeAgentShim(shimDir, requestDir, 'codex', CANNOT_WRITE_THE_REQUEST.codex, rules)
     const guide = await run(path.join(shimDir, 'koloft'), ['help'], {})
     expect(guide.stdout).toBe(agentGuide(rules) + '\n')
     expect(guide.stdout).toContain(rules)
@@ -327,7 +328,12 @@ describe('koloft command in a Codex or Antigravity session says which agent it r
   ] as const)(
     'once Koloft lets go of it, a %s session says it is a %s session no longer linked to Koloft, and exits 1',
     async (backend, label) => {
-      writeAgentShim(shimDir, path.join(base, `${backend}-requests`), backend)
+      writeAgentShim(
+        shimDir,
+        path.join(base, `${backend}-requests`),
+        backend,
+        CANNOT_WRITE_THE_REQUEST[backend]
+      )
       const r = await run(path.join(shimDir, 'koloft'), ['note'], {})
       expect(r.status).toBe(1)
       expect(r.stderr).toBe(`koloft: this ${label} session is no longer linked to Koloft.\n`)
@@ -342,7 +348,7 @@ describe('koloft command in a Codex or Antigravity session says which agent it r
     async (backend, said) => {
       const requestDir = path.join(base, `${backend}-requests`)
       fs.mkdirSync(requestDir, { mode: 0o555 })
-      writeAgentShim(shimDir, requestDir, backend)
+      writeAgentShim(shimDir, requestDir, backend, CANNOT_WRITE_THE_REQUEST[backend])
       try {
         const r = await run(path.join(shimDir, 'koloft'), ['note'], {})
         expect(r.status).toBe(1)

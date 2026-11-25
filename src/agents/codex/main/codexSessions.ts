@@ -103,6 +103,7 @@ import { codexSessionKey } from '@agents/kit/main/sessionStore'
 import { resolveCodexRuntime, updateCodex } from './codexRuntime'
 import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './codexMinimum'
 import { startToolShim } from '../../../main/toolShim'
+import { CODEX_SANDBOX_IS_READ_ONLY } from './codexShim'
 import { passOf, TAB_PASS_ENV } from '../../../main/tabPass'
 import {
   bashEnvFileIn,
@@ -1248,7 +1249,14 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   ): { shimDir: string; zdotDir: string; release(): void } {
     const { shim, release } = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
-      { backend: 'codex', userZdotdir, open, agent, rules }
+      {
+        backend: 'codex',
+        cannotWriteTheRequest: CODEX_SANDBOX_IS_READ_ONLY,
+        userZdotdir,
+        open,
+        agent,
+        rules
+      }
     )
     return { shimDir: shim.shimDir, zdotDir: shim.zdotDir, release }
   }

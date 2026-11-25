@@ -5,9 +5,10 @@ import { NEWID_FN } from '../../../main/openShimScript'
 import { CLAUDE_AUTH_ENV_VARS } from '../../../main/remote/launch'
 import { ENSURE_CLAUDE_MINIMUM_FN } from './claudeMinimum'
 import { ADVISOR_OFF_ON_FABLE_FN } from './advisorOnFable'
+import type { AgentTools } from '@core/agent/agentsMain'
 
 // CC§9
-export const CLAUDE_FLAGS_FOLLOWED_BY_A_VALUE = [
+const CLAUDE_FLAGS_FOLLOWED_BY_A_VALUE = [
   '-w',
   '--worktree',
   '-r',
@@ -62,7 +63,7 @@ ${utilTerminalRefusal('Claude', 'claude -p · --help · doctor · mcp')}
   fi
 fi`
 
-export const SHIM_SCRIPT = `#!/usr/bin/env bash
+const SHIM_SCRIPT = `#!/usr/bin/env bash
 : koloft claude shim
 self_dir="$(cd "$(dirname "$0")" >/dev/null 2>&1 && pwd)"
 real=""
@@ -260,4 +261,8 @@ exec "$real" "\${inj[@]}" "$@"
 
 export function registeredByTabRoot(regPid: unknown, rootPid: number | undefined): boolean {
   return typeof regPid !== 'number' || rootPid === undefined || regPid === rootPid
+}
+
+export const claudeTools: AgentTools = {
+  shimScript: () => SHIM_SCRIPT
 }

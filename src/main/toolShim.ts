@@ -31,6 +31,7 @@ export function startToolShim(
   deps: ToolShimDeps,
   opts: {
     backend: BackendId
+    cannotWriteTheRequest: string
     userZdotdir?: string
     open: (target: string) => void
     agent?: (dir: string, name: string, raw: unknown) => void
@@ -50,7 +51,14 @@ export function startToolShim(
     if (deps.gitBin) fs.symlinkSync(path.join(deps.gitBin, 'git'), path.join(shim.shimDir, 'git'))
     fs.symlinkSync(deps.ghWrapper, path.join(shim.shimDir, 'gh'))
     const { agent } = opts
-    if (agent) writeAgentShim(shim.shimDir, shim.requestDir, opts.backend, opts.rules)
+    if (agent)
+      writeAgentShim(
+        shim.shimDir,
+        shim.requestDir,
+        opts.backend,
+        opts.cannotWriteTheRequest,
+        opts.rules
+      )
     const opens = oncePerName(() => openDropHandler(opts.open))
     const dropped = opts.drop && oncePerName(opts.drop)
     const isOpenDrop = (name: string): boolean =>
