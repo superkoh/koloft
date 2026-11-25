@@ -603,6 +603,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     env
   }) => {
     const said = 'left on the screen before Koloft closed'
+    const answered = `answered: ${said}`
     await withLab(env, async ({ page: firstWindow, lab, quitKoloft, openKoloftAgain }) => {
       await addMachine(firstWindow, 'kt-key', 'kuser')
       await startSessionIn(firstWindow, 'kt-key', { remote: true })
@@ -613,7 +614,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       await runIn(firstWindow, centerTerm(firstWindow), `/answer ${said}`)
       await expect
         .poll(() => terminalText(firstWindow, firstTab), { timeout: 60_000 })
-        .toContain(`Answer to: ${said}`)
+        .toContain(answered)
       await quitKoloft()
       const page = await openKoloftAgain()
       await expect
@@ -631,7 +632,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       await expect
         .poll(() => terminalText(page, tabId), { timeout: 60_000 })
         .toContain('stopped with exit code 137')
-      expect(await terminalText(page, tabId)).toContain(`Answer to: ${said}`)
+      expect(await terminalText(page, tabId)).toContain(answered)
     })
   })
 
