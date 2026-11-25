@@ -370,7 +370,6 @@ import {
   whenMessagingSocket,
   whenMessagingSocketOnMachine
 } from '@agents/claude/main/claudeSessionRegistry'
-import { messageSocket } from '@agents/claude/main/messageSocket'
 import { GLOBAL_SCOPE, scopeName } from '@shared/scope'
 import { Commands } from '@core/commands'
 import { PLUGINS } from '@plugins/list'
@@ -1690,9 +1689,6 @@ const messaging = sessionMessaging({
   get hosts() {
     return hosts
   },
-  get codexSessions() {
-    return codexSessions
-  },
   get hookRegDir() {
     return hookRegDir
   },
@@ -1702,32 +1698,17 @@ const messaging = sessionMessaging({
   get sessionBackends() {
     return sessionBackends
   },
-  get noteOfWhatKoloftSends() {
-    return noteOfWhatKoloftSends
-  },
   get noteSent() {
     return noteSent
+  },
+  get opensAsOnlyKoloftSends() {
+    return opensAsOnlyKoloftSends
   },
   get buildHandOver() {
     return buildHandOver
   },
   ptyMgr,
-  startupErrors,
-  machineOfTab,
-  storedOwnerOf,
-  sendPeerLine: messageSocket({
-    get tracker() {
-      return tracker
-    },
-    get writeLineInTurn() {
-      return writeLineInTurn
-    },
-    remoteControlDir,
-    sessionOfTab,
-    liveClaudeRegistryOn,
-    whenMessagingSocket,
-    whenMessagingSocketOnMachine
-  })
+  machineOfTab
 })
 
 const syncRepoKeys = new GitRepoKeys(undefined, (machine, paths) =>
@@ -6262,8 +6243,8 @@ const {
   localNotice,
   markAnswerable,
   markOwnerAsleep,
-  noteOfWhatKoloftSends,
   noteSent,
+  opensAsOnlyKoloftSends,
   noticeFile,
   pruneStale,
   quotedPrompt,

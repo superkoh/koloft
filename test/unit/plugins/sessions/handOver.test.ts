@@ -1,12 +1,20 @@
 import { describe, it, expect } from 'vitest'
 import { HandOver, type HandOverDeps, type Recipient } from '../../../../src/plugins/sessions/api'
+import { everyAgentsMessages, type WhatEachAgentSendsThrough } from '../../helpers/agentMessages'
 
 const TAB = 'pty-1'
 
-function setup(more: Partial<HandOverDeps> = {}) {
+function setup(more: Partial<HandOverDeps & WhatEachAgentSendsThrough> = {}) {
   const typed: string[] = []
   let release: () => void = () => {}
   const gate = new Promise<void>((resolve) => (release = resolve))
+  const { send } = everyAgentsMessages({
+    sendLine: async () => undefined,
+    queue: async (_t, text) => void typed.push(text),
+    throughItsApi: async () => false,
+    noteKoloftSent: async () => undefined,
+    ...more
+  })
   const deps: HandOverDeps = {
     backendOf: () => 'codex',
     boundKey: () => 'session-1',
@@ -14,10 +22,9 @@ function setup(more: Partial<HandOverDeps> = {}) {
     typable: () => true,
     ready: async (_t, ready) => ready(),
     type: async () => true,
-    queue: async (_t, text) => void typed.push(text),
-    sendLine: async () => undefined,
+    send,
     modeOf: () => 'bypass',
-    noteSent: async () => undefined,
+    opensAsOnlyKoloftSends: () => false,
     ...more
   }
   const to: Recipient = {

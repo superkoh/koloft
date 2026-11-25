@@ -54,12 +54,13 @@ export function messageSocket(
   return sendPeerLine
 }
 
-export interface ClaudeMessageDeps extends MessageSocketDeps {
+export interface ClaudeMessageDeps {
+  sendPeerLine(tabId: string, line: string, ms: number): Promise<void>
   noteKoloftSent(tabId: string, note: SentNote): Promise<void>
 }
 
 export function claudeMessages(d: ClaudeMessageDeps): SessionMessages {
-  const sendPeerLine = messageSocket(d)
+  const { sendPeerLine } = d
   let lined = 0
   return {
     send: async (tabId, m) => {

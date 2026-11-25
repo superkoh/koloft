@@ -754,16 +754,9 @@ export function sentWordsFile(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}${SENT_WORDS_SUFFIX}`)
 }
 
-// ADR-0028 CC§13 CODEX§33 AGY§16
-export function noteOfWhatKoloftSends(
-  backend: BackendId | undefined,
-  text: string,
-  id: string | undefined
-): SentNote | undefined {
-  if (![FROM_DISCORD, ...OPENINGS_ONLY_KOLOFT_SENDS].some((o) => text.startsWith(o)))
-    return undefined
-  if (backend === 'claude') return id === undefined ? undefined : { id }
-  return backend === 'codex' ? { words: text } : undefined
+// ADR-0028
+export function opensAsOnlyKoloftSends(text: string): boolean {
+  return [FROM_DISCORD, ...OPENINGS_ONLY_KOLOFT_SENDS].some((o) => text.startsWith(o))
 }
 
 export function noteSent(regDir: string, tabId: string, note: SentNote): void {

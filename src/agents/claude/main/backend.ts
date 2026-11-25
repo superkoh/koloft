@@ -25,7 +25,12 @@ import type {
   SessionMessages,
   TabExit
 } from '@core/agent/sessionBackends'
-import { claudeMessages, type ClaudeMessageDeps } from './messageSocket'
+import {
+  claudeMessages,
+  messageSocket,
+  type ClaudeMessageDeps,
+  type MessageSocketDeps
+} from './messageSocket'
 import { KEEPS_NO_WORKTREE_RECORDS } from '@core/agent/worktreeRecords'
 import {
   A_PASS_WITH_NO_ROWS,
@@ -151,7 +156,7 @@ export interface ClaudeBackendDeps {
   messaged(tabId: string, fromSessionId: string): void
   error(message: string): void
   machineOfTab(tabId: string): string | undefined
-  messages: Omit<ClaudeMessageDeps, 'tracker'>
+  messages: Omit<MessageSocketDeps, 'tracker'> & Pick<ClaudeMessageDeps, 'noteKoloftSent'>
   otherTabOnMachine?(machine: string, tmuxName: string, launchTab: string): string | undefined
   projectRules?(workspace: string): Promise<string | undefined>
   workspaceInstructions?(workspace: string): Promise<string[]>
@@ -295,8 +300,8 @@ export class ClaudeBackend implements SessionBackend {
 
   private messagesNow(): SessionMessages {
     return (this.messages ??= claudeMessages({
-      ...this.d.messages,
-      tracker: this.d.tracker
+      sendPeerLine: messageSocket({ ...this.d.messages, tracker: this.d.tracker }),
+      noteKoloftSent: (tabId, note) => this.d.messages.noteKoloftSent(tabId, note)
     }))
   }
 
