@@ -7,7 +7,8 @@ import {
   type AccountKind,
   type AccountView,
   type CronEffort,
-  type QuotaBucket
+  type QuotaBucket,
+  type SignInCommand
 } from '@shared/types'
 import type { AgentAccounts } from '@core/agent/agentsMain'
 import {
@@ -532,6 +533,15 @@ export function agyHomeAccounts(deps: AgyHomeAccountsDeps) {
     setAgyApiKeyRoute(agyHomeFor(name), true)
   }
 
+  // AGY§5 AGY§7
+  async function homeLogin(name: string): Promise<SignInCommand> {
+    const binary = await agyBinary()
+    const home = agyHomeFor(name)
+    const apiKey = await agyApiKeyOf(name)
+    setAgyApiKeyRoute(home, !!apiKey)
+    return { binary, env: agyAccountEnv(apiKey), args: [`--gemini_dir=${home}`] }
+  }
+
   return {
     agyPicker,
     agyHomeFor,
@@ -539,16 +549,13 @@ export function agyHomeAccounts(deps: AgyHomeAccountsDeps) {
     pickAgyHome,
     agyBinary,
     probeAgyAccounts,
-    // AGY§5 AGY§7
-    homeLogin: async (name: string) => {
-      const binary = await agyBinary()
-      const home = agyHomeFor(name)
-      const apiKey = await agyApiKeyOf(name)
-      setAgyApiKeyRoute(home, !!apiKey)
-      return { binary, env: agyAccountEnv(apiKey), args: [`--gemini_dir=${home}`] }
-    },
-    probeHomeAccount: (name: string) => probeAgyAccount(name),
     accounts: {
+      signIn: (_kind, name, again) =>
+        deps.signInInATab('agy-home', name, again, {
+          homeLogin,
+          probeHomeAccount: probeAgyAccount
+        }),
+      cancelSignIn: () => {},
       pickForThisStart: () =>
         answerOfTerminalPick('agy', () => {
           const picked = terminalPickOf(pickAgyHome())
