@@ -83,6 +83,7 @@ import {
 import { shellWrittenFiles } from '../../../main/touchedFiles'
 import {
   acceptCodexHookTrust,
+  CODEX_HISTORY_STORE,
   codexConfigFile,
   codexHookTrusted,
   codexTrustsFolder,
@@ -322,6 +323,7 @@ interface CodexLaunch {
 
 export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLaunch> {
   readonly id = 'codex'
+  readonly historyStore = CODEX_HISTORY_STORE
   private crashLeftoversEnded?: Promise<void>
   private listedHooks = new Map<string, ListedHook>()
   private resumedInDefaultHome = new Map<string, Promise<void>>()

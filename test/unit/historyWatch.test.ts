@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { HISTORY_STORES, watchHistory, type HistoryStore } from '../../src/main/historyWatch'
+import { watchHistory, type HistoryStore } from '../../src/main/historyWatch'
+import { AGY_HISTORY_STORE } from '../../src/agents/agy/main/agyStore'
+import { CODEX_HISTORY_STORE } from '../../src/agents/codex/main/codexTrust'
 
 const SETTLE_MS = 50
 const QUIET_WINDOW_MS = 600
@@ -63,7 +65,7 @@ async function watching(
 
 describe('the session list of an agent Koloft does not run asks it again when its own store gains or loses a session', () => {
   it('Codex: a rollout written in a new day folder is listed once, its later turns are not, and deleting it lists again', async () => {
-    const w = await watching(HISTORY_STORES.codex, (n) => `warm-${n}.jsonl`)
+    const w = await watching(CODEX_HISTORY_STORE, (n) => `warm-${n}.jsonl`)
     const rollout = path.join('2026', '10', '27', 'rollout-2026-10-27T07-15-39-abc.jsonl')
     write(w.dir, rollout)
     await w.listed()
@@ -79,7 +81,7 @@ describe('the session list of an agent Koloft does not run asks it again when it
     const older = path.join('2026', '10', '26', 'rollout-older.jsonl')
     write(dir, older)
     await quiet()
-    const w = await watching(HISTORY_STORES.codex, (n) => `warm-${n}.jsonl`, dir)
+    const w = await watching(CODEX_HISTORY_STORE, (n) => `warm-${n}.jsonl`, dir)
     write(w.dir, older, 'next turn\n')
     await quiet()
     expect(w.lists()).toBe(0)
@@ -88,7 +90,7 @@ describe('the session list of an agent Koloft does not run asks it again when it
   })
 
   it("Antigravity: a new conversation's .db is listed, its sqlite side files are not, and deleting it lists again", async () => {
-    const w = await watching(HISTORY_STORES.agy, (n) => `warm-${n}.db`)
+    const w = await watching(AGY_HISTORY_STORE, (n) => `warm-${n}.db`)
     write(w.dir, 'c1.db-wal')
     write(w.dir, 'c1.db-shm')
     await quiet()
@@ -100,7 +102,7 @@ describe('the session list of an agent Koloft does not run asks it again when it
   })
 
   it('a second session late in the wait for the first waits its own full time, so one listing sees both', async () => {
-    const w = await watching(HISTORY_STORES.agy, (n) => `warm-${n}.db`, tempDir(), LONG_SETTLE_MS)
+    const w = await watching(AGY_HISTORY_STORE, (n) => `warm-${n}.db`, tempDir(), LONG_SETTLE_MS)
     write(w.dir, 'first.db')
     await sleep(SECOND_SESSION_LATE_IN_THE_WINDOW_MS)
     write(w.dir, 'second.db')
@@ -113,7 +115,7 @@ describe('the session list of an agent Koloft does not run asks it again when it
     const dir = path.join(tempDir(), 'agy', 'conversations')
     let count = 0
     closers.push(
-      watchHistory({ ...HISTORY_STORES.agy, settleMs: SETTLE_MS }, dir, () => void count++)
+      watchHistory({ ...AGY_HISTORY_STORE, settleMs: SETTLE_MS }, dir, () => void count++)
     )
     await quiet()
     expect(count).toBe(0)

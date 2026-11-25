@@ -51,10 +51,10 @@
       "export const codexSessionKey = sessionKeyOn('codex', 'Codex')",
       "private keyOf: KeyOf = codexSessionKey"
     ],
-    "src/agents/kit/main/stored.ts": [
-      "import type { AgySessions } from '@agents/agy/main/agySessions'",
-      "import type { CodexSessions } from '@agents/codex/main/codexSessions'",
-      "sessions: CodexSessions | AgySessions,"
+    "src/agents/kit/main/sessionWorktrees.ts": [
+      "const target = `${root}/.claude/worktrees/${name}`",
+      "const worktreePath = `${root}/.claude/worktrees/${name}`",
+      "if (!listedRoot) throw new Error('Not a .claude/worktrees folder')"
     ],
     "src/agents/kit/main/storedSessions.ts": [
       "import type { CodexApproval, CodexQuestion, SentAnswer } from '@plugins/sessions/main/dialog'",
@@ -153,20 +153,6 @@
     "src/main/cliRuntime.ts": ["command: Exclude<AgentCommand, 'claude'>"],
     "src/main/gitStatus.ts": ["const SESSION_WORKTREES_DIR = '.claude/worktrees/'"],
     "src/main/gitSteps.ts": ["const dir = `${top.stdout.trim()}/.claude/worktrees/pr-${pr}`"],
-    "src/main/historyWatch.ts": [
-      "agy: {",
-      "codex: {",
-      "const AGY_LISTS_A_NEW_CONVERSATION_WITHIN_MS = 1500",
-      "const CODEX_LISTS_A_NEW_ROLLOUT_WITHIN_MS = 1000",
-      "dir: (env) => path.join(ownersGeminiDir(env), AGY_APP_DIR, 'conversations'),",
-      "dir: (env) => path.join(path.dirname(codexConfigFile(env)), 'sessions'),",
-      "export const HISTORY_STORES: Record<Exclude<BackendId, 'claude'>, HistoryStore> = {",
-      "import { AGY_APP_DIR, ownersGeminiDir } from '@agents/agy/main/agyStore'",
-      "import { codexConfigFile } from '@agents/codex/main/codexTrust'",
-      "readonly id: Exclude<BackendId, 'claude'>",
-      "settleMs: AGY_LISTS_A_NEW_CONVERSATION_WITHIN_MS",
-      "settleMs: CODEX_LISTS_A_NEW_ROLLOUT_WITHIN_MS"
-    ],
     "src/main/homeKeyOnDisk.ts": [
       "'agy-home': (userData, name) => agyApiKeyRoute(agyHomeOf(userData, name))",
       "'codex-home': (userData, name) =>",
@@ -874,11 +860,6 @@
       "return startedAHelper(codexTaskName(item.agentPath) ?? 'helper')",
       "type CodexApproval,",
       "type CodexQuestion"
-    ],
-    "src/main/sessionWorktrees.ts": [
-      "const target = `${root}/.claude/worktrees/${name}`",
-      "const worktreePath = `${root}/.claude/worktrees/${name}`",
-      "if (!listedRoot) throw new Error('Not a .claude/worktrees folder')"
     ],
     "src/main/shim.ts": [
       "${ADVISOR_OFF_ON_FABLE_FN}",

@@ -1,14 +1,13 @@
 import type { ResumePlan } from '@shared/types'
 import { isRemoteKey } from '@shared/remoteKey'
 import type { SessionBackend } from '@core/agent/sessionBackends'
-import type { CodexSessions } from '@agents/codex/main/codexSessions'
-import type { AgySessions } from '@agents/agy/main/agySessions'
+import type { HistoryEntry, StoredRun, StoredSessions } from './storedSessions'
 import { planResume, ResumeRefused, type ResumeProbes } from '../../../main/resumePlan'
 import { errorText } from '@core/errorText'
 import { rowsKeptInMemory } from './rowsKeptInMemory'
 
-export function storedBackend(
-  sessions: CodexSessions | AgySessions,
+export function storedBackend<R extends StoredRun, H extends HistoryEntry, P>(
+  sessions: StoredSessions<R, H, P>,
   resumeProbes: ResumeProbes,
   own: Pick<
     SessionBackend,
@@ -47,6 +46,7 @@ export function storedBackend(
     stop: (tabId, restarting) => sessions.stop(tabId, undefined, restarting),
     archive: (key) => sessions.archive(key),
     adopt: (keys) => sessions.adopt(keys),
+    worktreeRecords: sessions.worktrees.records,
     transcriptExists: (key) => sessions.transcriptExists(key),
     transcriptPlaces: (key) => sessions.transcriptPlaces(key),
     observe: (tabId, event) => sessions.observe(tabId, event),

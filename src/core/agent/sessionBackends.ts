@@ -17,7 +17,7 @@ import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
 import {
   worktreeRecordsOfEveryAgent,
-  type KeepsWorktreeRecords,
+  type WorktreeRecords,
   type WorktreeRecordsOfEveryAgent
 } from './worktreeRecords'
 import { identityOf, sourceOf, SESSION_BACKENDS } from '@shared/sessionBackend'
@@ -55,6 +55,7 @@ export interface SessionBackend extends SessionRowsSource {
   peerNames(): (key: string) => Promise<string | null>
   runningElsewhere(key: string): boolean | Promise<boolean>
   workStillRunning(tabId: string): Promise<boolean>
+  worktreeRecords: WorktreeRecords
 }
 
 export interface SessionLifecycle {
@@ -73,10 +74,6 @@ export class SessionBackends {
   private adapters = new Map<BackendId, SessionBackend>()
   private cleanExitAt = new Map<string, number>()
   private questionsAsked = 0
-  keepersOfWorktreeRecords: () => readonly KeepsWorktreeRecords[] = () => []
-  readonly worktreeRecords: WorktreeRecordsOfEveryAgent = worktreeRecordsOfEveryAgent(() =>
-    this.keepersOfWorktreeRecords()
-  )
   isOverseerSession: (tabOrSessionId: string) => boolean = () => false
   turnOver: (tabId: string) => boolean = () => false
   askingOf: (tabId: string) => string | undefined = () => undefined
@@ -84,13 +81,17 @@ export class SessionBackends {
   noAccountMessage: (backend: BackendId) => string = (backend) => NO_USABLE_ACCOUNT[backend]
   turnedOff: (backend: BackendId) => string | null = () => null
   readonly rows: RowsOfEveryAgent = rowsOfEveryAgent(() =>
-    SESSION_BACKENDS.flatMap((id) => {
-      const backend = this.adapters.get(id)
-      return backend ? [{ id, rows: backend }] : []
-    })
+    this.inListOrder().map((backend) => ({ id: backend.id, rows: backend }))
+  )
+  readonly worktreeRecords: WorktreeRecordsOfEveryAgent = worktreeRecordsOfEveryAgent(() =>
+    this.inListOrder()
   )
 
   constructor(private lifecycle: SessionLifecycle) {}
+
+  private inListOrder(): SessionBackend[] {
+    return SESSION_BACKENDS.flatMap((id) => this.adapters.get(id) ?? [])
+  }
 
   observe(tabId: string, event: SessionEvent): void {
     switch (event.type) {

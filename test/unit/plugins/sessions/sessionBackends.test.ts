@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { SessionBackends, type SessionBackend } from '../../../../src/core/agent/sessionBackends'
+import { KEEPS_NO_WORKTREE_RECORDS } from '../../../../src/core/agent/worktreeRecords'
 import { rowsKeptInMemory } from '../../../../src/agents/kit/main/rowsKeptInMemory'
 import { sessionEventFromHook } from '../../../../src/agents/claude/main/sessionTracker'
 import {
@@ -43,6 +44,7 @@ function stubBackend(
     transcriptExists: () => true,
     observe: () => {},
     occupantOf: () => null,
+    worktreeRecords: KEEPS_NO_WORKTREE_RECORDS,
     accountUsable: () => true,
     trustsFolder: () => true,
     turns: async () => [],

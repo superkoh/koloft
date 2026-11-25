@@ -21,7 +21,8 @@ import type { SessionPlace } from '../../../main/usageCache'
 import type { CodexApproval, CodexQuestion, SentAnswer } from '@plugins/sessions/main/dialog'
 import type { WorktreeResource } from '@core/agent/worktreeRecords'
 import { SessionStore, hostOfPath, type KeyOf } from './sessionStore'
-import { SessionWorktrees, type TreeIo } from '../../../main/sessionWorktrees'
+import { SessionWorktrees } from './sessionWorktrees'
+import type { TreeIo } from '../../../main/sessionWorktrees'
 import type { PtyManager } from '../../../main/ptyManager'
 import {
   MACHINE_ASKS_AT_MOST_EVERY_MS,
@@ -154,7 +155,6 @@ export const ownerTextApart = (
 export interface SessionsWithStore {
   readonly id: BackendId
   readonly store: SessionStore
-  readonly worktrees: SessionWorktrees
   rows(workspace: string): BackendSessionRow[]
   workspacesFor(cwds: string[]): string[]
   sessionPlaces(): (id: string, host?: string) => SessionPlace | undefined

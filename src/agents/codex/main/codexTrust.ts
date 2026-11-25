@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import { writePrivateAtomically } from '@core/privateFile'
 import { realpathSafe } from '../../../main/projectInfo'
+import type { HistoryStore } from '../../../main/historyWatch'
 import { record } from '@core/unknownValue'
 import type { KoloftHook } from './codexLaunchConfig'
 import {
@@ -16,6 +17,16 @@ import {
 
 export function codexConfigFile(env: NodeJS.ProcessEnv | undefined): string {
   return path.join(env?.CODEX_HOME || path.join(os.homedir(), '.codex'), 'config.toml')
+}
+
+// CODEX§15
+const CODEX_LISTS_A_NEW_ROLLOUT_WITHIN_MS = 1000
+
+// CODEX§15
+export const CODEX_HISTORY_STORE: HistoryStore = {
+  dir: (env) => path.join(path.dirname(codexConfigFile(env)), 'sessions'),
+  holdsASession: () => true,
+  settleMs: CODEX_LISTS_A_NEW_ROLLOUT_WITHIN_MS
 }
 
 function readConfig(configFile: string): string {

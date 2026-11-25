@@ -12,16 +12,23 @@ export interface WorktreeResource {
   error?: string
 }
 
+export interface WorktreeRecords {
+  of(workspace: string): WorktreeResource[]
+  at(dir: string): WorktreeResource | undefined
+  untouched(record: WorktreeResource): Promise<boolean>
+  forgetUnusedAt(treeRoot: string): void
+}
+
+export const KEEPS_NO_WORKTREE_RECORDS: WorktreeRecords = {
+  of: () => [],
+  at: () => undefined,
+  untouched: async () => false,
+  forgetUnusedAt: () => {}
+}
+
 export interface KeepsWorktreeRecords {
   readonly id: BackendId
-  readonly store: {
-    listResources(): WorktreeResource[]
-    removeUnusedResourcesAt(worktreePath: string): void
-  }
-  readonly worktrees: {
-    recorded(worktreePath: string): boolean
-    untouched(record: WorktreeResource): Promise<boolean>
-  }
+  readonly worktreeRecords: WorktreeRecords
 }
 
 export interface WorktreeRecordOfAgent {
@@ -38,27 +45,21 @@ export interface WorktreeRecordsOfEveryAgent {
 }
 
 export function worktreeRecordsOfEveryAgent(
-  keepers: () => readonly KeepsWorktreeRecords[]
+  agents: () => readonly KeepsWorktreeRecords[]
 ): WorktreeRecordsOfEveryAgent {
-  const keeper = (backendId: BackendId): KeepsWorktreeRecords | undefined =>
-    keepers().find((k) => k.id === backendId)
+  const recordsOf = (backendId: BackendId): WorktreeRecords | undefined =>
+    agents().find((a) => a.id === backendId)?.worktreeRecords
   return {
-    recorded: (dir) => keepers().some((k) => k.worktrees.recorded(dir)),
-    at: (backendId, dir) =>
-      keeper(backendId)
-        ?.store.listResources()
-        .find((record) => record.worktreePath === dir),
+    recorded: (dir) => agents().some((a) => a.worktreeRecords.at(dir) !== undefined),
+    at: (backendId, dir) => recordsOf(backendId)?.at(dir),
     untouched: async (backendId, record) =>
-      !!(await keeper(backendId)?.worktrees.untouched(record)),
+      (await recordsOf(backendId)?.untouched(record)) ?? false,
     forgetUnusedAt: (treeRoot) => {
-      for (const k of keepers()) k.store.removeUnusedResourcesAt(treeRoot)
+      for (const a of agents()) a.worktreeRecords.forgetUnusedAt(treeRoot)
     },
     of: (workspace) =>
-      keepers().flatMap((k) =>
-        k.store
-          .listResources()
-          .filter((record) => record.originalCwd === workspace)
-          .map((record) => ({ backendId: k.id, record }))
+      agents().flatMap((a) =>
+        a.worktreeRecords.of(workspace).map((record) => ({ backendId: a.id, record }))
       )
   }
 }

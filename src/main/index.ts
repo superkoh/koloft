@@ -611,7 +611,6 @@ backendHooks.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
 const noAccountNow = (backend: BackendId): string => noAccountMessage(listAccounts(), backend)
 backendHooks.noAccountMessage = noAccountNow
 backendHooks.turnedOff = turnedOffNow
-backendHooks.keepersOfWorktreeRecords = storedSessions
 function allSessions(): SessionInfo[] {
   return sessionBackends.list()
 }

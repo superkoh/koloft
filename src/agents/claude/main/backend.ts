@@ -18,6 +18,7 @@ import { hasUsableAccount } from '@shared/accountUsage'
 import type { Turn } from '@shared/turns'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import type { ModeClass, SessionBackend } from '@core/agent/sessionBackends'
+import { KEEPS_NO_WORKTREE_RECORDS } from '@core/agent/worktreeRecords'
 import {
   A_PASS_WITH_NO_ROWS,
   type RowsPass,
@@ -252,6 +253,7 @@ class CallerOnTheMachine {
 
 export class ClaudeBackend implements SessionBackend {
   readonly id = 'claude'
+  readonly worktreeRecords = KEEPS_NO_WORKTREE_RECORDS
   private hookRegDir = ''
   private statusLogCursors = new Map<string, AppendCursor>()
   private statusLogDraining = new Map<string, boolean>()

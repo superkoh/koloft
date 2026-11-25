@@ -3,18 +3,47 @@ import os from 'os'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import { execFileSync } from 'child_process'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { app } from 'electron'
+
+vi.mock('electron', async () => {
+  const nfs = await import('node:fs')
+  const nos = await import('node:os')
+  const npath = await import('node:path')
+  const base = nfs.mkdtempSync(npath.join(nos.tmpdir(), 'koloft-worktree-records-'))
+  return { app: { getPath: () => base, getName: () => 'koloft-dev', isPackaged: false } }
+})
+
+afterAll(() => fs.rmSync(app.getPath('userData'), { recursive: true, force: true }))
+
 import { SESSION_BACKENDS } from '@shared/sessionBackend'
 import type { BackendId, WorktreeInfo } from '@shared/types'
 import type { MainIpc } from '@core/ipc'
 import { BackgroundFile } from '../../../../src/main/backgroundFile'
-import { SessionBackends, type SessionLifecycle } from '../../../../src/core/agent/sessionBackends'
-import type {
-  WorktreeRecordsOfEveryAgent,
-  WorktreeResource
+import {
+  SessionBackends,
+  type SessionBackend,
+  type SessionLifecycle
+} from '../../../../src/core/agent/sessionBackends'
+import {
+  KEEPS_NO_WORKTREE_RECORDS,
+  type WorktreeRecordsOfEveryAgent,
+  type WorktreeResource
 } from '../../../../src/core/agent/worktreeRecords'
 import { SessionStore, codexSessionKey } from '../../../../src/agents/kit/main/sessionStore'
-import { SessionWorktrees } from '../../../../src/main/sessionWorktrees'
+import { SessionWorktrees } from '../../../../src/agents/kit/main/sessionWorktrees'
+import { agyBackend } from '../../../../src/agents/agy/main/backend'
+import { codexBackend } from '../../../../src/agents/codex/main/backend'
+import type { ResumeProbes } from '../../../../src/main/resumePlan'
+import {
+  agySessionsIn,
+  claudeBackendIn,
+  codexSessionsIn,
+  makeWorld,
+  recordingPty,
+  recordingSsh,
+  type World
+} from '../../helpers/agentTabs'
 import { registerChannels } from '../../../../src/plugins/sessions/main/channels'
 import { CHANNELS } from '../../../../src/plugins/sessions/shared/ipc'
 
@@ -61,11 +90,11 @@ function everyAgent(built: readonly BackendId[] = SESSION_BACKENDS): EveryAgent 
     kept.set(id, { store, worktrees: new SessionWorktrees(store) })
   }
   const registry = new SessionBackends(lifecycle)
-  registry.keepersOfWorktreeRecords = () =>
-    SESSION_BACKENDS.flatMap((id) => {
-      const keeper = kept.get(id)
-      return keeper ? [{ id, ...keeper }] : []
-    })
+  for (const id of [...built].reverse())
+    registry.register({
+      id,
+      worktreeRecords: kept.get(id)?.worktrees.records ?? KEEPS_NO_WORKTREE_RECORDS
+    } as SessionBackend)
   return {
     registry,
     records: registry.worktreeRecords,
@@ -125,6 +154,46 @@ function worktreeList(
   const list = handlers.get(CHANNELS.worktrees) as (workspace: string) => Promise<WorktreeInfo[]>
   return (workspace) => list(workspace)
 }
+
+describe('what each agent says about worktrees', () => {
+  let world: World
+  beforeEach(() => {
+    world = makeWorld()
+  })
+  afterEach(() => world.gone())
+
+  it('an agent that says it rebuilds worktrees answers with the record it keeps, and one that does not say so holds no record', async () => {
+    const pty = recordingPty('pty-t1').pty
+    const machine = { run: recordingSsh().run }
+    const codex = codexSessionsIn(world, pty, {
+      run: () => ({ code: 0, stdout: '', stderr: '' }),
+      ranOnTheMachine: []
+    })
+    const agy = agySessionsIn(world, pty, { machine })
+    const probes: ResumeProbes = {
+      dirExists: () => true,
+      occupantOf: () => null,
+      branchExists: async () => false,
+      headAt: async () => null
+    }
+    const backends: SessionBackend[] = [
+      claudeBackendIn(world, pty, { machine }),
+      codexBackend(codex, probes, () => probes),
+      agyBackend(agy, probes, () => probes)
+    ]
+    expect(backends.map((backend) => backend.id)).toEqual(SESSION_BACKENDS)
+    const kept = recordOf('one')
+    for (const sessions of [codex, agy]) sessions.store.putResource(kept)
+    for (const backend of backends) {
+      const records = backend.worktreeRecords
+      const held = { of: records.of(REPO), at: records.at(kept.worktreePath) }
+      expect(held, backend.id).toEqual(
+        backend.recoversWorktrees ? { of: [kept], at: kept } : { of: [], at: undefined }
+      )
+      if (!backend.recoversWorktrees) expect(await records.untouched(kept), backend.id).toBe(false)
+    }
+  })
+})
 
 describe('the records agents keep of the worktrees they made', () => {
   it('a folder counts as recorded when any agent keeps a record of a worktree there', () => {

@@ -42,6 +42,7 @@ import {
 import {
   agyTranscript,
   AGY_APP_DIR,
+  AGY_HISTORY_STORE,
   agyBrain,
   ancestryOfAgyConversation,
   diffCounts,
@@ -629,6 +630,7 @@ function remoteStatus(run: AgyRun, read: AgyLogLine): ProgramStatus | undefined 
 
 export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch> {
   readonly id = 'agy'
+  readonly historyStore = AGY_HISTORY_STORE
   private parsers = new Map<string, ProgramStatusParser>()
   private ticking?: ReturnType<typeof setInterval>
   private unreadable = new Set<string>()
