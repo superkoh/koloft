@@ -1,20 +1,24 @@
-import { useCallback, useEffect, useRef, useState, type JSX } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState, type JSX } from 'react'
 import { IconClose, IconPlus, IconReload, IconWebPage } from '../../icons'
 import type {
   AccountKind,
   AccountView,
   BackendId,
   LoginProgress,
-  SignInBackend,
-  SignInFailure
+  SignInProgress
 } from '@shared/types'
+import { SIGN_IN_FOLDER_KINDS } from '@shared/types'
+import { backendAvailable } from '@shared/sessionBackend'
 import {
-  BACKEND_OF_SIGN_IN_FOLDER,
-  SIGN_IN_FOLDER_KINDS,
-  SIGN_IN_FOLDER_OF,
-  isSignInFolderKind
-} from '@shared/types'
-import { BACKEND_LABEL, backendAvailable } from '@shared/sessionBackend'
+  AGENT_IDS,
+  accountKindFacts,
+  agentManifest,
+  agentOfAccountKind,
+  signInKindOf,
+  type AgentId
+} from '@core/agent/registry'
+import type { AgentUi } from '@core/agent/agentUi'
+import { AGENT_UIS } from '@agents/uis'
 import { useStore } from '../../store'
 import { useInstalledBackends } from '../../useInstalledBackends'
 import {
@@ -24,12 +28,6 @@ import {
   needsSignInAgain,
   windowLabel
 } from '@shared/accountUsage'
-
-// AGY§5
-const SIGN_IN_COMMAND: Record<SignInBackend, string> = {
-  codex: 'codex login',
-  agy: 'agy'
-}
 import {
   ApiKeyBadge,
   Meter,
@@ -49,13 +47,25 @@ import '../../accounts.css'
 const REFRESH_DONE_LABEL_BEAT_MS = 2500
 const INVALID_ACCOUNT_NAME = 'Invalid name: [A-Za-z0-9._-] only, 32 characters max'
 
-export type PaneForm = { signIn: SignInBackend; again?: string } | { paste: AccountKind }
+export type PaneForm = { signIn: AccountKind; again?: string } | { paste: AccountKind }
 
 export const loginRunning = (progress: LoginProgress | null): boolean =>
   progress !== null && progress.phase !== 'failed'
 
 const scrollIntoViewOnOpen = (form: HTMLDivElement | null): void =>
   form?.scrollIntoView({ block: 'nearest' })
+
+const uiOf = (agent: AgentId): AgentUi => AGENT_UIS.find((ui) => ui.id === agent)!
+
+const agentOf = (kind: AccountKind): AgentId => agentOfAccountKind(kind)!
+
+const openSignInTabOf = (
+  open: (tab: { tabId: string; cwd: string }, title: string) => void,
+  progress: SignInProgress,
+  title: string
+): void => {
+  if (progress.tab) open({ tabId: progress.tab.tabId, cwd: progress.tab.cwd ?? '' }, title)
+}
 
 export function AccountsPane(): JSX.Element {
   const settings = useStore((s) => s.settings)
@@ -73,20 +83,24 @@ export function AccountsPane(): JSX.Element {
   const [refresh, setRefresh] = useState<'idle' | 'busy' | 'done'>('idle')
   const refreshBeat = useRef<ReturnType<typeof setTimeout>>(undefined)
   useEffect(() => () => clearTimeout(refreshBeat.current), [])
-  const claudeLoginRunning = !!login && loginRunning(login.progress)
+  const backgroundLoginRunning = !!login && loginRunning(login.progress)
   const dismissFailure = (): void => {
-    if (failed) window.api.accounts.dismissSignInFailure()
+    if (failed) window.api.accounts.endSignIn(failed.kind, failed.name)
   }
   const openForm = (next: PaneForm): void => {
-    if (login && !claudeLoginRunning) clearLogin()
+    if (login && !backgroundLoginRunning) clearLogin()
     dismissFailure()
     setForm(next)
   }
-  const openClaudeSignIn = (again?: string): void => {
-    if (claudeLoginRunning) return
+  const openBackgroundSignIn = (kind: AccountKind, again?: string): void => {
+    if (backgroundLoginRunning) return
     dismissFailure()
     setForm(null)
-    beginLogin(again)
+    beginLogin(kind, again)
+  }
+  const openSignIn = (kind: AccountKind, again?: string): void => {
+    if (uiOf(agentOf(kind)).accounts.signIn.inATab) openForm({ signIn: kind, again })
+    else openBackgroundSignIn(kind, again)
   }
   const signIn = form && 'signIn' in form ? form : null
   const adding = form && 'paste' in form ? form.paste : null
@@ -119,7 +133,6 @@ export function AccountsPane(): JSX.Element {
 
   const row = (a: AccountView): JSX.Element => {
     const key = `${a.kind}:${a.name}`
-    const folderBackend = isSignInFolderKind(a.kind) ? BACKEND_OF_SIGN_IN_FOLDER[a.kind] : null
     return (
       <AccountRow
         key={key}
@@ -145,38 +158,52 @@ export function AccountsPane(): JSX.Element {
           setConfirmDel(key)
         }}
         onRelogin={
-          a.kind === 'oauth'
-            ? () => openClaudeSignIn(a.name)
-            : folderBackend
-              ? () => openForm({ signIn: folderBackend, again: a.name })
-              : undefined
+          accountKindFacts(a.kind).signsInThroughABrowser
+            ? () => openSignIn(a.kind, a.name)
+            : undefined
         }
       />
     )
   }
 
-  const section = (backend: BackendId, empty: string, foot: JSX.Element): JSX.Element => {
-    const list = accounts.filter((a) => ACCOUNT_KINDS_OF[backend].includes(a.kind))
+  const section = (agent: BackendId): JSX.Element => {
+    const kinds = ACCOUNT_KINDS_OF[agent]
+    const list = accounts.filter((a) => kinds.includes(a.kind))
+    const words = uiOf(agent).accounts
+    const signInKind = signInKindOf(agent).id as AccountKind
     return (
       <div className="acct-section">
         {list.length === 0 ? (
-          <div className="acct-empty">{empty}</div>
+          <div className="acct-empty">{words.emptyLine}</div>
         ) : (
           <div className="acct-list">{list.map(row)}</div>
         )}
-        <div className="acct-foot">{foot}</div>
-        {backend === 'claude' && login && <LoginDialog key={login.reauthName ?? ''} />}
-        {signIn?.signIn === backend ? (
+        <div className="acct-foot">
+          <button
+            className="mini"
+            onClick={() => openSignIn(signInKind)}
+            title={words.signIn.buttonTitle}
+          >
+            <IconWebPage size={14} />
+            {` ${words.signIn.button}`}
+          </button>
+          <button className="mini" onClick={() => openForm({ paste: signInKind })}>
+            <IconPlus size={14} />
+            {` ${words.signIn.pasteButton}`}
+          </button>
+        </div>
+        {login && agentOf(login.kind) === agent && <LoginDialog key={login.reauthName ?? ''} />}
+        {signIn && agentOf(signIn.signIn) === agent ? (
           <SignInDialog
             key={signIn.again ?? ''}
-            backend={signIn.signIn}
+            kind={signIn.signIn}
             again={signIn.again}
             onClose={() => setForm(null)}
           />
         ) : (
-          failed?.backend === backend && <SignInFailedCard failed={failed} />
+          failed && agentOf(failed.kind) === agent && <SignInFailedCard failed={failed} />
         )}
-        {adding && ACCOUNT_KINDS_OF[backend].includes(adding) && (
+        {adding && kinds.includes(adding) && (
           <AddAccountDialog key={adding} kind={adding} onClose={() => setForm(null)} />
         )}
       </div>
@@ -239,75 +266,29 @@ export function AccountsPane(): JSX.Element {
         </button>
       </div>
 
-      <div className="set-grp">Claude</div>
-      <div className="set-row">
-        <div className="set-lab">
-          <b>Prefer accounts with fable allowance</b>
-          <small>
-            Off, accounts are picked by weekly use alone, skipping any near its 5-hour limit — use
-            that when fable is nearly spent and one account is taking every session.
-          </small>
-        </div>
-        <Switch checked={settings.fablePriority} onChange={(on) => update({ fablePriority: on })} />
-      </div>
-
-      {section(
-        'claude',
-        'No accounts yet — add one below. Claude sessions start only once there is one.',
-        <>
-          <button
-            className="mini"
-            onClick={() => openClaudeSignIn()}
-            title="Runs claude setup-token in the background and stores the token for you"
-          >
-            <IconWebPage size={14} /> Sign in
-          </button>
-          <button className="mini" onClick={() => openForm({ paste: 'oauth' })}>
-            <IconPlus size={14} /> Paste token
-          </button>
-        </>
-      )}
-
-      <div className="set-grp">Codex</div>
-      {section(
-        'codex',
-        'No Codex accounts yet — Codex sessions start only once there is one. Each account here is its own Codex sign-in or API key. Every Codex session picks the least-used sign-in, and an API key only when every sign-in is at its limit.',
-        <>
-          <button
-            className="mini"
-            onClick={() => openForm({ signIn: 'codex' })}
-            title="Runs codex login in a terminal tab for a new Codex account"
-          >
-            <IconWebPage size={14} /> Sign in to Codex
-          </button>
-          <button className="mini" onClick={() => openForm({ paste: 'codex-home' })}>
-            <IconPlus size={14} /> Paste API key
-          </button>
-        </>
-      )}
-      <div className="set-grp">Antigravity</div>
-      {section(
-        'agy',
-        'No Antigravity accounts yet — Antigravity sessions start only once there is one. Each account here is its own Google sign-in or Gemini API key. Every Antigravity session picks the least-used sign-in, and a Gemini API key only when every sign-in is at its limit.',
-        <>
-          <button
-            className="mini"
-            onClick={() => openForm({ signIn: 'agy' })}
-            title="Runs agy in a terminal tab for a new Antigravity account"
-          >
-            <IconWebPage size={14} /> Sign in with Google
-          </button>
-          <button className="mini" onClick={() => openForm({ paste: 'agy-home' })}>
-            <IconPlus size={14} /> Paste Gemini API key
-          </button>
-        </>
-      )}
+      {AGENT_IDS.map((agent) => (
+        <Fragment key={agent}>
+          <div className="set-grp">{agentManifest(agent).name}</div>
+          {uiOf(agent).accounts.ownSettingRows.map((own) => (
+            <div className="set-row" key={own.setting}>
+              <div className="set-lab">
+                <b>{own.title}</b>
+                <small>{own.note}</small>
+              </div>
+              <Switch
+                checked={settings[own.setting]}
+                onChange={(on) => update({ [own.setting]: on })}
+              />
+            </div>
+          ))}
+          {section(agent)}
+        </Fragment>
+      ))}
       <GitAccountsSection />
     </>
   )
 }
 
-// CC§7
 export function LoginDialog(): JSX.Element | null {
   const login = useStore((s) => s.accountLogin)
   const addTab = useStore((s) => s.addTab)
@@ -318,20 +299,20 @@ export function LoginDialog(): JSX.Element | null {
   const [name, setName] = useState(login?.reauthName ?? '')
   const [error, setError] = useState<string | null>(null)
   if (!login) return null
-  const reauthName = login.reauthName
-  const progress = login.progress
+  const { kind, reauthName, progress } = login
+  const command = agentManifest(agentOf(kind)).signInCommand
 
   const start = async (): Promise<void> => {
     setError(null)
     const nm = name.trim()
     setLoginProgress({ phase: 'starting', name: nm })
-    const ok = await window.api.accounts.startLogin(nm, !!reauthName)
-    if (ok !== 'ok') {
-      beginLogin(reauthName)
+    const r = await window.api.accounts.beginSignIn(kind, nm, !!reauthName)
+    if (!r.ok) {
+      beginLogin(kind, reauthName)
       setError(
-        ok === 'invalid-name'
+        r.error === 'invalid-name'
           ? INVALID_ACCOUNT_NAME
-          : ok === 'duplicate'
+          : r.error === 'duplicate'
             ? 'A subscription account already has that name'
             : 'Could not start sign-in'
       )
@@ -339,7 +320,7 @@ export function LoginDialog(): JSX.Element | null {
   }
 
   const cancel = (): void => {
-    window.api.accounts.cancelLogin()
+    window.api.accounts.endSignIn(kind, name.trim())
     clearLogin()
   }
 
@@ -375,7 +356,7 @@ export function LoginDialog(): JSX.Element | null {
 
       {progress?.phase === 'starting' && (
         <div className="acct-login-state">
-          Running <code>claude setup-token</code>…
+          Running <code>{command}</code>…
         </div>
       )}
       {progress?.phase === 'browser' && (
@@ -403,7 +384,7 @@ export function LoginDialog(): JSX.Element | null {
             <button className="mini" onClick={showTerminal} disabled={!progress.tabId}>
               Show terminal
             </button>
-            <button className="mini" onClick={() => beginLogin(reauthName)}>
+            <button className="mini" onClick={() => beginLogin(kind, reauthName)}>
               Try again
             </button>
           </div>
@@ -430,9 +411,9 @@ export function LoginDialog(): JSX.Element | null {
       )}
 
       <span className="field-hint">
-        Koloft runs the official <code>claude setup-token</code> in the <b>background</b> — no
-        terminal tab. Once you authorize in the browser, the token goes straight into your Keychain
-        and the account joins the pool: no copy-paste, and you never leave this panel.
+        Koloft runs the official <code>{command}</code> in the <b>background</b> — no terminal tab.
+        Once you authorize in the browser, the token goes straight into your Keychain and the
+        account joins the pool: no copy-paste, and you never leave this panel.
         {reauthName &&
           ' The new token replaces the existing entry; this row keeps its place and its enabled state.'}
       </span>
@@ -440,12 +421,12 @@ export function LoginDialog(): JSX.Element | null {
   )
 }
 
-export function useSignInFailure(): SignInFailure | null {
-  const [failure, setFailure] = useState<SignInFailure | null>(null)
+export function useSignInFailure(): SignInProgress | null {
+  const [failure, setFailure] = useState<SignInProgress | null>(null)
   useEffect(() => {
     let alive = true
-    const off = window.api.accounts.onSignInFailure(setFailure)
-    void window.api.accounts.signInFailure().then((f) => {
+    const off = window.api.accounts.onSignInProgress((news) => setFailure(news.heldFailure))
+    void window.api.accounts.heldSignInFailure().then((f) => {
       if (alive) setFailure(f)
     })
     return () => {
@@ -461,27 +442,27 @@ export function SignInFailedDialog(): JSX.Element | null {
   return failed && <SignInFailedCard failed={failed} />
 }
 
-export function SignInFailedCard({ failed }: { failed: SignInFailure }): JSX.Element {
+export function SignInFailedCard({ failed }: { failed: SignInProgress }): JSX.Element {
   return (
     <SignInDialog
-      key={`${failed.backend}:${failed.name}`}
-      backend={failed.backend}
+      key={`${failed.kind}:${failed.name}`}
+      kind={failed.kind}
       again={failed.again ? failed.name : undefined}
       failed={failed}
-      onClose={() => window.api.accounts.dismissSignInFailure()}
+      onClose={() => window.api.accounts.endSignIn(failed.kind, failed.name)}
     />
   )
 }
 
 export function SignInDialog({
-  backend,
+  kind,
   again,
   failed,
   onClose
 }: {
-  backend: SignInBackend
+  kind: AccountKind
   again?: string
-  failed?: SignInFailure
+  failed?: SignInProgress
   onClose(): void
 }): JSX.Element {
   const openSignInTab = useStore((s) => s.openSignInTab)
@@ -489,19 +470,16 @@ export function SignInDialog({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const { installed } = useInstalledBackends()
-  const label = BACKEND_LABEL[backend]
-  const command = SIGN_IN_COMMAND[backend]
-  const installsFirst = installed !== null && !backendAvailable(installed, backend)
-  const shared =
-    backend === 'agy'
-      ? 'Sign in, then pick a colour scheme and answer Google’s Terms and data-use screen yourself, then type /exit. Your Antigravity conversations, rules, plugins and MCP servers are shared by every account.'
-      : `Your ${label} settings and trusted folders are shared by every account.`
+  const agent = agentOf(kind)
+  const { name: label, signInCommand: command } = agentManifest(agent)
+  const signIn = uiOf(agent).accounts.signIn
+  const installsFirst = installed !== null && !backendAvailable(installed, agent)
 
   const start = async (): Promise<void> => {
     setBusy(true)
     setError(null)
     const nm = name.trim()
-    const r = await window.api.accounts.signIn(SIGN_IN_FOLDER_OF[backend], nm, !!again)
+    const r = await window.api.accounts.beginSignIn(kind, nm, !!again)
     setBusy(false)
     if (!r.ok) {
       setError(
@@ -513,7 +491,7 @@ export function SignInDialog({
       )
       return
     }
-    openSignInTab(r, `${label} sign in: ${nm}`)
+    openSignInTabOf(openSignInTab, r.progress, `${label} sign in: ${nm}`)
     onClose()
   }
 
@@ -550,7 +528,7 @@ export function SignInDialog({
         Koloft opens a terminal tab that runs <code>{command}</code> for this account only.
         {installsFirst && ` ${label} is not on this Mac yet, so the tab installs it first.`} Finish
         the sign-in there; the tab closes itself when <code>{command}</code> ends. Signed in, the
-        account joins the pool; if not, this page says so. {shared}
+        account joins the pool; if not, this page says so. {signIn.inATab && signIn.hintEnd}
       </span>
     </div>
   )
@@ -721,6 +699,10 @@ export function AddAccountDialog({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const openSignInTab = useStore((s) => s.openSignInTab)
+  const facts = accountKindFacts(kind)
+  const agent = agentManifest(agentOf(kind))
+  const words = uiOf(agentOf(kind)).accounts
+  const form = words.pasteForms[kind]
 
   const save = async (): Promise<void> => {
     setBusy(true)
@@ -729,18 +711,24 @@ export function AddAccountDialog({
       name.trim(),
       kind,
       secret,
-      kind === 'custom' ? { baseUrl: baseUrl.trim(), model: model.trim() || undefined } : undefined
+      facts.takesAnEndpoint
+        ? { baseUrl: baseUrl.trim(), model: model.trim() || undefined }
+        : undefined
     )
     // ADR-0002
     setSecret('')
-    if (kind === 'agy-home' && r.account && r.account.status !== 'ok') {
-      const setup = await window.api.accounts.signIn('agy-home', r.account.name, true)
+    if (
+      facts.stillAsksItsFirstRunQuestionsAfterAPastedKey &&
+      r.account &&
+      r.account.status !== 'ok'
+    ) {
+      const setup = await window.api.accounts.beginSignIn(kind, r.account.name, true)
       setBusy(false)
       if (!setup.ok) {
-        setError('Saved, but agy could not be opened — use Sign in again on its row')
+        setError(`Saved, but ${agent.command} could not be opened — use Sign in again on its row`)
         return
       }
-      openSignInTab(setup, `${BACKEND_LABEL.agy} sign in: ${r.account.name}`)
+      openSignInTabOf(openSignInTab, setup.progress, `${agent.name} sign in: ${r.account.name}`)
       onClose()
       return
     }
@@ -760,20 +748,9 @@ export function AddAccountDialog({
     }
   }
 
-  const title =
-    kind === 'oauth'
-      ? 'Paste token'
-      : kind === 'apikey'
-        ? 'Add API key'
-        : kind === 'codex-home'
-          ? 'Add OpenAI API key'
-          : kind === 'agy-home'
-            ? 'Add Gemini API key'
-            : 'Add custom endpoint'
-
   return (
     <div className="acct-add" ref={scrollIntoViewOnOpen}>
-      <div className="acct-add-title">{title}</div>
+      <div className="acct-add-title">{form.title}</div>
       <input
         type="text"
         placeholder="Account name (e.g. personal)"
@@ -782,11 +759,11 @@ export function AddAccountDialog({
         spellCheck={false}
         autoFocus
       />
-      {kind === 'custom' && (
+      {facts.takesAnEndpoint && (
         <>
           <input
             type="text"
-            placeholder="Base URL (e.g. https://example.com/api/anthropic)"
+            placeholder={words.baseUrlPlaceholders[kind]}
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
             spellCheck={false}
@@ -802,17 +779,7 @@ export function AddAccountDialog({
       )}
       <input
         type="password"
-        placeholder={
-          kind === 'oauth'
-            ? 'sk-ant-oat01-… (from claude setup-token)'
-            : kind === 'apikey'
-              ? 'sk-ant-api03-…'
-              : kind === 'codex-home'
-                ? 'sk-proj-… (OpenAI API key)'
-                : kind === 'agy-home'
-                  ? 'Gemini API key'
-                  : 'Key issued by that endpoint'
-        }
+        placeholder={form.placeholder}
         value={secret}
         onChange={(e) => setSecret(e.target.value)}
       />
@@ -825,7 +792,7 @@ export function AddAccountDialog({
           className="mini"
           onClick={() => void save()}
           disabled={
-            busy || !name.trim() || !secret.trim() || (kind === 'custom' && !baseUrl.trim())
+            busy || !name.trim() || !secret.trim() || (facts.takesAnEndpoint && !baseUrl.trim())
           }
         >
           {SIGN_IN_FOLDER_KINDS.includes(kind)
@@ -838,12 +805,8 @@ export function AddAccountDialog({
         </button>
       </div>
       <span className="field-hint">
-        {kind === 'codex-home'
-          ? 'Koloft hands the key to codex login, which keeps it in this account’s own sign-in folder; Koloft itself never echoes or stores it. Codex does not check the key here: a wrong one shows as signed in and fails at the first message a session sends.'
-          : kind === 'agy-home'
-            ? 'The key goes into your Keychain and is handed to agy when a session starts. Saving opens agy in a terminal tab once: pick a colour scheme and answer Google’s Terms screen there, then type /exit, and the account is ready.'
-            : 'What you paste is used only to verify and to write the Keychain entry — never echoed, never written to a file. A failed check still saves the account, marked UNVERIFIED.'}
-        {kind === 'custom' &&
+        {form.hint}
+        {facts.takesAnEndpoint &&
           ' A custom endpoint exposes no quota to measure, so it is used only when every ' +
             'subscription is rate-limited — and it switches the session to that endpoint’s own model.'}
       </span>

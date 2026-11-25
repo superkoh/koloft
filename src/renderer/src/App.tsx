@@ -151,7 +151,11 @@ import type { WorkbenchCommandSignal } from './components/workbenchCommands'
 import { ExtensionConfirm } from './components/ExtensionConfirm'
 import { tabLabel, type WorkbenchTab, type WorkbenchTabSet } from './components/workbenchTabs'
 import { SettingsModal } from './components/settings/SettingsModal'
-import { loginClearDelay, savedClearDue } from './components/settings/loginFlow'
+import {
+  loginClearDelay,
+  progressOfTheOpenBox,
+  savedClearDue
+} from './components/settings/loginFlow'
 import { TopbarUsage } from './components/TopbarUsage'
 import { WorldClock } from './components/WorldClock'
 import { UpdateModal } from './components/UpdateModal'
@@ -886,9 +890,10 @@ export default function App(): JSX.Element {
   )
 
   useEffect(() => {
-    return window.api.accounts.onLoginProgress((p) => {
+    return window.api.accounts.onSignInProgress((news) => {
       const st = useStore.getState()
-      if (!st.accountLogin) return
+      const p = progressOfTheOpenBox(st.accountLogin, news.progress)
+      if (!p) return
       st.setLoginProgress(p)
       const delay = loginClearDelay(p)
       if (delay !== null) {

@@ -1,5 +1,6 @@
 import { useState, type JSX } from 'react'
-import type { BackendId } from '@shared/types'
+import type { AccountKind, BackendId } from '@shared/types'
+import { signInKindOf } from '@core/agent/registry'
 import { accountToSignInAgain } from '@shared/accountUsage'
 import { assistRunsOn } from '@shared/assistPicks'
 import { settingsPaneName } from '@shared/settingsPanes'
@@ -78,9 +79,9 @@ export function AssistSetup({
     closeForms()
     setForm(next)
   }
-  const openClaudeSignIn = (again: string | undefined): void => {
+  const openClaudeSignIn = (kind: AccountKind, again: string | undefined): void => {
     closeForms()
-    if (!claudeLoginRunning) beginLogin(again)
+    if (!claudeLoginRunning) beginLogin(kind, again)
   }
   const signIn = form && 'signIn' in form ? form : null
 
@@ -88,8 +89,8 @@ export function AssistSetup({
     if (setup.usable[b]) {
       closeForms()
       update({ assist: { ...assist, backend: b } })
-    } else if (b === 'claude') openClaudeSignIn(again)
-    else openForm({ signIn: b, again })
+    } else if (b === 'claude') openClaudeSignIn(signInKindOf(b).id as AccountKind, again)
+    else openForm({ signIn: signInKindOf(b).id as AccountKind, again })
   }
 
   if (setup.noTool)
@@ -164,7 +165,7 @@ export function AssistSetup({
       ) : signIn ? (
         <SignInDialog
           key={`${signIn.signIn}:${signIn.again ?? ''}`}
-          backend={signIn.signIn}
+          kind={signIn.signIn}
           again={signIn.again}
           onClose={() => setForm((open) => (open === signIn ? null : open))}
         />

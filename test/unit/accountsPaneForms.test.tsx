@@ -3,7 +3,7 @@ import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { render, cleanup, act, fireEvent, within } from '@testing-library/react'
 import type { AccountAddResult, AccountKind, AccountView } from '@shared/types'
 import { ACCOUNT_KINDS } from '@shared/types'
-import { AGENT_IDS, agentManifest, type AgentId } from '@core/agent/registry'
+import { AGENT_IDS, accountKindFacts, agentManifest, type AgentId } from '@core/agent/registry'
 
 vi.mock('../../src/renderer/src/components/settings/GitAccountsSection', () => ({
   GitAccountsSection: () => null
@@ -44,26 +44,26 @@ const accounts = {
     )
     return fake.addReply
   },
-  startLogin: async (name: string, again?: boolean) => {
-    askedToSignIn('oauth', name, again)
-    return fake.signInReply
-  },
-  cancelLogin: () => fake.log.push('sign-in ended: oauth'),
-  signIn: async (kind: AccountKind, name: string, again?: boolean) => {
+  beginSignIn: async (kind: AccountKind, name: string, again?: boolean) => {
     askedToSignIn(kind, name, again)
     const reply = await fake.signInReply
-    return reply === 'ok' ? { ok: true, ...SIGN_IN_TAB } : { ok: false, error: reply }
+    if (reply !== 'ok') return { ok: false, error: reply }
+    const inATab = accountKindFacts(kind).isASignInFolder
+    return {
+      ok: true,
+      progress: inATab
+        ? { kind, name, again: !!again, phase: 'inATab', tab: SIGN_IN_TAB }
+        : { kind, name, again: !!again, phase: 'starting' }
+    }
   },
-  signInFailure: async () => {
-    const held = fake.held
-    if (!held) return null
-    const backend = AGENT_IDS.find((id) =>
-      agentManifest(id).accountKinds.some((k) => k.id === held.kind)
-    )
-    return { backend, name: held.name, again: held.again, tail: held.tail }
-  },
-  onSignInFailure: () => () => {},
-  dismissSignInFailure: () => fake.log.push('held failure dismissed')
+  endSignIn: (kind: AccountKind, name: string) =>
+    fake.log.push(
+      fake.held?.kind === kind && fake.held.name === name
+        ? 'held failure dismissed'
+        : `sign-in ended: ${kind}`
+    ),
+  heldSignInFailure: async () => fake.held && { ...fake.held, phase: 'failed' },
+  onSignInProgress: () => () => {}
 }
 
 Element.prototype.scrollIntoView = () => {}
@@ -225,7 +225,7 @@ describe('Settings ▸ Accounts forms the screenshots cannot reach keep every wo
   it('the background sign-in box: the browser step with no link, a failure with no terminal and no output, a failure with a terminal shown, and trying again', async () => {
     render(<AccountsPane />)
     await settle()
-    useStore.getState().beginLogin()
+    useStore.getState().beginLogin('oauth')
     await settle()
     const { setLoginProgress } = useStore.getState()
     for (const [title, progress] of [
@@ -242,7 +242,7 @@ describe('Settings ▸ Accounts forms the screenshots cannot reach keep every wo
     fireEvent.click(formButton(/^Show terminal$/))
     await settle()
     shoot('terminal shown')
-    useStore.getState().beginLogin('night')
+    useStore.getState().beginLogin('oauth', 'night')
     await act(async () =>
       setLoginProgress({ phase: 'failed', name: 'night', tail: 'again failed' })
     )
