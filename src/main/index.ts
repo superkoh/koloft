@@ -2088,7 +2088,9 @@ function inboxSessionOfEndedTab(tabId: string): AskedSession | undefined {
   const ended = attention.list().find((m) => m.tabId === tabId && m.kind === 'exited')
   if (!ended?.sessionId || !sessionsEndedThisRun.has(ended.sessionId)) return undefined
   const ws = workspaceMgr?.workspaceOf(ended.sessionId)
-  const { backendId, sourceId } = identityOf(ended.sessionId)
+  const identity = identityOf(ended.sessionId)
+  if (!identity) return undefined
+  const { backendId, sourceId } = identity
   const machine = (ws && parseRemoteKey(ws)?.host) ?? (sourceId === 'local' ? undefined : sourceId)
   return askedSession(ended.sessionId, ended.title, backendId, ws, machine)
 }
@@ -4734,7 +4736,7 @@ function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
 }
 
 function archiveSession(id: string): boolean {
-  const archived = sessionBackends.forSession(id).archive(id)
+  const archived = sessionBackends.archive(id)
   if (archived) {
     koloftInbox.sessionGone(id, 'Its session was deleted')
     attention.clearSession(id)
@@ -5096,8 +5098,7 @@ async function resumeRow(
   row: SessionRow,
   { rebuildGoneWorktree }: { rebuildGoneWorktree: boolean }
 ): Promise<{ ok: true; tabId: string } | { ok: false; error: string }> {
-  const backend = sessionBackends.forSession(row.id)
-  const plan = await backend.resumePlan(row.id)
+  const plan = await sessionBackends.resumePlan(row.id)
   if (plan.action === 'dialog' || (plan.action === 'rebuild' && !rebuildGoneWorktree)) {
     return {
       ok: false,
@@ -5113,7 +5114,7 @@ async function resumeRow(
           : `Could not start “${row.title}” — its folder is gone.`
     }
   }
-  const res = await backend.resume({
+  const res = await sessionBackends.resume({
     sessionId: row.id,
     cwd: plan.action === 'rebuild' ? plan.resumeCwd : plan.cwd,
     mode: plan.action

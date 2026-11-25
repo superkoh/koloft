@@ -27,7 +27,7 @@ import {
   REMOTE_WS_NAME
 } from './helpers/remote'
 import type { BackendId, SessionInfo } from '../../src/shared/types'
-import { identityOf } from '../../src/shared/sessionBackend'
+import { agentSessionId, identityOf } from '../../src/shared/sessionBackend'
 import { CLOSED_IN_ROOM, STARTED_OVER_IN_ROOM } from '../../src/plugins/discord/main/rooms'
 import { NOT_FROM_THE_RELAY, NOT_SENT_BY_KOLOFT } from '../../src/plugins/sessions/main/hooks'
 
@@ -122,7 +122,7 @@ async function talkedToInItsRoom(
   await expect.poll(() => inRoom(fake, room.id).some((p) => p.includes('where it is'))).toBe(true)
   const session = await sessionOf(page, backend)
   const onTheMachineToo =
-    session.remote?.host === REMOTE_HOST || identityOf(session.sessionId).sourceId === REMOTE_HOST
+    session.remote?.host === REMOTE_HOST || identityOf(session.sessionId)?.sourceId === REMOTE_HOST
   expect(onTheMachineToo).toBe(workspace === REMOTE_WS_NAME)
 
   await expect
@@ -214,11 +214,7 @@ test.describe('Discord rooms: a session the owner carries on the phone has a roo
             )
           if (backend !== 'agy') {
             const contexts = (): string[] =>
-              promptContextsOnTheMachine(
-                env,
-                backend,
-                identityOf(session.sessionId).nativeSessionId
-              )
+              promptContextsOnTheMachine(env, backend, agentSessionId(session.sessionId))
             await expect
               .poll(() => contexts().some((c) => c.includes('«how is the room»')))
               .toBe(true)

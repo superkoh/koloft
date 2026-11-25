@@ -72,11 +72,11 @@ async function boundSession(page: Page, backend: BackendId, remote: boolean): Pr
             x.backendId === backend &&
             x.alive &&
             !x.overseer &&
-            (x.remote?.host === REMOTE_HOST || identityOf(x.sessionId).sourceId === REMOTE_HOST) ===
-              remote &&
-            identityOf(x.sessionId).nativeSessionId
+            (x.remote?.host === REMOTE_HOST ||
+              identityOf(x.sessionId)?.sourceId === REMOTE_HOST) === remote &&
+            identityOf(x.sessionId)?.nativeSessionId
         )
-        id = s && identityOf(s.sessionId).nativeSessionId
+        id = s && identityOf(s.sessionId)?.nativeSessionId
         return !!id
       },
       { timeout: AN_AGENT_BINDS_WITHIN_MS }

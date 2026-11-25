@@ -23,6 +23,7 @@ import { FROM_KOLOFT } from '../../../../src/plugins/sessions/main/messageOpenin
 const DEADLINE_MS = 1000
 const CLAUDE_KEY = 's1'
 const CODEX_KEY = 'codex:019a-thread'
+const REMOVED_AGENTS_KEY = 'muse:local:00000000-0000-4000-8000-000000000001'
 
 let userData: string
 let name: string
@@ -764,6 +765,20 @@ describe('the butler', () => {
     c.onBound('tab-1', CODEX_KEY)
     expect(session.lastSessionKey).toBe(CODEX_KEY)
   })
+
+  it.each([REMOVED_AGENTS_KEY, 'muse:019a-thread'])(
+    'a last conversation of an agent this Koloft no longer has (%s) is never resumed as another agent’s: the next open starts a new conversation and says so',
+    async (key) => {
+      session = { sessionIds: [key], lastSessionKey: key }
+      transcripts.add(key)
+      const c = make()
+      await opened(c)
+      expect(started[0].backend).toBe('claude')
+      expect(resumed).toEqual([])
+      expect(toasts).toEqual(['Alfred now runs on Claude, so it starts a new conversation.'])
+      expect(c.isButlerSession(key)).toBe(true)
+    }
+  )
 
   // AGY§21
   it('says which model it runs on in place of the picked one: under its own name, or in the same line as why it starts a new conversation', async () => {

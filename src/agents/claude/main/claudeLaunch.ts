@@ -16,6 +16,7 @@ import type { Machine, TabProgram } from '../../../main/host/machine'
 import { ownerTextOver, type LaunchIdentity } from '../../../main/launchPrompt'
 import { resolveSpawnCwd } from '../../../main/projectInfo'
 import {
+  ACCOUNT_ENV_HELD_IN_MEMORY,
   AGENT_PLUGIN_DIR,
   CLAUDE_BIN_DIR,
   DOCS_PLUGIN_DIR,
@@ -288,7 +289,6 @@ const OWNER_TEXT_SUFFIX = '.owner.md'
 
 export const claudeTabProgram = (tab: ClaudeTabPlace, c: ClaudeTab): TabProgram => ({
   run: claudeRun(tab.tabId, c),
-  beforeEnsure: '',
   beforeTmux: `${c.trustFolder ? trustOnTheMachine(tab.cwd) : ''}${c.pictureFolder ? trustOnTheMachine(c.pictureFolder) : ''}${claudeFirstRun(tab)}`,
   files: {
     [`${tab.tabId}.json`]: JSON.stringify(c.settings),
@@ -319,7 +319,7 @@ function claudeFirstRun(tab: ClaudeTabPlace): string {
   const T = remoteTabPath(tab.tabId)
   return `${tab.ownerWords ? `mkdir -p "${REMOTE_HOOK_DIR}" && mv -f "${T}".said* "${REMOTE_HOOK_DIR}/"\n` : ''}# CC§10
 CJ="$HOME/.claude.json"
-if [ -f "${T}.env" ]; then
+if [ -n "$${ACCOUNT_ENV_HELD_IN_MEMORY}" ]; then
   if [ ! -f "$CJ" ]; then printf '{"hasCompletedOnboarding":true}\\n' > "$CJ"
   elif ! grep -q hasCompletedOnboarding "$CJ" && [ "$(head -n1 "$CJ")" = "{" ]; then
     sed -i.koloft-bak '1s/^{/{"hasCompletedOnboarding":true,/' "$CJ" && rm -f "$CJ.koloft-bak"
@@ -327,7 +327,7 @@ if [ -f "${T}.env" ]; then
   # CC§10
   if ! grep -q cachedGrowthBookFeatures "$CJ"; then
     echo '[Koloft] first run on this machine: fetching Claude settings (a few seconds)'
-    ( set -a; . "${T}.env"; set +a
+    ( set -a; eval "$${ACCOUNT_ENV_HELD_IN_MEMORY}"; set +a
       if command -v timeout >/dev/null 2>&1; then timeout 60 claude -p ok --max-turns 1; else claude -p ok --max-turns 1; fi ) >/dev/null 2>&1
   fi
 fi

@@ -38,7 +38,7 @@ const FAKE_CLAUDE_SRC = path.join(__dirname, '..', 'fixtures', 'fake-claude.js')
 
 const UNPACKAGED_BUILD_APIKEY_SVC = 'koloft-dev-anthropic-api'
 export const E2E_CLAUDE_ACCOUNT = 'e2e-key'
-const E2E_CLAUDE_ACCOUNT_KEY = 'sk-ant-api03-e2e-fixture'
+export const E2E_CLAUDE_ACCOUNT_KEY = 'sk-ant-api03-e2e-fixture'
 export const E2E_CODEX_ACCOUNT = 'e2e-codex'
 export const E2E_AGY_ACCOUNT = 'e2e-agy'
 export const E2E_AGY_ACCOUNT_KEY = 'fake-gemini-key'

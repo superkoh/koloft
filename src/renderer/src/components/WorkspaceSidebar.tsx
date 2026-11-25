@@ -1,4 +1,4 @@
-import { BACKEND_LABEL, identityOf, type LaunchMenu } from '@shared/sessionBackend'
+import { BACKEND_LABEL, agentSessionId, type LaunchMenu } from '@shared/sessionBackend'
 import { SessionBackendIcon } from './SessionBackendIcon'
 import {
   Fragment,
@@ -852,7 +852,7 @@ function SidebarFloating({
             className="mi"
             onClick={() => {
               setMenu(null)
-              copy(row.nativeSessionId ?? identityOf(row.id).nativeSessionId)
+              copy(row.nativeSessionId ?? agentSessionId(row.id))
             }}
           >
             Copy session ID
@@ -889,7 +889,7 @@ function SidebarFloating({
           className="mi"
           onClick={() => {
             setMenu(null)
-            copy(row.nativeSessionId ?? identityOf(row.id).nativeSessionId)
+            copy(row.nativeSessionId ?? agentSessionId(row.id))
           }}
         >
           Copy session ID

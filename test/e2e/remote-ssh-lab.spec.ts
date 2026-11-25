@@ -6,6 +6,7 @@ import path from 'path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
 import {
+  E2E_CLAUDE_ACCOUNT_KEY,
   HAVE_REAL_GH,
   NEEDS_REAL_GH,
   addCodexAccount,
@@ -94,6 +95,7 @@ import {
   dockerAvailable,
   FAKE_RESPONSES_PORT,
   installCurlOnTarget,
+  installCurlThatNeverAnswersOnTarget,
   installFakeCodexOnTarget,
   installLabSsh,
   startFakeResponsesOnTarget,
@@ -102,6 +104,7 @@ import {
   remoteKeyFor,
   runOnBastion,
   runOnTarget,
+  runOnTargetAsRoot,
   servePageOnTarget,
   startSshLab,
   stopMachine,
@@ -217,26 +220,70 @@ test.beforeAll(() =>
   test.skip(!dockerAvailable(), 'needs a running Docker (for example `colima start`)')
 )
 
+interface Lab {
+  app: ElectronApplication
+  page: Page
+  lab: SshLab
+  quitKoloft: () => Promise<void>
+  openKoloftAgain: () => Promise<Page>
+}
+
 async function withLab(
   env: E2EEnv,
-  body: (ctx: { app: ElectronApplication; page: Page; lab: SshLab }) => Promise<void>,
+  body: (ctx: Lab) => Promise<void>,
   beforeLaunch?: (lab: SshLab) => void,
   machines: { noNode?: boolean } = {}
 ): Promise<void> {
   const lab = await startSshLab(env, machines)
   let app: ElectronApplication | null = null
+  const open = async (): Promise<{ app: ElectronApplication; page: Page }> => {
+    const opened = await launchApp(env)
+    app = opened
+    const page = await opened.firstWindow()
+    await page.waitForLoadState('domcontentloaded')
+    await waitBooted(page)
+    return { app: opened, page }
+  }
+  const quitKoloft = async (): Promise<void> => {
+    if (app) await quitAndClose(app)
+    app = null
+  }
   try {
     installLabSsh(env, lab)
     beforeLaunch?.(lab)
-    app = await launchApp(env)
-    const page = await app.firstWindow()
-    await page.waitForLoadState('domcontentloaded')
-    await waitBooted(page)
-    await body({ app, page, lab })
+    await body({
+      ...(await open()),
+      lab,
+      quitKoloft,
+      openKoloftAgain: async () => (await open()).page
+    })
   } finally {
-    if (app) await quitAndClose(app)
+    await quitKoloft()
     stopSshLab(lab, defaultControlDir())
   }
+}
+
+const KEY_HOLDERS_UNDER_KOLOFT = `grep -rl -e '${E2E_CLAUDE_ACCOUNT_KEY}' .koloft 2>/dev/null || true`
+
+const filesHoldingTheKeyOn = (lab: SshLab, user: string): string[] =>
+  runOnTarget(lab, user, KEY_HOLDERS_UNDER_KOLOFT).split('\n').filter(Boolean)
+
+const tabScriptsRunningOn = (lab: SshLab, user: string): string[] =>
+  runOnTarget(lab, user, "ps -eo args= | grep -e '[.]koloft/tabs/' || true")
+    .split('\n')
+    .filter(Boolean)
+
+async function newClaudeTabOn(page: Page, alias: LabAlias): Promise<string> {
+  const before = await termIds(page)
+  await openMenu(page, page.locator('.ws-head', { hasText: alias }))
+  await page.locator('.menu .mi', { hasText: 'New session' }).click()
+  let tabId = ''
+  await expect
+    .poll(async () => (tabId = (await termIds(page)).find((id) => !before.includes(id)) ?? ''), {
+      timeout: 60_000
+    })
+    .not.toBe('')
+  return tabId
 }
 
 async function refusedSessionNewOnKtKey(
@@ -479,6 +526,99 @@ test.describe('remote workspaces against real sshd machines behind a company jum
       expect(beforeTmux).toContain('koloft:')
       expect(beforeTmux).not.toContain('tar: ')
     })
+  })
+
+  test('E-SSH-54: a Claude Code start that fails before tmux, on a machine without tmux that cannot install it, leaves the account’s key in no file there, before and after its tab closes', async ({
+    env
+  }) => {
+    await withLab(
+      env,
+      async ({ app, page, lab }) => {
+        await addMachine(page, 'kt-key', 'kuser')
+        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+        const tabId = await newClaudeTabOn(page, 'kt-key')
+        await expect
+          .poll(() => terminalText(page, tabId), { timeout: 90_000 })
+          .toContain('stopped with exit code 4')
+        expect(await terminalText(page, tabId)).toContain('[Koloft] tmux is missing')
+        await expect.poll(() => tabScriptsRunningOn(lab, 'kuser'), { timeout: 30_000 }).toEqual([])
+        expect(filesHoldingTheKeyOn(lab, 'kuser')).toEqual([])
+        await sendShortcut(app, 'shortcut:close-tab')
+        await expect.poll(() => termIds(page), { timeout: 30_000 }).not.toContain(tabId)
+        expect(filesHoldingTheKeyOn(lab, 'kuser')).toEqual([])
+      },
+      (lab) => runOnTargetAsRoot(lab, 'mv /usr/bin/tmux /usr/bin/tmux-away')
+    )
+  })
+
+  test('E-SSH-55: a Claude Code tab keeps running in tmux on the machine while Koloft is closed, and each reopened Koloft attaches to it again with the account’s key in no file there, not even the one an older Koloft left there hours ago', async ({
+    env
+  }) => {
+    const leftByAnOlderKoloft = `printf "ANTHROPIC_API_KEY='%s'\\n" '${E2E_CLAUDE_ACCOUNT_KEY}' > .koloft/tabs/pty-old-1.env`
+    await withLab(
+      env,
+      async ({ page: firstWindow, lab, quitKoloft, openKoloftAgain }) => {
+        await addMachine(firstWindow, 'kt-key', 'kuser')
+        await startSessionIn(firstWindow, 'kt-key', { remote: true })
+        await expect(wsRows(firstWindow, 'kt-key')).toHaveClass(/\bst-waiting\b/, {
+          timeout: 60_000
+        })
+        const { sessionId } = (await firstWindow.evaluate(() => window.api.sessions.list())).find(
+          (s) => s.alive
+        )!
+        for (let reopen = 1; reopen <= 2; reopen++) {
+          await quitKoloft()
+          expect(
+            runOnTarget(lab, 'kuser', "tmux -L koloft list-sessions -F '#{session_name}'")
+          ).toContain(`k-${sessionId}`)
+          const page = await openKoloftAgain()
+          await expect
+            .poll(
+              async () =>
+                (await page.evaluate(() => window.api.sessions.list())).find((s) => s.alive)
+                  ?.sessionId ?? '',
+              { timeout: 90_000 }
+            )
+            .toBe(sessionId)
+          await expect
+            .poll(
+              () => tabScriptsRunningOn(lab, 'kuser').filter((l) => /\.sh attach\b/.test(l)).length,
+              { timeout: 60_000 }
+            )
+            .toBe(1)
+          expect(filesHoldingTheKeyOn(lab, 'kuser')).toEqual([])
+        }
+      },
+      (lab) =>
+        runOnTarget(
+          lab,
+          'kuser',
+          `umask 077 && mkdir -p .koloft/tabs && ${leftByAnOlderKoloft} && touch -d '3 hours ago' .koloft/tabs/pty-old-1.env`
+        )
+    )
+  })
+
+  test('E-SSH-56: Koloft closed while a Claude Code start is still installing Claude Code on the machine, before tmux, leaves the account’s key in no file there', async ({
+    env
+  }) => {
+    await withLab(
+      env,
+      async ({ page, lab, quitKoloft }) => {
+        await addMachine(page, 'kt-key', 'kuser')
+        await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
+        const tabId = await newClaudeTabOn(page, 'kt-key')
+        await expect
+          .poll(() => terminalText(page, tabId), { timeout: 90_000 })
+          .toContain('[Koloft] installing claude (official installer)')
+        await quitKoloft()
+        await expect.poll(() => tabScriptsRunningOn(lab, 'kuser'), { timeout: 30_000 }).toEqual([])
+        expect(filesHoldingTheKeyOn(lab, 'kuser')).toEqual([])
+      },
+      (lab) => {
+        installCurlThatNeverAnswersOnTarget(lab)
+        runOnTargetAsRoot(lab, 'mv /usr/local/bin/claude /usr/local/bin/claude-away')
+      }
+    )
   })
 
   test('E-SSH-02: a password login says so on the dot, and once the password is typed in the session tab, files and sessions work', async ({

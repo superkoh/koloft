@@ -208,17 +208,33 @@ export function sessionKey(ref: SessionIdentity): string {
   return [ref.backendId, ref.sourceId, ref.nativeSessionId].map(encodeURIComponent).join(':')
 }
 
-export function identityOf(key: string): SessionIdentity {
+export function identityOf(key: string): SessionIdentity | undefined {
   const parts = key.split(':')
-  const backendId = backendIdOf(parts[0])
-  if (parts.length === 3 && backendId) {
+  const named = backendIdOf(parts[0])
+  if (parts.length > 1 && !named) return undefined
+  if (named && parts.length === 3) {
     return {
-      backendId,
+      backendId: named,
       sourceId: decodeURIComponent(parts[1]),
       nativeSessionId: decodeURIComponent(parts[2])
     }
   }
-  return { backendId: AGENT_OF_UNNAMED_OLD_DATA, sourceId: 'local', nativeSessionId: key }
+  return (
+    AGENT_OF_UNNAMED_OLD_DATA && {
+      backendId: AGENT_OF_UNNAMED_OLD_DATA,
+      sourceId: 'local',
+      nativeSessionId: key
+    }
+  )
+}
+
+export function agentSessionId(key: string): string {
+  return identityOf(key)?.nativeSessionId ?? key
+}
+
+export function ownedByTheOwnerOfUnnamedOldData(key: string): boolean {
+  const owner = identityOf(key)?.backendId
+  return owner !== undefined && owner === AGENT_OF_UNNAMED_OLD_DATA
 }
 
 // CC§10 CODEX§16

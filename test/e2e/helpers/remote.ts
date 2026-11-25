@@ -330,7 +330,7 @@ export async function boundRemoteSession(
         const s = all.find(
           (x) =>
             x.backendId === backend &&
-            identityOf(x.sessionId).sourceId === host &&
+            identityOf(x.sessionId)?.sourceId === host &&
             x.alive &&
             x.nativeSessionId
         )
