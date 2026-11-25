@@ -75,7 +75,7 @@ describe('session backend boundary', () => {
 
   it('marks the butler’s session, by its tab or its session id, and never offers the butler’s session from history', async () => {
     const registry = new SessionBackends(lifecycle())
-    registry.isOverseerSession = (id) => id === 'conductor-tab' || id === 'old-conductor-session'
+    registry.isKoloftsOwnSession = (id) => id === 'conductor-tab' || id === 'old-conductor-session'
     const session = (tabId: string, sessionId: string): BackendSessionInfo => ({
       tabId,
       sessionId,

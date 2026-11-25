@@ -80,10 +80,10 @@ export class SessionBackends {
   private questionsAsked = 0
   private quitEnding = false
   private quitEnded = false
-  isOverseerSession: (tabOrSessionId: string) => boolean = () => false
+  isKoloftsOwnSession: (tabOrSessionId: string) => boolean = () => false
   turnOver: (tabId: string) => boolean = () => false
   askingOf: (tabId: string) => string | undefined = () => undefined
-  docVerdictsOf: (sessionId: string) => Record<string, DocVerdict> | undefined = () => undefined
+  verdictsOnFilesOf: (sessionId: string) => Record<string, DocVerdict> | undefined = () => undefined
   noAccountMessage: (backend: BackendId) => string = (backend) => NO_USABLE_ACCOUNT[backend]
   turnedOff: (backend: BackendId) => string | null = () => null
   readonly rows: RowsOfEveryAgent = rowsOfEveryAgent(() =>
@@ -184,10 +184,10 @@ export class SessionBackends {
         backendId: backend.id,
         host: s.remote ? 'ssh' : hostOf(s.cwd),
         nativeSessionId: s.nativeSessionId ?? s.sessionId,
-        overseer: this.isOverseerSession(s.tabId) || this.isOverseerSession(s.sessionId),
+        overseer: this.isKoloftsOwnSession(s.tabId) || this.isKoloftsOwnSession(s.sessionId),
         turnOver: this.turnOver(s.tabId),
         asking: this.askingOf(s.tabId),
-        docVerdicts: s.sessionId ? this.docVerdictsOf(s.sessionId) : undefined
+        docVerdicts: s.sessionId ? this.verdictsOnFilesOf(s.sessionId) : undefined
       }))
     )
   }
@@ -278,7 +278,7 @@ export class SessionBackends {
     })
     if (failures.length && !rows.length) throw failures[0].error
     for (const f of failures) partlyUnread(f.id, f.error)
-    return rows.filter((r) => !this.isOverseerSession(r.id)).sort((a, b) => b.mtime - a.mtime)
+    return rows.filter((r) => !this.isKoloftsOwnSession(r.id)).sort((a, b) => b.mtime - a.mtime)
   }
 
   adopt(rows: readonly Pick<SessionRow, 'id' | 'backendId'>[]): void {

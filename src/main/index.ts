@@ -594,7 +594,7 @@ const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
   }
 }
 const backendHooks: PluginStartDeps['sessions']['backendHooks'] = {}
-backendHooks.isOverseerSession = (id) => !!butler?.isButlerSession(id)
+backendHooks.isKoloftsOwnSession = (id) => !!butler?.isButlerSession(id)
 backendHooks.turnOver = (tabId) => runtime.turnOver(tabId)
 backendHooks.askingOf = (tabId) => {
   if (runtime.statusOf(tabId) !== 'approval') return undefined
@@ -607,7 +607,7 @@ backendHooks.askingOf = (tabId) => {
 function showAskOnItsRow(tabId: string): void {
   if (runtime.statusOf(tabId) === 'approval') pushToSessions.sessions(onSessionsChanged())
 }
-backendHooks.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
+backendHooks.verdictsOnFilesOf = (sessionId) => readerDocs.of(sessionId)
 const noAccountNow = (backend: BackendId): string => noAccountMessage(listAccounts(), backend)
 backendHooks.noAccountMessage = noAccountNow
 backendHooks.turnedOff = turnedOffNow
@@ -3721,7 +3721,7 @@ app.whenReady().then(() => {
     remoteOrphansOf: (wsPath) => claudeStore?.remoteOrphansOf(wsPath) ?? [],
     killRemoteSession: (host, sessionId) =>
       claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
-    hiddenRow: (id) => sessionBackends.isOverseerSession(id),
+    hiddenRow: (id) => sessionBackends.isKoloftsOwnSession(id),
     parentOf: (rowId) => startedSessions.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
     scratchRoots: scratchRootsAround(os.homedir(), os.tmpdir()),
@@ -6032,7 +6032,7 @@ const sessionSearch = new SessionSearch({
   },
   backendSnippets: async (term, signal) =>
     (await Promise.all(storedSessions().map((s) => s.searchSnippets(term, signal)))).flat(),
-  hidden: (id) => sessionBackends.isOverseerSession(id),
+  hidden: (id) => sessionBackends.isKoloftsOwnSession(id),
   scan: (files, term, found) => {
     // PLATFORM§4
     const worker = createTranscriptSearchWorker({ workerData: { files, term } })

@@ -40,10 +40,10 @@ type TrackerDeps = Pick<
 type BackendHooks = Partial<
   Pick<
     SessionBackends,
-    | 'isOverseerSession'
+    | 'isKoloftsOwnSession'
     | 'turnOver'
     | 'askingOf'
-    | 'docVerdictsOf'
+    | 'verdictsOnFilesOf'
     | 'noAccountMessage'
     | 'turnedOff'
   >
