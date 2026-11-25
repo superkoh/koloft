@@ -7,9 +7,9 @@ import { BackgroundFile } from '../../../../src/main/backgroundFile'
 import {
   SessionStore,
   codexSessionKey,
-  type StoredMember,
-  type WorktreeResource
+  type StoredMember
 } from '../../../../src/agents/kit/main/sessionStore'
+import type { WorktreeResource } from '../../../../src/core/agent/worktreeRecords'
 
 let directory: string
 let filename: string

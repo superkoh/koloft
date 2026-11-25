@@ -2,6 +2,7 @@ import fs from 'fs'
 import type { LaunchPermission } from '@shared/types'
 import { isAbsoluteOnHost, parseRemoteKey } from '@shared/remoteKey'
 import { sessionKey } from '@shared/sessionBackend'
+import type { WorktreeResource } from '@core/agent/worktreeRecords'
 import { BackgroundFile } from '../../../main/backgroundFile'
 
 export interface StoredMember {
@@ -14,18 +15,6 @@ export interface StoredMember {
   updatedAt: number
   worktreeResourceId?: string
   permission?: LaunchPermission
-}
-
-export interface WorktreeResource {
-  id: string
-  originalCwd: string
-  worktreePath: string
-  worktreeName: string
-  worktreeBranch: string | null
-  originalHeadCommit: string
-  state: 'creating' | 'ready' | 'failed'
-  managed: boolean
-  error?: string
 }
 
 interface SessionStoreData {

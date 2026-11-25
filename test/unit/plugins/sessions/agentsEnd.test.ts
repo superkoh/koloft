@@ -4,6 +4,10 @@ import {
   type SessionBackend,
   type TabExit
 } from '../../../../src/core/agent/sessionBackends'
+import {
+  KEEPS_NO_WORKTREE_RECORDS,
+  type WorktreeRecords
+} from '../../../../src/core/agent/worktreeRecords'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../../../src/agents/claude/main/backend'
 import { storedBackend } from '../../../../src/agents/kit/main/stored'
 import { sessionKey } from '@shared/sessionBackend'
@@ -13,6 +17,7 @@ import { lifecycle } from '../../helpers/sessionBackendStub'
 interface SessionsKeptInAStore {
   id: BackendId
   store: { flushSync(): void }
+  worktrees: { records: WorktreeRecords }
   rows(workspace: string): BackendSessionRow[]
   threadGone(key: string): boolean
   hasProcesses(): boolean
@@ -27,6 +32,7 @@ function sessionsOf(id: BackendId, over: Partial<SessionsKeptInAStore> = {}): Se
   return {
     id,
     store: { flushSync: () => {} },
+    worktrees: { records: KEEPS_NO_WORKTREE_RECORDS },
     rows: () => [],
     threadGone: () => false,
     hasProcesses: () => false,

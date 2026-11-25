@@ -10,10 +10,8 @@ import {
   type CodexSessionDeps
 } from '../../../../src/agents/codex/main/codexSessions'
 import { storedBackend } from '../../../../src/agents/kit/main/stored'
-import {
-  codexSessionKey,
-  type WorktreeResource
-} from '../../../../src/agents/kit/main/sessionStore'
+import { codexSessionKey } from '../../../../src/agents/kit/main/sessionStore'
+import type { WorktreeResource } from '../../../../src/core/agent/worktreeRecords'
 import type {
   CodexProcessOptions,
   CodexTransportOptions

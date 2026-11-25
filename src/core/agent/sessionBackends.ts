@@ -15,6 +15,11 @@ import type {
 } from '@shared/types'
 import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
+import {
+  worktreeRecordsOfEveryAgent,
+  type WorktreeRecords,
+  type WorktreeRecordsOfEveryAgent
+} from './worktreeRecords'
 import { identityOf, sourceOf, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { hostOf } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
@@ -53,6 +58,7 @@ export interface SessionBackend extends SessionRowsSource {
   peerNames(): (key: string) => Promise<string | null>
   runningElsewhere(key: string): boolean | Promise<boolean>
   workStillRunning(tabId: string): Promise<boolean>
+  worktreeRecords: WorktreeRecords
   tabExited(exit: TabExit): void | Promise<void>
   quitWaitsForIt(): boolean
   endBeforeQuit(): Promise<void>
@@ -87,6 +93,9 @@ export class SessionBackends {
   turnedOff: (backend: BackendId) => string | null = () => null
   readonly rows: RowsOfEveryAgent = rowsOfEveryAgent(() =>
     this.builtInListOrder().map((backend) => ({ id: backend.id, rows: backend }))
+  )
+  readonly worktreeRecords: WorktreeRecordsOfEveryAgent = worktreeRecordsOfEveryAgent(() =>
+    this.builtInListOrder()
   )
 
   constructor(private lifecycle: SessionLifecycle) {}
