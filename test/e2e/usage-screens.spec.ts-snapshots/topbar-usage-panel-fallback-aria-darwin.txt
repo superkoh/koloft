@@ -1,0 +1,10 @@
+- text: Account usage updated just now Claude walled WALLED
+- group "5h walled, back in 3h 00m": 100%
+- group "7d resets at 3-6 09:30": 97%
+- text: metered API KEY Metered — used only when every subscription is rate-limited
+- button "Probe now 1–2 requests per account":
+  - img
+  - text: Probe now 1–2 requests per account
+- button "Account settings…":
+  - img
+  - text: Account settings…

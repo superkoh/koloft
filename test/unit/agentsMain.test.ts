@@ -3,11 +3,12 @@ import {
   AgentsMain,
   type AgentAccounts,
   type AgentCatalog,
+  type AgentTools,
   type OneShotTarget
 } from '../../src/core/agent/agentsMain'
-import { AGENT_IDS, type AgentId } from '../../src/core/agent/registry'
+import { AGENT_IDS, agentManifest, type AgentId } from '../../src/core/agent/registry'
 import { ACCOUNT_KINDS_OF } from '../../src/shared/accountUsage'
-import { accountsThatAreNeverAsked } from './helpers/agentCatalogs'
+import { accountsThatAreNeverAsked } from './helpers/agentAccounts'
 
 const targetOf = (binary: string): OneShotTarget => ({ binary, env: {}, done: () => {} })
 
@@ -16,6 +17,8 @@ const catalogOf = (id: AgentId): AgentCatalog => ({
   mcpServersOn: async (folders) =>
     folders.map((onlyIn) => ({ name: `${id}'s`, backend: id, onlyIn }))
 })
+
+const toolsOf = (id: AgentId): AgentTools => ({ shimScript: () => `the ${id} shim` })
 
 const accountsThatSayWhoTheyAre = (id: AgentId, asked: string[]): AgentAccounts => ({
   pickForThisStart: async (ask) => ({ account: `${id}'s`, tabId: ask.tabId }),
@@ -42,6 +45,7 @@ const agentsWithAccounts = (ids: readonly AgentId[], asked: string[] = []): Agen
       id,
       oneShotTarget: async () => null,
       catalog: catalogOf(id),
+      tools: toolsOf(id),
       accounts: accountsThatSayWhoTheyAre(id, asked)
     })
   return agents
@@ -55,6 +59,7 @@ describe('the agents registered with their main-process side', () => {
         id,
         oneShotTarget: async () => targetOf(`the ${id} program`),
         catalog: catalogOf(id),
+        tools: toolsOf(id),
         accounts: accountsThatAreNeverAsked
       })
 
@@ -68,6 +73,7 @@ describe('the agents registered with their main-process side', () => {
       id: AGENT_IDS[0],
       oneShotTarget: async () => targetOf('built'),
       catalog: catalogOf(AGENT_IDS[0]),
+      tools: toolsOf(AGENT_IDS[0]),
       accounts: accountsThatAreNeverAsked
     })
 
@@ -86,10 +92,28 @@ describe('the agents registered with their main-process side', () => {
         id,
         oneShotTarget: async () => null,
         catalog: catalogOf(id),
+        tools: toolsOf(id),
         accounts: accountsThatAreNeverAsked
       })
 
     expect((await agents.mcpServersOn(['/w'])).map((s) => s.backend)).toEqual(built)
+  })
+
+  it('hands over the shim script of every agent that was built, named by its program, in the order of the list of agents, whatever order they were registered in', () => {
+    const agents = new AgentsMain()
+    const built = AGENT_IDS.filter((_, i) => i !== 1)
+    for (const id of [...built].reverse())
+      agents.register({
+        id,
+        oneShotTarget: async () => null,
+        catalog: catalogOf(id),
+        tools: toolsOf(id),
+        accounts: accountsThatAreNeverAsked
+      })
+
+    expect(agents.shimScripts()).toEqual(
+      built.map((id) => ({ command: agentManifest(id).command, script: `the ${id} shim` }))
+    )
   })
 
   it('asks the agent that was named which account this start gets, and answers an agent that was not built, or none, with an empty answer', async () => {

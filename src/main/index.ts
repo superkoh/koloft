@@ -223,7 +223,8 @@ import {
 } from '@shared/browserRoute'
 import { PASTED_PICTURE_EXTENSIONS, pastedPicturesIn, withPictures } from '@shared/pastedPictures'
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
-import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
+import { pidAlive } from './leftovers'
+import { scanLeftovers, stopLeftover } from './leftoverProcesses'
 import { parseSessionPorts, scanPortsHere, scanPortsOnMachine } from './sessionPorts'
 import { reachesThisMacsServer } from '@core/thisMacsServers'
 import { mapAtMost } from '@core/mapAtMost'
@@ -323,6 +324,9 @@ import { sleep } from '@core/sleep'
 import { claudeCatalog, ownersClaudePlaywrightMcp } from '@agents/claude/main/claudeCatalog'
 import { codexCatalog } from '@agents/codex/main/codexCatalog'
 import { agyCatalog } from '@agents/agy/main/agyCatalog'
+import { claudeTools } from '@agents/claude/main/claudeShim'
+import { codexTools } from '@agents/codex/main/codexShim'
+import { agyTools } from '@agents/agy/main/agyShim'
 import type { McpServer } from '@shared/types'
 import {
   LIVE_REGISTRY_ON_A_MACHINE_SH,
@@ -369,6 +373,7 @@ import {
   type AgentAccounts,
   type AgentCatalog,
   type AgentMain,
+  type AgentTools,
   type OneShotTarget
 } from '@core/agent/agentsMain'
 import { AGENT_OF_UNNAMED_OLD_DATA } from '@core/agent/registry'
@@ -1537,6 +1542,11 @@ const catalogs: Record<BackendId, AgentCatalog> = {
   codex: codexCatalog(codexSharedConfig),
   agy: agyCatalog(ownersGemini, isGitCheckoutAsync)
 }
+const tools: Record<BackendId, AgentTools> = {
+  claude: claudeTools,
+  codex: codexTools,
+  agy: agyTools
+}
 const accountsOf: Record<BackendId, AgentAccounts> = {
   claude: claudeAccounts,
   codex: codexAccounts.accounts,
@@ -1548,6 +1558,7 @@ for (const id of SESSION_BACKENDS)
     id,
     oneShotTarget: oneShotTargets[id],
     catalog: catalogs[id],
+    tools: tools[id],
     accounts: accountsOf[id]
   })
 const assist = koloftAssist({
@@ -2580,7 +2591,8 @@ app.whenReady().then(() => {
   const gitRequestDir = newGitRequestDir()
   const { shimDir, regDir, openDir, pickDir, agentDir, gitHelper, ghWrapper } = setupShim(
     gitRequestDir,
-    conductorFolder(app.getPath('userData'))
+    conductorFolder(app.getPath('userData')),
+    agentsMain.shimScripts()
   )
   ptyMgr.shimDir = shimDir
   ptyMgr.regDir = regDir

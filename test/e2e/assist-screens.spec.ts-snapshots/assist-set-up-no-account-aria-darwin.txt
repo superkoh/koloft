@@ -1,0 +1,9 @@
+- dialog "Koloft Assist":
+  - text: Koloft Assist Every session in Koloft runs on an account you add here, never on the login this Mac already has. Add one, then pick the one that does Koloft’s small jobs, like naming a new session. That is Koloft Assist.
+  - button "Claude No account yet. Click to sign in."
+  - button "Codex No account yet. Click to sign in."
+  - button "Antigravity No account yet. Click to sign in."
+  - text: "Each Assist job costs a little of that account’s plan or API balance: about a cent or less. Choose what each job runs on in Settings ▸ Assist. Have a Claude token?"
+  - button "Paste it"
+  - text: .
+  - button "Not now"

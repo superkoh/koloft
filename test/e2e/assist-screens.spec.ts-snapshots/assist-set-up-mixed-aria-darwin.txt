@@ -1,0 +1,11 @@
+- dialog "Koloft Assist":
+  - text: Koloft Assist Every session in Koloft runs on an account you add here, never on the login this Mac already has. Add one, then pick the one that does Koloft’s small jobs, like naming a new session. That is Koloft Assist.
+  - button "Claude Signed in. Assist runs on it."
+  - button "Codex \"work\" is not signed in. Click to sign in again."
+  - button "Antigravity No account yet. Click to sign in."
+  - text: "Each Assist job costs a little of that account’s plan or API balance: about a cent or less. Choose what each job runs on in Settings ▸ Assist. Have a Claude token?"
+  - button "Paste it"
+  - text: . Koloft starts sessions without asking you before each file change or command. Is that OK?
+  - button "Yes, don’t ask Koloft remembers your answer. Your own Claude settings stay as they are."
+  - button "No, ask me first Change it later in Settings ▸ Accounts."
+  - button "Not now"

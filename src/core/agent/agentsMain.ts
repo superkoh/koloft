@@ -1,6 +1,12 @@
 // ADR-0054
 import type { AccountAddResult, McpServer } from '@shared/types'
-import { AGENT_IDS, agentOfAccountKind, type AccountKindId, type AgentId } from './registry'
+import {
+  AGENT_IDS,
+  agentManifest,
+  agentOfAccountKind,
+  type AccountKindId,
+  type AgentId
+} from './registry'
 
 export interface OneShotTarget {
   binary: string
@@ -12,6 +18,15 @@ export interface OneShotTarget {
 export interface AgentCatalog {
   moreSkillFoldersEveryAccountReadsOnThisMac(): readonly string[]
   mcpServersOn(folders: readonly string[]): Promise<McpServer[]>
+}
+
+export interface AgentTools {
+  shimScript(): string
+}
+
+export interface AgentShimScript {
+  command: string
+  script: string
 }
 
 export interface StartAsk {
@@ -36,6 +51,7 @@ export interface AgentMain {
   id: AgentId
   oneShotTarget(): Promise<OneShotTarget | null>
   catalog: AgentCatalog
+  tools: AgentTools
   accounts: AgentAccounts
 }
 
@@ -56,6 +72,13 @@ export class AgentsMain {
 
   moreSkillFoldersEveryAccountReadsOnThisMac(id: AgentId): readonly string[] {
     return this.built.get(id)?.catalog.moreSkillFoldersEveryAccountReadsOnThisMac() ?? []
+  }
+
+  shimScripts(): AgentShimScript[] {
+    return this.inListOrder().map((agent) => ({
+      command: agentManifest(agent.id).command,
+      script: agent.tools.shimScript()
+    }))
   }
 
   async mcpServersOn(folders: readonly string[]): Promise<McpServer[]> {

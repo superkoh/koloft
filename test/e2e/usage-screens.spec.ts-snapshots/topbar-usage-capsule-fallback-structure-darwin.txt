@@ -1,0 +1,10 @@
+button.tbu [aria-label="1 account, highest 100%, 0 usable, 1 walled" aria-expanded="false"]
+  {display: flex; color: rgb(0, 0, 0); align-items: flex-end; font-family: Arial; font-size: 13.3333px; text-align: center; padding: 4px 3px 4px 3px; gap: 5px}
+  span.tbu-bar
+    {display: block; position: relative; background-color: rgb(52, 52, 58); width: 4px; height: 16px; overflow-x: hidden; overflow-y: hidden; border-radius: 2px}
+    i.tbu-fill.bad [style="height: 100%;"]
+      {display: block; position: absolute; background-color: rgb(217, 119, 106); height: 100%; min-height: 4px; font-style: italic; border-radius: 2px; inset: auto 0px 0px 0px}
+  span.tbu-bar [title="Every subscription is walled — metered fallback active"]
+    {display: block; position: relative; background-color: rgb(52, 52, 58); width: 4px; height: 16px; overflow-x: hidden; overflow-y: hidden; border-radius: 2px}
+    i.tbu-fill.acc [style="height: 100%;"]
+      {display: block; position: absolute; background-color: rgb(236, 150, 112); height: 100%; min-height: 4px; font-style: italic; border-radius: 2px; inset: auto 0px 0px 0px}

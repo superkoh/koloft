@@ -1,0 +1,7 @@
+- text: Sign in again lapsed
+- textbox "Name this account (e.g. work)": lapsed
+- button "Cancel"
+- button "Sign in"
+- text: Koloft runs the official
+- code: claude setup-token
+- text: "in the background — no terminal tab. Once you authorize in the browser, the token goes straight into your Keychain and the account joins the pool: no copy-paste, and you never leave this panel. The new token replaces the existing entry; this row keeps its place and its enabled state."

@@ -1,0 +1,10 @@
+div.wb-bar
+  {display: flex; position: relative; background-color: rgb(28, 28, 31); height: 36px; flex-shrink: 0; align-items: center; border-width: - - 1px -; border-style: none none solid none; border-color: - - rgba(255, 255, 255, 0.1) -; padding: 0px 9px 0px 9px; gap: 8px}
+  span.wb-title
+    {display: flex; min-width: 0px; flex-grow: 1; flex-basis: 0%; align-items: baseline; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 12.5px; font-weight: 600; white-space: nowrap}
+    span.nm
+      {display: block; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden}
+      "Antigravity sign in: fresh"
+  button.mini
+    {display: flex; background-color: rgb(52, 52, 58); align-items: center; font-size: 13px; font-weight: 600; line-height: 1; text-align: center; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.17); border-radius: 7px; padding: 7px 14px 7px 14px; gap: 5px}
+    "Cancel"

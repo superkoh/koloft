@@ -1,0 +1,8 @@
+- switch "In the pool" [checked]
+- text: drained
+- button "Delete account":
+  - img
+- text: Delete drained? Its sign-in folder stays on disk, so its sessions stay in your history.
+- button "Delete"
+- button "Cancel"
+- text: Gemini Models · 7d 100% Gemini Models · 5h 65% Gemini Models · 7d resets 3-6 09:30
