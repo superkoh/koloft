@@ -167,13 +167,18 @@ fi
 trap 'rm -f "${T}${TAB_PASS_FILE_SUFFIX}"' EXIT
 ${sourceTabPass(spec.tabId)}
 ${onATerminalEvenWhenSshGaveNone('$2', '$3', spec.tabId, `sh '${T}.sh' $1`)}
+E="${T}"
+endsUnderTheTabThatStarted() {
+  s=$(tmux -L koloft display-message -p -t "=$1:" '#{pane_start_command}' 2>/dev/null | sed -n 's|.*/\\.koloft/tabs/\\([A-Za-z0-9._=-]*\\)\\.sh.*|\\1|p')
+  [ -n "$s" ] && E="${REMOTE_TABS_DIR}/$s"
+}
 exited() {
-  c=$?; [ -s "${T}.exit" ] && c=$(cat "${T}.exit")
+  c=$?; [ -s "$E.exit" ] && c=$(cat "$E.exit")
   [ "$c" = ${SSH_LINK_BROKE_EXIT} ] && c=${AGENT_EXIT_255_PASSED_AS}
-  [ -f "${T}.screen" ] && awk 'NF { if (seen) for (; n; n--) print ""; seen = 1; n = 0; print; next } { n++ }' "${T}.screen"
+  [ -f "$E.screen" ] && awk 'NF { if (seen) for (; n; n--) print ""; seen = 1; n = 0; print; next } { n++ }' "$E.screen"
   rm -f "${T}.env"; exit $c
 }
-[ "$1" = attach ] && { n=${attachTo}; ${passIntoATmuxThatHoldsOne(T, '$n', spec.tabId)}; unset ${TAB_PASS_ENV}; ${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u attach -d -t "$n"; exited; }
+[ "$1" = attach ] && { n=${attachTo}; endsUnderTheTabThatStarted "$n"; ${passIntoATmuxThatHoldsOne(T, '$n', spec.tabId)}; unset ${TAB_PASS_ENV}; ${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u attach -d -t "$n"; exited; }
 unset ${ACCOUNT_ENV_HELD_IN_MEMORY}; ${ACCOUNT_ENV_HELD_IN_MEMORY}=$(cat "${T}.env" 2>/dev/null); rm -f "${T}.env"
 sh "$M/ensure.sh"${program.ensureTool ? ` ${program.ensureTool}` : ''} || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
@@ -182,6 +187,7 @@ rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}" "${T}.exit" "${T}.screen" "${T}.tmu
 ${program.beforeTmux}${passIntoATmuxThatHoldsOne(T, spec.tmuxName, spec.tabId)}
 [ -n "$${TAB_PASS_ENV}" ] && ( umask 077; printf '${TAB_PASS_ENV}=%s\\n' "$${TAB_PASS_ENV}" > "${T}${TAB_PASS_FILE_SUFFIX}" ); unset ${TAB_PASS_ENV}
 [ -n "$${ACCOUNT_ENV_HELD_IN_MEMORY}" ] && ( umask 077; printf '%s\\n' "$${ACCOUNT_ENV_HELD_IN_MEMORY}" > "${T}.env" ); unset ${ACCOUNT_ENV_HELD_IN_MEMORY}
+endsUnderTheTabThatStarted '${spec.tmuxName}'
 ${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
 exited
 `

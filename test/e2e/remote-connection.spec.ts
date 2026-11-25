@@ -147,6 +147,11 @@ const RUNS_A_COMMAND_IN_ITS_SESSION: Partial<Record<AgentName, (command: string)
   Antigravity: (command) => `!${command}`
 }
 
+const AGENT_PID_IN_A_TMUX_ON_THE_MACHINE: Partial<Record<AgentName, (env: E2EEnv) => number>> = {
+  Claude: (env) => readCalls(env)[0].pid,
+  Antigravity: (env) => machineAgyCalls(env)[0].pid
+}
+
 const EVERY_AGENT_ON_THE_MACHINE: {
   label: AgentName
   install?: (env: E2EEnv) => void
@@ -548,6 +553,49 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
         expect(there.launches(env)).toBe(launches)
       } finally {
         await quitAndClose(app)
+      }
+    })
+  }
+
+  for (const agent of EVERY_AGENT_ON_THE_MACHINE) {
+    const pidThere = AGENT_PID_IN_A_TMUX_ON_THE_MACHINE[agent.label]
+    if (!pidThere) continue
+
+    // PLATFORM§35
+    test(`a remote ${agent.label} tab taken back after a Koloft restart whose agent then dies says the agent's exit code and keeps its tab, as it would had Koloft never restarted`, async ({
+      env
+    }) => {
+      test.setTimeout(300_000)
+      agent.install?.(env)
+      seedSettings(env, { hintsOff: true })
+      const { app, page } = await launchWithRemote(env)
+      try {
+        await addRemoteWorkspace(page, env)
+        await startOnTheMachine(page, agent)
+        await page.waitForTimeout(LAYOUT_SAVE_DEBOUNCE_SETTLE_MS)
+      } finally {
+        await quitAndClose(app)
+      }
+
+      const app2 = await launchApp(env)
+      try {
+        const page2 = await app2.firstWindow()
+        await waitBooted(page2)
+        await untilItCameBackOnTheMachine(env, agent.label, 0)
+        const row = wsRows(page2, REMOTE_WS_NAME).first()
+        await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, {
+          timeout: IDLE_20S_HEARTBEAT_ROUND_TIMEOUT_MS
+        })
+        const tabId = (await row.getAttribute('data-tab-id'))!
+
+        killSession(pidThere(env), env)
+
+        await expect
+          .poll(() => terminalText(page2, tabId), { timeout: 30_000 })
+          .toContain('stopped with exit code 137')
+        await expect(row.locator('.ws-tab-sub')).toContainText('exited (code 137)')
+      } finally {
+        await quitAndClose(app2)
       }
     })
   }

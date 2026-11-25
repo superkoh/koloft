@@ -479,6 +479,7 @@ interface Box {
   order(): string[]
   standIn(): string[]
   run(...args: string[]): { status: number | null; stdout: string }
+  runTab(tabId: string, ...args: string[]): { status: number | null; stdout: string }
 }
 
 function box(
@@ -515,6 +516,7 @@ printf 'tmux %s\\n' "$*" >> ${JSON.stringify(path.join(logs, 'order'))}
 conf=""; prev=""; last=""
 for a in "$@"; do [ "$prev" = -f ] && conf="$a"; last="$a"; prev="$a"; done
 case " $* " in *" capture-pane "*) printf 'the last screen\\n\\n\\n'; exit 0;; esac
+case " $* " in *" display-message "*) cat ${JSON.stringify(path.join(logs, 'pane-start-command'))} 2>/dev/null; echo; exit 0;; esac
 case " $* " in *" source-file "*) cat "$last" >> ${JSON.stringify(path.join(logs, 'sourced'))}; exit 0;; esac
 case " $* " in *" show-environment "*) [ -f ${JSON.stringify(path.join(logs, 'keyed'))} ]; exit $?;; esac
 case " $* " in *" attach "*) ls -A "$HOME/.koloft/tabs" > ${JSON.stringify(path.join(logs, 'tab-files-while-attached'))}; exit 0;; esac
@@ -584,20 +586,22 @@ exit ${opts.claudeExit ?? 0}
     onATerminal: () => fs.existsSync(path.join(logs, 'tty')),
     standIn: () =>
       fs.existsSync(path.join(logs, 'script')) ? read('script').trim().split('\n') : [],
-    run: (...args) => {
-      const res = spawnSync('/bin/sh', [path.join(tabs, `${s.tabId}.sh`), ...args], {
-        encoding: 'utf8',
-        env: {
-          HOME: home,
-          PATH: '/usr/bin:/bin',
-          SHELL: path.join(bin, 'fish'),
-          ANTHROPIC_API_KEY: 'stale-machine-key',
-          GEMINI_API_KEY: 'stale-machine-key'
-        },
-        timeout: 30_000
-      })
-      return { status: res.status, stdout: res.stdout }
-    }
+    run: (...args) => runTab(s.tabId, ...args),
+    runTab
+  }
+  function runTab(tabId: string, ...args: string[]): { status: number | null; stdout: string } {
+    const res = spawnSync('/bin/sh', [path.join(tabs, `${tabId}.sh`), ...args], {
+      encoding: 'utf8',
+      env: {
+        HOME: home,
+        PATH: '/usr/bin:/bin',
+        SHELL: path.join(bin, 'fish'),
+        ANTHROPIC_API_KEY: 'stale-machine-key',
+        GEMINI_API_KEY: 'stale-machine-key'
+      },
+      timeout: 30_000
+    })
+    return { status: res.status, stdout: res.stdout }
   }
 }
 
@@ -1105,6 +1109,20 @@ cat "$p" >> "$L/prompt"
     expect(clean.stdout).not.toContain('the last screen')
   })
 
+  // PLATFORM§35
+  it('a tab that attaches, under a new tab id after a Koloft restart, to a session another tab started ends with the code and shows the screen the agent left there, read from the tab that started it', () => {
+    const b = box(spec({ tabId: 'OLD' }), { claudeExit: 3 })
+    expect(b.run().status).toBe(3)
+    writeTabPackage(b.tabs, spec({ tabId: 'NEW' }))
+    fs.writeFileSync(
+      path.join(b.logs, 'pane-start-command'),
+      '"sh \\"\\$HOME/.koloft/tabs/OLD.sh\\" run"'
+    )
+    const attached = b.runTab('NEW', 'attach')
+    expect(attached.status).toBe(3)
+    expect(attached.stdout).toMatch(/the last screen\n$/)
+  })
+
   it('an agent that exits 255 ends the tab with 254, since 255 from ssh means the link broke and the tab would reconnect', () => {
     expect(box(spec(), { claudeExit: 255 }).run().status).toBe(254)
   })
@@ -1115,6 +1133,7 @@ cat "$p" >> "$L/prompt"
     const res = b.run('attach')
     expect(res.status).toBe(0)
     expect(b.tmux()).toEqual([
+      ...['-L', 'koloft', 'display-message', '-p', '-t', '=k-sess1:', '#{pane_start_command}'],
       ...['-L', 'koloft', 'show-environment', '-t', 'k-sess1', 'KOLOFT_TAB_PASS'],
       ...['-L', 'koloft', 'set', '-gq', 'set-titles', 'on', ';'],
       ...['set', '-gq', 'set-titles-string', '#{pane_title}', ';'],

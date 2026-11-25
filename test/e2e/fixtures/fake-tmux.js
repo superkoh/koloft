@@ -49,7 +49,7 @@ const rawPaneMark = (io) => path.join(ioDir, `${io}.raw`)
 function recordOf(name) {
   try {
     const rec = JSON.parse(fs.readFileSync(aliveFile(name), 'utf8'))
-    return { pid: Number(rec.pid), io: String(rec.io) }
+    return { pid: Number(rec.pid), io: String(rec.io), cmd: String(rec.cmd ?? '') }
   } catch {
     return null
   }
@@ -163,7 +163,7 @@ if (verb === 'new-session') {
       }
     })
     child.unref()
-    fs.writeFileSync(aliveFile(name), JSON.stringify({ pid: child.pid, io }))
+    fs.writeFileSync(aliveFile(name), JSON.stringify({ pid: child.pid, io, cmd }))
   }
   attach(name, paneJustStarted)
 } else if (verb === 'attach') {
@@ -187,6 +187,15 @@ if (verb === 'new-session') {
   const pid = pidOf(flagVal('-t').replace(/^=(.*):$/, '$1'))
   if (!alive(pid)) process.exit(1)
   process.stdout.write(pid + '\n')
+  process.exit(0)
+} else if (
+  (verb === 'display-message' || verb === 'display') &&
+  rest.includes('#{pane_start_command}')
+) {
+  // PLATFORM§35
+  const rec = recordOf(flagVal('-t').replace(/^=(.*):$/, '$1'))
+  const quoted = rec && alive(rec.pid) ? `"${rec.cmd.replace(/["\\$]/g, '\\$&')}"` : ''
+  process.stdout.write(quoted + '\n')
   process.exit(0)
 } else if (verb === 'display-message' || verb === 'display') {
   const io = process.env.KOLOFT_FAKE_TMUX_IO
