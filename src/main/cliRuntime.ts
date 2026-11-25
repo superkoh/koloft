@@ -2,7 +2,8 @@ import fs from 'fs'
 import path from 'path'
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { agentsInLoginShell, LoginShellError, type AgentCommand } from './loginShell'
+import type { AgentCommand } from '@core/agent/registry'
+import { agentsInLoginShell, LoginShellError } from './loginShell'
 import { isNewer } from './releaseNotes'
 
 const exec = promisify(execFile)
@@ -16,7 +17,7 @@ export interface CliRuntime {
 }
 
 export interface CliSpec {
-  command: Exclude<AgentCommand, 'claude'>
+  command: AgentCommand
   testCommandEnv: string
   name: string
   cliName: string

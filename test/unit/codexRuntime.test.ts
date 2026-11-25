@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resolveCodexRuntime } from '../../src/agents/codex/main/codexRuntime'
 import { PtyManager } from '../../src/main/ptyManager'
 import { CODEX_TAB_ENV } from '../../src/agents/codex/main/codexSessions'
-import { MIN_CODEX_VERSION } from '../../src/main/cliMinimums'
+import { MIN_CODEX_VERSION } from '../../src/agents/codex/main/codexMinimum'
 
 const fake = vi.hoisted(() => ({ spawn: vi.fn() }))
 vi.mock('node-pty', () => ({ spawn: fake.spawn }))
