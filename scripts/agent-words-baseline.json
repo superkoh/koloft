@@ -213,7 +213,6 @@
       "function codexSharedConfig(): string {",
       "function notifyExpired(name: string, label = 'Claude'): void {",
       "function ownersGemini(): string {",
-      "function shrinkAdoptedClaudePtysOneRowSoFitRepaints(tabs: TabInventoryReply['tabs']): void {",
       "if (!codex.available) return",
       "if (!exited?.alive) claudeDialogs.forget(e.id)",
       "if (!picked || !codexSessions || !(await codexSessions.availability()).available) return null",
@@ -288,7 +287,6 @@
       "scriptsDir: path.join(userData, 'agy-scripts'),",
       "sessionBackends.register(agyBackend(agySessions, resumeProbes, machineProbes))",
       "showsDialogsClosing: (tabId) => claudeDialogs.showsDialogsClosing(tabId),",
-      "shrinkAdoptedClaudePtysOneRowSoFitRepaints(tabs)",
       "skillsFolder: () => claudeAgentPlugin && pluginSkills(claudeAgentPlugin)",
       "startupErrors.agy = `Antigravity session data could not be loaded; the original file is preserved. ${String(error)}`",
       "startupErrors.codex = `Codex session data could not be loaded; the original file is preserved. ${String(error)}`",
@@ -397,9 +395,6 @@
       "export function setupAgyStatusline(paths: StatuslinePaths): string {",
       "fs.writeFileSync(script, AGY_STATUSLINE_JS)",
       "import { AGY_COST_ENV } from '@agents/agy/main/agyHooks'"
-    ],
-    "src/plugins/browser-control/renderer/BrowserControlSettings.tsx": [
-      "you can see, signed in as you. Claude Code sessions on another machine (over SSH) can"
     ],
     "src/plugins/discord/main/relay.ts": [
       "CODEX_NEEDS_YES_OR_NO,",
@@ -586,14 +581,7 @@
       "if (backend === 'claude' && !exit.signal && exit.exitCode === SHIM_FOUND_NO_ACCOUNT_EXIT)"
     ],
     "src/renderer/src/components/AssistSetup.tsx": [
-      "<button className=\"ob-link\" onClick={() => openForm({ paste: 'oauth' })}>",
-      "Claude token?{' '}",
-      "Koloft remembers your answer. Your own Claude settings stay as they are.",
-      "const claudeLoginRunning = !!login && loginRunning(login.progress)",
-      "const openClaudeSignIn = (kind: AccountKind, again: string | undefined): void => {",
-      "if (!claudeLoginRunning) beginLogin(kind, again)",
-      "if (login && !claudeLoginRunning) clearLogin()",
-      "} else if (b === 'claude') openClaudeSignIn(signInKindOf(b).id as AccountKind, again)"
+      "Koloft remembers your answer. Your own Claude settings stay as they are."
     ],
     "src/renderer/src/components/SessionDefaultsDialog.tsx": [
       "\"Where the project's own AGENTS.md or CLAUDE.md says otherwise, an agent may follow that file instead.\"",
@@ -667,30 +655,6 @@
       "{fable && (",
       "{fable && <i className=\"tbu-gap\" style={{ bottom: `${fillPct}%` }} />}"
     ],
-    "src/renderer/src/components/Welcome.tsx": [
-      "'A terminal tab opens and Codex sends you to your browser. It closes by itself once you are in.',",
-      ") : claudeBusy && pick === 'claude' ? (",
-      ") : claudeFailed ? (",
-      "<p className=\"wl-sub\">Koloft runs Claude Code, Codex and Antigravity.</p>",
-      "? 'Installing Claude Code, then your browser opens…'",
-      "agy: 'A terminal tab opens: sign in with Google, pick colours and accept Google’s terms, then type /exit.'",
-      "agy: {",
-      "asks: 'Claude Code asks only about risky steps (its auto mode). Press Shift+Tab in a session to be asked every step.',",
-      "asks: 'Codex asks only about some steps, like one that leaves its sandbox.',",
-      "claude: 'Your browser opens once. Koloft keeps the account: no terminal, nothing to paste.',",
-      "claude: {",
-      "codex:",
-      "codex: {",
-      "const claudeBusy = loginPhase === 'starting' || loginPhase === 'browser'",
-      "const claudeFailed = pick === 'claude' && login?.progress?.phase === 'failed'",
-      "const loginPhase = signingFor === 'claude' ? login?.progress?.phase : undefined",
-      "const signTabOpen = !!signingFor && signingFor !== 'claude' && !!signInTabId",
-      "const waiting = claudeBusy || signTabOpen",
-      "if (claudeBusy && pick === 'claude')",
-      "if (pick === 'claude') {",
-      "setSigningFor('claude')",
-      "{loginPhase === 'starting' && !isInstalled('claude')"
-    ],
     "src/renderer/src/components/accountMeter.tsx": [
       "const FABLE_WARN_AT = 0.85",
       "const level = win === 'oi' ? fableLevel(v, soi ?? '?') : meterLevel(v)",
@@ -717,44 +681,20 @@
       "{codexBalance && <span className=\"acct-note\">{codexBalance}</span>}",
       "{u.hasOi && <Meter label=\"fable\" v={u.uoi} win=\"oi\" soi={u.soi} />}"
     ],
-    "src/renderer/src/components/settings/AppearancePane.tsx": [
-      "Antigravity session, in place of the one you set yourself. Applies to sessions started",
-      "Shows Koloft&rsquo;s own status line under the prompt of every Claude Code, Codex and"
-    ],
     "src/renderer/src/components/settings/AssistSection.tsx": [
       "'A small job waits 15 seconds for its answer, 30 on Codex. A bigger model or more thinking is slower; when no answer comes, Koloft does the job without AI.'"
     ],
-    "src/renderer/src/components/settings/SessionMethodsSection.tsx": [
-      "agy: 'Runs on a Google sign-in or a Gemini API key from Settings ▸ Accounts'",
-      "claude: 'Runs on a Claude account from Settings ▸ Accounts',",
-      "codex: 'Runs on a Codex account from Settings ▸ Accounts',"
-    ],
     "src/renderer/src/components/settings/UsagePane.tsx": [
-      "Claude Code, Codex and Antigravity sessions are read from the files each tool keeps, on",
       "agy: 'ANTIGRAVITY'",
       "b !== 'claude' && (",
       "codex: 'CODEX',",
       "const BADGE: Record<Exclude<BackendId, 'claude'>, string> = {"
     ],
-    "src/renderer/src/components/settings/WelcomePane.tsx": [
-      "['Real Claude Code, Codex and Antigravity terminals', 'yes', 'yes'],",
-      "title: 'Claude Code, Codex and Antigravity sessions',"
-    ],
     "src/renderer/src/costs.css": [".acct-badge.agy {", ".acct-badge.codex {"],
-    "src/renderer/src/store.ts": [
-      "const liveClaude = !!sess?.alive && !!sess.sessionId",
-      "if (sessionId) return void begin(sessionId, sess?.treeRoot ?? tab.cwd, liveClaude)"
-    ],
     "src/renderer/src/topbarUsage.css": [
       ".tbu-bar.stale .tbu-fable {",
       ".tbu-bar.total .tbu-fable {",
       ".tbu-fable {"
-    ],
-    "src/renderer/src/useAssistSetup.ts": [
-      "const agy = useStore((s) => hasUsableAccount(s.accounts ?? [], 'agy'))",
-      "const claude = useStore((s) => hasUsableAccount(s.accounts ?? [], 'claude'))",
-      "const codex = useStore((s) => hasUsableAccount(s.accounts ?? [], 'codex'))",
-      "usable: { claude, codex, agy },"
     ],
     "src/shared/accountUsage.ts": [
       "'Claude did not start: Koloft could not use an account for it. Check Settings ▸ Accounts, then try again.'",

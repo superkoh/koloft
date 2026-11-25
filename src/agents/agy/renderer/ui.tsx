@@ -40,5 +40,17 @@ const accounts = {
 export const ui: AgentUi = {
   id: agent.id,
   mark: AntigravityMark,
-  accounts
+  accounts,
+  welcome: {
+    howItSignsIn:
+      'A terminal tab opens: sign in with Google, pick colours and accept Google’s terms, then type /exit.',
+    // AGY§26
+    whatItsSessionsAsk: {
+      asks: 'Sessions ask you before each step.',
+      askInstead: 'Ask me first instead'
+    }
+  },
+  settings: {
+    whatItRunsOn: 'a Google sign-in or a Gemini API key'
+  }
 }

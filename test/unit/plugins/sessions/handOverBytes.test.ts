@@ -390,6 +390,7 @@ function carrying(value: unknown, where: string): string[] {
 }
 
 const SAID = /said|task-first/
+const HOOK_SCRIPTS_FOLDER = `scripts${path.sep}`
 
 function filesIn(dir: string): Map<string, string> {
   return new Map(
@@ -403,7 +404,7 @@ function filesIn(dir: string): Map<string, string> {
 
 function filesWritten(before: Map<string, string>, after: Map<string, string>): string[] {
   return [...after]
-    .filter(([rel, text]) => before.get(rel) !== text)
+    .filter(([rel, text]) => before.get(rel) !== text && !rel.startsWith(HOOK_SCRIPTS_FOLDER))
     .flatMap(([rel, text]) =>
       SAID.test(path.basename(rel))
         ? [`file ${rel}: ${JSON.stringify(text)}`]

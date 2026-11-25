@@ -1,6 +1,7 @@
 import { useEffect, useState, type JSX } from 'react'
 import { IconMinus, IconPlus } from '../../icons'
 import { clampFontSize } from '@shared/settingsOps'
+import { SESSION_BACKENDS, shortProductList } from '@shared/sessionBackend'
 import { useStore } from '../../store'
 import { Switch } from './Switch'
 import { useSettingsUpdate } from './useSettingsUpdate'
@@ -108,9 +109,7 @@ export function AppearancePane(): JSX.Element {
         <div className="set-lab">
           <b>Built-in status line</b>
           <small>
-            Shows Koloft&rsquo;s own status line under the prompt of every Claude Code, Codex and
-            Antigravity session, in place of the one you set yourself. Applies to sessions started
-            after a change; off brings back your own setting.
+            {`Shows Koloft’s own status line under the prompt of every ${shortProductList(SESSION_BACKENDS, 'and')} session, in place of the one you set yourself. Applies to sessions started after a change; off brings back your own setting.`}
           </small>
         </div>
         <Switch

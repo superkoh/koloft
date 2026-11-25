@@ -41,6 +41,7 @@ import {
   oneStillRunning,
   openMenu,
   openWorktreeSession,
+  killSession,
   processAlive,
   readAllCalls,
   readCalls,
@@ -1580,6 +1581,44 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     }
     expect(fs.existsSync(shots)).toBe(false)
     expect(fs.readFileSync(account, 'utf8')).toBe('fake token')
+  })
+
+  // AGY§6 AGY§20
+  test('an Assist agy -p still running when Koloft quits is stopped with it, and its throwaway Gemini folder stays gone', async ({
+    env
+  }) => {
+    installAgy(env)
+    seedSettings(env, { hintsOff: true, assist: { backend: 'agy' } })
+    fs.writeFileSync(
+      path.join(env.home, 'fake-agy-assist-reply'),
+      JSON.stringify({ workspace: 1, worktree: 'main', title: 'Flaky login', why: 'ws-a.' })
+    )
+    fs.writeFileSync(path.join(env.home, 'fake-agy-assist-ms'), '120000')
+    const shots = path.join(env.userData, 'agy-one-shots')
+    const running = (): AgyCall[] =>
+      agyCalls(env).filter((c) => c.argv.includes('-p') && !c.argv.includes('/usage'))
+    const app = await launchApp(env)
+    let pid = 0
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await sendShortcut(app, 'shortcut:command-palette')
+      const askBox = page.locator('.modal.palette').getByRole('textbox', { name: 'Ask or jump' })
+      await expect(askBox).toBeFocused()
+      await askBox.fill('Fix the flaky login test')
+      await page.keyboard.press('Enter')
+      await expect.poll(() => running().length, { timeout: 20_000 }).toBe(1)
+      pid = running()[0].pid
+      expect(processAlive(pid)).toBe(true)
+    } finally {
+      await quitAndClose(app)
+    }
+    try {
+      await expect.poll(() => processAlive(pid), { timeout: 5_000 }).toBe(false)
+      expect(fs.existsSync(shots)).toBe(false)
+    } finally {
+      if (pid) killSession(pid, env)
+    }
   })
 
   // AGY§21

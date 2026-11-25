@@ -58,6 +58,13 @@ export function productList(backends: readonly BackendId[], joiner: 'or' | 'and'
   )
 }
 
+export function shortProductList(backends: readonly BackendId[], joiner: 'or' | 'and'): string {
+  return inWords(
+    backends.map((b) => agentManifest(b).shortProductName),
+    joiner
+  )
+}
+
 export function statusUnavailable(session?: Pick<SessionInfo, 'details'>): boolean {
   return session?.details?.codex?.observation === 'degraded'
 }
