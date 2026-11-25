@@ -14,7 +14,6 @@ import {
   killSessionCmd,
   launchLine,
   skillsFromMachineLine,
-  machineToolProgram,
   tabScript,
   utilShellLine,
   writeTabPassFile,

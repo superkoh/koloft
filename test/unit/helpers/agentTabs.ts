@@ -11,7 +11,11 @@ import { GithubRepos } from '../../../src/main/githubRepos'
 import type { RemoteTab } from '../../../src/main/host/host'
 import { Hosts } from '../../../src/main/host/hosts'
 import { localHost } from '../../../src/main/host/localHost'
-import { SshHost, type MachineAccount } from '../../../src/main/host/sshHost'
+import {
+  SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST,
+  SshHost,
+  type MachineAccount
+} from '../../../src/main/host/sshHost'
 import type { BytesResult } from '../../../src/main/remote/ssh'
 
 export const MACHINE = 'devbox'
@@ -319,6 +323,7 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
     gitAccounts: { configEnv: (env) => env, ghWrapper: path.join(tools, 'gh') },
     remote: {
       machine,
+      saidWhenTheMachineWantsAPasswordFirst: SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST,
       hosts: () => [MACHINE],
       keyed: (host, p) => `ssh://${host}${p}`,
       mirrorDir: () => mirror,
@@ -327,8 +332,7 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
       connected: () => true,
       nextPull: async () => undefined,
       setupLine: () => undefined,
-      hookSettings: () => undefined,
-      machineName: () => a.machine.machinePackageName?.() ?? MACHINE_PACKAGE
+      hookSettings: () => undefined
     }
   }
   sessions = new AgySessions(path.join(world.home, 'agy-sessions.json'), deps)

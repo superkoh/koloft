@@ -18,7 +18,12 @@ import {
   annotationFile,
   type SummaryRow
 } from '../../../../src/agents/agy/main/agyStore'
-import type { AgyMachineLaunch, RemoteAgyConfig } from '../../../../src/agents/agy/main/agyTab'
+import type {
+  AgyMachineLaunch,
+  AgyMachinePlan,
+  RemoteAgyConfig
+} from '../../../../src/agents/agy/main/agyTab'
+import type { Machine } from '../../../../src/main/host/machine'
 import { TAB_TMUX_NAME_SH } from '../../../../src/main/remote/launch'
 import { SessionRuntime } from '../../../../src/core/agent/sessionRuntime'
 import { PROGRAM_STATUS_REPLY } from '../../../../src/main/programStatus'
@@ -28,6 +33,32 @@ import { koloftPrompt } from '../../../../src/plugins/sessions/api'
 import { appendConversation, ownerTyped, writeSummaries } from '../../helpers/agyStore'
 const mocks = vi.hoisted(() => ({ runtime: vi.fn() }))
 vi.mock('../../../../src/main/cliRuntime', () => ({ resolveCliRuntime: mocks.runtime }))
+vi.mock('../../../../src/agents/agy/main/agyMachine', () => ({
+  launchAgy: async (_on: Machine, spec: AgyMachineLaunch): Promise<AgyMachinePlan> => {
+    machine.launches.push(spec)
+    return {
+      attach: machine.attach,
+      tmuxName: spec.resumeId ? `k-${spec.resumeId}` : `m-${spec.tabId}-t`,
+      spawnCwd: home,
+      shell: '/bin/zsh',
+      launchCommand: () => 'ssh devbox',
+      resized: () => undefined
+    }
+  },
+  readAgyConfig: async () => machine.config,
+  agyHeldElsewhere: async () => machine.held,
+  agyConversationTitle: async (_on: Machine, id: string) => {
+    machine.titleReads++
+    return (
+      machine.titles[id] ??
+      (machine.rows as { conversation_id?: string; title?: string }[]).find(
+        (r) => r.conversation_id === id && r.title
+      )?.title
+    )
+  },
+  agyConversations: async () => machine.rows as SummaryRow[],
+  agySend: async () => false
+}))
 
 const A = '3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d'
 const B = '7a2d4e6f-1b3c-4d5e-8f9a-0b1c2d3e4f5a'
@@ -287,38 +318,20 @@ beforeEach(() => {
     projectRules: async () => projectRules,
     gitAccounts: { configEnv: (env) => env, ghWrapper: path.join(tools, 'gh') },
     remote: {
-      machine: () => ({
-        launchAgy: async (spec) => {
-          machine.launches.push(spec)
-          return {
-            attach: machine.attach,
-            tmuxName: spec.resumeId ? `k-${spec.resumeId}` : `m-${spec.tabId}-t`,
-            spawnCwd: home,
-            shell: '/bin/zsh',
-            launchCommand: () => 'ssh devbox',
-            resized: () => undefined
+      machine: () =>
+        ({
+          packageName: () => 'm-test',
+          runScript: async (script: string) =>
+            script === TAB_TMUX_NAME_SH ? machine.tmuxThere : null,
+          tmux: {
+            end: async (name: string) => {
+              machine.ended.push(name)
+              return undefined
+            },
+            endedByKoloft: async (id: string) => machine.ended.includes(`k-${id}`)
           }
-        },
-        readAgyConfig: async () => machine.config,
-        agyHeldElsewhere: async () => machine.held,
-        agyConversationTitle: async (id) => {
-          machine.titleReads++
-          return (
-            machine.titles[id] ??
-            (machine.rows as { conversation_id?: string; title?: string }[]).find(
-              (r) => r.conversation_id === id && r.title
-            )?.title
-          )
-        },
-        agyConversations: async () => machine.rows as SummaryRow[],
-        agySend: async () => false,
-        endTmuxSession: async (name) => {
-          machine.ended.push(name)
-          return undefined
-        },
-        endedByKoloft: async (id) => machine.ended.includes(`k-${id}`),
-        runScript: async (script) => (script === TAB_TMUX_NAME_SH ? machine.tmuxThere : null)
-      }),
+        }) as unknown as Machine,
+      saidWhenTheMachineWantsAPasswordFirst: 'sign in there first',
       hosts: () => ['devbox'],
       keyed: (host, p) => `ssh://${host}${p}`,
       mirrorDir: () => mirror,
@@ -327,8 +340,7 @@ beforeEach(() => {
       connected: () => true,
       nextPull: async () => undefined,
       setupLine: () => undefined,
-      hookSettings: () => undefined,
-      machineName: () => 'm-test'
+      hookSettings: () => undefined
     }
   }
   sessions = new AgySessions(path.join(home, 'agy-sessions.json'), deps)
