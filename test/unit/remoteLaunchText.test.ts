@@ -178,7 +178,7 @@ async function claudeOnThisMac(
   const made = await backend.create({ kind: 'claude', cwd: world.repo, tabId: TAB, ...spec })
   if (!made.ok) throw new Error(`launch refused: ${made.code}`)
   const [tab] = started
-  const given = Object.entries(tab.extraEnv ?? {})
+  const given = Object.entries({ ...tab.extraEnv, ...tab.envSetForThisTab })
     .filter(([, value]) => value !== undefined)
     .sort(([a], [b]) => (a < b ? -1 : 1))
     .map(([key, value]) => `${key}=${value}`)

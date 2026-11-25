@@ -15,6 +15,11 @@ export interface AtTopOfSessionFolder {
   foldersMadeEmptyAhead: readonly string[]
 }
 
+export interface EnvNames {
+  named: readonly string[]
+  startingWith: readonly string[]
+}
+
 export interface NamedModel {
   id: string
   label: string
@@ -59,6 +64,7 @@ export interface AgentManifest {
   trustQuestion: string
   ownLogFolderNames: readonly string[]
   atTopOfSessionFolder: AtTopOfSessionFolder
+  envOfItsSessionThatMisleadsWhatStartsInside: EnvNames
   modelEveryAccountTakes?: string
   normalTaskFamilyEveryAccountHas?: string
   namedModels: readonly NamedModel[]

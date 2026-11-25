@@ -169,15 +169,17 @@ async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<Cla
       KOLOFT_DOCS_PLUGIN: d.docsPlugin(),
       // CC§13
       ...(ownerText ? { KOLOFT_OWNER_TEXT: ownerText } : {}),
-      // CC§12
-      CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1',
-      CLAUDE_CODE_DECSTBM: '1',
       ...(agentPlugin
         ? {
             KOLOFT_AGENT_PLUGIN: agentPlugin,
             KOLOFT_AGENT_PROMPT: prompt
           }
         : {})
+    },
+    envSetForThisTab: {
+      // CC§12
+      CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1',
+      CLAUDE_CODE_DECSTBM: '1'
     }
   }
 }

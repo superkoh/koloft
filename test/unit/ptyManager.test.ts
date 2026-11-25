@@ -104,26 +104,33 @@ describe('PtyManager per-tab environment', () => {
     expect(Object.keys(env).some((k) => k.startsWith('ANTIGRAVITY_'))).toBe(false)
   })
 
-  it('keeps the hook log and notice a local Antigravity launch passes, while stripping inherited ones when a remote tab starts without processEnv', () => {
+  it('keeps the hook log and notice a launch sets for its own tab, and strips the same names when they are only given to it, as a remote tab starting without its own is', () => {
     const mgr = new PtyManager()
     const envOf = (args: Parameters<PtyManager['create']>[0]): Record<string, string> => {
       mocks.spawn.mockClear()
       mgr.create(args)
       return spawnedEnv()
     }
-    const localAgy = envOf({
+    const ownVariables = { KOLOFT_AGY_LOG: '/tab/agy.jsonl', KOLOFT_NOTICE: '/tab/pty-1.notice' }
+    const setForItself = envOf({
       kind: 'agy',
       koloftShim: false,
       cwd: os.tmpdir(),
-      processEnv: {
-        PATH: '/usr/bin:/bin',
-        KOLOFT_AGY_LOG: '/tab/agy.jsonl',
-        KOLOFT_NOTICE: '/tab/pty-1.notice'
-      }
+      processEnv: { PATH: '/usr/bin:/bin' },
+      envSetForThisTab: ownVariables
     })
-    expect(localAgy.KOLOFT_AGY_LOG).toBe('/tab/agy.jsonl')
-    expect(localAgy.KOLOFT_NOTICE).toBe('/tab/pty-1.notice')
-    expect(localAgy.ANTIGRAVITY_CONVERSATION_ID).toBeUndefined()
+    expect(setForItself.KOLOFT_AGY_LOG).toBe('/tab/agy.jsonl')
+    expect(setForItself.KOLOFT_NOTICE).toBe('/tab/pty-1.notice')
+    expect(setForItself.ANTIGRAVITY_CONVERSATION_ID).toBeUndefined()
+
+    const onlyGiven = envOf({
+      kind: 'agy',
+      koloftShim: false,
+      cwd: os.tmpdir(),
+      processEnv: { PATH: '/usr/bin:/bin', ...ownVariables }
+    })
+    expect(onlyGiven.KOLOFT_AGY_LOG).toBeUndefined()
+    expect(onlyGiven.KOLOFT_NOTICE).toBeUndefined()
 
     const remoteAgy = envOf({ kind: 'agy', koloftShim: SHIM, cwd: os.tmpdir() })
     expect(remoteAgy.KOLOFT_AGY_LOG).toBeUndefined()
@@ -151,7 +158,7 @@ describe('PtyManager per-tab environment', () => {
         kind: 'claude',
         koloftShim: SHIM,
         cwd: os.tmpdir(),
-        extraEnv: { CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1', CLAUDE_CODE_DECSTBM: '1' }
+        envSetForThisTab: { CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1', CLAUDE_CODE_DECSTBM: '1' }
       })
       expect(spawnedEnv().CLAUDE_CODE_FORCE_SYNC_OUTPUT).toBe('1')
       expect(spawnedEnv().CLAUDE_CODE_DECSTBM).toBe('1')
