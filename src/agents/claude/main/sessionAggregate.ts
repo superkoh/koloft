@@ -255,22 +255,6 @@ export function aggregateSessions(buckets: Bucket[], deps: AggregateDeps): Backe
   return [...rows.values()].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
 }
 
-export function filterOwned<R extends BackendSessionRow>(
-  rows: R[],
-  owned: ReadonlySet<string>,
-  running: ReadonlySet<string>
-): R[] {
-  return rows.filter((r) => owned.has(r.id) || running.has(r.id))
-}
-
-export function hasHistory(
-  rows: BackendSessionRow[],
-  owned: ReadonlySet<string>,
-  running: ReadonlySet<string>
-): boolean {
-  return rows.some((r) => !owned.has(r.id) && !running.has(r.id))
-}
-
 export interface PendingLaunch {
   tabId: string
   cwd: string

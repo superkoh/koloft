@@ -105,11 +105,14 @@ async function holdNextRescan(
 ): Promise<() => void> {
   let release!: () => void
   const held = new Promise<void>((r) => (release = r))
-  const internals = mgr as unknown as Record<typeof at, (...a: unknown[]) => Promise<unknown>> & {
+  type Internals = Record<typeof at, (...a: unknown[]) => Promise<unknown>>
+  const internals = mgr as unknown as Internals & {
     rescan(): Promise<void>
+    claude: Internals
   }
-  const real = internals[at].bind(mgr)
-  const spy = vi.spyOn(internals, at).mockImplementationOnce(async (...a) => {
+  const holder = at === 'listJsonlIds' ? internals.claude : internals
+  const real = holder[at].bind(holder)
+  const spy = vi.spyOn(holder, at).mockImplementationOnce(async (...a) => {
     await held
     return real(...a)
   })
