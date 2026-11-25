@@ -349,7 +349,8 @@ import { within } from '@core/within'
 import { clicksTheMouse, pressesAKey, typeKeys } from '@core/typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import { sleep } from '@core/sleep'
-import { mcpServersIn, ownersClaudePlaywrightMcp } from './mcpServers'
+import { mcpServersIn } from './mcpServers'
+import { ownersClaudePlaywrightMcp } from '@agents/claude/main/claudeCatalog'
 import type { McpServer } from '@shared/types'
 import {
   LIVE_REGISTRY_ON_A_MACHINE_SH,

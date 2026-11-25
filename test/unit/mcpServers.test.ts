@@ -2,15 +2,10 @@ import { describe, it, expect } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import {
-  claudePlaywrightServers,
-  claudeServers,
-  codexServers,
-  foldersUpToRepoTop,
-  foldersUpToRoot,
-  jsonServers,
-  mcpServersIn
-} from '../../src/main/mcpServers'
+import { foldersUpToRoot, jsonServers, mcpServersIn } from '../../src/main/mcpServers'
+import { claudePlaywrightServers, claudeServers } from '../../src/agents/claude/main/claudeCatalog'
+import { codexServers } from '../../src/agents/codex/main/codexCatalog'
+import { foldersUpToRepoTop } from '../../src/agents/agy/main/agyCatalog'
 
 describe('the MCP servers koloft todo lists for the workspaces on this Mac', () => {
   // CC§22 AGY§30 CODEX§15
