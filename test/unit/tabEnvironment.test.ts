@@ -67,7 +67,6 @@ vi.mock('../../src/agents/codex/main/codexTransport', async (importOriginal) => 
 
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { codexEnvironment } from '../../src/agents/codex/main/codexTransport'
-import { BackgroundFile } from '../../src/main/backgroundFile'
 import { PtyManager } from '../../src/main/ptyManager'
 import {
   agySessionsIn,
@@ -183,9 +182,8 @@ beforeEach(() => {
 
 afterEach(async () => {
   for (const stop of stops) await stop()
-  await BackgroundFile.whenAllWritten()
   loginShellOfWhoeverRunsTheTests.mockRestore()
-  world.gone()
+  await world.gone()
 })
 
 function nothingButThis(env: NodeJS.ProcessEnv): void {

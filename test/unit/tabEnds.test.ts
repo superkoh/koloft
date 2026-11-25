@@ -61,7 +61,6 @@ import { SessionBackends } from '../../src/core/agent/sessionBackends'
 import { SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import { SessionRuntime } from '../../src/core/agent/sessionRuntime'
 import { TAB_TORN_DOWN, type Moment, type TabEnded } from '../../src/core/moment'
-import { BackgroundFile } from '../../src/main/backgroundFile'
 import { TabLifecycle, subscribeTabSubsystems } from '../../src/plugins/sessions/main/tabLifecycle'
 import {
   agySessionsIn,
@@ -116,9 +115,8 @@ beforeEach(() => {
 async function theWorldEnds(): Promise<void> {
   try {
     for (const stop of stops) await stop()
-    await BackgroundFile.whenAllWritten()
   } finally {
-    world.gone()
+    await world.gone()
   }
 }
 
