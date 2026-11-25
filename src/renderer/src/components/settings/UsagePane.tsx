@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import type { BackendId, UsageRead } from '@shared/types'
 import { BACKEND_PRODUCT, SESSION_BACKENDS, shortProductList } from '@shared/sessionBackend'
 import { isRemoteKey } from '@shared/remoteKey'
+import { agentUi } from '@agents/uis'
 import { basename } from '@shared/preview'
 import { formatCost, formatTokens, localDayKey } from '@shared/usageFormat'
 import {
@@ -33,11 +34,6 @@ const GROUPS: { id: UsageGroup; label: string; title: string }[] = [
   { id: 'model', label: 'Model', title: 'By model' }
 ]
 
-const BADGE: Record<Exclude<BackendId, 'claude'>, string> = {
-  codex: 'CODEX',
-  agy: 'ANTIGRAVITY'
-}
-
 const GRID_STEPS = [0, 0.25, 0.5, 0.75]
 const TIP_FLIPS_PAST = 0.6
 const NO_PRICE_TITLE = 'No price for this model yet'
@@ -56,14 +52,16 @@ function niceMax(max: number): number {
 function Badges({ backends, ssh }: { backends: BackendId[]; ssh: boolean }): JSX.Element {
   return (
     <>
-      {backends.map(
-        (b) =>
-          b !== 'claude' && (
+      {backends.map((b) => {
+        const badge = agentUi(b).usage.costBadge
+        return (
+          badge && (
             <span key={b} className={`acct-badge ${b}`}>
-              {BADGE[b]}
+              {badge}
             </span>
           )
-      )}
+        )
+      })}
       {ssh && <span className="acct-badge ssh">SSH</span>}
     </>
   )

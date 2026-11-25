@@ -46,7 +46,6 @@ const api: KoloftApi = {
   isDev: ipcRenderer.sendSync(CH.app.isDev) as boolean,
   domRenderer: process.env.KOLOFT_DOM_RENDERER === '1',
   testMode: process.env.KOLOFT_TEST_BACKGROUND === '1',
-  usageFromShape: process.env.KOLOFT_TEST_USAGE_FROM_SHAPE === '1',
   home: ipcRenderer.sendSync(CH.app.home) as string,
   app: {
     onQuitRequested: (cb) => {

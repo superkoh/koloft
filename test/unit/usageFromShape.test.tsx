@@ -23,7 +23,6 @@ function anyApi(): unknown {
 }
 
 let shown: AccountView[] = []
-let fromShape = false
 let answerReset: () => Promise<string> = () => Promise.resolve('reset')
 let pushAccounts: (next: AccountView[]) => void = () => {}
 const accounts = {
@@ -41,8 +40,7 @@ const rest = anyApi() as Record<string, unknown>
 ;(window as unknown as { api: unknown }).api = new Proxy(
   {},
   {
-    get: (_t, k) =>
-      k === 'accounts' ? accounts : k === 'usageFromShape' ? fromShape : rest[k as string]
+    get: (_t, k) => (k === 'accounts' ? accounts : rest[k as string])
   }
 )
 
@@ -72,9 +70,8 @@ function withTextPiecesMarked(el: Element | null): string {
   return copy.outerHTML.replaceAll('><', '>\n<')
 }
 
-async function openTopBar(set: AccountView[], shape: boolean): Promise<boolean> {
+async function openTopBar(set: AccountView[]): Promise<boolean> {
   shown = set
-  fromShape = shape
   render(<TopbarUsage />)
   await settle()
   const pill = document.querySelector('button.tbu')
@@ -84,8 +81,8 @@ async function openTopBar(set: AccountView[], shape: boolean): Promise<boolean> 
   return true
 }
 
-async function topBar(set: AccountView[], shape: boolean): Promise<string[]> {
-  const open = await openTopBar(set, shape)
+async function topBar(set: AccountView[]): Promise<string[]> {
+  const open = await openTopBar(set)
   const out = open
     ? [
         '== the pill',
@@ -117,13 +114,8 @@ function rowAt(index: number): Element | null {
   return document.querySelectorAll('.tbu-pop .tbu-row')[index] ?? null
 }
 
-async function resetFlow(
-  set: AccountView[],
-  shape: boolean,
-  offered: number,
-  outcome: string
-): Promise<string[]> {
-  await openTopBar(set, shape)
+async function resetFlow(set: AccountView[], offered: number, outcome: string): Promise<string[]> {
+  await openTopBar(set)
   let answer: (v: string) => void = () => {}
   answerReset = () => new Promise<string>((r) => (answer = r))
   const button = document.querySelectorAll('.tbu-pop button.acct-relogin')[offered]
@@ -145,20 +137,19 @@ async function resetFlow(
   return shots
 }
 
-async function resetFlows(set: AccountView[], shape: boolean): Promise<string[]> {
-  const offered = (await openTopBar(set, shape))
+async function resetFlows(set: AccountView[]): Promise<string[]> {
+  const offered = (await openTopBar(set))
     ? document.querySelectorAll('.tbu-pop button.acct-relogin').length
     : 0
   cleanup()
   const shots: string[] = []
   for (let row = 0; row < offered; row++)
-    for (const outcome of OUTCOMES) shots.push(...(await resetFlow(set, shape, row, outcome)))
+    for (const outcome of OUTCOMES) shots.push(...(await resetFlow(set, row, outcome)))
   return shots
 }
 
-async function accountRows(set: AccountView[], shape: boolean): Promise<string[]> {
+async function accountRows(set: AccountView[]): Promise<string[]> {
   shown = set
-  fromShape = shape
   const { container } = render(<AccountsPane />)
   await settle()
   const rows = [...container.querySelectorAll('.acct-row')].map(withTextPiecesMarked)
@@ -166,26 +157,22 @@ async function accountRows(set: AccountView[], shape: boolean): Promise<string[]
   return ['== account rows on the accounts page', ...rows]
 }
 
-async function drawn(set: AccountView[], shape: boolean): Promise<string> {
+async function drawn(set: AccountView[]): Promise<string> {
   return (
-    [
-      ...(await topBar(set, shape)),
-      ...(await accountRows(set, shape)),
-      ...(await resetFlows(set, shape))
-    ].join('\n') + '\n'
+    [...(await topBar(set)), ...(await accountRows(set)), ...(await resetFlows(set))].join('\n') +
+    '\n'
   )
 }
 
-describe('usage drawn from each agent’s shape is the page pinned from the drawing it replaces', () => {
+describe('usage drawn from each agent’s shape is the page pinned from the drawing it replaced', () => {
   for (const [name, set] of Object.entries(ACCOUNT_SETS)) {
     it(`top bar pill and panel, account rows, every answer to a saved reset: ${name}`, async () => {
-      await expect(await drawn(set, false)).toMatchFileSnapshot(`${PINNED}/${name}.txt`)
-      await expect(await drawn(set, true)).toMatchFileSnapshot(`${PINNED}/${name}.txt`)
+      await expect(await drawn(set)).toMatchFileSnapshot(`${PINNED}/${name}.txt`)
     })
   }
 
   it('the sets reach every state the pinned pages are meant to cover', async () => {
-    await openTopBar(ACCOUNT_SETS.everyAgent, false)
+    await openTopBar(ACCOUNT_SETS.everyAgent)
     const pop = document.querySelector('.tbu-pop')!.outerHTML
     for (const seen of [
       'no 5-hour limit',
@@ -200,7 +187,7 @@ describe('usage drawn from each agent’s shape is the page pinned from the draw
     ])
       expect(pop).toContain(seen)
     cleanup()
-    expect((await topBar(ACCOUNT_SETS.claudeFallback, false)).join('')).toContain(
+    expect((await topBar(ACCOUNT_SETS.claudeFallback)).join('')).toContain(
       'metered fallback active'
     )
   })

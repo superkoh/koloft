@@ -157,4 +157,4 @@ function group(accounts: readonly AccountView[], nowMs: number): UsageGroup {
   }
 }
 
-export const usage: AgentUsageUi = { account, group }
+export const usage: AgentUsageUi = { account, group, costBadge: 'CODEX' }
