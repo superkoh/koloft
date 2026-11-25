@@ -89,6 +89,10 @@ delivered: true
 ssh -W wrote: "ssh -o RemoteCommand=none -o RequestTTY=no -o ControlMaster=auto -o ControlPath=<home>/ssh-control/%C -o ControlPersist=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o BatchMode=yes -W /home/me/.claude/sockets/target.sock devbox\n{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"bypass\\\">\\n(From Koloft:) Could not deliver to Target. <where the owner is>\\n(Koloft message koloft-notice-1)\\n</cross-session-message>\"}}\n"
 noted on the machine: script 1 with set -- 'pty-target' 'koloft-notice-1'
 
+=== Koloft's own notice, holding </cross-session-message> ===
+delivered: false
+told to the sender later: to Target: the message cannot hold the text </cross-session-message>.
+
 === script 1, as run on the machine ===
 sh -c 'echo koloft-answer-starts-here; eval "$(printf %s "$0" | base64 -d)"'
 export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"

@@ -1,7 +1,8 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, onTestFinished } from 'vitest'
+import { BackgroundFile } from '../../src/main/backgroundFile'
 import {
   OpenTabsFile,
   openTabsNow,
@@ -36,16 +37,25 @@ describe('restorePlan: which saved tabs come back running and which come back as
   })
 })
 
+const tempDir = (): string => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-open-tabs-'))
+  onTestFinished(async () => {
+    await BackgroundFile.whenAllWritten()
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+  return dir
+}
+
 describe('the open-tabs file', () => {
   it('a missing or broken file restores nothing', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-open-tabs-'))
+    const dir = tempDir()
     expect(readOpenTabs(path.join(dir, 'none.json'))).toEqual({ tabs: [] })
     fs.writeFileSync(path.join(dir, 'broken.json'), '{"tabs": [')
     expect(readOpenTabs(path.join(dir, 'broken.json'))).toEqual({ tabs: [] })
   })
 
   it('reads back what was written: running tabs, sleepers and the selected one', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-open-tabs-'))
+    const dir = tempDir()
     const file = path.join(dir, 'open-tabs.json')
     const state = openTabsNow([tab('a'), tab('m', { kind: 'agy' })], [tab('b')], 'b')
     const onDisk = new OpenTabsFile(file, { tabs: [] })
