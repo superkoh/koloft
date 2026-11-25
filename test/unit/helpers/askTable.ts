@@ -775,7 +775,9 @@ async function raiseAgy(kind: Kind, ask: AgyAsk): Promise<Raised> {
     raw.push(`PreToolUse hook input: ${JSON.stringify(input)}`)
     const log = tabEnv().KOLOFT_AGY_LOG!
     const size = fs.statSync(log).size
-    await vi.waitFor(() => expect(sessions['runs'].get(tab)?.log['offset']).toBe(size))
+    await vi.waitFor(() => expect(sessions['runs'].get(tab)?.log['offset']).toBe(size), {
+      timeout: AN_AGENT_UNDER_LOAD_IS_READ_WITHIN_MS
+    })
   }
   if (ask.plan !== undefined)
     raw.push(`brain/<conversation>/plan.md, waiting for review: ${JSON.stringify(ask.plan)}`)
