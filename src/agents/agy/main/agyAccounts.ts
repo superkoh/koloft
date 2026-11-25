@@ -485,7 +485,11 @@ export function agyHomeAccounts(deps: AgyHomeAccountsDeps) {
     agyProbeRound ??= Promise.all(
       listAccounts()
         .filter((a) => a.kind === 'agy-home' && a.enabled)
-        .map((a) => probeAgyAccount(a.name))
+        .map((a) =>
+          probeAgyAccount(a.name).catch((err) =>
+            console.error(`[koloft] could not probe the Antigravity account ${a.name}:`, err)
+          )
+        )
     ).then(() => {
       agyProbeRound = null
     })
