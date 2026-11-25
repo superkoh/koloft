@@ -52,6 +52,15 @@ export interface AgentPureFunctions {
   effortsAModelTakes(model: string | undefined): readonly CronEffort[]
 }
 
+export interface AccountKindFacts {
+  id: string
+  keychainServiceSuffix: string
+  isASignInFolder: boolean
+  signsInThroughABrowser: boolean
+  storesAPastedKeyItself: boolean
+  takesAnEndpoint: boolean
+}
+
 export interface AgentManifest {
   id: string
   name: string
@@ -75,4 +84,5 @@ export interface AgentManifest {
   slotAdditions: Readonly<Record<string, string>>
   flags: AgentFlags
   pureFunctions: AgentPureFunctions
+  accountKinds: readonly AccountKindFacts[]
 }

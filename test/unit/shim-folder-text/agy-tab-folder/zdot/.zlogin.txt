@@ -1,0 +1,6 @@
+koloft_found_zdotdir="${ZDOTDIR-}"
+if [ -n "$koloft_user_zdotdir" ]; then ZDOTDIR="$koloft_user_zdotdir"; else unset ZDOTDIR; fi
+[ -f "${ZDOTDIR:-$HOME}/.zlogin" ] && . "${ZDOTDIR:-$HOME}/.zlogin"
+koloft_user_zdotdir="${ZDOTDIR-}"
+export ZDOTDIR="$koloft_found_zdotdir"
+if [ "$ZDOTDIR" = '<userData>/agy-open/<pid>-<uuid>/zdot' ]; then path=('<userData>/agy-open/<pid>-<uuid>' ${path:#'<userData>/agy-open/<pid>-<uuid>'}); fi

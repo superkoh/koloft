@@ -304,6 +304,7 @@ import {
   isHttpUrl,
   keychainNamespace,
   keepsSecretInKeychain,
+  takesAnEndpoint,
   BACKEND_OF_SIGN_IN_FOLDER,
   isSignInFolderKind,
   type SignInFolderKind,
@@ -2637,7 +2638,7 @@ async function addAccount(
   if (isSignInFolderKind(kind)) return addHomeKey(kind, name, trimmed)
   const baseUrl = endpoint?.baseUrl?.trim()
   const model = endpoint?.model?.trim() || undefined
-  if (kind === 'custom' && !isHttpUrl(baseUrl)) return { ok: false, error: 'invalid-endpoint' }
+  if (takesAnEndpoint(kind) && !isHttpUrl(baseUrl)) return { ok: false, error: 'invalid-endpoint' }
   if (!(await keychainWrite(kind, name, trimmed))) return { ok: false, error: 'unknown' }
   const result = await probeAccount(kind, trimmed, {
     timeoutMs: ACCOUNT_PROBE_TIMEOUT_MS,
@@ -2651,7 +2652,7 @@ async function addAccount(
     fable: result.ok && result.fable ? result.fable : 'unknown',
     status: result.ok ? 'ok' : 'unverified',
     addedAt: Date.now(),
-    ...(kind === 'custom' ? { baseUrl, model } : {})
+    ...(takesAnEndpoint(kind) ? { baseUrl, model } : {})
   }
   upsertAccountMeta(meta)
   if (result.ok && result.fable) recordFableCapability(name, kind, result.fable)
