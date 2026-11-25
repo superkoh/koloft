@@ -86,27 +86,35 @@ function barsOf(u: UsageSnapshot, nowMs: number): UsageBar[] {
   ]
 }
 
-function endpointLine(a: AccountView): string {
-  return `${a.baseUrl}${a.model ? ` · ${a.model}` : ''} · ${ONLY_WHEN_WALLED}`
+function endpointLine(a: AccountView): string[] {
+  return [a.baseUrl ?? '', a.model ? ` · ${a.model}` : '']
 }
 
 function notProbed(a: AccountView): string {
   return a.probeError ? probeErrorLabel(a.probeError) : 'Not probed yet'
 }
 
+function say(instead: string): UsageBody {
+  return { instead: [instead], after: [] }
+}
+
 function paneOf(a: AccountView, nowMs: number): UsageBody {
   const u = a.usage
-  if (a.kind === 'custom') return { instead: `${endpointLine(a)} (switches model)`, after: [] }
-  if (a.kind === 'apikey') return { instead: METERED_NOTE, after: [] }
-  if (!u) return { instead: notProbed(a), after: [] }
+  if (a.kind === 'custom')
+    return {
+      instead: [...endpointLine(a), ` · ${ONLY_WHEN_WALLED} (switches model)`],
+      after: []
+    }
+  if (a.kind === 'apikey') return say(METERED_NOTE)
+  if (!u) return say(notProbed(a))
   // CC§7
-  return { instead: null, after: u.r5 > 0 ? [`5h resets ${resetLabel(u.r5, nowMs)}`] : [] }
+  return { instead: null, after: u.r5 > 0 ? [['5h resets ', resetLabel(u.r5, nowMs)]] : [] }
 }
 
 function topBarOf(a: AccountView): UsageBody {
-  const say = (instead: string): UsageBody => ({ instead, after: [] })
   if (a.kind === 'apikey') return say(METERED_NOTE)
-  if (a.kind === 'custom') return say(endpointLine(a))
+  if (a.kind === 'custom')
+    return { instead: [...endpointLine(a), ` · ${ONLY_WHEN_WALLED}`], after: [] }
   if (a.status !== 'ok')
     return say(
       a.status === 'expired'

@@ -11,6 +11,7 @@ import type {
   UsageBar,
   UsageColumn,
   UsageGroup,
+  UsageText,
   UsageTotal
 } from '@core/agent/usageShape'
 import { AGENT_UIS } from '@agents/uis'
@@ -288,31 +289,45 @@ function Bars({
   after
 }: {
   bars: UsageBar[]
-  instead?: string | null
-  after: string[]
+  instead?: UsageText | null
+  after: UsageText[]
 }): JSX.Element {
   return (
     <div className="acct-meters">
       {instead !== null ? (
-        <span className="acct-note">{instead}</span>
+        <span className="acct-note">
+          <Pieces text={instead} />
+        </span>
       ) : (
         bars.map((b) => (
           <MeterBar key={b.label} label={b.label} v={b.used} win={b.column} level={b.closeness} />
         ))
       )}
-      {after.map((n) => (
-        <span key={n} className="acct-note">
-          {n}
+      {after.map((n, i) => (
+        <span key={i} className="acct-note">
+          <Pieces text={n} />
         </span>
       ))}
     </div>
   )
 }
 
-function RowNote({ text }: { text: string }): JSX.Element {
+function Pieces({ text }: { text: UsageText }): JSX.Element {
+  return (
+    <>
+      {text.map((piece, i) => (
+        <Fragment key={i}>{piece}</Fragment>
+      ))}
+    </>
+  )
+}
+
+function RowNote({ text }: { text: UsageText }): JSX.Element {
   return (
     <div className="tbu-row-note">
-      <span className="acct-note">{text}</span>
+      <span className="acct-note">
+        <Pieces text={text} />
+      </span>
     </div>
   )
 }
@@ -388,7 +403,7 @@ function TopBarRow({
       ) : (
         <Bars bars={u.bars} after={u.topBar.after} />
       )}
-      {lined && u.topBar.after.map((n) => <RowNote key={n} text={n} />)}
+      {lined && u.topBar.after.map((n, i) => <RowNote key={i} text={n} />)}
       {confirm && (
         <div className="acct-confirm">
           {'said' in confirm ? (
@@ -402,7 +417,7 @@ function TopBarRow({
             asked && (
               <>
                 <span>
-                  {asked.ask.before}
+                  <Pieces text={asked.ask.before} />
                   <b>{asked.ask.name}</b>
                   {asked.ask.after}
                 </span>

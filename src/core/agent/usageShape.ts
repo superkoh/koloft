@@ -27,19 +27,21 @@ export interface UsageBadge {
   title: string | null
 }
 
+export type UsageText = readonly string[]
+
 export interface UsageAction {
   id: string
   offered: boolean
   label: string
-  ask: { before: string; name: string; after: string }
+  ask: { before: UsageText; name: string; after: string }
   go: string
   going: string
   outcomes: Readonly<Record<string, string | null>>
 }
 
 export interface UsageBody {
-  instead: string | null
-  after: string[]
+  instead: UsageText | null
+  after: UsageText[]
 }
 
 export interface PillLayers {

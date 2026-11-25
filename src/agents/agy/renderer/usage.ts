@@ -1,7 +1,13 @@
 import type { AccountView, QuotaBucket } from '@shared/types'
 import { METERED_NOTE, meterLevel } from '@shared/accountUsage'
 import { probeErrorLabel, resetLabel } from '@shared/usageWords'
-import type { AgentUsageUi, UsageAccount, UsageBody, UsageGroup } from '@core/agent/usageShape'
+import type {
+  AgentUsageUi,
+  UsageAccount,
+  UsageBody,
+  UsageGroup,
+  UsageText
+} from '@core/agent/usageShape'
 import { API_KEY_BADGE, NO_LINE, pillSpoken } from '@agents/kit/shared/usage'
 import { agent } from '../agent'
 
@@ -9,9 +15,9 @@ function heaviest(quota: readonly QuotaBucket[]): number {
   return Math.max(0, ...quota.map((q) => q.used))
 }
 
-function firstResets(quota: readonly QuotaBucket[], nowMs: number): string[] {
+function firstResets(quota: readonly QuotaBucket[], nowMs: number): UsageText[] {
   const first = quota[0]
-  return first?.resetsAt ? [`${first.label} resets ${resetLabel(first.resetsAt, nowMs)}`] : []
+  return first?.resetsAt ? [[first.label, ' resets ', resetLabel(first.resetsAt, nowMs)]] : []
 }
 
 function paneOf(a: AccountView, nowMs: number): UsageBody {
@@ -25,13 +31,13 @@ function paneOf(a: AccountView, nowMs: number): UsageBody {
         : a.probeError
           ? probeErrorLabel(a.probeError)
           : 'Signed in'
-  return { instead, after: [] }
+  return { instead: [instead], after: [] }
 }
 
 function topBarOf(a: AccountView, nowMs: number): UsageBody {
   if (a.status !== 'ok')
-    return { instead: 'Not signed in — sign in again from Settings', after: [] }
-  if (a.apiKey) return { instead: METERED_NOTE, after: [] }
+    return { instead: ['Not signed in — sign in again from Settings'], after: [] }
+  if (a.apiKey) return { instead: [METERED_NOTE], after: [] }
   return { instead: null, after: firstResets(a.quota ?? [], nowMs) }
 }
 

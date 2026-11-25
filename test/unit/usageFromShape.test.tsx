@@ -60,8 +60,16 @@ async function settle(): Promise<void> {
   for (let i = 0; i < 3; i++) await act(() => new Promise<void>((r) => setTimeout(r, 0)))
 }
 
+function withTextPiecesMarked(el: Element): string {
+  const copy = el.cloneNode(true) as Element
+  const walk = document.createTreeWalker(copy, NodeFilter.SHOW_TEXT)
+  for (let n = walk.nextNode(); n; n = walk.nextNode()) n.textContent = `⟨${n.textContent}⟩`
+  return copy.outerHTML
+}
+
 function html(selector: string): string {
-  return document.querySelector(selector)?.outerHTML ?? ''
+  const el = document.querySelector(selector)
+  return el ? withTextPiecesMarked(el) : ''
 }
 
 async function openTopBar(set: AccountView[], shape: boolean): Promise<boolean> {
@@ -127,7 +135,7 @@ async function pane(set: AccountView[], shape: boolean): Promise<string> {
   fromShape = shape
   const { container } = render(<AccountsPane />)
   await settle()
-  const out = container.innerHTML
+  const out = withTextPiecesMarked(container)
   cleanup()
   return out
 }
@@ -161,7 +169,7 @@ describe('usage drawn from each agent’s shape is the same page as the drawing 
 
   it('the sets reach every state the comparison is meant to cover', async () => {
     await openTopBar(ACCOUNT_SETS.everyAgent, false)
-    const pop = html('.tbu-pop')
+    const pop = document.querySelector('.tbu-pop')!.outerHTML
     for (const seen of [
       'no 5-hour limit',
       ' soon"',

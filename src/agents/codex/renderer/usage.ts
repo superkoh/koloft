@@ -16,7 +16,8 @@ import type {
   UsageAction,
   UsageAccount,
   UsageBody,
-  UsageGroup
+  UsageGroup,
+  UsageText
 } from '@core/agent/usageShape'
 import { API_KEY_BADGE, lineUnder, pillSpoken } from '@agents/kit/shared/usage'
 import { agent } from '../agent'
@@ -62,7 +63,7 @@ function resetAction(a: AccountView): UsageAction {
     offered: codexResetOffered(a),
     label: 'Use a reset',
     ask: {
-      before: `Use 1 of ${a.limits?.resets?.available} saved resets on `,
+      before: ['Use 1 of ', String(a.limits?.resets?.available ?? ''), ' saved resets on '],
       name: a.name,
       after: ' now? Its limits start again from 0.'
     },
@@ -72,11 +73,11 @@ function resetAction(a: AccountView): UsageAction {
   }
 }
 
-function insteadOfBars(a: AccountView, signedOut: string): string | null {
-  if (a.status !== 'ok') return signedOut
-  if (a.apiKey && !a.probeError) return METERED_NOTE
+function insteadOfBars(a: AccountView, signedOut: string): UsageText | null {
+  if (a.status !== 'ok') return [signedOut]
+  if (a.apiKey && !a.probeError) return [METERED_NOTE]
   if (a.limits && a.limits.windows.length > 0) return null
-  return a.probeError ? probeErrorLabel(a.probeError) : 'Not probed yet'
+  return [a.probeError ? probeErrorLabel(a.probeError) : 'Not probed yet']
 }
 
 function paneOf(a: AccountView, nowMs: number): UsageBody {
@@ -88,9 +89,9 @@ function paneOf(a: AccountView, nowMs: number): UsageBody {
     instead: insteadOfBars(a, 'Not signed in — use Sign in again'),
     after: [
       ...(ok && first?.resetsAt
-        ? [`${windowLabel(first.minutes)} resets ${resetLabel(first.resetsAt, nowMs)}`]
+        ? [[windowLabel(first.minutes), ' resets', ' ', resetLabel(first.resetsAt, nowMs)]]
         : []),
-      ...(balance ? [balance] : [])
+      ...(balance ? [[balance]] : [])
     ]
   }
 }
@@ -99,7 +100,7 @@ function topBarOf(a: AccountView, nowMs: number): UsageBody {
   const balance = a.status === 'ok' && a.limits ? balanceLabel(a.limits, nowMs) : ''
   return {
     instead: insteadOfBars(a, 'Not signed in — sign in again from Settings'),
-    after: balance ? [balance] : []
+    after: balance ? [[balance]] : []
   }
 }
 
