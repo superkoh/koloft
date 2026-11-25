@@ -1,13 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import { claudeAskLine, storedAskLine } from '../../src/main/rowActivity'
+import { claudeToolDid } from '../../src/agents/claude/main/claudeToolDid'
 import {
-  agyToolDid,
-  claudeAskLine,
-  claudeToolDid,
   codexEditTarget,
   codexItemDid,
-  codexTaskName,
-  storedAskLine
-} from '../../src/main/rowActivity'
+  codexTaskName
+} from '../../src/agents/codex/main/codexItemDid'
+import { agyToolDid } from '../../src/agents/agy/main/agyToolDid'
 
 const LONG = 'x'.repeat(250)
 const KEPT = 'x'.repeat(200)
