@@ -319,13 +319,18 @@ export function oneShotAgyHome(
   const dir = fs.mkdtempSync(path.join(tmpRoot, 'agy-'))
   const token = agyTokenFile(home)
   const copy = agyTokenFile(dir)
-  fs.mkdirSync(path.dirname(copy), { recursive: true, mode: 0o700 })
   let before: string | undefined
-  if (!apiKey && fs.existsSync(token)) {
-    before = fs.readFileSync(token, 'utf8')
-    fs.writeFileSync(copy, before, { mode: 0o600 })
+  try {
+    fs.mkdirSync(path.dirname(copy), { recursive: true, mode: 0o700 })
+    if (!apiKey && fs.existsSync(token)) {
+      before = fs.readFileSync(token, 'utf8')
+      fs.writeFileSync(copy, before, { mode: 0o600 })
+    }
+    if (apiKey) writeAgyJson(settingsFile(dir), { modelProvider: 'gemini' })
+  } catch (err) {
+    endAgyOneShots(dir)
+    throw err
   }
-  if (apiKey) writeAgyJson(settingsFile(dir), { modelProvider: 'gemini' })
   return {
     dir,
     done: () => {
@@ -338,6 +343,15 @@ export function oneShotAgyHome(
       } catch {}
       fs.rm(dir, { recursive: true, force: true }, () => {})
     }
+  }
+}
+
+// AGY§6
+export function endAgyOneShots(tmpRoot: string): void {
+  try {
+    fs.rmSync(tmpRoot, { recursive: true, force: true })
+  } catch (err) {
+    console.error('[koloft] could not remove the Antigravity one-shot folders:', err)
   }
 }
 
