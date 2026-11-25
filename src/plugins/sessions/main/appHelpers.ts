@@ -27,10 +27,12 @@ export {
 } from './hooks'
 export { resolveWorkspace } from './placedRows'
 export {
+  anotherSessionIn,
   closingTree,
   leftText,
   machineUnreachable,
   removeTree,
+  stillOpenIn,
   tidyTree,
   whatIsLeft
 } from './sessionClose'

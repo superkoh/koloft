@@ -23,7 +23,7 @@ import {
 } from '@shared/remoteKey'
 import { hasUsableAccount } from '@shared/accountUsage'
 import type { Turn } from '@shared/turns'
-import { isValidWorktreeName } from '@shared/worktreeName'
+import { isValidWorktreeName, SESSION_WORKTREES_FOLDER } from '@shared/worktreeName'
 import type {
   HandOverLaunch,
   MessageToSend,
@@ -42,7 +42,12 @@ import {
   type ClaudeMessageDeps,
   type MessageSocketDeps
 } from './messageSocket'
-import { KEEPS_NO_WORKTREE_RECORDS } from '@core/agent/worktreeRecords'
+import {
+  A_FOLDER_BEING_PREPARED,
+  A_NAME_WITH_A_RECOVERY_RECORD,
+  KEEPS_NO_WORKTREE_RECORDS
+} from '@core/agent/worktreeRecords'
+import { projectInfoFor } from '../../../main/projectInfo'
 import {
   A_PASS_WITH_NO_ROWS,
   type RowsPass,
@@ -129,6 +134,12 @@ import {
   type ResumeProbes
 } from '../../../main/resumePlan'
 import type { GitOut } from '@core/worktree'
+import {
+  holdingTheFolder,
+  preparedKeyOf,
+  whenNobodyPrepares,
+  type WorktreesBeingPrepared
+} from '../../../main/worktreesBeingPrepared'
 
 export interface ClaudeBackendDeps {
   pty: PtyManager
@@ -151,6 +162,7 @@ export interface ClaudeBackendDeps {
   playwrightMcp(cwd: string): Promise<string[]>
   ptysChanged(): void
   resumeProbes: ResumeProbes
+  worktreesBeingPrepared: WorktreesBeingPrepared
   events(tabId: string, event: SessionEvent): void
   messaged(tabId: string, fromSessionId: string): void
   error(message: string): void
@@ -1028,6 +1040,7 @@ export class ClaudeBackend implements SessionBackend {
   async create(opts: CreateTabOptions): Promise<CreateTabResult> {
     const asked = typeof opts.cwd === 'string' ? opts.cwd : ''
     const root = hostOf(asked) === 'ssh' ? asked : (this.homeOf(opts.resumeSessionId) ?? asked)
+    if (opts.worktree) await this.refuseANameAnotherAgentHolds(root, opts.worktree)
     return this.createTab({
       tabId: opts.tabId,
       root,
@@ -1077,17 +1090,31 @@ export class ClaudeBackend implements SessionBackend {
         return { ok: false, code: 'invalid-args' }
       }
       worktree = req.worktree
+      await this.refuseANameAnotherAgentHolds(cwd, worktree)
     }
-    const rebuildable = !home || !!this.d.store()?.findRow(sid)?.worktreeState
+    const bound = this.d.store()?.findRow(sid)?.worktreeState
+    const rebuildable = !home || !!bound
+    const { worktreesBeingPrepared } = this.d
+    await whenNobodyPrepares(
+      worktreesBeingPrepared,
+      preparedKeyOf(host.keyed(bound?.worktreePath ?? cwd))
+    )
     if (await rebuildsTheWorktree(req.mode, async () => !rebuildable || host.dirExists(cwd))) {
       const plan = home
         ? await this.machineResumePlan(host, sid)
         : await this.localWorktreePlan(sid)
       if (plan.action === 'rebuild') {
+        const tree = host.keyed(plan.worktreePath)
         if (
           !GIT_REF_RE.test(plan.branch) ||
           !GIT_REF_RE.test(plan.baseRef) ||
-          !(await rebuildWorktree(plan, host, this.d.hosts.machineOf(home ?? asked)))
+          !(await holdingTheFolder(
+            worktreesBeingPrepared,
+            preparedKeyOf(tree),
+            async () =>
+              (await host.dirExists(tree)) ||
+              rebuildWorktree(plan, host, this.d.hosts.machineOf(home ?? asked))
+          ))
         ) {
           return { ok: false, code: 'rebuild-failed' }
         }
@@ -1119,6 +1146,23 @@ export class ClaudeBackend implements SessionBackend {
       effort: req.effort
     })
     return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
+  }
+
+  private async refuseANameAnotherAgentHolds(where: string, name: string): Promise<void> {
+    const root = isRemoteKey(where) ? await this.mainCheckoutOn(where) : projectInfoFor(where).root
+    const tree = `${root}/${SESSION_WORKTREES_FOLDER}/${name}`
+    if (this.d.resumeProbes.recorded?.(tree)) throw new Error(A_NAME_WITH_A_RECOVERY_RECORD)
+    if (this.d.worktreesBeingPrepared.has(preparedKeyOf(tree)))
+      throw new Error(A_FOLDER_BEING_PREPARED)
+  }
+
+  private async mainCheckoutOn(where: string): Promise<string> {
+    const host = this.d.hosts.of(where)
+    const listed = await host.gitOut(where, ['worktree', 'list', '--porcelain'])
+    const first = listed?.split('\n')[0]
+    return first?.startsWith('worktree ')
+      ? host.keyed(first.slice('worktree '.length))
+      : where.split(`/${SESSION_WORKTREES_FOLDER}/`)[0]
   }
 
   resumePlan(key: string): Promise<ResumePlan> {
