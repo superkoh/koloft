@@ -6,11 +6,8 @@ import { shq } from '@shared/shellQuote'
 import { portOffset } from '@shared/worktreeName'
 import { pictureFolderIn } from '@shared/pastedPictures'
 import { aboveItsTools } from '../../../main/agentLift'
-import {
-  AGENT_PROMPT_FILE,
-  claudeProjectPrompt,
-  projectPromptFile
-} from '../../../main/agentPlugin'
+import { claudeProjectPrompt, projectPromptFile } from '../../../main/agentPlugin'
+import { AGENT_PROMPT_FILE } from '../../../main/agentPromptFile'
 import type { RemoteTab } from '../../../main/host/host'
 import type { Machine, TabProgram } from '../../../main/host/machine'
 import { ownerTextOver, type LaunchIdentity } from '../../../main/launchPrompt'
