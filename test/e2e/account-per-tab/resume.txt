@@ -1,9 +1,12 @@
 === Claude Code over SSH, restarted ===
   started on made-up-left
   resumed on made-up-left, its line resumes the session
+  a new session right after starts on made-up-right
 === Codex on this Mac, restarted ===
   started on made-up-left
   resumed on made-up-left
+  a new session right after starts on made-up-right
 === Antigravity on this Mac, after Koloft only asked once whether an account trusts a folder; restarted ===
   started on made-up-left
   resumed on made-up-left
+  a new session right after starts on made-up-right

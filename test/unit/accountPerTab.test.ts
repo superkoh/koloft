@@ -241,19 +241,19 @@ function homeRows(kind: 'codex-home' | 'agy-home', agent: 'codex' | 'agy'): stri
 }
 
 describe('which account each start gets, for every kind of account and each situation — pinned so that moving the pickers into the agents changes no row', () => {
-  it('Claude Code (oauth, apikey, custom), on this Mac and over SSH alike', async () => {
+  it('Claude Code (oauth, apikey, custom) — the pickers alone; the end-to-end spec covers each tab', async () => {
     await expect(['=== Claude Code ===', ...(await claudeRows())].join('\n')).toMatchFileSnapshot(
       `${PINNED}/which-account-claude.txt`
     )
   })
 
-  it('Codex (codex-home), on this Mac and over SSH alike', async () => {
+  it('Codex (codex-home) — the pickers alone; the end-to-end spec covers each tab', async () => {
     await expect(
       ['=== Codex ===', ...homeRows('codex-home', 'codex')].join('\n')
     ).toMatchFileSnapshot(`${PINNED}/which-account-codex.txt`)
   })
 
-  it('Antigravity (agy-home), on this Mac and over SSH alike', async () => {
+  it('Antigravity (agy-home) — the pickers alone; the end-to-end spec covers each tab', async () => {
     await expect(
       ['=== Antigravity ===', ...homeRows('agy-home', 'agy')].join('\n')
     ).toMatchFileSnapshot(`${PINNED}/which-account-agy.txt`)

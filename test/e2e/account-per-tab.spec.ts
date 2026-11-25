@@ -204,9 +204,8 @@ async function afterOneMore<T>(
       )
       .toBeGreaterThan(before)
   } catch (error) {
-    const screen = await centerTerm(page)
-      .innerText()
-      .catch(() => '')
+    const active = await page.locator('.ws .ws-tab.active').getAttribute('data-tab-id')
+    const screen = active ? await terminalText(page, active).catch(() => '') : ''
     throw new Error(
       `${(error as Error).message}\nnotices: ${[...notices].join(' | ')}\nscreen:\n${screen.slice(-1500)}`
     )
@@ -373,7 +372,6 @@ test.describe('which account each kind of tab starts on, with which environment 
       codexAccount(env, 'made-up-codex-key', codexKey('made-up-codex-key')),
       agyKeyAccount(env, 'made-up-gemini-key')
     ])
-    fs.writeFileSync(path.join(env.home, '.zprofile'), `export PATH="${env.fakeBin}:$PATH"\n`)
     const { app, page } = await launchWithRemote(env)
     const t = table(env)
     try {
@@ -418,7 +416,9 @@ test.describe('which account each kind of tab starts on, with which environment 
           )
         )
       }
-      await wsRows(page, HERE).filter({ hasText: 'Fake session' }).click()
+      await wsRows(page, HERE)
+        .filter({ hasText: /^Fake session: project notes/ })
+        .click()
       await openSessionTerminal(app, page)
       const printCalls = (): AgyCall[] =>
         agyCalls(env).filter((c) => c.argv.includes('-p') && c.argv.includes('hello'))
@@ -434,16 +434,20 @@ test.describe('which account each kind of tab starts on, with which environment 
     pin(t.rows, 'keys')
   })
 
-  test('a custom endpoint of Claude Code, with a model of its own and without one — on this Mac and over SSH', async ({
-    env
-  }) => {
-    installCodex(env)
-    seedRemoteWorkspace(env)
-    const proxy = { baseUrl: 'https://llm-proxy.example.test/v1' }
-    for (const [label, extra] of [
-      ['with the model made-up-model-7b', { ...proxy, model: 'made-up-model-7b' }],
-      ['with no model of its own', proxy]
-    ] as const) {
+  const PROXY = { baseUrl: 'https://llm-proxy.example.test/v1' }
+  for (const [label, extra, pinned] of [
+    [
+      'with the model made-up-model-7b',
+      { ...PROXY, model: 'made-up-model-7b' },
+      'custom-endpoint-with-a-model'
+    ],
+    ['with no model of its own', PROXY, 'custom-endpoint-without-a-model']
+  ] as const)
+    test(`a custom endpoint of Claude Code ${label} — on this Mac and over SSH`, async ({
+      env
+    }) => {
+      installCodex(env)
+      seedRemoteWorkspace(env)
       onlyTheseAccounts(env, [
         claudeAccount(env, account('made-up-proxy', 'custom', extra), 'made-up-endpoint-token')
       ])
@@ -464,9 +468,8 @@ test.describe('which account each kind of tab starts on, with which environment 
       } finally {
         await quitAndClose(app)
       }
-      pin(t.rows, `custom-endpoint-${'model' in extra ? 'with-a-model' : 'without-a-model'}`)
-    }
-  })
+      pin(t.rows, pinned)
+    })
 
   test('restarting a session keeps the account it ran on, though a new session would take the other — Claude Code over SSH (the other account has more room by the time of the restart), Codex and Antigravity on this Mac (two accounts with equal room, taken in turn)', async ({
     env
@@ -500,7 +503,12 @@ test.describe('which account each kind of tab starts on, with which environment 
       const resumed = await afterOneMore(page, records, () =>
         sendShortcut(app, 'shortcut:restart-session')
       )
-      return [`  started on ${accountOf(started)}`, `  resumed on ${accountOf(resumed)}`]
+      const next = await afterOneMore(page, records, start)
+      return [
+        `  started on ${accountOf(started)}`,
+        `  resumed on ${accountOf(resumed)}`,
+        `  a new session right after starts on ${accountOf(next)}`
+      ]
     }
     try {
       await expect.poll(() => claudeUsageKnown(page), { timeout: 30_000 }).toBe(2)
@@ -513,7 +521,18 @@ test.describe('which account each kind of tab starts on, with which environment 
             await untilTheActiveTabsTranscriptIsWritten(page)
             probe.set('made-up-oauth-token-of-made-up-left', { s5: 'allowed', u5: 0.1, u7: 0.7 })
             probe.set('made-up-oauth-token-of-made-up-right', { s5: 'allowed', u5: 0.1, u7: 0.1 })
-            await page.evaluate(() => window.api.accounts.probe())
+            await expect
+              .poll(
+                async () => {
+                  await page.evaluate(() => window.api.accounts.probe())
+                  const left = (await page.evaluate(() => window.api.accounts.list())).find(
+                    (a) => a.kind === 'oauth' && a.name === 'made-up-left'
+                  )
+                  return left?.usage?.u7
+                },
+                { timeout: 30_000 }
+              )
+              .toBe(0.7)
           },
           claudeAccountOf
         )
@@ -636,12 +655,12 @@ test.describe('which account each kind of tab starts on, with which environment 
       const callsBefore = claudeCalls(env).length
       await newSessionOf(page, HERE, 'Claude')
       const tabId = (await wsRows(page, HERE).getAttribute('data-tab-id'))!
-      const unwrapped = async (): Promise<string> =>
-        (await terminalText(page, tabId)).replace(/\s*\n\s*/g, ' ')
-      await expect.poll(unwrapped, { timeout: 30_000 }).toContain('koloft: could not read')
+      const withNoSpaces = async (): Promise<string> =>
+        (await terminalText(page, tabId)).replace(/\s+/g, '')
+      await expect.poll(withNoSpaces, { timeout: 30_000 }).toContain('koloft:couldnotread')
       t.cell('Claude Code on this Mac, its account’s secret gone from the Keychain', [
         `  claude started: ${claudeCalls(env).length > callsBefore ? 'yes' : 'no'}`,
-        `  the refusal names the account and the Keychain: ${/koloft: could not read [^.]*made-up-gone[^.]*Keychain/.test(await unwrapped()) ? 'yes' : 'no'}`
+        `  the refusal names the account and the Keychain: ${/koloft:couldnotread[^.]*made-up-gone[^.]*Keychain/.test(await withNoSpaces()) ? 'yes' : 'no'}`
       ])
       let refusal = ''
       await newSessionInWith(page, THERE, 'Claude')
