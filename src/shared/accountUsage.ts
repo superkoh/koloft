@@ -4,22 +4,20 @@ import type {
   AccountView,
   BackendId,
   CodexLimits,
-  SignInBackend,
   UsageSnapshot
 } from './types'
-import { SIGN_IN_FOLDER_KINDS, SIGN_IN_FOLDER_OF } from './types'
+import { ACCOUNT_KINDS, SIGN_IN_FOLDER_KINDS } from './types'
 import { BACKEND_LABEL } from './sessionBackend'
-import { ofEachAgent } from '@core/agent/registry'
+import { accountKindFacts, agentManifest, ofEachAgent } from '@core/agent/registry'
 import { ageLabel } from './freshnessOps'
 
-export const ACCOUNT_KINDS_OF: Record<BackendId, AccountKind[]> = {
-  claude: ['oauth', 'apikey', 'custom'],
-  ...(Object.fromEntries(
-    Object.entries(SIGN_IN_FOLDER_OF).map(([backend, kind]) => [backend, [kind]])
-  ) as Record<SignInBackend, AccountKind[]>)
-}
+export const ACCOUNT_KINDS_OF: Record<BackendId, AccountKind[]> = ofEachAgent((id) =>
+  agentManifest(id).accountKinds.map((kind) => kind.id as AccountKind)
+)
 
-const KINDS_WITH_A_BROWSER_SIGN_IN: AccountKind[] = ['oauth', ...SIGN_IN_FOLDER_KINDS]
+const KINDS_WITH_A_BROWSER_SIGN_IN: AccountKind[] = ACCOUNT_KINDS.filter(
+  (kind) => accountKindFacts(kind).signsInThroughABrowser
+)
 
 export function usableAccounts<A extends Pick<AccountMeta, 'kind' | 'enabled' | 'status'>>(
   accounts: readonly A[],
