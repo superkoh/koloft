@@ -111,7 +111,7 @@
       "agentPlugin: () => (agentToolsOn() ? claudeAgentPlugin : undefined),",
       "agy: () => agyOneShotTarget()",
       "agy: agyAccounts.accounts",
-      "agy: agyCatalog(ownersGemini, isGitCheckoutAsync, agyOneShotTarget)",
+      "agy: agyCatalog(ownersGemini, isGitCheckoutAsync, oneShotTargets.agy)",
       "agy: agyTools",
       "agyAccountEnv,",
       "agyBackend,",

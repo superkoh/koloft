@@ -73,7 +73,7 @@ describe('the agents registered with their main-process side', () => {
     }
   })
 
-  it('answers that an agent that was not built has no one-shot target, no model list and no skill folders, without an error', async () => {
+  it('answers that an agent that was not built has no one-shot target, no one-shot command, no model list and no skill folders, without an error', async () => {
     const agents = new AgentsMain()
     agents.register({
       id: AGENT_IDS[0],
@@ -85,6 +85,7 @@ describe('the agents registered with their main-process side', () => {
 
     expect(await agents.oneShotTarget(AGENT_IDS[1])).toBeNull()
     expect(await agents.listedModels(AGENT_IDS[1])).toBeUndefined()
+    expect(agents.oneShot(AGENT_IDS[1])).toBeUndefined()
     expect(agents.moreSkillFoldersEveryAccountReadsOnThisMac(AGENT_IDS[0])).toEqual([
       `/${AGENT_IDS[0]}/skills`
     ])

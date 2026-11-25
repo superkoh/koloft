@@ -36,14 +36,6 @@ export const agyOneShot: AgentOneShot = {
   saysItHasNoSuchModel: /invalid model selection/
 }
 
-async function listedModelsWith(
-  oneShotTarget: () => Promise<OneShotTarget | null>
-): Promise<ListedModel[] | undefined> {
-  const target = await oneShotTarget()
-  if (!target) return undefined
-  return readAgyModels(target.binary, target.env, target.args ?? []).finally(() => target.done())
-}
-
 // AGY§30
 export const AGY_PROJECT_MCP_FILE = '.agents/mcp_config.json'
 
@@ -63,7 +55,11 @@ export const agyCatalog = (
   oneShotTarget: () => Promise<OneShotTarget | null>
 ): AgentCatalog => ({
   // AGY§21
-  listedModels: () => listedModelsWith(oneShotTarget),
+  listedModels: async (): Promise<ListedModel[] | undefined> => {
+    const target = await oneShotTarget()
+    if (!target) return undefined
+    return readAgyModels(target.binary, target.env, target.args ?? []).finally(() => target.done())
+  },
   oneShot: agyOneShot,
   // AGY§4 AGY§31
   moreSkillFoldersEveryAccountReadsOnThisMac: () => [],

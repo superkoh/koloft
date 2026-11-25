@@ -82,10 +82,8 @@ export class AgentsMain {
     return (await this.built.get(id)?.oneShotTarget()) ?? null
   }
 
-  oneShot(id: AgentId): AgentOneShot {
-    const agent = this.built.get(id)
-    if (!agent) throw new Error(`The agent ${id} was not built.`)
-    return agent.catalog.oneShot
+  oneShot(id: AgentId): AgentOneShot | undefined {
+    return this.built.get(id)?.catalog.oneShot
   }
 
   async listedModels(id: AgentId): Promise<ListedModel[] | undefined> {

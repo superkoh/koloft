@@ -14,7 +14,7 @@ export interface AssistDeps {
   picks(): Parameters<typeof assistBackendsFor>[1]
   enabled(backend: BackendId): boolean
   target(backend: BackendId): Promise<OneShotTarget | null>
-  oneShot(backend: BackendId): AgentOneShot
+  oneShot(backend: BackendId): AgentOneShot | undefined
   onThisAccount(backend: BackendId, asked: ModelAndEffort): Promise<ModelAndEffort>
 }
 
@@ -88,6 +88,8 @@ export function koloftAssist(deps: AssistDeps): Assist {
     const picks = deps.picks()
     for (const backend of assistBackendsFor(job.row, picks)) {
       if (!deps.enabled(backend)) continue
+      const shot = deps.oneShot(backend)
+      if (!shot) continue
       const target = await deps.target(backend).catch((err: unknown) => {
         console.error('[koloft] Assist could not make its one-shot target:', backend, err)
         return null
@@ -97,7 +99,6 @@ export function koloftAssist(deps: AssistDeps): Assist {
         return null
       }
       if (!target) continue
-      const shot = deps.oneShot(backend)
       const launch = assistLaunchOn(job.row, backend, picks)
       const limitMs = shot.sometimesAnswersLate ? ASSIST_ANSWERS_WITHIN_MS : ASSIST_TIMEOUT_MS
       const started = Date.now()

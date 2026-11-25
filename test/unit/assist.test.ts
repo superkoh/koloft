@@ -26,6 +26,8 @@ function recordingBinary(name: string, reply: string): { bin: string; log: strin
 
 const nothingToCleanUp = (): void => {}
 
+const REAL_ONE_SHOTS = { oneShot: (backend: BackendId) => EVERY_AGENTS_ONE_SHOT[backend] }
+
 const read = (file: string): string | null =>
   fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null
 
@@ -49,7 +51,7 @@ function assistWith(
   return koloftAssist({
     picks: picksOf(assist),
     enabled: (backend) => !off.includes(backend),
-    oneShot: (backend) => EVERY_AGENTS_ONE_SHOT[backend],
+    ...REAL_ONE_SHOTS,
     target: async (backend) => {
       const binary = bins[backend]
       if (!binary) return null
@@ -81,7 +83,7 @@ describe('Koloft Assist', () => {
     const reply = await koloftAssist({
       picks: picksOf({ backend: 'agy' }),
       enabled: () => true,
-      oneShot: (backend) => EVERY_AGENTS_ONE_SHOT[backend],
+      ...REAL_ONE_SHOTS,
       target: async (backend) => {
         if (backend === 'agy') throw new Error('ENOSPC: no space left on device, mkdtemp')
         if (backend === 'claude') return { binary: claude.bin, env: {}, done: nothingToCleanUp }
@@ -98,7 +100,7 @@ describe('Koloft Assist', () => {
     const reply = await koloftAssist({
       picks: picksOf({ backend: 'agy' }),
       enabled: () => true,
-      oneShot: (backend) => EVERY_AGENTS_ONE_SHOT[backend],
+      ...REAL_ONE_SHOTS,
       target: async (backend) => {
         if (backend === 'agy') {
           cancel.abort()
@@ -174,7 +176,7 @@ describe('Koloft Assist', () => {
         rows: { turn: { backend: 'agy', model: 'gemini-4-neon', effort: 'xhigh' } }
       }),
       enabled: () => true,
-      oneShot: (backend) => EVERY_AGENTS_ONE_SHOT[backend],
+      ...REAL_ONE_SHOTS,
       target: async () => ({ binary: agy.bin, env: {}, done: nothingToCleanUp }),
       onThisAccount: async () => ({ model: 'gemini-4-argon' })
     })({ ...JOB, row: 'turn' })
@@ -196,7 +198,7 @@ describe('Koloft Assist', () => {
     const reply = await koloftAssist({
       picks: picksOf({ backend: 'agy' }),
       enabled: () => true,
-      oneShot: (backend) => EVERY_AGENTS_ONE_SHOT[backend],
+      ...REAL_ONE_SHOTS,
       target: async () => {
         const shot = oneShotAgyHome(home, path.join(root, 'agy-one-shots'), false)
         shotDir = shot.dir
@@ -229,7 +231,7 @@ describe('Koloft Assist', () => {
         fresh({
           picks: picksOf({ backend: 'claude' }),
           enabled: () => true,
-          oneShot: (backend) => EVERY_AGENTS_ONE_SHOT[backend],
+          ...REAL_ONE_SHOTS,
           target: async () => ({ binary: bin, env: {}, done: nothingToCleanUp }),
           onThisAccount: (_backend, asked) =>
             new Promise((done) => setTimeout(() => done(asked), waitMs))
@@ -346,7 +348,7 @@ describe('Koloft Assist', () => {
             rows: { title: { backend: 'codex', model: 'gpt-6-luna' } }
           }),
           enabled: () => true,
-          oneShot: (backend) => EVERY_AGENTS_ONE_SHOT[backend],
+          ...REAL_ONE_SHOTS,
           target: async () => ({ binary: codex, env: {}, done: nothingToCleanUp }),
           onThisAccount: async (_backend, asked) => asked
         })

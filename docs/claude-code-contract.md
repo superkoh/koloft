@@ -5006,7 +5006,7 @@ a git repo's parent folders.
 Koloft dependents: the repo's own `CLAUDE.md` and `test/CLAUDE.md` are symlinks to the
 `AGENTS.md` beside them (`test/unit/devRules.test.ts`, ADR-0053).
 
-## §31 No command lists the models an account can run
+## §31 `claude --help` names no command that lists models
 
 2026-11-25, CC 2.1.332, read from `claude --help` on this Mac: none of its commands
 (`agents`, `attach`, `auth`, `auto-mode`, `doctor`, `gateway`, `import`, `install`, `logs`,

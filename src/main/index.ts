@@ -1540,7 +1540,7 @@ const oneShotTargets: Record<BackendId, AgentMain['oneShotTarget']> = {
 const catalogs: Record<BackendId, AgentCatalog> = {
   claude: claudeCatalog,
   codex: codexCatalog(codexSharedConfig, codexAccounts.listedModels),
-  agy: agyCatalog(ownersGemini, isGitCheckoutAsync, agyOneShotTarget)
+  agy: agyCatalog(ownersGemini, isGitCheckoutAsync, oneShotTargets.agy)
 }
 const tools: Record<BackendId, AgentTools> = {
   claude: claudeTools,

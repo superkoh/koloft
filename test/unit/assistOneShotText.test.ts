@@ -40,44 +40,58 @@ interface Fake {
   runs(): Record<string, unknown>[]
 }
 
-function fakeProgram(reply: string, refusal?: Refusal): Fake {
+const splitOnNul = (text: string): string[] => text.split('\0').slice(0, -1)
+
+function fakeProgram(name: AgentId, reply: string, refusal?: Refusal): Fake {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-one-shot-text-'))
-  const bin = path.join(dir, 'agent')
-  const log = path.join(dir, 'runs.jsonl')
+  const bin = path.join(dir, name)
+  const runsDir = path.join(dir, 'runs')
+  fs.mkdirSync(runsDir)
+  fs.writeFileSync(path.join(dir, 'reply'), reply)
+  if (refusal) {
+    fs.writeFileSync(path.join(dir, 'refuse-when'), refusal.whenArgvHas)
+    fs.writeFileSync(path.join(dir, 'refusal'), refusal.says + '\n')
+  }
   fs.writeFileSync(
     bin,
     [
-      `#!${process.execPath}`,
-      `const fs = require('fs')`,
-      `const keys = ${JSON.stringify(ENV_KEYS)}`,
-      `const refusal = ${JSON.stringify(refusal ?? null)}`,
-      `let stdin = ''`,
-      `process.stdin.setEncoding('utf8')`,
-      `process.stdin.on('data', (d) => (stdin += d))`,
-      `process.stdin.on('end', () => {`,
-      `  const argv = process.argv.slice(2)`,
-      `  const env = Object.fromEntries(keys.map((k) => [k, process.env[k] ?? null]))`,
-      `  fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ argv, stdin, cwd: process.cwd(), env }) + '\\n')`,
-      `  if (refusal && argv.includes(refusal.whenArgvHas)) {`,
-      `    process.stderr.write(refusal.says + '\\n')`,
-      `    process.exit(1)`,
-      `  }`,
-      `  process.stdout.write(${JSON.stringify(reply)})`,
-      `})`,
+      '#!/bin/sh',
+      `dir='${dir}'`,
+      `n=$(( $(cat "$dir/count" 2>/dev/null || echo 0) + 1 ))`,
+      `echo "$n" > "$dir/count"`,
+      `run="$dir/runs/$n"`,
+      `mkdir "$run"`,
+      `printf '%s\\0' "$@" > "$run/argv"`,
+      `cat > "$run/stdin"`,
+      `pwd -P > "$run/cwd"`,
+      `printf '%s\\0' ${ENV_KEYS.map((k) => `"$${k}"`).join(' ')} > "$run/env"`,
+      `if [ -f "$dir/refuse-when" ]; then`,
+      `  when=$(cat "$dir/refuse-when")`,
+      `  for arg in "$@"; do`,
+      `    if [ "$arg" = "$when" ]; then cat "$dir/refusal" >&2; exit 1; fi`,
+      `  done`,
+      `fi`,
+      `cat "$dir/reply"`,
       ''
     ].join('\n'),
     { mode: 0o755 }
   )
+  const read = (run: string, part: string): string =>
+    fs.readFileSync(path.join(runsDir, run, part), 'utf8')
   return {
     bin,
     runs: () =>
-      fs.existsSync(log)
-        ? fs
-            .readFileSync(log, 'utf8')
-            .trim()
-            .split('\n')
-            .map((line) => JSON.parse(line) as Record<string, unknown>)
-        : []
+      fs
+        .readdirSync(runsDir)
+        .sort((a, b) => Number(a) - Number(b))
+        .map((run) => ({
+          argv: splitOnNul(read(run, 'argv')),
+          stdin: read(run, 'stdin'),
+          cwd: read(run, 'cwd').trim(),
+          env: Object.fromEntries(
+            splitOnNul(read(run, 'env')).map((value, i) => [ENV_KEYS[i], value])
+          )
+        }))
   }
 }
 
@@ -163,31 +177,35 @@ describe('the command line, input, folder and environment each agent runs an Ass
   for (const id of AGENT_IDS) {
     for (const job of ASSIST_JOBS)
       it(`${id}, the ${job.id} job`, async () => {
-        await pin(await assistOn(id, job.id, fakeProgram(SAMPLE_REPLY[id])), `${id}/job-${job.id}`)
+        await pin(
+          await assistOn(id, job.id, fakeProgram(id, SAMPLE_REPLY[id])),
+          `${id}/job-${job.id}`
+        )
       })
 
     for (const [name, launch] of Object.entries(LAUNCHES))
       it(`${id}, the account's model and thinking: ${name}`, async () => {
-        const text = await assistOn(id, 'title', fakeProgram(SAMPLE_REPLY[id]), () => launch)
+        const text = await assistOn(id, 'title', fakeProgram(id, SAMPLE_REPLY[id]), () => launch)
         await pin(text, `${id}/launch-${name}`)
       })
 
     it(`${id}, the model from Koloft's table refused, then the run on the model every account takes`, async () => {
       const { row, refusal } = REFUSALS[id]
       await pin(
-        await assistOn(id, row, fakeProgram(SAMPLE_REPLY[id], refusal)),
+        await assistOn(id, row, fakeProgram(id, SAMPLE_REPLY[id], refusal)),
         `${id}/model-refused`
       )
     })
   }
 
   it('agy, an answer that did not succeed gives no answer', async () => {
-    const fake = fakeProgram('{"status":"ERROR","response":"Fix Login Crash"}\n')
+    const fake = fakeProgram('agy', '{"status":"ERROR","response":"Fix Login Crash"}\n')
     await pin(await assistOn('agy', 'title', fake), 'agy/answer-not-a-success')
   })
 
   it('agy, the model list of an account', async () => {
     const fake = fakeProgram(
+      'agy',
       'gemini-4-argon-low\tGemini 4 Argon\ngemini-4-argon-medium\tGemini 4 Argon\ngemini-3.8-flash-low\tGemini 3.8 Flash\n'
     )
     const listed = await readAgyModels(fake.bin, envOf('agy'), [ONE_SHOT_FOLDER_ARG])
