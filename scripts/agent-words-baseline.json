@@ -130,7 +130,6 @@
       "const CODEX_ONE_SHOT = (launch: ModelAndEffort): string[] => [",
       "function agyResponse(out: string): string | null {"
     ],
-    "src/main/cliRuntime.ts": ["command: Exclude<AgentCommand, 'claude'>"],
     "src/main/gitStatus.ts": ["const SESSION_WORKTREES_DIR = '.claude/worktrees/'"],
     "src/main/gitSteps.ts": ["const dir = `${top.stdout.trim()}/.claude/worktrees/pr-${pr}`"],
     "src/main/homeKeyOnDisk.ts": [
@@ -553,7 +552,6 @@
       "export const CODEX_TMP_FOLDER = new RegExp(",
       "return idIn(commandWithEnv, 'CLAUDE_CODE_SESSION_ID')"
     ],
-    "src/main/loginShell.ts": ["const AGENT_COMMANDS = ['claude', 'codex', 'agy'] as const"],
     "src/main/machineTrees.ts": [
       "/^(?:\\S*\\/)?(?:node\\s+\\S*\\/(?:claude|codex|agy)(?:\\.js)?\\s|node\\s+\\S*\\/(?:claude-code|codex)\\/\\S*\\s|(?:claude|codex|agy)(?:\\s|$))/"
     ],
@@ -854,12 +852,6 @@
       "import { looksLikeClaude } from '@agents/claude/main/claudeLiveness'",
       "interface ClaudeShells {",
       "let read = claudeShellsOf.get(table)"
-    ],
-    "src/main/toolInstall.ts": [
-      "agy: `curl -fsSL ${AGY_INSTALLER_URL} | bash`",
-      "claude: 'curl -fsSL https://claude.ai/install.sh | bash',",
-      "codex: 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh',",
-      "import { AGY_INSTALLER_URL } from '@agents/agy/shared/agyInstaller'"
     ],
     "src/main/toolShim.ts": [
       "CODEX_TMP_DIR,",

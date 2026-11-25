@@ -10,6 +10,9 @@ export const agent = {
   name: 'Claude',
   productName: 'Claude Code',
   maker: 'Anthropic',
+  command: 'claude',
+  // CC§10
+  installCommand: 'curl -fsSL https://claude.ai/install.sh | bash',
   wordsThatNameMe: {
     anyCase: ['claude', 'anthropic', 'fable', 'opus', 'sonnet', 'haiku', 'sk-ant'],
     wholeWord: [

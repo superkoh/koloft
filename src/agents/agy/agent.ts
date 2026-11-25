@@ -6,6 +6,7 @@ import {
   AGY_UPLOADS_FOLDER
 } from './shared/agyBrain'
 import { agyEffortsAModelTakes } from './shared/agyEfforts'
+import { AGY_INSTALLER_URL } from './shared/agyInstaller'
 import { SLOT_ADDITIONS, SLOT_FILLS } from './prompts/text'
 
 export const agent = {
@@ -13,6 +14,9 @@ export const agent = {
   name: 'Antigravity',
   productName: 'Antigravity CLI',
   maker: 'Google',
+  command: 'agy',
+  // AGY§3
+  installCommand: `curl -fsSL ${AGY_INSTALLER_URL} | bash`,
   wordsThatNameMe: {
     anyCase: ['agy', 'antigravity', 'google', 'gemini'],
     wholeWord: [

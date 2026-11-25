@@ -10,6 +10,9 @@ export const agent = {
   name: 'Codex',
   productName: 'Codex',
   maker: 'OpenAI',
+  command: 'codex',
+  // CODEX§22
+  installCommand: 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh',
   wordsThatNameMe: {
     anyCase: ['codex', 'openai', 'gpt'],
     wholeWord: [

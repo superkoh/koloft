@@ -1,14 +1,7 @@
 import path from 'path'
 import type { BackendId } from '@shared/types'
 import { shq } from '@shared/shellQuote'
-import { AGY_INSTALLER_URL } from '@agents/agy/shared/agyInstaller'
-
-// CC§10 CODEX§22 AGY§3
-const OFFICIAL_INSTALLER: Record<BackendId, string> = {
-  claude: 'curl -fsSL https://claude.ai/install.sh | bash',
-  codex: 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh',
-  agy: `curl -fsSL ${AGY_INSTALLER_URL} | bash`
-}
+import { agentManifest } from '@core/agent/registry'
 
 // CC§10
 export function pathWithInstallDir(pathVar: string | undefined, home: string): string {
@@ -30,7 +23,8 @@ export function installThen(
   then: (binary: string) => string,
   testInstaller?: string
 ): string {
-  const run = testInstaller ? `${shq(testInstaller)} ${backend}` : OFFICIAL_INSTALLER[backend]
-  const binary = `"$HOME/.local/bin/${backend}"`
+  const { command, installCommand } = agentManifest(backend)
+  const run = testInstaller ? `${shq(testInstaller)} ${backend}` : installCommand
+  const binary = `"$HOME/.local/bin/${command}"`
   return `${run}; [ -x ${binary} ] && ${then(binary)}`
 }

@@ -66,6 +66,8 @@ export interface AgentManifest {
   name: string
   productName: string
   maker: string
+  command: string
+  installCommand: string
   wordsThatNameMe: AgentWords
   skillPrefix: string
   questionToolName: string
