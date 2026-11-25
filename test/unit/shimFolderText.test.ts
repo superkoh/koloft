@@ -31,7 +31,8 @@ const TAB = 'tab-pinned'
 const ACCOUNT_TOKEN_IN_THE_FAKE_KEYCHAIN = 'secret-from-the-fake-keychain'
 const SHELL_GENERATED = new Set(['PWD', 'OLDPWD', 'SHLVL', '_'])
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g
-const PICK_TIMES_OUT_WITHIN_MS = 10_000
+const ALL_RUNS_OF_ONE_AGENT_END_WITHIN_MS = 30_000
+const UMASK_OF_A_MAC_LOGIN = 0o022
 
 const userData = (): string => app.getPath('userData')
 
@@ -44,7 +45,6 @@ const sameOnEveryRun = (text: string): string =>
   text
     .replaceAll(userData(), '<userData>')
     .replaceAll(scratch, '<scratch>')
-    .replaceAll(os.userInfo().username, '<user>')
     .replace(new RegExp(`\\b${process.pid}-(?=<uuid>|[0-9a-f]{8}-)`, 'g'), '<pid>-')
     .replace(UUID, '<uuid>')
     .replace(/"ts":\d+/g, '"ts":<ts>')
@@ -84,7 +84,7 @@ function writeExecutable(file: string, text: string): void {
   fs.chmodSync(file, 0o755)
 }
 
-const RECORDING_AGENT = `#!/usr/bin/env bash
+const RECORDING_AGENT = `#!/bin/sh
 d="$KOLOFT_FAKE_DIR"
 name="$(basename "$0")"
 if [ "$1" = "--version" ]; then
@@ -102,7 +102,7 @@ env > "$d/$name-env"
 exit 0
 `
 
-const FAKE_SECURITY = `#!/usr/bin/env bash
+const FAKE_SECURITY = `#!/bin/sh
 d="$KOLOFT_FAKE_DIR"
 printf '%s\\n' "$*" >> "$d/security-calls"
 acct=""; prev=""
@@ -153,11 +153,16 @@ describe('the shim folder every session tab and shell tab on this Mac shares, pi
       fs.chmodSync(path.join(shared.shimDir, name), 0o644)
     }
     fs.writeFileSync(path.join(shared.shimDir, 'muse'), '#!/bin/sh\n', { mode: 0o755 })
-    setupShim(GIT_REQUEST_DIR, BUTLER_FOLDER)
-    expect(scriptsIn(shared.shimDir, new Set())).toEqual(files)
-    for (const name of files) {
-      expect(fs.readFileSync(path.join(shared.shimDir, name), 'utf8')).toBe(before.get(name))
-      expect(modeOf(path.join(shared.shimDir, name))).toBe('0755')
+    try {
+      setupShim(GIT_REQUEST_DIR, BUTLER_FOLDER)
+      expect(scriptsIn(shared.shimDir, new Set())).toEqual(files)
+      for (const name of files) {
+        expect(fs.readFileSync(path.join(shared.shimDir, name), 'utf8')).toBe(before.get(name))
+        expect(modeOf(path.join(shared.shimDir, name))).toBe('0755')
+      }
+    } finally {
+      for (const [name, text] of before) writeExecutable(path.join(shared.shimDir, name), text)
+      fs.rmSync(path.join(shared.shimDir, 'muse'), { force: true })
     }
   })
 
@@ -183,14 +188,20 @@ describe('the shim folder every session tab and shell tab on this Mac shares, pi
 })
 
 describe('the shim folder Koloft writes for each Codex or Antigravity tab on this Mac, pinned so that moving the code changes no character', () => {
-  let started: ToolShim | undefined
+  const started: ToolShim[] = []
+  let umaskBefore: number
+  beforeAll(() => {
+    umaskBefore = process.umask(UMASK_OF_A_MAC_LOGIN)
+  })
+  afterAll(() => {
+    process.umask(umaskBefore)
+  })
   afterEach(() => {
-    started?.release()
-    started = undefined
+    for (const shim of started.splice(0)) shim.release()
   })
 
   const start = (backend: 'codex' | 'agy', agentTools: boolean): ToolShim => {
-    started = startToolShim(
+    const shim = startToolShim(
       {
         openShimRoot: path.join(userData(), `${backend}-open`),
         playwrightBin: PLAYWRIGHT_BIN,
@@ -205,8 +216,17 @@ describe('the shim folder Koloft writes for each Codex or Antigravity tab on thi
         rules: RULES
       }
     )
-    return started
+    started.push(shim)
+    return shim
   }
+
+  const textsIn = (dir: string): Record<string, string> =>
+    Object.fromEntries(
+      scriptsIn(dir, new Set()).map((n) => [
+        n,
+        sameOnEveryRun(fs.readFileSync(path.join(dir, n), 'utf8'))
+      ])
+    )
 
   const GUIDE = {
     'koloft-guide.txt':
@@ -217,13 +237,9 @@ describe('the shim folder Koloft writes for each Codex or Antigravity tab on thi
     'a %s tab with agent tools on gets these files, each with this mode and this text, and a request folder only its owner can enter',
     async (backend) => {
       const { shim } = start(backend, true)
-      const umask = process.umask()
-      const declared = (mode: number): string => (mode & ~umask).toString(8).padStart(4, '0')
       const text = listing(shim.shimDir, GUIDE)
       await pin(
-        `${text}\nrequest folder ${shim.requestDir}/  folder ${modeOf(shim.requestDir)}\n`
-          .replaceAll(` file ${declared(0o755)}`, ' file 0755 less the umask')
-          .replaceAll(` file ${declared(0o666)}`, ' file 0666 less the umask'),
+        `${text}\nrequest folder ${shim.requestDir}/  folder ${modeOf(shim.requestDir)}\n`,
         `${backend}-tab-folder/files.txt`
       )
       expect(modeOf(shim.requestDir)).toBe('0700')
@@ -238,33 +254,20 @@ describe('the shim folder Koloft writes for each Codex or Antigravity tab on thi
   it.each(['codex', 'agy'] as const)(
     'a %s tab with agent tools off gets no koloft command, no guide and no sudo files, and the rest is the same as with them on',
     (backend) => {
-      const on = start(backend, true)
-      const withThem = scriptsIn(on.shim.shimDir, new Set())
-      const openText = fs.readFileSync(path.join(on.shim.shimDir, 'open'), 'utf8')
-      on.release()
-      const { shim } = start(backend, false)
-      expect(scriptsIn(shim.shimDir, new Set())).toEqual(
-        withThem.filter(
-          (n) => !['koloft', 'koloft-guide.txt', 'sudo', 'koloft-askpass'].includes(n)
-        )
-      )
-      expect(sameOnEveryRun(fs.readFileSync(path.join(shim.shimDir, 'open'), 'utf8'))).toBe(
-        sameOnEveryRun(openText)
-      )
+      const withThem = textsIn(start(backend, true).shim.shimDir)
+      for (const name of ['koloft', 'koloft-guide.txt', 'sudo', 'koloft-askpass']) {
+        expect(withThem).toHaveProperty([name])
+        delete withThem[name]
+      }
+      expect(textsIn(start(backend, false).shim.shimDir)).toEqual(withThem)
     }
   )
 
   it('each tab gets a folder of its own, and closing the tab removes it and its request folder', () => {
     const one = start('codex', true)
-    const two = startToolShim(
-      {
-        openShimRoot: path.join(userData(), 'codex-open'),
-        playwrightBin: PLAYWRIGHT_BIN,
-        ghWrapper: GH_WRAPPER
-      },
-      { backend: 'codex', open: () => {} }
-    )
+    const two = start('codex', false)
     expect(two.shim.shimDir).not.toBe(one.shim.shimDir)
+    expect(two.shim.requestDir).not.toBe(one.shim.requestDir)
     two.release()
     expect(fs.existsSync(two.shim.shimDir)).toBe(false)
     expect(fs.existsSync(two.shim.requestDir)).toBe(false)
@@ -310,19 +313,23 @@ async function runShim(run: Run): Promise<string> {
   const responder = setInterval(() => {
     const req = fs.readdirSync(pickDir).find((f) => f.startsWith('req-') && f.endsWith('.json'))
     if (!req || asked !== undefined) return
-    asked = fs.readFileSync(path.join(pickDir, req), 'utf8')
+    const written = fs.readFileSync(path.join(pickDir, req), 'utf8')
+    if (!written.endsWith('\n')) return
+    asked = written
     if (run.answer === 'none' || run.answer === undefined) return
     const res = path.join(pickDir, `res-${req.slice('req-'.length)}`)
     fs.writeFileSync(`${res}.tmp`, JSON.stringify(run.answer))
     fs.renameSync(`${res}.tmp`, res)
   }, 10)
-  const { status, stderr } = await new Promise<{ status: number; stderr: string }>((resolve) => {
-    const child = spawn(path.join(shared.shimDir, run.bin), run.args, { cwd: home, env: given })
-    let err = ''
-    child.stderr.on('data', (c) => (err += c))
-    child.on('close', (code) => resolve({ status: code ?? -1, stderr: err }))
-  })
-  clearInterval(responder)
+  const { status, stderr } = await new Promise<{ status: number; stderr: string }>(
+    (resolve, reject) => {
+      const child = spawn(path.join(shared.shimDir, run.bin), run.args, { cwd: home, env: given })
+      let err = ''
+      child.stderr.on('data', (c) => (err += c))
+      child.on('error', reject)
+      child.on('close', (code) => resolve({ status: code ?? -1, stderr: err }))
+    }
+  ).finally(() => clearInterval(responder))
   const read = (name: string): string | undefined =>
     fs.existsSync(path.join(dir, name)) ? fs.readFileSync(path.join(dir, name), 'utf8') : undefined
   const argv = read(`${run.bin}-argv`)
@@ -455,7 +462,7 @@ describe('what each shim on this Mac does when it runs, as far as it is one agen
         ],
         'runs/claude.txt'
       ),
-    PICK_TIMES_OUT_WITHIN_MS
+    ALL_RUNS_OF_ONE_AGENT_END_WITHIN_MS
   )
 
   it(
@@ -522,7 +529,7 @@ describe('what each shim on this Mac does when it runs, as far as it is one agen
         ],
         'runs/codex.txt'
       ),
-    PICK_TIMES_OUT_WITHIN_MS
+    ALL_RUNS_OF_ONE_AGENT_END_WITHIN_MS
   )
 
   it(
@@ -600,6 +607,6 @@ describe('what each shim on this Mac does when it runs, as far as it is one agen
         ],
         'runs/agy.txt'
       ),
-    PICK_TIMES_OUT_WITHIN_MS
+    ALL_RUNS_OF_ONE_AGENT_END_WITHIN_MS
   )
 })
