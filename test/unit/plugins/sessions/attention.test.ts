@@ -278,12 +278,12 @@ describe('attention — a mark of last run whose session no row can show goes on
     expect(changes).toEqual([{ pending: t.list(), event: null }])
   })
 
-  it('a mark raised in this run is never dropped, even when its session is not listed yet', () => {
-    const { t } = makeTracker()
-    t.onExited('tab-A', { sessionId: NO_AGENT_LISTS })
+  it('a mark raised in this run is never dropped, even when its session is not listed yet and its tab id is one a mark of last run had', () => {
+    const { t } = makeTracker(lastRun)
+    t.onExited('old-2', { sessionId: NO_AGENT_LISTS })
     const b = backends()
     t.forgetLastRunGone((key) => b.sessionStillThere(key, listedNow))
-    expect(t.list()).toEqual([expect.objectContaining({ tabId: 'tab-A' })])
+    expect(t.list().map((e) => e.tabId)).toEqual(['old-2', 'old-3'])
   })
 })
 
