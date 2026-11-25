@@ -23,6 +23,8 @@ export function codexBackend(
       turns: async (key, n) => sessions.turnsOf(key, n) ?? sessions.readTurns(key, n),
       peerNames: () => async () => null,
       runningElsewhere: () => false,
+      // CODEX§17
+      handOverLaunch: (handOver, task) => ({ role: handOver, firstPrompt: task }),
       // CODEX§6
       worktreeExitWatch: () => undefined,
       showsAPanel: codexShowsAPanelOnItsScreen(screenLines),

@@ -728,9 +728,6 @@
       "ticks: agyTicks,",
       "ticks: codexAsksNoQuestionTakingSeveralPicks,"
     ],
-    "src/plugins/sessions/main/handoverPreamble.ts": [
-      "const OLDER_SEND_MESSAGE_ENDING = 'with your SendMessage tool.'"
-    ],
     "src/plugins/sessions/main/hooks.ts": [
       "[ -n \"$wrote\" ] && [ -n \"$${CODEX_SHELL_WROTE_ENV}\" ] && printf '{\"event\":\"${SHELL_WROTE_EVENT}\"%s}\\\\n' \"$wrote\" >> \"$${CODEX_SHELL_WROTE_ENV}\"",
       "`sh \"$${CODEX_REPLY_LANGUAGE_ENV}\" ${event}`",
