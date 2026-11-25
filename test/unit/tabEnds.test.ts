@@ -86,10 +86,27 @@ type Sent = [string, SessionEvent]
 
 const NO_RESUME_IS_PLANNED_HERE = {} as Parameters<typeof codexBackend>[1]
 
-function terminalOf(tabId: string): { pty: unknown; killed: string[] } {
+function terminalOf(tabId: string): {
+  pty: unknown
+  killed: string[]
+  machineNamed: (string | undefined)[]
+} {
   const killed: string[] = []
+  const machineNamed: (string | undefined)[] = []
   const { pty } = recordingPty(tabId)
-  return { killed, pty: { ...(pty as object), kill: (id: string) => void killed.push(id) } }
+  const recorded = pty as { create(args: { remoteHost?: string }): unknown }
+  return {
+    killed,
+    machineNamed,
+    pty: {
+      ...(pty as object),
+      create: (args: { remoteHost?: string }) => {
+        machineNamed.push(args.remoteHost)
+        return recorded.create(args)
+      },
+      kill: (id: string) => void killed.push(id)
+    }
+  }
 }
 
 type ThreeAgents = Awaited<ReturnType<typeof aTabOfEveryAgent>>
@@ -234,6 +251,7 @@ async function aTabOfEveryAgent() {
       sessions: agy,
       sent: agySent,
       killed: agyTerminal.killed,
+      machineNamed: agyTerminal.machineNamed,
       ranOverSsh: ssh.ran
     },
     whenTornDown,
@@ -487,6 +505,18 @@ describe('the tmux session a tab runs in on a machine, as each of the three real
       codex: [undefined, undefined, undefined, undefined],
       agy: [undefined, undefined, undefined, expect.stringContaining(AGY_TAB)]
     })
+  })
+
+  it('Antigravity names its tab on a machine as the one running that tmux session there, or as the tab asked about when it runs there, and none on another machine or for a tmux session and tab not its own; that tab’s terminal names the same machine, so its tab id alone already finds it there', async () => {
+    const a = await aTabOfEveryAgent()
+    const tmux = a.agy.backend.tmuxOfTab(AGY_TAB)!
+    expect([
+      a.agy.sessions.tabOnMachine(MACHINE, tmux, 'pty-not-its-own'),
+      a.agy.sessions.tabOnMachine(MACHINE, '', AGY_TAB),
+      a.agy.sessions.tabOnMachine('otherbox', tmux, AGY_TAB),
+      a.agy.sessions.tabOnMachine(MACHINE, 'k-not-its-own', 'pty-not-its-own')
+    ]).toEqual([AGY_TAB, AGY_TAB, undefined, undefined])
+    expect(a.agy.machineNamed).toEqual([MACHINE])
   })
 })
 

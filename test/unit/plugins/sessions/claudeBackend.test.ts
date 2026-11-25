@@ -110,6 +110,16 @@ const MACHINE_TABS = {
 
 const CODEX_TABS = { 'pty-cx': 'devbox', 'pty-cy': 'otherbox' } as Record<string, string>
 
+const AGY_TABS = {
+  'pty-g': { host: 'devbox', tmuxName: 'k-sg' },
+  'pty-h': { host: 'otherbox', tmuxName: 'k-sh' }
+} as Record<string, { host: string; tmuxName: string }>
+
+const agyTabOnMachine = (machine: string, tmux: string, launchTab: string): string | undefined =>
+  Object.entries(AGY_TABS).find(
+    ([tabId, t]) => t.host === machine && ((tmux && t.tmuxName === tmux) || tabId === launchTab)
+  )?.[0]
+
 const WORKBENCH_SHELLS = {
   'pty-wa': { util: true, ownerTabId: 'pty-a' },
   'pty-wcx': { util: true, ownerTabId: 'pty-cx' },
@@ -136,10 +146,12 @@ function machineBackend(): {
   const backend = new ClaudeBackend({
     pty: {
       get: (id: string) =>
-        WORKBENCH_SHELLS[id] ?? (MACHINE_TABS[id] || CODEX_TABS[id] ? { alive: true } : undefined),
+        WORKBENCH_SHELLS[id] ??
+        (MACHINE_TABS[id] || CODEX_TABS[id] || AGY_TABS[id] ? { alive: true } : undefined),
       clearResumeIntent: () => {}
     },
-    machineOfTab: (id: string) => MACHINE_TABS[id]?.host ?? CODEX_TABS[id],
+    machineOfTab: (id: string) => MACHINE_TABS[id]?.host ?? CODEX_TABS[id] ?? AGY_TABS[id]?.host,
+    otherTabOnMachine: agyTabOnMachine,
     hosts: {
       machine: (host: string) => ({
         answerRequest: async (id: string, reply: string | null) =>
@@ -233,11 +245,12 @@ describe('ClaudeBackend: koloft requests from a session on a remote machine', ()
   })
 
   async function readsWhileTheOwnerIsAsked(
-    seen: (RequestCallerState | undefined)[]
-  ): Promise<{ read: boolean[]; sent: [string, string, string | null][] }> {
+    seen: (RequestCallerState | undefined)[],
+    from: unknown = request('pty-a', 'k-sa')
+  ): Promise<{ read: boolean[]; sent: [string, string, string | null][]; checks: string[] }> {
     const m = machineBackend()
     m.callerSeen.push(...seen)
-    m.drop('req-r11.json', { ...(request('pty-a', 'k-sa') as object), pid: 77 })
+    m.drop('req-r11.json', { ...(from as object), pid: 77 })
     await vi.waitFor(() => expect(m.waits).toHaveLength(1), { timeout: 5000 })
     const read: boolean[] = []
     for (let i = 0; i <= seen.length; i++) {
@@ -246,8 +259,22 @@ describe('ClaudeBackend: koloft requests from a session on a remote machine', ()
     }
     m.release()
     await vi.waitFor(() => expect(m.sent).toHaveLength(1), { timeout: 5000 })
-    return { read, sent: m.sent }
+    return { read, sent: m.sent, checks: m.callerChecks }
   }
+
+  it.each([
+    ['a Claude Code tab', request('pty-a', 'k-sa')],
+    ['a Codex tab', request('pty-cx', '')],
+    ['an Antigravity tab', request('pty-g', 'k-sg')]
+  ])(
+    'asks the machine whether the koloft command of %s there still waits while its answer waits on the owner, and takes the answer away once it stopped',
+    async (_tab, from) => {
+      const { read, sent, checks } = await readsWhileTheOwnerIsAsked(['runs', 'gone'], from)
+      expect(read).toEqual([true, true, false])
+      expect(sent).toEqual([['devbox', 'r11', null]])
+      expect(checks).toContain('r11')
+    }
+  )
 
   it('reads a koloft command on the machine as no longer waiting once its pid, first seen running koloft, is gone; a pid never seen running koloft, as from another pid namespace, or a broken link keeps it waiting; once it stopped, its answer is taken away instead of written', async () => {
     const { read, sent } = await readsWhileTheOwnerIsAsked([
@@ -337,6 +364,47 @@ describe('ClaudeBackend: koloft requests from a session on a remote machine', ()
     await new Promise((r) => setTimeout(r, A_FEW_MIRROR_PULLS_MS))
 
     expect(m.sent).toEqual([['devbox', 'r7', replyJson(answered('for pty-cx'))]])
+  })
+
+  it('answers a request from an Antigravity tab on that machine carrying its pass, whatever tmux session it names, and leaves one from an Antigravity tab on another machine unanswered', async () => {
+    const m = machineBackend()
+    m.drop('req-g1.json', request('pty-h', 'k-sh'))
+    m.drop('req-g2.json', request('pty-g', 'k-sa'))
+    await vi.waitFor(() => expect(m.sent).toHaveLength(1), { timeout: 5000 })
+    await new Promise((r) => setTimeout(r, A_FEW_MIRROR_PULLS_MS))
+
+    expect(m.sent).toEqual([['devbox', 'g2', replyJson(answered('for pty-g'))]])
+  })
+
+  it('a request with no pass from an Antigravity session that was already running before Koloft gave tabs a pass, naming a tab that is gone, is answered for the Antigravity tab that runs its tmux session on that machine, and refused once that tab no longer counts as started before passes', async () => {
+    const m = machineBackend()
+    markStartedBeforeTabPasses('pty-g', true)
+    m.drop('req-g3.json', keyless('pty-old-agy-tab', 'k-sg'))
+    m.drop('req-g4.json', keyless('pty-old-agy-tab', 'k-sh'))
+    await vi.waitFor(() => expect(m.sent).toHaveLength(1), { timeout: 5000 })
+    await new Promise((r) => setTimeout(r, A_FEW_MIRROR_PULLS_MS))
+    expect(m.sent).toEqual([['devbox', 'g3', replyJson(answered('for pty-g'))]])
+
+    markStartedBeforeTabPasses('pty-g', false)
+    m.drop('req-g5.json', keyless('pty-old-agy-tab', 'k-sg'))
+    await vi.waitFor(() => expect(m.sent).toHaveLength(2), { timeout: 5000 })
+    expect(m.sent[1]).toEqual(['devbox', 'g5', replyJson(refused(NOT_ITS_PASS))])
+  })
+
+  it('a request with no pass that runs in an Antigravity tab’s tmux session but names another live tab on that machine counts as the tab it names, while one in a Claude Code tab’s tmux session counts as that tab', async () => {
+    const m = machineBackend()
+    markStartedBeforeTabPasses('pty-g', true)
+    markStartedBeforeTabPasses('pty-a', true)
+    m.drop('req-g6.json', keyless('pty-b', 'k-sg'))
+    m.drop('req-g7.json', keyless('pty-b', 'k-sa'))
+    await vi.waitFor(() => expect(m.sent).toHaveLength(2), { timeout: 5000 })
+    markStartedBeforeTabPasses('pty-g', false)
+    markStartedBeforeTabPasses('pty-a', false)
+
+    expect(Object.fromEntries(m.sent.map(([, id, reply]) => [id, reply]))).toEqual({
+      g6: replyJson(refused(NOT_ITS_PASS)),
+      g7: replyJson(answered('for pty-a'))
+    })
   })
 
   it('answers a request from a Workbench shell on that machine as the session tab that owns the shell, Claude or Codex, and one whose owner is gone at once, with no tab, instead of leaving it to time out', async () => {
