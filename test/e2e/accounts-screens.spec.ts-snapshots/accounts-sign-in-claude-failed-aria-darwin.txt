@@ -1,0 +1,8 @@
+- text: Sign in
+- textbox "Name this account (e.g. work)": night
+- text: "Sign-in did not complete. Sign-in timed out (stand-in: the hidden terminal’s own lines name this machine’s user and a throwaway folder)"
+- button "Show terminal" [disabled]
+- button "Try again"
+- text: Koloft runs the official
+- code: claude setup-token
+- text: "in the background — no terminal tab. Once you authorize in the browser, the token goes straight into your Keychain and the account joins the pool: no copy-paste, and you never leave this panel."

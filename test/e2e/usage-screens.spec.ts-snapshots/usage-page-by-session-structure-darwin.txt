@@ -1,0 +1,68 @@
+div.set-grp
+  {display: block; color: rgb(144, 139, 132); font-size: 11px; font-weight: 650; letter-spacing: 0.88px; text-transform: uppercase; margin: 18px 0px -2px 0px}
+  "By session · most costly first"
+
+div.acct-list.costs-list
+  {display: block; overflow-x: hidden; overflow-y: hidden; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.1); border-radius: 7px; margin: 8px 0px 0px 0px}
+  div.acct-row.costs-row
+    {display: flex; background-color: rgb(28, 28, 31); align-items: center; border-width: - - 1px -; border-style: none none solid none; border-color: - - rgba(255, 255, 255, 0.1) -; padding: 9px 12px 9px 12px; gap: 10px}
+    div.t
+      {display: block; min-width: 0px; flex-grow: 1; flex-basis: 0%; overflow-x: hidden; overflow-y: hidden; font-size: 13px; white-space: nowrap}
+      "Tidy the release notes"
+      small
+        {display: block; color: rgb(144, 139, 132); overflow-x: hidden; overflow-y: hidden; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; margin: 1px 0px 0px 0px}
+        "ws-a · claude-opus-5-5 · 1 day"
+    span.tk
+      {display: block; color: rgb(144, 139, 132); min-width: 58px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; text-align: right}
+      "1.10M"
+    span.c
+      {display: block; min-width: 64px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 13px; font-weight: 700; text-align: right}
+      "$6.00"
+  div.acct-row.costs-row
+    {display: flex; background-color: rgb(28, 28, 31); align-items: center; border-width: - - 1px -; border-style: none none solid none; border-color: - - rgba(255, 255, 255, 0.1) -; padding: 9px 12px 9px 12px; gap: 10px}
+    div.t
+      {display: block; min-width: 0px; flex-grow: 1; flex-basis: 0%; overflow-x: hidden; overflow-y: hidden; font-size: 13px; white-space: nowrap}
+      "Draft the onboarding copy"
+      small
+        {display: block; color: rgb(144, 139, 132); overflow-x: hidden; overflow-y: hidden; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; margin: 1px 0px 0px 0px}
+        "ws-b · claude-opus-5-5 · 1 day"
+    span.tk
+      {display: block; color: rgb(144, 139, 132); min-width: 58px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; text-align: right}
+      "440k"
+    span.c
+      {display: block; min-width: 64px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 13px; font-weight: 700; text-align: right}
+      "$2.40"
+  div.acct-row.costs-row
+    {display: flex; background-color: rgb(28, 28, 31); align-items: center; border-width: - - 1px -; border-style: none none solid none; border-color: - - rgba(255, 255, 255, 0.1) -; padding: 9px 12px 9px 12px; gap: 10px}
+    div.t
+      {display: block; min-width: 0px; flex-grow: 1; flex-basis: 0%; overflow-x: hidden; overflow-y: hidden; font-size: 13px; white-space: nowrap}
+      "Codex session"
+      small
+        {display: block; color: rgb(144, 139, 132); overflow-x: hidden; overflow-y: hidden; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; margin: 1px 0px 0px 0px}
+        "ws-a · gpt-5.5 · 1 day"
+    span.acct-badge.codex
+      {display: flex; color: rgb(169, 154, 216); background-color: rgba(169, 154, 216, 0.16); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; font-weight: 700; white-space: nowrap; border-width: 1px; border-style: solid; border-color: rgba(169, 154, 216, 0.5); border-radius: 5px; padding: 1px 7px 1px 7px}
+      "CODEX"
+    span.tk
+      {display: block; color: rgb(144, 139, 132); min-width: 58px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; text-align: right}
+      "400k"
+    span.c
+      {display: block; min-width: 64px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 13px; font-weight: 700; text-align: right}
+      "$2.00"
+  div.acct-row.costs-row
+    {display: flex; background-color: rgb(28, 28, 31); align-items: center; padding: 9px 12px 9px 12px; gap: 10px}
+    div.t
+      {display: block; min-width: 0px; flex-grow: 1; flex-basis: 0%; overflow-x: hidden; overflow-y: hidden; font-size: 13px; white-space: nowrap}
+      "Antigravity CLI session"
+      small
+        {display: block; color: rgb(144, 139, 132); overflow-x: hidden; overflow-y: hidden; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; margin: 1px 0px 0px 0px}
+        "Other · gemini-3.1-pro · 1 day"
+    span.acct-badge.agy
+      {display: flex; color: rgb(189, 185, 178); background-color: rgb(39, 39, 44); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; font-weight: 700; white-space: nowrap; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.17); border-radius: 5px; padding: 1px 7px 1px 7px}
+      "ANTIGRAVITY"
+    span.tk
+      {display: block; color: rgb(144, 139, 132); min-width: 58px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; text-align: right}
+      "500k"
+    span.c
+      {display: block; min-width: 64px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 13px; font-weight: 700; text-align: right}
+      "$1.00"

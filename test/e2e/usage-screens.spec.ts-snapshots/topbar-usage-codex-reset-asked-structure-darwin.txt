@@ -1,0 +1,59 @@
+div.tbu-row
+  {display: block; border-radius: 7px; padding: 7px 8px 8px 8px}
+  div.tbu-row-head
+    {display: flex; align-items: baseline; gap: 7px}
+    span.acct-name [title="capped"]
+      {display: block; min-width: 0px; overflow-x: hidden; overflow-y: hidden; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 13.5px; font-weight: 700; white-space: nowrap}
+      "capped"
+    span.acct-status.walled
+      {display: flex; color: rgb(217, 119, 106); flex-shrink: 0; align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; font-weight: 700; white-space: nowrap; border-width: 1px; border-style: solid; border-color: rgb(217, 119, 106); border-radius: 5px; padding: 1px 7px 1px 7px}
+      "WALLED"
+  div.tbu-grid.two
+    {display: grid; grid-template-columns: repeat(2, 128px); margin: 6px 0px 0px 0px; gap: normal 6px}
+    div.tbu-cell [role="group" aria-label="5h walled, back in 40m"]
+      {display: flex; min-width: 0px; flex-direction: column; gap: 2px}
+      span.acct-meter.bad [data-win="5h"]
+        {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+        span.m-track
+          {display: block; background-color: rgb(52, 52, 58); width: 86px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+          span.m-fill [style="width: 100%;"]
+            {display: block; background-color: rgb(217, 119, 106); width: 100%; height: 100%; border-radius: 3px}
+        span.m-pct
+          {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+          "100%"
+      span.tbu-cell-sub.alarm [aria-hidden="true"]
+        {display: block; color: rgb(217, 119, 106); min-height: 15px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; white-space: nowrap}
+        "back in 40m"
+    div.tbu-cell [role="group" aria-label="7d resets at 3-6 09:30"]
+      {display: flex; min-width: 0px; flex-direction: column; gap: 2px}
+      span.acct-meter.bad [data-win="7d"]
+        {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+        span.m-track
+          {display: block; background-color: rgb(52, 52, 58); width: 86px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+          span.m-fill [style="width: 92%;"]
+            {display: block; background-color: rgb(217, 119, 106); width: 92%; height: 100%; border-radius: 3px}
+        span.m-pct
+          {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+          "92%"
+      span.tbu-cell-sub [aria-hidden="true"]
+        {display: block; opacity: 0.8; color: rgb(144, 139, 132); min-height: 15px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; white-space: nowrap}
+        "3-6 09:30"
+  div.tbu-row-note
+    {display: block; margin: 5px 0px 0px 0px}
+    span.acct-note
+      {display: inline; color: rgb(144, 139, 132); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px}
+      "2 resets saved, first expires 3-5 09:30"
+  div.acct-confirm
+    {display: flex; color: rgb(189, 185, 178); background-color: rgba(217, 119, 106, 0.08); flex-wrap: wrap; align-items: center; font-size: 12px; border-width: 1px; border-style: solid; border-color: rgba(217, 119, 106, 0.35); border-radius: 7px; padding: 7px 10px 7px 10px; margin: 8px 0px 0px 0px; gap: 10px}
+    span
+      {display: block; min-width: 180px; flex-grow: 1; flex-basis: 0%}
+      "Use 1 of 2 saved resets on now? Its limits start again from 0."
+      b
+        {display: inline; font-weight: 700}
+        "capped"
+    button.mini.danger
+      {display: flex; color: rgb(217, 119, 106); align-items: center; font-size: 13px; font-weight: 600; line-height: 1; text-align: center; border-width: 1px; border-style: solid; border-color: rgba(217, 119, 106, 0.45); border-radius: 7px; padding: 7px 14px 7px 14px; gap: 5px}
+      "Use"
+    button.mini
+      {display: flex; color: rgb(243, 241, 238); background-color: rgb(52, 52, 58); align-items: center; font-size: 13px; font-weight: 600; line-height: 1; text-align: center; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.17); border-radius: 7px; padding: 7px 14px 7px 14px; gap: 5px}
+      "Cancel"

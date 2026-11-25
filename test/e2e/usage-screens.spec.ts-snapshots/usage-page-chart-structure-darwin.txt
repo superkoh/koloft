@@ -1,0 +1,226 @@
+div.set-ph
+  {display: block; border-width: - - 1px -; border-style: none none solid none; border-color: - - rgba(255, 255, 255, 0.1) -; padding: 0px 0px 12px 0px; margin: 0px 0px 12px 0px}
+  h3
+    {display: block; font-size: 15px; font-weight: 650; letter-spacing: -0.15px}
+    "Usage"
+  p
+    {display: block; color: rgb(144, 139, 132); font-size: 12px; line-height: 1.55; margin: 3px 0px 0px 0px}
+    "What your sessions would cost on the API, counted from their tokens at list price. A subscription is not billed per token, so this is a yardstick, not a bill."
+
+div.costs-head
+  {display: flex; flex-wrap: wrap; align-items: center; margin: 2px 0px 10px 0px; gap: 10px}
+  div.seg [role="group" aria-label="Range"]
+    {display: flex; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.1); border-radius: 6px}
+    button [aria-pressed="false"]
+      {display: flex; color: rgb(144, 139, 132); background-color: rgb(22, 22, 24); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 11px; text-align: center; padding: 3px 9px 3px 9px; gap: 5px}
+      "7 days"
+    button.on [aria-pressed="true"]
+      {display: flex; background-color: rgb(52, 52, 58); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 11px; text-align: center; padding: 3px 9px 3px 9px; gap: 5px}
+      "30 days"
+    button [aria-pressed="false"]
+      {display: flex; color: rgb(144, 139, 132); background-color: rgb(22, 22, 24); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 11px; text-align: center; padding: 3px 9px 3px 9px; gap: 5px}
+      "90 days"
+    button [aria-pressed="false"]
+      {display: flex; color: rgb(144, 139, 132); background-color: rgb(22, 22, 24); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 11px; text-align: center; padding: 3px 9px 3px 9px; gap: 5px}
+      "All"
+  div.seg [role="group" aria-label="Group by"]
+    {display: flex; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.1); border-radius: 6px; margin: 0px 0px 0px auto}
+    button.on [aria-pressed="true"]
+      {display: flex; background-color: rgb(52, 52, 58); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 11px; text-align: center; padding: 3px 9px 3px 9px; gap: 5px}
+      "Day"
+    button [aria-pressed="false"]
+      {display: flex; color: rgb(144, 139, 132); background-color: rgb(22, 22, 24); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 11px; text-align: center; padding: 3px 9px 3px 9px; gap: 5px}
+      "Session"
+    button [aria-pressed="false"]
+      {display: flex; color: rgb(144, 139, 132); background-color: rgb(22, 22, 24); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 11px; text-align: center; padding: 3px 9px 3px 9px; gap: 5px}
+      "Workspace"
+    button [aria-pressed="false"]
+      {display: flex; color: rgb(144, 139, 132); background-color: rgb(22, 22, 24); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 11px; text-align: center; padding: 3px 9px 3px 9px; gap: 5px}
+      "Model"
+
+div.costs-sum
+  {display: flex; flex-wrap: wrap; align-items: baseline; padding: 6px 0px 14px 0px; gap: 22px}
+  span
+    {display: block}
+    span.n
+      {display: inline; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 22px; font-weight: 700; letter-spacing: -0.22px}
+      "$11.4"
+    span.l
+      {display: inline; color: rgb(144, 139, 132); font-size: 11px; margin: 0px 0px 0px 6px}
+      "last 30 days"
+  span
+    {display: block}
+    span.n
+      {display: inline; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 22px; font-weight: 700; letter-spacing: -0.22px}
+      "4"
+    span.l
+      {display: inline; color: rgb(144, 139, 132); font-size: 11px; margin: 0px 0px 0px 6px}
+      "sessions"
+
+div.costs-chart [aria-label="Cost per day, last 30 days"]
+  {display: grid; position: relative; height: 150px; grid-template-columns: 34px 1fr; margin: 0px 0px 6px 0px; gap: 0px 8px}
+  div.costs-y
+    {display: block; position: relative; color: rgb(144, 139, 132); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px}
+    span [style="top: 0%;"]
+      {display: block; position: absolute; transform: translate(0px, -50%); inset: 0% 0px auto auto}
+      "$10.0"
+    span [style="top: 25%;"]
+      {display: block; position: absolute; transform: translate(0px, -50%); inset: 25% 0px auto auto}
+      "$7.50"
+    span [style="top: 50%;"]
+      {display: block; position: absolute; transform: translate(0px, -50%); inset: 50% 0px auto auto}
+      "$5.00"
+    span [style="top: 75%;"]
+      {display: block; position: absolute; transform: translate(0px, -50%); inset: 75% 0px auto auto}
+      "$2.50"
+    span [style="top: 100%;"]
+      {display: block; position: absolute; transform: translate(0px, -50%); inset: 100% 0px auto auto}
+      "0"
+  div.costs-plot
+    {display: block; position: relative; border-width: - - 1px -; border-style: none none solid none; border-color: - - rgba(255, 255, 255, 0.17) -}
+    div.costs-grid [style="top: 0%;"]
+      {display: block; position: absolute; background-color: rgba(255, 255, 255, 0.1); height: 1px; inset: 0% 0px auto 0px}
+    div.costs-grid [style="top: 25%;"]
+      {display: block; position: absolute; background-color: rgba(255, 255, 255, 0.1); height: 1px; inset: 25% 0px auto 0px}
+    div.costs-grid [style="top: 50%;"]
+      {display: block; position: absolute; background-color: rgba(255, 255, 255, 0.1); height: 1px; inset: 50% 0px auto 0px}
+    div.costs-grid [style="top: 75%;"]
+      {display: block; position: absolute; background-color: rgba(255, 255, 255, 0.1); height: 1px; inset: 75% 0px auto 0px}
+    div.costs-bars
+      {display: flex; position: absolute; align-items: flex-end; inset: 0px; gap: 2px}
+      div.costs-col [tabindex="0" aria-label="2031-02-03: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-04: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-05: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-06: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-07: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-08: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-09: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-10: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-11: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-12: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-13: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-14: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-15: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-16: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-17: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-18: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-19: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-20: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-21: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-22: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-23: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-24: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-25: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-26: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-27: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-02-28: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-03-01: $2.40"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 24%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 24%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-03-02: $0.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 0%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 0%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col [tabindex="0" aria-label="2031-03-03: $2.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 20%;"]
+          {display: block; background-color: rgb(236, 150, 112); width: 100%; height: 20%; max-width: 24px; border-radius: 4px 4px 0px 0px}
+      div.costs-col.today [tabindex="0" aria-label="2031-03-04: $7.00"]
+        {display: flex; height: 100%; min-width: 0px; flex-grow: 1; flex-basis: 0px; align-items: flex-end; justify-content: center}
+        div.costs-bar [style="height: 70%;"]
+          {display: block; background-color: rgb(217, 119, 87); width: 100%; height: 70%; max-width: 24px; filter: brightness(1.18); border-radius: 4px 4px 0px 0px}
+
+div.costs-x
+  {display: grid; grid-template-columns: 34px 1fr; margin: 0px 0px 14px 0px; gap: 0px 8px}
+  span
+    {display: block}
+  div
+    {display: flex; color: rgb(144, 139, 132); justify-content: space-between; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px}
+    span
+      {display: block}
+      "2/3"
+    span
+      {display: block}
+      "2/18"
+    span
+      {display: block}
+      "today"

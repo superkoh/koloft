@@ -1,0 +1,9 @@
+- text: Sign in again signed-out
+- textbox "Name this account (e.g. work)": signed-out
+- button "Cancel"
+- button "Sign in"
+- text: Koloft opens a terminal tab that runs
+- code: codex login
+- text: for this account only. Finish the sign-in there; the tab closes itself when
+- code: codex login
+- text: ends. Signed in, the account joins the pool; if not, this page says so. Your Codex settings and trusted folders are shared by every account.

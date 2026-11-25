@@ -1,0 +1,35 @@
+div.menu.wt-list [role="listbox" aria-label="Agents" tabindex="-1" style="left: 882px; top: 247.219px;" .focused]
+  {display: block; position: fixed; background-color: rgb(28, 28, 31); box-shadow: rgba(0, 0, 0, 0.7) 0px 14px 40px -10px; width: 240px; max-height: 244px; overflow-x: hidden; overflow-y: auto; font-size: 13px; z-index: 200; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.17); border-radius: 9px; padding: 4px; inset: 247.219px auto auto 882px}
+  div.cb-row.hot [role="option" aria-selected="true"]
+    {display: flex; background-color: rgb(39, 39, 44); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 12.5px; white-space: nowrap; border-radius: 6px; padding: 7px 10px 7px 10px; gap: 8px}
+    svg [aria-hidden="true"]
+      {display: block; width: 14px; height: 14px; overflow-x: hidden; overflow-y: hidden}
+      shape 811179dd
+    span.wsp-name
+      {display: block; max-width: 60%; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden}
+      "Claude"
+    span.note
+      {display: block; color: rgb(144, 139, 132); overflow-x: hidden; overflow-y: hidden; font-size: 10.5px; padding: 0px 0px 0px 16px; margin: 0px 0px 0px auto}
+      "default"
+  div.cb-row.dim [role="option" aria-selected="false" aria-disabled="true" title="no account — add one in Settings ▸ Accounts"]
+    {display: flex; opacity: 0.45; color: rgb(189, 185, 178); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 12.5px; white-space: nowrap; border-radius: 6px; padding: 7px 10px 7px 10px; gap: 8px}
+    svg [aria-hidden="true"]
+      {display: block; width: 14px; height: 14px; overflow-x: hidden; overflow-y: hidden}
+      shape 47ace0c3
+    span.wsp-name
+      {display: block; max-width: 60%; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden}
+      "Codex"
+    span.note
+      {display: block; color: rgb(144, 139, 132); overflow-x: hidden; overflow-y: hidden; font-size: 10.5px; padding: 0px 0px 0px 16px; margin: 0px 0px 0px auto}
+      "No account"
+  div.cb-row.dim [role="option" aria-selected="false" aria-disabled="true" title="no account — add one in Settings ▸ Accounts"]
+    {display: flex; opacity: 0.45; color: rgb(189, 185, 178); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 12.5px; white-space: nowrap; border-radius: 6px; padding: 7px 10px 7px 10px; gap: 8px}
+    svg [aria-hidden="true"]
+      {display: block; width: 14px; height: 14px; overflow-x: hidden; overflow-y: hidden}
+      shape 91c7dcf9
+    span.wsp-name
+      {display: block; max-width: 60%; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden}
+      "Antigravity"
+    span.note
+      {display: block; color: rgb(144, 139, 132); overflow-x: hidden; overflow-y: hidden; font-size: 10.5px; padding: 0px 0px 0px 16px; margin: 0px 0px 0px auto}
+      "No account"

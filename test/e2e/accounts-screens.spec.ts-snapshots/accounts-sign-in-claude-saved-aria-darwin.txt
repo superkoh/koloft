@@ -1,0 +1,3 @@
+- text: Sign in ✓ Saved night — the account joined the pool Koloft runs the official
+- code: claude setup-token
+- text: "in the background — no terminal tab. Once you authorize in the browser, the token goes straight into your Keychain and the account joins the pool: no copy-paste, and you never leave this panel."

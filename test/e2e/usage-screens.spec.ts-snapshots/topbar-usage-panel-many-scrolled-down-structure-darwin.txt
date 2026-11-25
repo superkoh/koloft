@@ -1,0 +1,478 @@
+div.tbu-pop [style="left: 8px; bottom: 42px;"]
+  {display: flex; position: fixed; background-color: rgb(28, 28, 31); box-shadow: rgba(0, 0, 0, 0.7) 0px 14px 40px -10px; width: 430px; max-height: 862px; flex-direction: column; font-size: 13px; z-index: 200; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.17); border-radius: 9px; padding: 6px; inset: auto auto 42px 8px}
+  div.tbu-pop-head
+    {display: flex; color: rgb(144, 139, 132); flex-shrink: 0; align-items: center; justify-content: space-between; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; letter-spacing: 0.84px; text-transform: uppercase; padding: 6px 8px 7px 8px}
+    span
+      {display: block}
+      "Account usage"
+    span.age
+      {display: block; letter-spacing: 0.42px; text-transform: none}
+      "updated just now"
+  div.tbu-rows
+    {display: block; min-height: 0px; overflow-x: auto; overflow-y: auto; padding: 0px 6px 0px 6px; margin: 0px -6px 0px -6px}
+    div.tbu-pop-head
+      {display: flex; color: rgb(144, 139, 132); align-items: center; justify-content: space-between; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; letter-spacing: 0.84px; text-transform: uppercase; padding: 6px 8px 7px 8px}
+      span
+        {display: block}
+        "Claude"
+    div.tbu-grid.tbu-colhead [aria-hidden="true"]
+      {display: grid; color: rgb(144, 139, 132); grid-template-columns: repeat(3, 128px); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; letter-spacing: 0.8px; text-transform: uppercase; padding: 2px 8px 5px 8px; margin: 6px 0px 0px 0px; gap: normal 6px}
+      span
+        {display: block}
+        "5h"
+      span
+        {display: block}
+        "7d"
+      span
+        {display: block}
+        "fable"
+    div.tbu-row.pool [role="group" aria-label="Pool: 3 measured, 2 usable, 1 walled"]
+      {display: block; background-color: rgb(39, 39, 44); border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.17); border-radius: 7px; padding: 6px 7px 7px 7px}
+      div.tbu-row-head
+        {display: flex; align-items: baseline; gap: 7px}
+        span.acct-name
+          {display: block; min-width: 0px; overflow-x: hidden; overflow-y: hidden; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 13.5px; font-weight: 700; white-space: nowrap}
+          "Pool"
+        span.tbu-pool-meta
+          {display: block; color: rgb(144, 139, 132); flex-shrink: 0; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; white-space: nowrap}
+          "3 measured · 2 usable"
+      div.tbu-grid
+        {display: grid; grid-template-columns: repeat(3, 128px); margin: 6px 0px 0px 0px; gap: normal 6px}
+        div.tbu-cell
+          {display: flex; min-width: 0px; flex-direction: column; gap: 2px}
+          span.acct-meter [data-win="5h"]
+            {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+            span.m-track
+              {display: block; background-color: rgb(52, 52, 58); width: 86px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+              span.m-fill [style="width: 50%;"]
+                {display: block; background-color: rgb(143, 198, 154); width: 50%; height: 100%; border-radius: 3px}
+            span.m-pct
+              {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+              "50%"
+        div.tbu-cell
+          {display: flex; min-width: 0px; flex-direction: column; gap: 2px}
+          span.acct-meter [data-win="7d"]
+            {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+            span.m-track
+              {display: block; background-color: rgb(52, 52, 58); width: 86px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+              span.m-fill [style="width: 55%;"]
+                {display: block; background-color: rgb(143, 198, 154); width: 55%; height: 100%; border-radius: 3px}
+            span.m-pct
+              {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+              "55%"
+        div.tbu-cell
+          {display: flex; min-width: 0px; flex-direction: column; gap: 2px}
+          span.acct-meter [data-win="oi"]
+            {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+            span.m-track
+              {display: block; background-color: rgb(52, 52, 58); width: 86px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+              span.m-fill [style="width: 59%;"]
+                {display: block; background-color: rgb(143, 198, 154); width: 59%; height: 100%; border-radius: 3px}
+            span.m-pct
+              {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+              "59%"
+        div.tbu-cell.span
+          {display: flex; min-width: 0px; flex-direction: column; gap: 2px}
+          span.tbu-cell-sub.alarm
+            {display: block; color: rgb(217, 119, 106); min-height: 15px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; white-space: nowrap}
+            "1 walled"
+    div.tbu-sep
+      {display: block; background-color: rgba(255, 255, 255, 0.1); height: 1px; margin: 5px 6px 5px 6px}
+    div.tbu-row
+      {display: block; border-radius: 7px; padding: 7px 8px 8px 8px}
+      div.tbu-row-head
+        {display: flex; align-items: baseline; gap: 7px}
+        span.acct-name [title="studio"]
+          {display: block; min-width: 0px; overflow-x: hidden; overflow-y: hidden; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 13.5px; font-weight: 700; white-space: nowrap}
+          "studio"
+        span.acct-badge.good
+          {display: flex; color: rgb(143, 198, 154); background-color: rgba(143, 198, 154, 0.12); flex-shrink: 0; align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; font-weight: 700; white-space: nowrap; border-width: 1px; border-style: solid; border-color: rgba(143, 198, 154, 0.4); border-radius: 5px; padding: 1px 7px 1px 7px}
+          "FABLE"
+      div.tbu-grid
+        {display: grid; grid-template-columns: repeat(3, 128px); margin: 6px 0px 0px 0px; gap: normal 6px}
+        div.tbu-cell [role="group" aria-label="5h resets in 2h 00m"]
+          {display: flex; min-width: 0px; flex-direction: column; gap: 2px}
+          span.acct-meter [data-win="5h"]
+            {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+            span.m-track
+              {display: block; background-color: rgb(52, 52, 58); width: 86px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+              span.m-fill [style="width: 42%;"]
+                {display: block; background-color: rgb(143, 198, 154); width: 42%; height: 100%; border-radius: 3px}
+            span.m-pct
+              {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+              "42%"
+          span.tbu-cell-sub [aria-hidden="true"]
+            {display: block; opacity: 0.8; color: rgb(144, 139, 132); min-height: 15px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; white-space: nowrap}
+            "in 2h 00m"
+        div.tbu-cell [role="group" aria-label="7d resets at 3-7 09:30"]
+          {display: flex; min-width: 0px; flex-direction: column; gap: 2px}
+          span.acct-meter [data-win="7d"]
+            {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+            span.m-track
+              {display: block; background-color: rgb(52, 52, 58); width: 86px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+              span.m-fill [style="width: 63%;"]
+                {display: block; background-color: rgb(143, 198, 154); width: 63%; height: 100%; border-radius: 3px}
+            span.m-pct
+              {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+              "63%"
+          span.tbu-cell-sub [aria-hidden="true"]
+            {display: block; opacity: 0.8; color: rgb(144, 139, 132); min-height: 15px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; white-space: nowrap}
+            "3-7 09:30"
+        div.tbu-cell [role="group" aria-label="fable resets at 3-7 09:30"]
+          {display: flex; min-width: 0px; flex-direction: column; gap: 2px}
+          span.acct-meter [data-win="oi"]
+            {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+            span.m-track
+              {display: block; background-color: rgb(52, 52, 58); width: 86px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+              span.m-fill [style="width: 18%;"]
+                {display: block; background-color: rgb(143, 198, 154); width: 18%; height: 100%; border-radius: 3px}
+            span.m-pct
+              {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+              "18%"
+          span.tbu-cell-sub [aria-hidden="true"]
+            {display: block; opacity: 0.8; color: rgb(144, 139, 132); min-height: 15px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; white-space: nowrap}
+            "3-7 09:30"
+    div.tbu-row
+      {display: block; border-radius: 7px; padding: 7px 8px 8px 8px}
+      div.tbu-row-head
+        {display: flex; align-items: baseline; gap: 7px}
+        span.acct-name [title="garden"]
+          {display: block; min-width: 0px; overflow-x: hidden; overflow-y: hidden; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 13.5px; font-weight: 700; white-space: nowrap}
+          "garden"
+      div.tbu-grid
+        {display: grid; grid-template-columns: repeat(3, 128px); margin: 6px 0px 0px 0px; gap: normal 6px}
+        div.tbu-cell [role="group" aria-label="5h resets in 2h 00m"]
+          {display: flex; min-width: 0px; flex-direction: column; gap: 2px}
+          span.acct-meter [data-win="5h"]
+            {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+            span.m-track
+              {display: block; background-color: rgb(52, 52, 58); width: 86px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+              span.m-fill [style="width: 7%;"]
+                {display: block; background-color: rgb(143, 198, 154); width: 7%; height: 100%; border-radius: 3px}
+            span.m-pct
+              {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+              "7%"
+          span.tbu-cell-sub [aria-hidden="true"]
+            {display: block; opacity: 0.8; color: rgb(144, 139, 132); min-height: 15px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; white-space: nowrap}
+            "in 2h 00m"
+        div.tbu-cell [role="group" aria-label="7d resets at 3-7 09:30"]
+          {display: flex; min-width: 0px; flex-direction: column; gap: 2px}
+          span.acct-meter [data-win="7d"]
+            {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+            span.m-track
+              {display: block; background-color: rgb(52, 52, 58); width: 86px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+              span.m-fill [style="width: 31%;"]
+                {display: block; background-color: rgb(143, 198, 154); width: 31%; height: 100%; border-radius: 3px}
+            span.m-pct
+              {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+              "31%"
+          span.tbu-cell-sub [aria-hidden="true"]
+            {display: block; opacity: 0.8; color: rgb(144, 139, 132); min-height: 15px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; white-space: nowrap}
+            "3-7 09:30"
+        div.tbu-cell
+          {display: flex; min-width: 0px; flex-direction: column; gap: 2px}
+    div.tbu-row
+      {display: block; border-radius: 7px; padding: 7px 8px 8px 8px}
+      div.tbu-row-head
+        {display: flex; align-items: baseline; gap: 7px}
+        span.acct-name [title="walled"]
+          {display: block; min-width: 0px; overflow-x: hidden; overflow-y: hidden; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 13.5px; font-weight: 700; white-space: nowrap}
+          "walled"
+        span.acct-badge.good
+          {display: flex; color: rgb(143, 198, 154); background-color: rgba(143, 198, 154, 0.12); flex-shrink: 0; align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; font-weight: 700; white-space: nowrap; border-width: 1px; border-style: solid; border-color: rgba(143, 198, 154, 0.4); border-radius: 5px; padding: 1px 7px 1px 7px}
+          "FABLE"
+        span.acct-status.walled
+          {display: flex; color: rgb(217, 119, 106); flex-shrink: 0; align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; font-weight: 700; white-space: nowrap; border-width: 1px; border-style: solid; border-color: rgb(217, 119, 106); border-radius: 5px; padding: 1px 7px 1px 7px}
+          "WALLED"
+      div.tbu-grid
+        {display: grid; grid-template-columns: repeat(3, 128px); margin: 6px 0px 0px 0px; gap: normal 6px}
+        div.tbu-cell [role="group" aria-label="5h walled, back in 40m"]
+          {display: flex; min-width: 0px; flex-direction: column; gap: 2px}
+          span.acct-meter.bad [data-win="5h"]
+            {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+            span.m-track
+              {display: block; background-color: rgb(52, 52, 58); width: 86px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+              span.m-fill [style="width: 100%;"]
+                {display: block; background-color: rgb(217, 119, 106); width: 100%; height: 100%; border-radius: 3px}
+            span.m-pct
+              {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+              "100%"
+          span.tbu-cell-sub.alarm [aria-hidden="true"]
+            {display: block; color: rgb(217, 119, 106); min-height: 15px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; white-space: nowrap}
+            "back in 40m"
+        div.tbu-cell [role="group" aria-label="7d resets at 3-7 09:30"]
+          {display: flex; min-width: 0px; flex-direction: column; gap: 2px}
+          span.acct-meter.warn [data-win="7d"]
+            {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+            span.m-track
+              {display: block; background-color: rgb(52, 52, 58); width: 86px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+              span.m-fill [style="width: 70%;"]
+                {display: block; background-color: rgb(240, 168, 48); width: 70%; height: 100%; border-radius: 3px}
+            span.m-pct
+              {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+              "70%"
+          span.tbu-cell-sub [aria-hidden="true"]
+            {display: block; opacity: 0.8; color: rgb(144, 139, 132); min-height: 15px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; white-space: nowrap}
+            "3-7 09:30"
+        div.tbu-cell [role="group" aria-label="fable allowance spent, resets at 3-7 09:30"]
+          {display: flex; min-width: 0px; flex-direction: column; gap: 2px}
+          span.acct-meter.bad [data-win="oi"]
+            {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+            span.m-track
+              {display: block; background-color: rgb(52, 52, 58); width: 86px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+              span.m-fill [style="width: 97%;"]
+                {display: block; background-color: rgb(217, 119, 106); width: 97%; height: 100%; border-radius: 3px}
+            span.m-pct
+              {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+              "97%"
+          span.tbu-cell-sub [aria-hidden="true"]
+            {display: block; opacity: 0.8; color: rgb(144, 139, 132); min-height: 15px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; white-space: nowrap}
+            "spent · 3-7 09:30"
+    div.tbu-row
+      {display: block; border-radius: 7px; padding: 7px 8px 8px 8px}
+      div.tbu-row-head
+        {display: flex; align-items: baseline; gap: 7px}
+        span.acct-name [title="metered"]
+          {display: block; min-width: 0px; overflow-x: hidden; overflow-y: hidden; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 13.5px; font-weight: 700; white-space: nowrap}
+          "metered"
+        span.acct-badge.api
+          {display: flex; color: rgb(159, 192, 221); background-color: rgba(159, 192, 221, 0.12); flex-shrink: 0; align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; font-weight: 700; white-space: nowrap; border-width: 1px; border-style: solid; border-color: rgba(159, 192, 221, 0.4); border-radius: 5px; padding: 1px 7px 1px 7px}
+          "API KEY"
+      div.tbu-row-note
+        {display: block; margin: 5px 0px 0px 0px}
+        span.acct-note
+          {display: inline; color: rgb(144, 139, 132); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px}
+          "Metered — used only when every subscription is rate-limited"
+    div.tbu-sep
+      {display: block; background-color: rgba(255, 255, 255, 0.1); height: 1px; margin: 5px 6px 5px 6px}
+    div.tbu-pop-head
+      {display: flex; color: rgb(144, 139, 132); align-items: center; justify-content: space-between; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; letter-spacing: 0.84px; text-transform: uppercase; padding: 6px 8px 7px 8px}
+      span
+        {display: block}
+        "Codex"
+    div.tbu-grid.tbu-colhead.two [aria-hidden="true"]
+      {display: grid; color: rgb(144, 139, 132); grid-template-columns: repeat(2, 128px); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; letter-spacing: 0.8px; text-transform: uppercase; padding: 2px 8px 5px 8px; margin: 6px 0px 0px 0px; gap: normal 6px}
+      span
+        {display: block}
+        "5h"
+      span
+        {display: block}
+        "7d"
+    div.tbu-row.pool [role="group" aria-label="Pool: 2 measured, 1 usable, 1 walled"]
+      {display: block; background-color: rgb(39, 39, 44); border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.17); border-radius: 7px; padding: 6px 7px 7px 7px}
+      div.tbu-row-head
+        {display: flex; align-items: baseline; gap: 7px}
+        span.acct-name
+          {display: block; min-width: 0px; overflow-x: hidden; overflow-y: hidden; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 13.5px; font-weight: 700; white-space: nowrap}
+          "Pool"
+        span.tbu-pool-meta
+          {display: block; color: rgb(144, 139, 132); flex-shrink: 0; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; white-space: nowrap}
+          "2 measured · 1 usable"
+      div.tbu-grid.two
+        {display: grid; grid-template-columns: repeat(2, 128px); margin: 6px 0px 0px 0px; gap: normal 6px}
+        div.tbu-cell
+          {display: flex; min-width: 0px; flex-direction: column; gap: 2px}
+          span.acct-meter [data-win="5h"]
+            {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+            span.m-track
+              {display: block; background-color: rgb(52, 52, 58); width: 86px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+              span.m-fill [style="width: 63%;"]
+                {display: block; background-color: rgb(143, 198, 154); width: 63%; height: 100%; border-radius: 3px}
+            span.m-pct
+              {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+              "63%"
+        div.tbu-cell
+          {display: flex; min-width: 0px; flex-direction: column; gap: 2px}
+          span.acct-meter.warn [data-win="7d"]
+            {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+            span.m-track
+              {display: block; background-color: rgb(52, 52, 58); width: 86px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+              span.m-fill [style="width: 77%;"]
+                {display: block; background-color: rgb(240, 168, 48); width: 77%; height: 100%; border-radius: 3px}
+            span.m-pct
+              {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+              "77%"
+        div.tbu-cell.span
+          {display: flex; min-width: 0px; flex-direction: column; gap: 2px}
+          span.tbu-cell-sub.alarm
+            {display: block; color: rgb(217, 119, 106); min-height: 15px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; white-space: nowrap}
+            "1 walled"
+    div.tbu-sep
+      {display: block; background-color: rgba(255, 255, 255, 0.1); height: 1px; margin: 5px 6px 5px 6px}
+    div.tbu-row
+      {display: block; border-radius: 7px; padding: 7px 8px 8px 8px}
+      div.tbu-row-head
+        {display: flex; align-items: baseline; gap: 7px}
+        span.acct-name [title="plus"]
+          {display: block; min-width: 0px; overflow-x: hidden; overflow-y: hidden; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 13.5px; font-weight: 700; white-space: nowrap}
+          "plus"
+      div.tbu-grid.two
+        {display: grid; grid-template-columns: repeat(2, 128px); margin: 6px 0px 0px 0px; gap: normal 6px}
+        div.tbu-cell [role="group" aria-label="5h resets in 4h 30m"]
+          {display: flex; min-width: 0px; flex-direction: column; gap: 2px}
+          span.acct-meter [data-win="5h"]
+            {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+            span.m-track
+              {display: block; background-color: rgb(52, 52, 58); width: 86px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+              span.m-fill [style="width: 25%;"]
+                {display: block; background-color: rgb(143, 198, 154); width: 25%; height: 100%; border-radius: 3px}
+            span.m-pct
+              {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+              "25%"
+          span.tbu-cell-sub [aria-hidden="true"]
+            {display: block; opacity: 0.8; color: rgb(144, 139, 132); min-height: 15px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; white-space: nowrap}
+            "in 4h 30m"
+        div.tbu-cell [role="group" aria-label="7d resets at 3-8 10:30"]
+          {display: flex; min-width: 0px; flex-direction: column; gap: 2px}
+          span.acct-meter [data-win="7d"]
+            {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+            span.m-track
+              {display: block; background-color: rgb(52, 52, 58); width: 86px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+              span.m-fill [style="width: 61%;"]
+                {display: block; background-color: rgb(143, 198, 154); width: 61%; height: 100%; border-radius: 3px}
+            span.m-pct
+              {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+              "61%"
+          span.tbu-cell-sub [aria-hidden="true"]
+            {display: block; opacity: 0.8; color: rgb(144, 139, 132); min-height: 15px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; white-space: nowrap}
+            "3-8 10:30"
+    div.tbu-row
+      {display: block; border-radius: 7px; padding: 7px 8px 8px 8px}
+      div.tbu-row-head
+        {display: flex; align-items: baseline; gap: 7px}
+        span.acct-name [title="capped"]
+          {display: block; min-width: 0px; overflow-x: hidden; overflow-y: hidden; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 13.5px; font-weight: 700; white-space: nowrap}
+          "capped"
+        span.acct-status.walled
+          {display: flex; color: rgb(217, 119, 106); flex-shrink: 0; align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; font-weight: 700; white-space: nowrap; border-width: 1px; border-style: solid; border-color: rgb(217, 119, 106); border-radius: 5px; padding: 1px 7px 1px 7px}
+          "WALLED"
+        button.acct-relogin
+          {display: block; color: rgb(236, 150, 112); background-color: rgba(236, 150, 112, 0.18); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; font-weight: 700; text-align: center; white-space: nowrap; border-width: 1px; border-style: solid; border-color: rgba(236, 150, 112, 0.45); border-radius: 5px; padding: 1px 8px 1px 8px}
+          "Use a reset"
+      div.tbu-grid.two
+        {display: grid; grid-template-columns: repeat(2, 128px); margin: 6px 0px 0px 0px; gap: normal 6px}
+        div.tbu-cell [role="group" aria-label="5h walled, back in 40m"]
+          {display: flex; min-width: 0px; flex-direction: column; gap: 2px}
+          span.acct-meter.bad [data-win="5h"]
+            {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+            span.m-track
+              {display: block; background-color: rgb(52, 52, 58); width: 86px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+              span.m-fill [style="width: 100%;"]
+                {display: block; background-color: rgb(217, 119, 106); width: 100%; height: 100%; border-radius: 3px}
+            span.m-pct
+              {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+              "100%"
+          span.tbu-cell-sub.alarm [aria-hidden="true"]
+            {display: block; color: rgb(217, 119, 106); min-height: 15px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; white-space: nowrap}
+            "back in 40m"
+        div.tbu-cell [role="group" aria-label="7d resets at 3-6 09:30"]
+          {display: flex; min-width: 0px; flex-direction: column; gap: 2px}
+          span.acct-meter.bad [data-win="7d"]
+            {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+            span.m-track
+              {display: block; background-color: rgb(52, 52, 58); width: 86px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+              span.m-fill [style="width: 92%;"]
+                {display: block; background-color: rgb(217, 119, 106); width: 92%; height: 100%; border-radius: 3px}
+            span.m-pct
+              {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+              "92%"
+          span.tbu-cell-sub [aria-hidden="true"]
+            {display: block; opacity: 0.8; color: rgb(144, 139, 132); min-height: 15px; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; white-space: nowrap}
+            "3-6 09:30"
+      div.tbu-row-note
+        {display: block; margin: 5px 0px 0px 0px}
+        span.acct-note
+          {display: inline; color: rgb(144, 139, 132); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px}
+          "2 resets saved, first expires 3-5 09:30"
+    div.tbu-row.dim
+      {display: block; border-radius: 7px; padding: 7px 8px 8px 8px}
+      div.tbu-row-head
+        {display: flex; align-items: baseline; gap: 7px}
+        span.acct-name [title="signed-out"]
+          {display: block; opacity: 0.5; min-width: 0px; overflow-x: hidden; overflow-y: hidden; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 13.5px; font-weight: 700; white-space: nowrap}
+          "signed-out"
+        span.acct-status.expired
+          {display: flex; color: rgb(217, 119, 106); background-color: rgba(217, 119, 106, 0.1); flex-shrink: 0; align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; font-weight: 700; white-space: nowrap; border-width: 1px; border-style: solid; border-color: rgba(217, 119, 106, 0.45); border-radius: 5px; padding: 1px 7px 1px 7px}
+          "EXPIRED"
+      div.tbu-row-note
+        {display: block; margin: 5px 0px 0px 0px}
+        span.acct-note
+          {display: inline; opacity: 0.5; color: rgb(144, 139, 132); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px}
+          "Not signed in — sign in again from Settings"
+    div.tbu-sep
+      {display: block; background-color: rgba(255, 255, 255, 0.1); height: 1px; margin: 5px 6px 5px 6px}
+    div.tbu-pop-head
+      {display: flex; color: rgb(144, 139, 132); align-items: center; justify-content: space-between; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; letter-spacing: 0.84px; text-transform: uppercase; padding: 6px 8px 7px 8px}
+      span
+        {display: block}
+        "Antigravity"
+    div.tbu-grid.tbu-colhead.two [aria-hidden="true"]
+      {display: grid; color: rgb(144, 139, 132); grid-template-columns: repeat(2, 128px); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; letter-spacing: 0.8px; text-transform: uppercase; padding: 2px 8px 5px 8px; margin: 6px 0px 0px 0px; gap: normal 6px}
+    div.tbu-row
+      {display: block; border-radius: 7px; padding: 7px 8px 8px 8px}
+      div.tbu-row-head
+        {display: flex; align-items: baseline; gap: 7px}
+        span.acct-name [title="google"]
+          {display: block; min-width: 0px; overflow-x: hidden; overflow-y: hidden; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 13.5px; font-weight: 700; white-space: nowrap}
+          "google"
+      div.acct-meters
+        {display: flex; flex-wrap: wrap; align-items: center; padding: 0px 0px 0px 39px; gap: 14px}
+        span.acct-meter [data-win=""]
+          {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+          span.m-label
+            {display: block; min-width: 22px; text-align: right}
+            "Gemini Models · 7d"
+          span.m-track
+            {display: block; background-color: rgb(52, 52, 58); width: 54px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+            span.m-fill [style="width: 42%;"]
+              {display: block; background-color: rgb(143, 198, 154); width: 42%; height: 100%; border-radius: 3px}
+          span.m-pct
+            {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+            "42%"
+        span.acct-meter [data-win=""]
+          {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+          span.m-label
+            {display: block; min-width: 22px; text-align: right}
+            "Gemini Models · 5h"
+          span.m-track
+            {display: block; background-color: rgb(52, 52, 58); width: 54px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+            span.m-fill [style="width: 10%;"]
+              {display: block; background-color: rgb(143, 198, 154); width: 10%; height: 100%; border-radius: 3px}
+          span.m-pct
+            {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+            "10%"
+        span.acct-note
+          {display: block; color: rgb(144, 139, 132); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px}
+          "Gemini Models · 7d resets 3-9 09:30"
+    div.tbu-row
+      {display: block; border-radius: 7px; padding: 7px 8px 8px 8px}
+      div.tbu-row-head
+        {display: flex; align-items: baseline; gap: 7px}
+        span.acct-name [title="gemini-key"]
+          {display: block; min-width: 0px; overflow-x: hidden; overflow-y: hidden; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 13.5px; font-weight: 700; white-space: nowrap}
+          "gemini-key"
+        span.acct-badge.api
+          {display: flex; color: rgb(159, 192, 221); background-color: rgba(159, 192, 221, 0.12); flex-shrink: 0; align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; font-weight: 700; white-space: nowrap; border-width: 1px; border-style: solid; border-color: rgba(159, 192, 221, 0.4); border-radius: 5px; padding: 1px 7px 1px 7px}
+          "API KEY"
+      div.tbu-row-note
+        {display: block; margin: 5px 0px 0px 0px}
+        span.acct-note
+          {display: inline; color: rgb(144, 139, 132); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px}
+          "Metered — used only when every subscription is rate-limited"
+  div.tbu-sep
+    {display: block; background-color: rgba(255, 255, 255, 0.1); height: 1px; flex-shrink: 0; margin: 5px 6px 5px 6px}
+  button.tbu-act
+    {display: flex; color: rgb(189, 185, 178); width: 100%; flex-shrink: 0; align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 12px; text-align: left; border-radius: 7px; padding: 7px 8px 7px 8px; gap: 8px}
+    "Probe now"
+    svg
+      {display: block; width: 14px; height: 14px; overflow-x: hidden; overflow-y: hidden}
+      shape 7c888dbd
+    span.k
+      {display: block; color: rgb(144, 139, 132); font-size: 10px; margin: 0px 0px 0px auto}
+      "1–2 requests per account"
+  button.tbu-act
+    {display: flex; color: rgb(189, 185, 178); width: 100%; flex-shrink: 0; align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 12px; text-align: left; border-radius: 7px; padding: 7px 8px 7px 8px; gap: 8px}
+    "Account settings…"
+    svg
+      {display: block; width: 14px; height: 14px; overflow-x: hidden; overflow-y: hidden}
+      shape 82167e76

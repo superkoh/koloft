@@ -1,0 +1,29 @@
+div.set-grp
+  {display: block; color: rgb(144, 139, 132); font-size: 11px; font-weight: 650; letter-spacing: 0.88px; text-transform: uppercase; margin: 2px 0px -2px 0px}
+  "Assist"
+
+div.set-row
+  {display: flex; align-items: center; border-width: - - 1px -; border-style: none none solid none; border-color: - - rgba(255, 255, 255, 0.1) -; padding: 12px 0px 12px 0px; gap: 18px}
+  div.set-lab
+    {display: block; min-width: 0px; flex-grow: 1; flex-basis: 0%}
+    b
+      {display: block; font-size: 13px; font-weight: 550}
+      "Runs on"
+    small.ob-warn
+      {display: block; color: rgb(144, 139, 132); font-size: 11.5px; line-height: 1.55; margin: 1px 0px 0px 0px}
+      "Codex · no account — add one in Settings ▸ Accounts"
+    small.ob-warn
+      {display: block; color: rgb(144, 139, 132); font-size: 11.5px; line-height: 1.55; margin: 1px 0px 0px 0px}
+      "Antigravity · no account — add one in Settings ▸ Accounts"
+    small
+      {display: block; color: rgb(144, 139, 132); font-size: 11.5px; line-height: 1.55; margin: 1px 0px 0px 0px}
+      "Koloft asks an AI for the jobs below, and Alfred runs on it too. Each one uses this unless it has a pick of its own. Each Assist job costs a little of that account’s plan or API balance: about a cent or less."
+  button.mini [aria-label="Koloft Assist runs on" aria-haspopup="listbox" aria-expanded="false"]
+    {display: flex; background-color: rgb(52, 52, 58); align-items: center; font-size: 13px; font-weight: 600; line-height: 1; text-align: center; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.17); border-radius: 7px; padding: 7px 14px 7px 14px; gap: 5px}
+    "Claude"
+    svg [aria-hidden="true"]
+      {display: block; width: 14px; height: 14px; overflow-x: hidden; overflow-y: hidden}
+      shape 811179dd
+    svg
+      {display: block; width: 14px; height: 14px; overflow-x: hidden; overflow-y: hidden}
+      shape 0a7d6eda
