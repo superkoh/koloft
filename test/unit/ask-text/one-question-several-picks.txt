@@ -1,0 +1,165 @@
+# Asks one question that takes several picks
+
+## Claude Code, its ask held by its hook (a tab on this Mac that Discord or the owner-asleep butler answers)
+the raw ask: PermissionRequest hook input: {"hook_event_name":"PermissionRequest","session_id":"11111111-1111-4111-8111-111111111111","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Which toppings?","header":"Toppings","options":[{"label":"Cheese"},{"label":"Ham"},{"label":"Olives"}],"multiSelect":true}]}}
+the session row's small line: Asks: Which toppings?
+Discord card: body:
+    Which toppings?
+    1. Cheese
+    2. Ham
+    3. Olives
+Discord card: footnote: -# Reply with the numbers of the options you pick, split by commas, or your own answer.
+Discord card: buttons: (nothing)
+Inbox card: title: “Fix the docs” is waiting for you in its tab
+Inbox card: quote: (nothing)
+Inbox card: questions: (nothing)
+Inbox card: text: Koloft cannot show what it asks here. Open the session to answer it.
+Inbox card: buttons: (nothing)
+the butler's owner-asleep report, the part that says what was asked: asked the owner "Which toppings? 1. Cheese 2. Ham 3. Olives"
+this ask's id: the hook's own process id, only in the name of its file claude-tab.<pid>.ask.json; the "someone asked" moment is never announced for it
+--- replied "1, 3" in the session's Discord room ---
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: the hook printed to Claude Code: {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedInput":{"questions":[{"question":"Which toppings?","header":"Toppings","options":[{"label":"Cheese"},{"label":"Ham"},{"label":"Olives"}],"multiSelect":true}],"answers":{"Which toppings?":"Cheese, Olives"}}}}}
+--- answered "1, 3" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: the hook printed to Claude Code: {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedInput":{"questions":[{"question":"Which toppings?","header":"Toppings","options":[{"label":"Cheese"},{"label":"Ham"},{"label":"Olives"}],"multiSelect":true}],"answers":{"Which toppings?":"Cheese, Olives"}}}}}
+--- replied "Cheese" in the session's Discord room ---
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: the hook printed to Claude Code: {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedInput":{"questions":[{"question":"Which toppings?","header":"Toppings","options":[{"label":"Cheese"},{"label":"Ham"},{"label":"Olives"}],"multiSelect":true}],"answers":{"Which toppings?":"Cheese"}}}}}
+--- answered "Cheese" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: the hook printed to Claude Code: {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedInput":{"questions":[{"question":"Which toppings?","header":"Toppings","options":[{"label":"Cheese"},{"label":"Ham"},{"label":"Olives"}],"multiSelect":true}],"answers":{"Which toppings?":"Cheese"}}}}}
+--- replied "Anchovies" in the session's Discord room ---
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: the hook printed to Claude Code: {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedInput":{"questions":[{"question":"Which toppings?","header":"Toppings","options":[{"label":"Cheese"},{"label":"Ham"},{"label":"Olives"}],"multiSelect":true}],"answers":{"Which toppings?":"Anchovies"}}}}}
+--- answered "Anchovies" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: the hook printed to Claude Code: {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedInput":{"questions":[{"question":"Which toppings?","header":"Toppings","options":[{"label":"Cheese"},{"label":"Ham"},{"label":"Olives"}],"multiSelect":true}],"answers":{"Which toppings?":"Anchovies"}}}}}
+
+## Claude Code, its ask not held (a tab on this Mac nobody answers from elsewhere; a tab on another machine, whose hook only records, takes this path too: inferred, not checked): Koloft answers by keys
+the raw ask: PermissionRequest hook input: {"hook_event_name":"PermissionRequest","session_id":"11111111-1111-4111-8111-111111111111","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Which toppings?","header":"Toppings","options":[{"label":"Cheese"},{"label":"Ham"},{"label":"Olives"}],"multiSelect":true}]}}
+the session row's small line: Asks: Which toppings?
+Discord card: body:
+    Which toppings?
+    1. Cheese
+    2. Ham
+    3. Olives
+Discord card: footnote: -# Reply with the numbers of the options you pick, split by commas, or your own answer.
+Discord card: buttons: (nothing)
+Inbox card: title: “Fix the docs” asks a question
+Inbox card: quote: (nothing)
+Inbox card: questions: “Which toppings?”: options Cheese | Ham | Olives; several picks: yes; own-words box: yes
+Inbox card: text: (nothing)
+Inbox card: buttons: Send answers
+the butler's owner-asleep report, the part that says what was asked: asked the owner "Which toppings? 1. Cheese 2. Ham 3. Olives"
+this ask's id: Claude Code's hook reported an ask (id 1)
+--- replied "1, 3" in the session's Discord room ---
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: keys pressed: "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[A" "\u001b[A" "\u0015" "\u001b[A" "1" "3" "\t" "1"
+--- answered "1, 3" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: keys pressed: "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[A" "\u001b[A" "\u0015" "\u001b[A" "1" "3" "\t" "1"
+--- replied "Cheese" in the session's Discord room ---
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: keys pressed: "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[A" "\u001b[A" "\u0015" "\u001b[A" "1" "\t" "1"
+--- answered "Cheese" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: keys pressed: "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[A" "\u001b[A" "\u0015" "\u001b[A" "1" "\t" "1"
+--- replied "Anchovies" in the session's Discord room ---
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: keys pressed: "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[A" "\u001b[A" "\u0015" "Anchovies" "\t" "\r" "1"
+--- answered "Anchovies" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: keys pressed: "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[A" "\u001b[A" "\u0015" "Anchovies" "\t" "\r" "1"
+
+## Codex (its app-server's request, read on the TUI's connection; the tab runs on the stand-in machine of agentTabs)
+never asks this: Codex asks no question that takes several picks (CODEX§20)
+
+## Antigravity, read through its API (a tab on this Mac)
+the raw ask:
+    PreToolUse hook input: {"conversationId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","workspacePaths":["<home>/repo"],"toolCall":{"name":"ask_question","args":{"questions":[{"question":"Which toppings?","options":["Cheese","Ham","Olives"],"is_multi_select":true}]}}}
+    7501 status: state=blocked, kind=question, msg="Which toppings?"
+    its API's trajectory: {"trajectoryId":"t9","steps":[{"userInput":{"userConfig":{"plannerConfig":{"planModel":"M36"}}}},{"status":"CORTEX_STEP_STATUS_DONE"},{"status":"CORTEX_STEP_STATUS_WAITING","requestedInteraction":{"askQuestion":{"questions":[{"question":"Which toppings?","options":[{"id":"a","text":"Cheese"},{"id":"b","text":"Ham"},{"id":"c","text":"Olives"}],"isMultiSelect":true}]}}}]}
+the session row's small line: Asks: Which toppings?
+Discord card: body:
+    Which toppings?
+    1. Cheese
+    2. Ham
+    3. Olives
+Discord card: footnote: -# Reply with the numbers of the options you pick, split by commas, or your own answer.
+Discord card: buttons: (nothing)
+Inbox card: title: “Fix the docs” asks a question
+Inbox card: quote: (nothing)
+Inbox card: questions: “Which toppings?”: options Cheese | Ham | Olives; several picks: yes; own-words box: yes
+Inbox card: text: (nothing)
+Inbox card: buttons: Send answers
+the butler's owner-asleep report, the part that says what was asked: asked the owner "Which toppings? 1. Cheese 2. Ham 3. Olives"
+this ask's id: the ids it had, in turn: hook:<when it was read> → t9:2
+--- replied "1, 3" in the session's Discord room ---
+Discord said: reacted ⏳
+handed to the session as a message: [Discord] 1, 3
+what reached the agent: (nothing)
+--- answered "1, 3" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which toppings?","selectedOptionIds":["a","c"]}]}}}
+--- replied "Cheese" in the session's Discord room ---
+Discord said: reacted ⏳
+handed to the session as a message: [Discord] Cheese
+what reached the agent: (nothing)
+--- answered "Cheese" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which toppings?","selectedOptionIds":["a"]}]}}}
+--- replied "Anchovies" in the session's Discord room ---
+Discord said: reacted ⏳
+handed to the session as a message: [Discord] Anchovies
+what reached the agent: (nothing)
+--- answered "Anchovies" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which toppings?","writeInResponse":"Anchovies"}]}}}
+
+## Antigravity, read from its tool call and 7501 status only, its API not answering (a tab on another machine has no API client and reads this way: inferred, not checked): Koloft answers by keys
+the raw ask:
+    PreToolUse hook input: {"conversationId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","workspacePaths":["<home>/repo"],"toolCall":{"name":"ask_question","args":{"questions":[{"question":"Which toppings?","options":["Cheese","Ham","Olives"],"is_multi_select":true}]}}}
+    7501 status: state=blocked, kind=question, msg="Which toppings?"
+the session row's small line: Asks: Which toppings?
+Discord card: body:
+    Which toppings?
+    1. Cheese
+    2. Ham
+    3. Olives
+Discord card: footnote: -# Reply with the numbers of the options you pick, split by commas, or your own answer.
+Discord card: buttons: (nothing)
+Inbox card: title: “Fix the docs” asks a question
+Inbox card: quote: (nothing)
+Inbox card: questions: “Which toppings?”: options Cheese | Ham | Olives; several picks: yes; own-words box: yes
+Inbox card: text: (nothing)
+Inbox card: buttons: Send answers
+the butler's owner-asleep report, the part that says what was asked: asked the owner "Which toppings? 1. Cheese 2. Ham 3. Olives"
+this ask's id: the ids it had, in turn: hook:<when it was read>
+--- replied "1, 3" in the session's Discord room ---
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: keys pressed: "1" "3" "\r"
+--- answered "1, 3" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: keys pressed: "1" "3" "\r"
+--- replied "Cheese" in the session's Discord room ---
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: keys pressed: "1" "\r"
+--- answered "Cheese" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: keys pressed: "1" "\r"
+--- replied "Anchovies" in the session's Discord room ---
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: keys pressed: "4" "Anchovies" "\r"
+--- answered "Anchovies" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: keys pressed: "4" "Anchovies" "\r"
