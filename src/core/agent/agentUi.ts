@@ -2,6 +2,7 @@
 import type { IconType } from 'react-icons'
 import type { AgentManifest } from './manifest'
 import type { AgentId, AgentSettingValues } from './registry'
+import type { AgentUsageUi } from './usageShape'
 
 export interface AgentOwnSettingRow<Setting extends string = keyof AgentSettingValues> {
   setting: Setting
@@ -67,4 +68,5 @@ export interface AgentUi {
   accounts: AgentAccountsUi
   welcome: AgentWelcomeWords
   settings: AgentSettingsWords
+  usage: AgentUsageUi
 }
