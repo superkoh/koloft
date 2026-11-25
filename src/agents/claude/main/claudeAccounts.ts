@@ -17,7 +17,8 @@ import {
   keychainWrite,
   listAccounts,
   recordProbeOutcome,
-  upsertAccountMeta
+  upsertAccountMeta,
+  validateNewAccount
 } from '../../../main/accounts'
 import { loadSettings } from '../../../main/settings'
 import {
@@ -85,7 +86,11 @@ export interface ClaudeAccountDeps {
     setPickedAccount(tabId: string, account: string): void
   }
   sessionAccounts: { of(backend: 'claude', sessionId: string | undefined): string | undefined }
-  claudeBackend: { picked(tabId: string, skipFlag: boolean): void }
+  claudeBackend: {
+    picked(tabId: string, skipFlag: boolean): void
+    forgetAvailability(): void
+    availability(): Promise<{ available: boolean }>
+  }
   loginEnvReady(): Promise<void>
   CLAUDE_AUTH_ENV_VARS: readonly string[]
   cronTestMs(name: string, dflt: number): number
@@ -374,6 +379,27 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
     return handle.id
   }
 
+  async function startLogin(
+    name: string,
+    reauth?: boolean
+  ): Promise<'ok' | 'invalid-name' | 'duplicate' | 'unknown'> {
+    const v = reauth
+      ? findAccount(name, 'oauth')
+        ? 'ok'
+        : 'unknown'
+      : validateNewAccount(name, 'oauth')
+    if (v !== 'ok') return v
+    claudeBackend.forgetAvailability()
+    const installFirst = !(await claudeBackend.availability()).available
+    for (const id of loginWatchers.keys()) cancelGuidedLogin(id)
+    startGuidedLogin(name, installFirst)
+    return 'ok'
+  }
+
+  function cancelLogins(): void {
+    for (const id of [...loginWatchers.keys()]) cancelGuidedLogin(id)
+  }
+
   async function completeLogin(tabId: string, name: string, token: string): Promise<void> {
     const result = await probeAccount('oauth', token, { timeoutMs: ACCOUNT_PROBE_TIMEOUT_MS })
     if (!result.ok && result.error === 'expired') {
@@ -433,7 +459,7 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
     loginPtys,
     feedLoginWatcher,
     failLogin,
-    cancelGuidedLogin,
-    startGuidedLogin
+    startLogin,
+    cancelLogins
   }
 }
