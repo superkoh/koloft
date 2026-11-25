@@ -84,7 +84,7 @@ export interface AccountKindFacts {
   signsInThroughABrowser: boolean
   storesAPastedKeyItself: boolean
   takesAnEndpoint: boolean
-  stillAsksItsFirstRunQuestionsAfterAPastedKey: boolean
+  asksItsFirstRunQuestionsForEachAccount: boolean
 }
 
 export interface AgentManifest {

@@ -131,7 +131,7 @@ export const agent = {
       signsInThroughABrowser: true,
       storesAPastedKeyItself: false,
       takesAnEndpoint: false,
-      stillAsksItsFirstRunQuestionsAfterAPastedKey: false
+      asksItsFirstRunQuestionsForEachAccount: false
     },
     {
       id: 'apikey',
@@ -140,7 +140,7 @@ export const agent = {
       signsInThroughABrowser: false,
       storesAPastedKeyItself: false,
       takesAnEndpoint: false,
-      stillAsksItsFirstRunQuestionsAfterAPastedKey: false
+      asksItsFirstRunQuestionsForEachAccount: false
     },
     {
       id: 'custom',
@@ -149,7 +149,7 @@ export const agent = {
       signsInThroughABrowser: false,
       storesAPastedKeyItself: false,
       takesAnEndpoint: true,
-      stillAsksItsFirstRunQuestionsAfterAPastedKey: false
+      asksItsFirstRunQuestionsForEachAccount: false
     }
   ]
 } as const satisfies AgentManifest

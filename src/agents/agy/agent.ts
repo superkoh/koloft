@@ -136,7 +136,7 @@ export const agent = {
       signsInThroughABrowser: true,
       storesAPastedKeyItself: false,
       takesAnEndpoint: false,
-      stillAsksItsFirstRunQuestionsAfterAPastedKey: true
+      asksItsFirstRunQuestionsForEachAccount: true
     }
   ]
 } as const satisfies AgentManifest

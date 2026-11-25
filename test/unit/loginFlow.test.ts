@@ -35,6 +35,13 @@ describe('savedClearDue (stale-timer guard)', () => {
     expect(savedClearDue(cur, saved)).toBe(false)
   })
 
+  it('is a no-op when the slice is already empty', () => {
+    expect(savedClearDue(null, p('saved'))).toBe(false)
+    expect(savedClearDue({ kind: 'oauth', progress: null }, p('saved'))).toBe(false)
+  })
+})
+
+describe('progressOfTheOpenBox', () => {
   it('takes only the progress of the kind the open box signs in, never a tab sign-in’s', () => {
     const box: LoginFlowState = { kind: 'oauth', progress: null }
     expect(
@@ -53,10 +60,5 @@ describe('savedClearDue (stale-timer guard)', () => {
     expect(
       progressOfTheOpenBox(null, { kind: 'oauth', name: 'w', again: false, phase: 'saved' })
     ).toBeNull()
-  })
-
-  it('is a no-op when the slice is already empty', () => {
-    expect(savedClearDue(null, p('saved'))).toBe(false)
-    expect(savedClearDue({ kind: 'oauth', progress: null }, p('saved'))).toBe(false)
   })
 })

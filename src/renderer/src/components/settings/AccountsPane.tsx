@@ -17,8 +17,7 @@ import {
   signInKindOf,
   type AgentId
 } from '@core/agent/registry'
-import type { AgentUi } from '@core/agent/agentUi'
-import { AGENT_UIS } from '@agents/uis'
+import { agentUi } from '@agents/uis'
 import { useStore } from '../../store'
 import { useInstalledBackends } from '../../useInstalledBackends'
 import {
@@ -54,8 +53,6 @@ export const loginRunning = (progress: LoginProgress | null): boolean =>
 
 const scrollIntoViewOnOpen = (form: HTMLDivElement | null): void =>
   form?.scrollIntoView({ block: 'nearest' })
-
-const uiOf = (agent: AgentId): AgentUi => AGENT_UIS.find((ui) => ui.id === agent)!
 
 const agentOf = (kind: AccountKind): AgentId => agentOfAccountKind(kind)!
 
@@ -99,7 +96,7 @@ export function AccountsPane(): JSX.Element {
     beginLogin(kind, again)
   }
   const openSignIn = (kind: AccountKind, again?: string): void => {
-    if (uiOf(agentOf(kind)).accounts.signIn.inATab) openForm({ signIn: kind, again })
+    if (agentUi(agentOf(kind)).accounts.signIn.inATab) openForm({ signIn: kind, again })
     else openBackgroundSignIn(kind, again)
   }
   const signIn = form && 'signIn' in form ? form : null
@@ -169,7 +166,7 @@ export function AccountsPane(): JSX.Element {
   const section = (agent: BackendId): JSX.Element => {
     const kinds = ACCOUNT_KINDS_OF[agent]
     const list = accounts.filter((a) => kinds.includes(a.kind))
-    const words = uiOf(agent).accounts
+    const words = agentUi(agent).accounts
     const signInKind = signInKindOf(agent).id as AccountKind
     return (
       <div className="acct-section">
@@ -269,7 +266,7 @@ export function AccountsPane(): JSX.Element {
       {AGENT_IDS.map((agent) => (
         <Fragment key={agent}>
           <div className="set-grp">{agentManifest(agent).name}</div>
-          {uiOf(agent).accounts.ownSettingRows.map((own) => (
+          {agentUi(agent).accounts.ownSettingRows.map((own) => (
             <div className="set-row" key={own.setting}>
               <div className="set-lab">
                 <b>{own.title}</b>
@@ -472,7 +469,7 @@ export function SignInDialog({
   const { installed } = useInstalledBackends()
   const agent = agentOf(kind)
   const { name: label, signInCommand: command } = agentManifest(agent)
-  const signIn = uiOf(agent).accounts.signIn
+  const signIn = agentUi(agent).accounts.signIn
   const installsFirst = installed !== null && !backendAvailable(installed, agent)
 
   const start = async (): Promise<void> => {
@@ -701,7 +698,7 @@ export function AddAccountDialog({
   const openSignInTab = useStore((s) => s.openSignInTab)
   const facts = accountKindFacts(kind)
   const agent = agentManifest(agentOf(kind))
-  const words = uiOf(agentOf(kind)).accounts
+  const words = agentUi(agentOf(kind)).accounts
   const form = words.pasteForms[kind]
 
   const save = async (): Promise<void> => {
@@ -717,11 +714,7 @@ export function AddAccountDialog({
     )
     // ADR-0002
     setSecret('')
-    if (
-      facts.stillAsksItsFirstRunQuestionsAfterAPastedKey &&
-      r.account &&
-      r.account.status !== 'ok'
-    ) {
+    if (facts.asksItsFirstRunQuestionsForEachAccount && r.account && r.account.status !== 'ok') {
       const setup = await window.api.accounts.beginSignIn(kind, r.account.name, true)
       setBusy(false)
       if (!setup.ok) {
