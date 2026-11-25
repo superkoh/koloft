@@ -35,8 +35,7 @@ const TODO_USAGE =
   'koloft todo: run it alone, or: koloft todo note <workspace> [-- "<note>"] | koloft todo file <workspace> <file>'
 const NOTE_USAGE =
   'koloft todo note: give a workspace, and a note after -- to save it, like: koloft todo note koloft -- "To-dos are GitHub issues assigned to me."'
-const FILE_USAGE =
-  'koloft todo file: give a workspace and one of the files koloft todo listed for it, like: koloft todo file koloft CLAUDE.md'
+const FILE_USAGE = `koloft todo file: give a workspace and one of the files koloft todo listed for it, like: koloft todo file koloft ${INSTRUCTION_FILES[0]}`
 
 const TODO_FILE = /^todo\b/i
 const GIT_LOOKUPS_AT_ONCE = 4

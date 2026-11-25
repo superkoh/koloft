@@ -12,6 +12,7 @@ import { GithubRepos } from '../../src/main/githubRepos'
 import { utilTerminalGuard } from '../../src/main/shim'
 import type { BytesResult } from '../../src/main/remote/ssh'
 import { shellOnThisMacAsTheMachine } from './helpers/agentTabs'
+import { agentsWithTheirCatalogs } from './helpers/agentCatalogs'
 import { barePath } from '../../src/shared/remoteKey'
 import { removeTree } from '../../src/plugins/sessions/main/sessionClose'
 
@@ -778,4 +779,73 @@ it('a worktree git cannot delete on the machine is reported in git’s words, wi
   fs.chmodSync(readOnly, 0o755)
   expect(problem).toContain(`failed to delete '${tree}': Permission denied`)
   expect(problem).toContain(`run on ${MACHINE}: chmod -R u+w '${tree}' && rm -rf '${tree}'`)
+})
+
+describe('the skills a scheduled task is offered, read where its workspace is (BB-M16)', () => {
+  const put = (file: string, text = '---\ndescription: d\n---'): void => {
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, text)
+  }
+
+  it.each(['claude', 'codex', 'agy'] as const)(
+    'on a machine, the script that gathers the skill files of %s names its own folders, the same byte for byte',
+    async (backend) => {
+      const onMachine = machine()
+      const scripts: string[] = []
+      onMachine.sh = async (script) => {
+        scripts.push(script)
+        return { code: 1, stdout: Buffer.alloc(0), stderr: '' }
+      }
+      expect(await onMachine.listSkills(keyed(repo), backend)).toEqual([])
+      expect(scripts).toHaveLength(1)
+      await expect(scripts[0]).toMatchFileSnapshot(`remote-skill-script/${backend}.sh`)
+    }
+  )
+
+  it("on this Mac, each agent's folders in the workspace and in this Mac's home, Codex's own home among them", async () => {
+    const codexHome = path.join(home, 'codex-home')
+    put(path.join(repo, '.claude', 'skills', 'cc-project', 'SKILL.md'))
+    put(path.join(repo, '.claude', 'commands', 'cc-command.md'), '# cc')
+    put(path.join(home, '.claude', 'skills', 'cc-home', 'SKILL.md'))
+    put(path.join(home, '.claude', 'commands', 'cc-home-command.md'), '# cc')
+    put(path.join(repo, '.agents', 'skills', 'agents-project', 'SKILL.md'))
+    put(path.join(repo, '.codex', 'skills', 'codex-project', 'SKILL.md'))
+    put(
+      path.join(repo, '.agent', 'skills', 'agent-project', 'SKILL.md'),
+      '---\nname: agent-named\n---'
+    )
+    put(path.join(repo, '_agents', 'skills', 'underscore', 'SKILL.md'), '---\nname: under\n---')
+    put(path.join(codexHome, 'skills', 'codex-home', 'SKILL.md'))
+    put(path.join(home, '.agents', 'skills', 'agents-home', 'SKILL.md'))
+    put(path.join(home, '.gemini', 'config', 'skills', 'gemini', 'SKILL.md'), '---\nname: g\n---')
+    const agents = agentsWithTheirCatalogs({
+      codexConfig: path.join(codexHome, 'config.toml'),
+      ownersGemini: path.join(home, '.gemini')
+    })
+    const here = localHost(new GithubRepos({}), {
+      moreSkillFoldersEveryAccountReads: (backend) =>
+        agents.moreSkillFoldersEveryAccountReadsOnThisMac(backend)
+    })
+    const homeBefore = process.env.HOME
+    process.env.HOME = home
+    try {
+      const names = async (backend: 'claude' | 'codex' | 'agy'): Promise<string[]> =>
+        (await here.listSkills(repo, backend)).map((s) => `${s.name} ${s.source}`)
+      expect(await names('claude')).toEqual([
+        '/cc-project project',
+        '/cc-command project',
+        '/cc-home home',
+        '/cc-home-command home'
+      ])
+      expect(await names('codex')).toEqual([
+        '$agents-project project',
+        '$codex-project project',
+        '$agents-home home',
+        '$codex-home home'
+      ])
+      expect(await names('agy')).toEqual(['/agent-named project', '/under project'])
+    } finally {
+      process.env.HOME = homeBefore
+    }
+  })
 })

@@ -1,12 +1,74 @@
 import { describe, it, expect } from 'vitest'
-import {
-  claudePlaywrightServers,
-  claudeServers,
-  codexServers,
-  foldersUpToRepoTop,
-  foldersUpToRoot,
-  jsonServers
-} from '../../src/main/mcpServers'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
+import { foldersUpToRoot, jsonServers } from '../../src/main/mcpServers'
+import { agentsWithTheirCatalogs } from './helpers/agentCatalogs'
+import { claudePlaywrightServers, claudeServers } from '../../src/agents/claude/main/claudeCatalog'
+import { codexServers } from '../../src/agents/codex/main/codexCatalog'
+import { foldersUpToRepoTop } from '../../src/agents/agy/main/agyCatalog'
+
+describe('the MCP servers koloft todo lists for the workspaces on this Mac', () => {
+  // CC§22 AGY§30 CODEX§15
+  it('reads each agent’s own files for each workspace: Claude Code’s ~/.claude.json and every .mcp.json up to /, Codex’s config.toml, Antigravity’s own settings and every .agents/mcp_config.json up to the repository’s top, in that order', async () => {
+    const top = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-mcp-')))
+    const json = (file: string, value: unknown): void => {
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      fs.writeFileSync(file, JSON.stringify(value))
+    }
+    const servers = (...names: string[]): unknown => ({
+      mcpServers: Object.fromEntries(names.map((n) => [n, { command: n }]))
+    })
+    const repo = path.join(top, 'mono')
+    const inRepo = path.join(repo, 'app')
+    const lone = path.join(top, 'lone')
+    fs.mkdirSync(path.join(repo, '.git'), { recursive: true })
+    fs.mkdirSync(inRepo, { recursive: true })
+    fs.mkdirSync(lone, { recursive: true })
+    json(path.join(top, 'home', '.claude.json'), {
+      mcpServers: { everywhere: {}, off: { disabled: true } },
+      projects: {
+        [repo]: servers('underTheRepoKey'),
+        [inRepo]: servers('underItsOwnPath'),
+        [lone]: servers('underLone')
+      }
+    })
+    json(path.join(inRepo, '.mcp.json'), servers('appFile'))
+    json(path.join(repo, '.mcp.json'), servers('repoFile'))
+    json(path.join(top, '.mcp.json'), servers('aboveFile'))
+    fs.writeFileSync(path.join(top, 'config.toml'), '[mcp_servers.cx]\ncommand = "cx"\n')
+    json(path.join(top, 'gemini', 'config', 'mcp_config.json'), servers('agyEverywhere'))
+    json(path.join(inRepo, '.agents', 'mcp_config.json'), servers('agyApp'))
+    json(path.join(repo, '.agents', 'mcp_config.json'), servers('agyRepo'))
+    json(path.join(top, '.agents', 'mcp_config.json'), servers('agyAbove'))
+    json(path.join(lone, '.agents', 'mcp_config.json'), servers('agyLone'))
+    const homeBefore = process.env.HOME
+    process.env.HOME = path.join(top, 'home')
+    try {
+      const agents = agentsWithTheirCatalogs({
+        codexConfig: path.join(top, 'config.toml'),
+        ownersGemini: path.join(top, 'gemini')
+      })
+      expect(await agents.mcpServersOn([inRepo, lone])).toEqual([
+        { name: 'everywhere', backend: 'claude' },
+        { name: 'underTheRepoKey', backend: 'claude', onlyIn: inRepo },
+        { name: 'underLone', backend: 'claude', onlyIn: lone },
+        { name: 'appFile', backend: 'claude', onlyIn: inRepo },
+        { name: 'repoFile', backend: 'claude', onlyIn: inRepo },
+        { name: 'aboveFile', backend: 'claude', onlyIn: inRepo },
+        { name: 'aboveFile', backend: 'claude', onlyIn: lone },
+        { name: 'cx', backend: 'codex' },
+        { name: 'agyEverywhere', backend: 'agy' },
+        { name: 'agyApp', backend: 'agy', onlyIn: inRepo },
+        { name: 'agyRepo', backend: 'agy', onlyIn: inRepo },
+        { name: 'agyLone', backend: 'agy', onlyIn: lone }
+      ])
+    } finally {
+      process.env.HOME = homeBefore
+      fs.rmSync(top, { recursive: true, force: true })
+    }
+  })
+})
 
 describe('the MCP servers koloft todo reads from each agent’s own config', () => {
   // CC§22

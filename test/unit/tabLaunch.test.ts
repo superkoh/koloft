@@ -51,6 +51,7 @@ import { barePath } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import { koloftPrompt } from '@plugins/sessions/api'
 import { docsWritingOn } from '@plugins/docs-writing/api'
+import { claudeProjectPrompt, projectPromptFile } from '../../src/main/agentPlugin'
 import {
   saidFile,
   seedHandedOverOwnerWords,
@@ -73,6 +74,7 @@ import { tabPushed } from '../../src/main/remote/launch'
 import { standInMachine } from './helpers/standInMachine'
 import { SessionRuntime } from '../../src/core/agent/sessionRuntime'
 import type { TreeIo } from '../../src/main/sessionWorktrees'
+import { worktreesOfOneAgent } from './helpers/worktreesOfOneAgent'
 
 const execFileAsync = promisify(execFile)
 const TAB = 'pty-t1'
@@ -135,7 +137,7 @@ async function claudeTab(
     },
     tracker: { track: () => {}, movePick: () => {}, list: () => [] },
     hosts: new Hosts(
-      localHost(new GithubRepos(), { agentHomes: () => ({ codexHome: '/nowhere' }) }),
+      localHost(new GithubRepos(), { moreSkillFoldersEveryAccountReads: () => [] }),
       (machine) =>
         new SshHost(machine, {
           run: async () => ({ code: 0, stdout: Buffer.from(''), stderr: '' }),
@@ -159,6 +161,7 @@ async function claudeTab(
       handOverOwnerWords: (tabId: string, words: string) =>
         seedHandedOverOwnerWords(saidFile(regDir, tabId), words),
       agentPlugin: () => (withPlugin ? '/koloft/agent-plugin' : undefined),
+      projectPromptFile,
       docsPlugin: () => '/koloft/docs-plugin',
       assistOf: () => assist,
       pastedPicturesDir: () => path.join(userData, 'palette-pictures')
@@ -167,6 +170,7 @@ async function claudeTab(
       realPath: (_machine: string, p: string) => p,
       settings: () => ({ skipPermissions: false }),
       agentTools: () => true,
+      projectPrompt: claudeProjectPrompt,
       docsWritingOn,
       pickAccount: async () => ({ env: {}, banner: '' }),
       noAccountMessage: () => NO_USABLE_ACCOUNT.claude,
@@ -208,7 +212,7 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
   const argv: string[][] = []
   const aboveItsTools: boolean[] = []
   const tabDirs = path.join(userData, 'tabs')
-  const sessions = new CodexSessions(path.join(home, 'sessions.json'), {
+  const sessions: CodexSessions = new CodexSessions(path.join(home, 'sessions.json'), {
     pty: {
       nextId: () => TAB,
       create: (args: { argv: string[]; aboveItsTools?: boolean }) => {
@@ -223,6 +227,7 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
     projectInfo: (p) => ({ root: cwd, treeRoot: p }),
     remoteDirExists: async () => true,
     remoteTreeIo: () => machineTreeIo,
+    worktreesOfEveryAgent: worktreesOfOneAgent(() => sessions.store),
     machine: {
       instance: 'table-instance',
       machine: (name) =>
