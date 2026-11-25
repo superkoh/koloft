@@ -48,6 +48,13 @@ export interface SessionRowsSource {
   liveKey(): string
 }
 
+export interface KeptInLayout {
+  list(): readonly string[]
+  add(ids: string[]): void
+  remove(id: string): void
+  keepOnly(ids: string[]): void
+}
+
 export function filterOwned<R extends BackendSessionRow>(
   rows: R[],
   owned: ReadonlySet<string>,

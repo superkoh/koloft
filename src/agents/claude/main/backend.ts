@@ -6,6 +6,7 @@ import type {
   BackendSessionInfo,
   CreateTabOptions,
   CreateTabResult,
+  DiscoveredFolder,
   ResumePlan,
   SessionResumeRequest,
   SessionResumeResult,
@@ -17,10 +18,11 @@ import { hasUsableAccount } from '@shared/accountUsage'
 import type { Turn } from '@shared/turns'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import type { ModeClass, SessionBackend } from '@core/agent/sessionBackends'
+import type { RowsPass, RowsPassStart, WhereNow } from '@core/agent/sessionRows'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
 import type { PtyManager } from '../../../main/ptyManager'
 import type { SessionTracker } from './sessionTracker'
-import type { WorkspaceManager } from '@plugins/sessions/main/workspaces'
+import type { ClaudeSessionStore } from './claudeSessionStore'
 import type { Hosts } from '../../../main/host/hosts'
 import { publicClaudeSession } from '../../../main/host/hosts'
 import type { MachineAccount, SshHost } from '../../../main/host/sshHost'
@@ -104,7 +106,9 @@ export interface ClaudeBackendDeps {
   pty: PtyManager
   tracker: SessionTracker
   hosts: Hosts<SshHost>
-  workspaces(): WorkspaceManager | null
+  store(): ClaudeSessionStore | null
+  remoteTargets(): { host: string; paths: string[] }[]
+  sessionRebound(prevId: string, nextId: string, source: string): void
   remoteSync(): RemoteSync | null
   userData(): string
   setupLine(): string | undefined
@@ -274,7 +278,35 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async historyRows(workspacePath: string): Promise<SessionRow[]> {
-    return this.d.workspaces()?.historyRows(workspacePath) ?? []
+    return this.d.store()?.historyRows(workspacePath) ?? []
+  }
+
+  rowsReady(): Promise<void> {
+    return this.d.store()!.rowsReady()
+  }
+
+  rowsPass(start: RowsPassStart): RowsPass {
+    return this.d.store()!.rowsPass(start)
+  }
+
+  members(): ReadonlySet<string> {
+    return this.d.store()!.members()
+  }
+
+  usedFolders(): Promise<DiscoveredFolder[]> {
+    return this.d.store()!.usedFolders()
+  }
+
+  whereNow(): WhereNow {
+    return this.d.store()!.whereNow()
+  }
+
+  liveKey(): string {
+    return this.d.store()!.liveKey()
+  }
+
+  launchEnded(tabId: string): void {
+    this.d.store()?.launchEnded(tabId)
   }
 
   hasTab(tabId: string): boolean {
@@ -298,9 +330,7 @@ export class ClaudeBackend implements SessionBackend {
       if (!s.alive || s.remote) continue
       if (s.treeRoot && path.resolve(s.treeRoot) === target) return occupantName(s)
       // CC§4
-      const bound = s.sessionId
-        ? this.d.workspaces()?.findRow(s.sessionId)?.worktreeState
-        : undefined
+      const bound = s.sessionId ? this.d.store()?.findRow(s.sessionId)?.worktreeState : undefined
       if (bound && path.resolve(bound.worktreePath) === target) return occupantName(s)
     }
     return null
@@ -329,15 +359,15 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   archive(key: string): boolean {
-    return this.d.workspaces()?.archiveSession(key) ?? false
+    return this.d.store()?.archiveSession(key) ?? false
   }
 
   adopt(keys: string[]): void {
-    this.d.workspaces()?.adopt(keys)
+    this.d.store()?.adopt(keys)
   }
 
   transcriptExists(key: string): boolean {
-    const listed = this.d.workspaces()?.transcriptFileOf(key)
+    const listed = this.d.store()?.transcriptFileOf(key)
     if (listed && fs.existsSync(listed)) return true
     return this.d.tracker.transcriptExists(key) || !!this.storedTranscript(key)
   }
@@ -392,7 +422,7 @@ export class ClaudeBackend implements SessionBackend {
 
   endRemoteTmux(machine: string, tmuxName: string, tabId?: string): void {
     const id = sessionIdOfTmux(tmuxName)
-    const title = id && this.d.workspaces()?.findRow(id)?.title
+    const title = id && this.d.store()?.findRow(id)?.title
     void this.d.hosts
       .machine(machine)
       .endTmuxSession(tmuxName, tabId)
@@ -413,10 +443,8 @@ export class ClaudeBackend implements SessionBackend {
 
   workspaceOfTab(tabId: string): string | undefined {
     const sessionId = this.sessionIdOf(tabId)
-    const workspaces = this.d.workspaces()
-    return (
-      (sessionId ? workspaces?.workspaceOf(sessionId) : undefined) ?? workspaces?.workspaceOf(tabId)
-    )
+    const store = this.d.store()
+    return (sessionId ? store?.workspaceOf(sessionId) : undefined) ?? store?.workspaceOf(tabId)
   }
 
   private titleOf(tabId: string): string | undefined {
@@ -814,7 +842,7 @@ export class ClaudeBackend implements SessionBackend {
       transcriptEnding(path.join(dir, `${heldBeforeStartup}.jsonl`)).continuedIn ===
         report.sessionId
     ) {
-      this.d.workspaces()?.dropOwnership(heldBeforeStartup, `continued in ${report.sessionId}`)
+      this.d.store()?.dropOwnership(heldBeforeStartup, `continued in ${report.sessionId}`)
     }
     return true
   }
@@ -896,7 +924,7 @@ export class ClaudeBackend implements SessionBackend {
     if (hit && EVICTING_END_REASONS.has(hit.raw.reason ?? '')) {
       const stillBound = !!sid && this.d.tracker.list().some((t) => t.alive && t.sessionId === sid)
       if (sid && !stillBound)
-        this.d.workspaces()?.dropOwnership(sid, `the remote claude ended (${hit.raw.reason})`)
+        this.d.store()?.dropOwnership(sid, `the remote claude ended (${hit.raw.reason})`)
     }
     if (!hit && sid && this.remoteSessionGone(host, sid))
       this.d.events(tabId, { type: 'exited', clean: false, title, sessionId: sid })
@@ -943,7 +971,7 @@ export class ClaudeBackend implements SessionBackend {
 
   private handleHookRegistration(raw: unknown): void {
     const { tracker } = this.d
-    const workspaces = this.d.workspaces()
+    const store = this.d.store()
     const obj = raw as HookReport & {
       tabId?: string
       transcriptPath?: string
@@ -961,14 +989,14 @@ export class ClaudeBackend implements SessionBackend {
         const sid = this.sessionIdOf(obj.tabId)
         tracker.untrack(obj.tabId)
         const stillBound = !!sid && tracker.list().some((s) => s.alive && s.sessionId === sid)
-        if (sid && !stillBound) workspaces?.dropOwnership(sid, `claude ended (${obj.reason})`)
+        if (sid && !stillBound) store?.dropOwnership(sid, `claude ended (${obj.reason})`)
       } else {
         // CC§1
         this.untrackIfClaudeGone(obj.tabId)
       }
       return
     }
-    if (obj.cwd) workspaces?.onSessionStart(obj.tabId, obj.cwd)
+    if (obj.cwd) store?.onSessionStart(obj.tabId, obj.cwd)
     const prevId = this.sessionIdOf(obj.tabId)
     tracker.bindSession(
       obj.tabId,
@@ -985,12 +1013,12 @@ export class ClaudeBackend implements SessionBackend {
       else this.heldBeforeStartup.delete(obj.tabId)
       if (tracker.remoteOf(obj.tabId) && obj.source !== MOVED_CONVERSATION_SOURCE)
         tracker.setRemoteTmuxName(obj.tabId, tmuxSessionName(nextId))
-      workspaces?.onSessionRebind(prevId, nextId, obj.source || '')
+      this.d.sessionRebound(prevId, nextId, obj.source || '')
       if (replacesTheConversation(obj.source || '')) {
-        workspaces?.dropOwnership(prevId, `replaced by ${nextId} (${obj.source})`)
+        store?.dropOwnership(prevId, `replaced by ${nextId} (${obj.source})`)
       }
     }
-    if (nextId) workspaces?.onSessionBound(nextId)
+    if (nextId) store?.onSessionBound(nextId)
     if (nextId)
       this.d.events(obj.tabId, {
         type: 'bound',
@@ -1003,10 +1031,7 @@ export class ClaudeBackend implements SessionBackend {
   watchRemoteHookMirrors(): void {
     const userData = this.d.userData()
     const wanted = new Map(
-      (this.d.workspaces()?.remoteTargets() ?? []).map((t) => [
-        mirrorHookDir(userData, t.host),
-        t.host
-      ])
+      this.d.remoteTargets().map((t) => [mirrorHookDir(userData, t.host), t.host])
     )
     for (const [dir, dispose] of this.watchedHookMirrors) {
       if (wanted.has(dir)) continue
@@ -1076,7 +1101,7 @@ export class ClaudeBackend implements SessionBackend {
       }
       worktree = req.worktree
     }
-    const rebuildable = !home || !!this.d.workspaces()?.findRow(sid)?.worktreeState
+    const rebuildable = !home || !!this.d.store()?.findRow(sid)?.worktreeState
     if (await rebuildsTheWorktree(req.mode, async () => !rebuildable || host.dirExists(cwd))) {
       const plan = home
         ? await this.machineResumePlan(host, sid)
@@ -1096,7 +1121,7 @@ export class ClaudeBackend implements SessionBackend {
     }
     if (!home) {
       if (mode === 'main' && !dirExistsSync(cwd)) {
-        const wt = this.d.workspaces()?.findRow(sid)?.worktreeState?.worktreePath
+        const wt = this.d.store()?.findRow(sid)?.worktreeState?.worktreePath
         const root = wt ? worktreeHomeRoot(wt) : null
         if (root && dirExistsSync(root)) cwd = root
       }
@@ -1130,16 +1155,12 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   private localWorktreePlan(sessionId: string): Promise<ResumePlan> {
-    const workspaces = this.d.workspaces()
-    return planResume(
-      workspaces?.findRow(sessionId),
-      this.d.resumeProbes,
-      workspaces?.bucketDirOf(sessionId)
-    )
+    const store = this.d.store()
+    return planResume(store?.findRow(sessionId), this.d.resumeProbes, store?.bucketDirOf(sessionId))
   }
 
   private async machineResumePlan(host: Host, sessionId: string): Promise<ResumePlan> {
-    const row = this.d.workspaces()?.findRow(sessionId)
+    const row = this.d.store()?.findRow(sessionId)
     if (!row) return { action: 'unavailable', reason: 'not-found' }
     if (!row.worktreeState) return { action: 'direct', cwd: row.cwd }
     return planResume(
@@ -1149,7 +1170,7 @@ export class ClaudeBackend implements SessionBackend {
         occupantOf: (dir) => this.machineOccupantOf(host.keyed(dir)),
         ...gitProbes(hostGit(host))
       },
-      this.d.workspaces()?.bucketDirOf(sessionId)
+      this.d.store()?.bucketDirOf(sessionId)
     )
   }
 
@@ -1158,9 +1179,7 @@ export class ClaudeBackend implements SessionBackend {
       if (!s.alive || !s.remote) continue
       const onMachine = (p: string): string => formatRemoteKey(s.remote!.host, p)
       if (onMachine(s.cwd) === dir) return occupantName(s)
-      const bound = s.sessionId
-        ? this.d.workspaces()?.findRow(s.sessionId)?.worktreeState
-        : undefined
+      const bound = s.sessionId ? this.d.store()?.findRow(s.sessionId)?.worktreeState : undefined
       if (bound && onMachine(bound.worktreePath) === dir) return occupantName(s)
     }
     return null
@@ -1172,7 +1191,7 @@ export class ClaudeBackend implements SessionBackend {
       const remote = this.d.tracker.remoteOf(t.tabId)
       if (remote && t.sessionId === sessionId) return formatRemoteKey(remote.host, t.cwd)
     }
-    const ws = this.d.workspaces()?.workspaceOf(sessionId)
+    const ws = this.d.store()?.workspaceOf(sessionId)
     return ws && hostOf(ws) === 'ssh' ? ws : undefined
   }
 
@@ -1181,8 +1200,8 @@ export class ClaudeBackend implements SessionBackend {
     spec: ClaudeLaunch & { tabId?: string; cols?: number; rows?: number }
   ): Promise<CreateTabResult> {
     const { tracker } = this.d
-    const workspaces = this.d.workspaces()
-    const ws = spec.resumeSessionId ? workspaces?.workspaceOf(spec.resumeSessionId) : undefined
+    const store = this.d.store()
+    const ws = spec.resumeSessionId ? store?.workspaceOf(spec.resumeSessionId) : undefined
     const plan = await host.launch({
       ...spec,
       fallbackCwd: ws && this.d.hosts.of(ws) === host ? ws : undefined,
@@ -1224,10 +1243,10 @@ export class ClaudeBackend implements SessionBackend {
       if (machine.pickKey) tracker.movePick(machine.pickKey, handle.id)
       if (machine.attachTo) {
         tracker.bindSession(handle.id, '', machine.attachTo, machine.cwd)
-        workspaces?.onSessionBound(machine.attachTo)
+        store?.onSessionBound(machine.attachTo)
         this.d.events(handle.id, { type: 'bound', key: machine.attachTo })
       } else if (!spec.resumeSessionId) {
-        workspaces?.launchStarted(
+        store?.launchStarted(
           handle.id,
           machine.root,
           spec.worktree,
@@ -1236,8 +1255,8 @@ export class ClaudeBackend implements SessionBackend {
         )
       }
       this.d.remoteSync()?.pokeNow(machine.tracking.host)
-    } else if (!spec.resumeSessionId || !workspaces?.isMember(spec.resumeSessionId)) {
-      workspaces?.launchStarted(handle.id, plan.cwd, spec.worktree)
+    } else if (!spec.resumeSessionId || !store?.isMember(spec.resumeSessionId)) {
+      store?.launchStarted(handle.id, plan.cwd, spec.worktree)
     }
     this.d.ptysChanged()
     return { ok: true, id: handle.id, cwd: plan.cwd }

@@ -22,9 +22,11 @@ import type { SearchCandidate } from '../../../main/sessionSearch'
 import type { SessionPlace } from '../../../main/usageCache'
 import { mapAtMost } from '@core/mapAtMost'
 import { BackgroundFile } from '../../../main/backgroundFile'
+import type { SessionTracker } from './sessionTracker'
 import {
   filterOwned,
   hasHistory,
+  type KeptInLayout,
   type RowsNow,
   type RowsPass,
   type RowsPassStart,
@@ -73,11 +75,18 @@ export interface LiveSession {
   relocated?: boolean
 }
 
-export interface KeptInLayout {
-  list(): readonly string[]
-  add(ids: string[]): void
-  remove(id: string): void
-  keepOnly(ids: string[]): void
+export function liveSessionsOf(tracker: Pick<SessionTracker, 'list'>): Map<string, LiveSession> {
+  const m = new Map<string, LiveSession>()
+  for (const s of tracker.list()) {
+    if (!s.alive || !s.sessionId) continue
+    m.set(s.sessionId, {
+      treeRoot: s.treeRoot,
+      worktree: s.worktree,
+      remote: !!s.remote,
+      relocated: s.relocated
+    })
+  }
+  return m
 }
 
 export interface ClaudeSessionStoreDeps {

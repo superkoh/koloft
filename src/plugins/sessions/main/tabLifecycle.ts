@@ -25,11 +25,11 @@ export class TabLifecycle extends EventEmitter<{
 
 export interface TabSubsystems {
   attention: Pick<AttentionTracker, 'clear' | 'tabStopping'>
-  claude: Pick<ClaudeBackend, 'onPtyExit'>
+  claude: Pick<ClaudeBackend, 'onPtyExit' | 'launchEnded'>
   tracker: Pick<SessionTracker, 'setAlive'>
   storedOwnerOf: (tabId: string) => Pick<SessionsWithStore, 'stop'> | undefined
   toast: (message: string) => void
-  workspaces: MadeLater<Pick<WorkspaceManager, 'launchEnded' | 'onTrackerUpdate'>>
+  workspaces: MadeLater<Pick<WorkspaceManager, 'onTrackerUpdate'>>
   announce: <T>(moment: Moment<T>, m: T) => void
 }
 
@@ -48,7 +48,7 @@ export function subscribeTabSubsystems(lifecycle: TabLifecycle, s: TabSubsystems
       ?.stop(tabId, signal ? -1 : exitCode)
       .catch((error) => s.toast(String(error)))
   })
-  lifecycle.on('teardown', ({ tabId }) => s.workspaces()?.launchEnded(tabId))
+  lifecycle.on('teardown', ({ tabId }) => s.claude.launchEnded(tabId))
   lifecycle.on('teardown', (exit) => s.announce(TAB_TORN_DOWN, exit))
 
   lifecycle.on('slept', () => s.workspaces()?.onTrackerUpdate())

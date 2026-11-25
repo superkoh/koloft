@@ -8,7 +8,6 @@ import type {
   FolderUse,
   LayoutV6,
   ProjectInfo,
-  BackendSessionRow,
   SessionRow,
   SessionWorkbenchState,
   WorkspaceAddResult,
@@ -18,11 +17,6 @@ import type {
   WorkspaceRows,
   WorktreeInfo
 } from '@shared/types'
-import {
-  ClaudeSessionStore,
-  type KeptInLayout,
-  type LiveSession
-} from '@agents/claude/main/claudeSessionStore'
 import {
   carrySessionWorkbench,
   decideWorkspaceAdd,
@@ -37,26 +31,15 @@ import { dirExistsSync } from '../../../main/resumePlan'
 import { isGitCheckoutAsync } from '../../../main/projectInfo'
 import { replacesTheConversation } from '../../../main/hookRouting'
 import { isRemoteKey, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
-import { SESSION_BACKENDS } from '@shared/sessionBackend'
 import {
   isWorkspaceWorkbenchKey,
   workspaceOfWorkbenchKey,
   WORKSPACE_WORKBENCH_STARTS_OPEN_WHATEVER_THE_SESSION_DEFAULT
 } from '@shared/workbenchState'
 import type { RemoteGitInfo } from '../../../main/remote/install'
-import type { SearchCandidate } from '../../../main/sessionSearch'
-import type { SessionPlace } from '../../../main/usageCache'
 import { isUnderAnyRoot } from '@core/isUnderAnyRoot'
 import { mergeUse } from '@shared/firstRun'
-import {
-  keptOrRunning,
-  rowsOfEveryAgent,
-  type RowsNow,
-  type RowsOfEveryAgent,
-  type SessionRowsSource
-} from '@core/agent/sessionRows'
-
-export type { LiveSession }
+import type { KeptInLayout, RowsNow, RowsOfEveryAgent } from '@core/agent/sessionRows'
 
 const RESCAN_DEBOUNCE_MS = 250
 const PANEL_SAVE_DEBOUNCE_MS = 600
@@ -79,16 +62,11 @@ export function scratchRootsAround(home: string, tmpdir: string): string[] {
 }
 
 export interface WorkspaceManagerDeps {
-  additionalRows?(workspacePath: string): (BackendSessionRow & { backendId: BackendId })[]
-  additionalMembers?(): Set<string>
-  additionalFolders?(): Promise<DiscoveredFolder[]>
-  projectsRoot: string
-  headCache?: { file: string; version: string }
+  agents: RowsOfEveryAgent
   loadLayout(): LayoutV6
   saveLayout(layout: LayoutV6): void
   projectInfo(p: string): ProjectInfo
   runningBindings(): Map<string, string>
-  liveSessions?(): Map<string, LiveSession>
   killTab(tabId: string): void
   pushRows(payload: WorkspaceRows[]): void
   freshness?(wsPath: string): WorkspaceFreshness | undefined
@@ -97,19 +75,17 @@ export interface WorkspaceManagerDeps {
   gitPickable?(wsPath: string): boolean
   onRescanned?(wsPaths: string[]): void
   jobCountFor?(wsPath: string): number
-  remoteProjectsRoot(host: string): string
   remoteRunning?(host: string): Set<string>
   remoteConnected?(host: string): boolean
   remoteProblem?(host: string): string | undefined
   remoteGit?(host: string, path: string): RemoteGitInfo | undefined
+  remoteOrphansOf?(wsPath: string): string[]
   killRemoteSession?(host: string, sessionId: string): void
   hiddenRow?(id: string): boolean
   parentOf?(rowId: string): string | undefined
   conductorsRoot?: string
   scratchRoots?: readonly string[]
   claimedFolder?: FolderClaim
-  sessionsOnDiskOrRunning?(ids: ReadonlySet<string>): void
-  memberDropped?(sessionId: string, why: string): void
 }
 
 // PLATFORM§1
@@ -155,13 +131,10 @@ export class WorkspaceManager {
   private fullScanAsked = true
   private lookedEverywhereAt = 0
   private worktreeDirsByStamp = new Map<string, { stamp: number; dirs: string[] }>()
-  private lastAdditionalKey = ''
   private growthAsked = false
   private membersPruned = false
-  private claude: ClaudeSessionStore
-  private agents: RowsOfEveryAgent
 
-  private keptInLayout: KeptInLayout = {
+  readonly keptInLayout: KeptInLayout = {
     list: () => this.layout.members,
     add: (sessionIds) => {
       const fresh = [...new Set(sessionIds)].filter((id) => id && !this.layout.members.includes(id))
@@ -197,82 +170,14 @@ export class WorkspaceManager {
 
   constructor(private deps: WorkspaceManagerDeps) {
     this.layout = deps.loadLayout()
-    this.claude = new ClaudeSessionStore({
-      projectsRoot: deps.projectsRoot,
-      headCache: deps.headCache,
-      remoteProjectsRoot: (host) => deps.remoteProjectsRoot(host),
-      pinnedPaths: () => this.pinnedPathList(),
-      remoteTargets: () => this.remoteTargets(),
-      kept: this.keptInLayout,
-      rereadRows: () => this.scheduleRescan(),
-      rereadGrownRows: () => this.rescanForGrowth(),
-      runningBindings: () => deps.runningBindings(),
-      liveSessions: () => deps.liveSessions?.() ?? new Map<string, LiveSession>(),
-      remoteRunning: (host) => deps.remoteRunning?.(host) ?? new Set<string>(),
-      sessionsOnDiskOrRunning: (ids) => deps.sessionsOnDiskOrRunning?.(ids),
-      memberDropped: (sessionId, why) => deps.memberDropped?.(sessionId, why)
-    })
-    this.agents = rowsOfEveryAgent(() => [
-      { id: 'claude', rows: this.claude },
-      ...this.rowsPushedInByTheEntryFile()
-    ])
-  }
-
-  private rowsPushedInByTheEntryFile(): { id: BackendId; rows: SessionRowsSource }[] {
-    const others = SESSION_BACKENDS.filter((id) => id !== 'claude')
-    return others.map((id) => ({
-      id,
-      rows: {
-        rowsReady: async () => {},
-        rowsPass: () => {
-          const members = this.deps.additionalMembers?.() ?? new Set<string>()
-          return {
-            in: async (place, now) =>
-              keptOrRunning(
-                (this.deps.additionalRows?.(place.path) ?? []).filter((r) => r.backendId === id),
-                members,
-                now()
-              ),
-            done: async () => {},
-            shown: () => {}
-          }
-        },
-        members: () => this.deps.additionalMembers?.() ?? new Set<string>(),
-        usedFolders: async () =>
-          id === others[0] ? ((await this.deps.additionalFolders?.()) ?? []) : [],
-        whereNow: () => (r) => ({ dir: r.cwd }),
-        liveKey: () => ''
-      }
-    }))
   }
 
   start(): void {
-    this.claude.start()
     this.scheduleRescan()
   }
 
   rows(): WorkspaceRows[] {
     return this.rowsCache
-  }
-
-  historyRows(wsPath: string): SessionRow[] {
-    return this.claude.historyRows(wsPath)
-  }
-
-  searchableRows(): SearchCandidate[] {
-    return this.claude.searchableRows()
-  }
-
-  transcriptFiles(): { file: string; workspace: string }[] {
-    return this.claude.transcriptFiles()
-  }
-
-  sessionPlaces(): Map<string, SessionPlace> {
-    return this.claude.sessionPlaces()
-  }
-
-  findRow(sessionId: string): SessionRow | undefined {
-    return this.claude.findRow(sessionId)
   }
 
   workspaceOf(sessionId: string): string | undefined {
@@ -313,29 +218,8 @@ export class WorkspaceManager {
     this.scheduleRescan()
   }
 
-  onAdditionalSessionsChanged(): void {
-    const key = this.additionalKey()
-    if (key === this.lastAdditionalKey) return
-    this.lastAdditionalKey = key
-    this.scheduleRescan()
-  }
-
-  private additionalKey(): string {
-    const rows = this.layout.workspaces.map((w) => this.deps.additionalRows?.(w.path) ?? [])
-    const members = [...(this.deps.additionalMembers?.() ?? [])].sort()
-    return JSON.stringify([rows, members])
-  }
-
-  bucketDirOf(sessionId: string): string | undefined {
-    return this.claude.bucketDirOf(sessionId)
-  }
-
-  transcriptFileOf(sessionId: string): string | undefined {
-    return this.claude.transcriptFileOf(sessionId)
-  }
-
   isMember(sessionId: string): boolean {
-    return this.agents.isMember(sessionId)
+    return this.deps.agents.isMember(sessionId)
   }
 
   isPinned(wsPath: string): boolean {
@@ -366,7 +250,7 @@ export class WorkspaceManager {
   async discover(): Promise<DiscoveredFolder[]> {
     const pinned = new Set(this.layout.workspaces.map((w) => w.path))
     const wtMark = `${path.sep}.claude${path.sep}worktrees${path.sep}`
-    const used = await this.agents.usedFolders()
+    const used = await this.deps.agents.usedFolders()
     const byCwd = new Map<string, DiscoveredFolder>()
     for (const use of used) {
       const wt = use.path.indexOf(wtMark)
@@ -478,24 +362,6 @@ export class WorkspaceManager {
     this.unpin(wsPath)
   }
 
-  launchStarted(
-    tabId: string,
-    cwd: string,
-    worktree?: string,
-    host?: string,
-    pickedSessionId?: string
-  ): void {
-    this.claude.launchStarted(tabId, cwd, worktree, host, pickedSessionId)
-  }
-
-  leavingWorktree(sessionId: string, tabId: string): void {
-    this.claude.leavingWorktree(sessionId, tabId)
-  }
-
-  leftWorktree(sessionId: string, removed: boolean): void {
-    this.claude.leftWorktree(sessionId, removed)
-  }
-
   hideWhileClosing(sessionId: string): void {
     this.closingForGood.set(sessionId, (this.closingForGood.get(sessionId) ?? 0) + 1)
     this.rowsCache = this.withoutClosing(this.rowsCache)
@@ -511,14 +377,6 @@ export class WorkspaceManager {
   private withoutClosing(rows: WorkspaceRows[]): WorkspaceRows[] {
     if (!this.closingForGood.size) return rows
     return rows.map((e) => ({ ...e, rows: e.rows.filter((r) => !this.closingForGood.has(r.id)) }))
-  }
-
-  launchEnded(tabId: string): void {
-    this.claude.launchEnded(tabId)
-  }
-
-  onSessionStart(tabId: string, cwd: string): void {
-    this.claude.onSessionStart(tabId, cwd)
   }
 
   workbenchState(sessionId: string): SessionWorkbenchState {
@@ -551,22 +409,6 @@ export class WorkspaceManager {
     if (!this.isMember(sessionId)) return
     this.layout = { ...this.layout, panels: withWorkbenchState(this.layout, sessionId, state) }
     this.saveSoon()
-  }
-
-  archiveSession(sessionId: string): boolean {
-    return this.claude.archiveSession(sessionId)
-  }
-
-  dropOwnership(sessionId: string, why: string): void {
-    this.claude.dropOwnership(sessionId, why)
-  }
-
-  onSessionBound(sessionId: string): void {
-    this.claude.onSessionBound(sessionId)
-  }
-
-  adopt(sessionIds: string[]): void {
-    this.claude.adopt(sessionIds)
   }
 
   onSessionRebind(prevId: string, nextId: string, source: string): void {
@@ -620,7 +462,7 @@ export class WorkspaceManager {
   }
 
   private liveKey(): string {
-    return this.agents.liveKey()
+    return this.deps.agents.liveKey()
   }
 
   private revealDirOf(
@@ -638,7 +480,6 @@ export class WorkspaceManager {
   dispose(): void {
     this.disposed = true
     this.flushPanelSave()
-    this.claude.dispose()
     if (this.timer) clearTimeout(this.timer)
     for (const done of this.scanWaiters.splice(0)) done()
   }
@@ -682,7 +523,7 @@ export class WorkspaceManager {
   }
 
   private remoteOrphansOf(wsPath: string): string[] {
-    return this.claude.remoteOrphansOf(wsPath)
+    return this.deps.remoteOrphansOf?.(wsPath) ?? []
   }
 
   whenScanned(): Promise<void> {
@@ -726,13 +567,13 @@ export class WorkspaceManager {
     }
   }
 
-  private rescanForGrowth(): void {
+  rescanForGrowth(): void {
     this.growthAsked = true
     this.armRescan()
   }
 
   private async doRescan(): Promise<void> {
-    await this.agents.rowsReady()
+    await this.deps.agents.rowsReady()
 
     const everywhere =
       this.fullScanAsked ||
@@ -743,7 +584,7 @@ export class WorkspaceManager {
     if (everywhere) this.lookedEverywhereAt = Date.now()
     const boundAtStart = this.deps.runningBindings()
     this.lastRunningKey = [...boundAtStart.keys()].join(',')
-    const pass = this.agents.rowsPass({ everywhere, bindings: boundAtStart })
+    const pass = this.deps.agents.rowsPass({ everywhere, bindings: boundAtStart })
 
     const payload: WorkspaceRows[] = []
     const wsBySession = new Map<string, string>()
@@ -827,7 +668,7 @@ export class WorkspaceManager {
   }
 
   private dropWhatNoAgentKeeps(): void {
-    const kept = this.agents.members()
+    const kept = this.deps.agents.members()
     const gc = gcSessions(this.layout.panels, kept)
     const resident = this.residentIds().filter((id) => kept.has(id))
     if (gc.changed || this.membersPruned || resident.length !== this.residentIds().length) {
@@ -838,7 +679,7 @@ export class WorkspaceManager {
   }
 
   private async revealDirsExisting(rows: WorkspaceRows[]): Promise<Map<string, boolean>> {
-    const whereNow = this.agents.whereNow()
+    const whereNow = this.deps.agents.whereNow()
     const dirs = new Set<string>()
     for (const e of rows) {
       if (e.workspace.remote) continue
@@ -851,7 +692,7 @@ export class WorkspaceManager {
   }
 
   private stampLive(rows: WorkspaceRows[], dirOk = new Map<string, boolean>()): WorkspaceRows[] {
-    const whereNow = this.agents.whereNow()
+    const whereNow = this.deps.agents.whereNow()
     return rows.map((e) => ({
       ...e,
       workspace: {
@@ -885,13 +726,11 @@ export class WorkspaceManager {
 
   private scope(wsPath: string): {
     key: RemoteKey | null
-    root: string
     scanPath: string
   } {
     const key = parseRemoteKey(wsPath)
     return {
       key,
-      root: key ? this.deps.remoteProjectsRoot(key.host) : this.deps.projectsRoot,
       scanPath: key ? this.realRemotePath(key) : wsPath
     }
   }

@@ -156,7 +156,6 @@ export interface SessionsWithStore {
   readonly worktrees: SessionWorktrees
   rows(workspace: string): BackendSessionRow[]
   workspacesFor(cwds: string[]): string[]
-  localHistoryFolders(): Promise<DiscoveredFolder[]>
   sessionPlaces(): (id: string, host?: string) => SessionPlace | undefined
   adopt(keys: string[]): void
   members(): Set<string>

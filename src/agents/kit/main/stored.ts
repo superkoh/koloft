@@ -5,6 +5,7 @@ import type { CodexSessions } from '@agents/codex/main/codexSessions'
 import type { AgySessions } from '@agents/agy/main/agySessions'
 import { planResume, ResumeRefused, type ResumeProbes } from '../../../main/resumePlan'
 import { errorText } from '@core/errorText'
+import { rowsKeptInMemory } from './rowsKeptInMemory'
 
 export function storedBackend(
   sessions: CodexSessions | AgySessions,
@@ -51,6 +52,7 @@ export function storedBackend(
     observe: (tabId, event) => sessions.observe(tabId, event),
     occupantOf: (dir) => sessions.occupantOf(dir),
     workStillRunning: async () => false,
+    ...rowsKeptInMemory(sessions),
     // ADR-0028
     permissionClass: (tabId) => (sessions.launchedBypassingChecks(tabId) ? 'bypass' : 'prompting'),
     ...own
