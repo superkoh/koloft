@@ -4,7 +4,6 @@ import path from 'path'
 import type {
   BackendAvailability,
   BackendSessionInfo,
-  ClaudeSessionInfo,
   CreateTabOptions,
   CreateTabResult,
   DiscoveredFolder,
@@ -219,7 +218,6 @@ interface StartingLaunch {
   folder: string
   name: string
   tabId?: string
-  entryBeforeItStarted?: ClaudeSessionInfo
 }
 
 const notStartedYet = (): StartingLaunch => ({ folder: '', name: '' })
@@ -433,7 +431,7 @@ export class ClaudeBackend implements SessionBackend {
 
   private listedInItsFolder(launch: StartingLaunch): boolean {
     const s = launch.tabId ? this.d.tracker.infoOf(launch.tabId) : undefined
-    if (!s?.alive || s === launch.entryBeforeItStarted) return false
+    if (!s?.alive) return false
     const remote = s.remote
     const there = (p: string | undefined): boolean =>
       !!p && preparedKeyOf(remote ? formatRemoteKey(remote.host, p) : p) === launch.folder
@@ -454,20 +452,13 @@ export class ClaudeBackend implements SessionBackend {
   ): Promise<R> {
     try {
       const r = await start()
-      if (r.ok && r.id) this.startedInTab(launch, r.id)
+      if (r.ok && r.id) launch.tabId = r.id
       else this.letGo(launch)
       return r
     } catch (error) {
       this.letGo(launch)
       throw error
     }
-  }
-
-  private startedInTab(launch: StartingLaunch, tabId: string): void {
-    for (const older of this.startingLaunches)
-      if (older.tabId === tabId && older !== launch) this.letGo(older)
-    launch.tabId = tabId
-    launch.entryBeforeItStarted = this.d.tracker.infoOf(tabId)
   }
 
   private notCountingItself<T>(launch: StartingLaunch, ask: () => T): T {
@@ -484,7 +475,6 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   private letGoOfTab(tabId: string): void {
-    if (this.d.pty.get(tabId)?.alive) return
     for (const launch of this.startingLaunches) if (launch.tabId === tabId) this.letGo(launch)
   }
 

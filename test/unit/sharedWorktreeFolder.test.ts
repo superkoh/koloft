@@ -39,6 +39,7 @@ const MACHINE = 'lab'
 const SID = '5b0c7a52-3f1e-4d2a-9c8b-7e6f5d4c3b2a'
 const OTHER = 'other-agent' as unknown as BackendId
 const CLAUDE_TAB = 'claude-tab'
+const ANOTHER_SESSION = '0e1d2c3b-4a59-4687-9a8b-7c6d5e4f3a2b'
 const LONG_ENOUGH_TO_TAKE_A_FOLDER_MS = 1000
 const ROUNDS = 4
 
@@ -133,19 +134,36 @@ function sharedFolder(
   const launched: { cwd: string; folderThere: boolean; worktree?: string }[] = []
   const launch: { held?: Promise<void>; fails?: boolean } = {}
   const liveTabs = new Set<string>()
-  const boundTabs = new Map<string, { cwd: string; [more: string]: unknown }>()
+  const trackedTabs = new Map<
+    string,
+    { sessionId: string; cwd: string; treeRoot: string; alive: boolean }
+  >()
+  let registrationDue = false
+  let spawnCwd = ''
+  const tracked = (cwd: string): void =>
+    void trackedTabs.set(CLAUDE_TAB, {
+      sessionId: '',
+      cwd,
+      treeRoot: cwd,
+      alive: true,
+      ...{ tabId: CLAUDE_TAB, title: '' },
+      ...(side.io ? { remote: { host: MACHINE } } : {})
+    })
   const tabs = ClaudeBackend.prototype as unknown as {
-    createTab(spec: { cwd: string; worktree?: string }): Promise<unknown>
+    createTab(spec: { cwd?: string; root: string; worktree?: string }): Promise<unknown>
   }
   vi.spyOn(tabs, 'createTab').mockImplementation(async (spec) => {
     launched.push({
-      cwd: spec.cwd,
+      cwd: spec.cwd ?? '',
       folderThere: fs.existsSync(barePath(spec.cwd ?? '')),
       worktree: spec.worktree
     })
     await launch.held
     if (launch.fails) return { ok: false, code: 'spawn-failed' }
     liveTabs.add(CLAUDE_TAB)
+    spawnCwd = barePath(spec.cwd ?? spec.root)
+    if (side.io) tracked(spawnCwd)
+    else registrationDue = true
     return { ok: true, id: CLAUDE_TAB, cwd: spec.cwd }
   })
   const claudeGit: string[] = []
@@ -167,20 +185,18 @@ function sharedFolder(
       clearResumeIntent: () => {}
     },
     tracker: {
-      list: () => [],
+      list: () => [...trackedTabs.values()],
       remoteOf: () => undefined,
-      infoOf: (id: string) => (liveTabs.has(id) ? boundTabs.get(id) : undefined),
-      bindSession: (id: string, _transcript: string, _sid: string, cwd: string) =>
-        void boundTabs.set(id, {
-          sessionId: SID,
-          title: '',
-          alive: true,
-          cwd,
-          treeRoot: cwd,
-          ...(side.io ? { remote: { host: MACHINE } } : {})
-        }),
-      untrack: (id: string) => void boundTabs.delete(id),
-      setAlive: () => {}
+      infoOf: (id: string) => (liveTabs.has(id) ? trackedTabs.get(id) : undefined),
+      bindSession: (id: string, _transcript: string, sid: string, cwd: string) => {
+        const entry = trackedTabs.get(id)
+        if (entry) Object.assign(entry, { sessionId: sid, cwd, treeRoot: cwd })
+      },
+      untrack: (id: string) => void trackedTabs.delete(id),
+      setAlive: (id: string, alive: boolean) => {
+        const entry = trackedTabs.get(id)
+        if (entry) entry.alive = alive
+      }
     },
     events: () => {},
     sessionRebound: () => {},
@@ -225,27 +241,24 @@ function sharedFolder(
     launched,
     launch,
     claudeGit,
-    claudeBinds: async (cwd: string) => {
-      const before = boundTabs.get(CLAUDE_TAB)
+    claudeBinds: async (cwd: string, sessionId = SID) => {
+      if (registrationDue) tracked(spawnCwd)
+      registrationDue = false
       fs.writeFileSync(
         path.join(hookReports, `${CLAUDE_TAB}.json`),
         JSON.stringify({
           tabId: CLAUDE_TAB,
-          sessionId: SID,
+          sessionId,
           event: 'start',
           source: 'startup',
           cwd
         })
       )
-      await vi.waitFor(() => {
-        const entry = boundTabs.get(CLAUDE_TAB)
-        expect(entry !== before && entry?.cwd).toBe(cwd)
-      })
+      await vi.waitFor(() => expect(trackedTabs.get(CLAUDE_TAB)).toMatchObject({ sessionId, cwd }))
     },
-    oldProcessOfTheTabEnds: () =>
-      claude.tabExited({ tabId: CLAUDE_TAB, exitCode: 1, crashed: false }),
     claudeTabEnds: () => {
       liveTabs.delete(CLAUDE_TAB)
+      trackedTabs.delete(CLAUDE_TAB)
       claude.tabExited({ tabId: CLAUDE_TAB, exitCode: 1, crashed: false })
     },
     theirCloseOf: (made: WorktreeResource) =>
@@ -518,7 +531,7 @@ const folderThere = (made: WorktreeResource): boolean =>
 describe.each(SIDES)(
   'a Claude Code tab still starting in an untouched worktree another agent made, $where',
   (side) => {
-    it('closing the other agent’s tab keeps the folder while a Claude Code resume into it starts and until its tab is listed in it, then removes it', async () => {
+    it('closing the other agent’s tab keeps the folder while a Claude Code resume into it starts, and Claude Code lets go once its tab is listed there, so the folder goes when that tab moves on', async () => {
       const s = sharedFolder(side)
       const made = await s.theirs.create(side.at(repo), 'foo')
       const launch = holdTheLaunch(s)
@@ -531,6 +544,9 @@ describe.each(SIDES)(
       await s.theirCloseOf(made)
       expect(folderThere(made)).toBe(true)
       await s.claudeBinds(barePath(made.worktreePath))
+      await s.theirCloseOf(made)
+      expect(folderThere(made)).toBe(true)
+      await s.claudeBinds(repo, ANOTHER_SESSION)
       await s.theirCloseOf(made)
       expect(fs.existsSync(barePath(made.worktreePath))).toBe(false)
     })
@@ -550,28 +566,6 @@ describe.each(SIDES)(
       s.claudeTabEnds()
       await s.theirCloseOf(made)
       expect(fs.existsSync(barePath(made.worktreePath))).toBe(false)
-    })
-
-    it('a Claude Code tab restarted in the same tab counts as in the folder until its new process is listed there, not because its old process was', async () => {
-      const s = sharedFolder(side)
-      const made = await s.theirs.create(side.at(repo), 'foo')
-      await expect(s.claudeStartsInTheFolder()).resolves.toMatchObject({ ok: true })
-      await s.claudeBinds(barePath(made.worktreePath))
-      await expect(s.claudeStartsInTheFolder()).resolves.toMatchObject({ ok: true })
-      await s.theirCloseOf(made)
-      expect(folderThere(made)).toBe(true)
-      await s.claudeBinds(barePath(made.worktreePath))
-      await s.theirCloseOf(made)
-      expect(fs.existsSync(barePath(made.worktreePath))).toBe(false)
-    })
-
-    it('a Claude Code tab restarted in the same tab keeps the folder when the old process’s exit arrives after the new start', async () => {
-      const s = sharedFolder(side)
-      const made = await s.theirs.create(side.at(repo), 'foo')
-      await expect(s.claudeStartsInTheFolder()).resolves.toMatchObject({ ok: true })
-      s.oldProcessOfTheTabEnds()
-      await s.theirCloseOf(made)
-      expect(folderThere(made)).toBe(true)
     })
 
     it('a Claude Code launch into the folder that fails leaves nobody in it, and the close removes it', async () => {
@@ -640,16 +634,6 @@ describe.each(SIDES)(
         claude.status === 'fulfilled' && claude.value.ok
       ].filter(Boolean)
       expect(got).toHaveLength(1)
-    })
-
-    it('a Claude Code tab restarted on another name before it made the first one frees the first name', async () => {
-      const s = sharedFolder(side)
-      await expect(s.claudeStartsIn('foo')).resolves.toMatchObject({ ok: true })
-      await expect(s.claudeStartsIn('bar')).resolves.toMatchObject({ ok: true })
-      s.oldProcessOfTheTabEnds()
-      await expect(s.theirs.create(side.at(repo), 'foo')).resolves.toMatchObject({
-        state: 'ready'
-      })
     })
 
     it('a Claude Code launch on that name that fails frees the name at once', async () => {
