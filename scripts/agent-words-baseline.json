@@ -450,6 +450,7 @@
       "import { codexConfigFile } from '@agents/codex/main/codexTrust'",
       "import { codexMachineInstance } from '@agents/codex/main/codexMachine'",
       "import { codexShowsAPanel } from './inputBox'",
+      "import { messageSocket } from '@agents/claude/main/messageSocket'",
       "import { probeAccount, shouldSkipFable } from './usageProbe'",
       "import { setupStatusline, setupAgyStatusline, statusLineSetting } from './statusline'",
       "inFolders(AGY_PROJECT_MCP_FILE, 'toRepoTop'),",
@@ -767,9 +768,6 @@
       "async function queueCodexMessage(tabId: string, text: string, clientId: string): Promise<void> {",
       "await d.codexSessions.queueMessage(tabId, text, clientId)",
       "if (!d.codexSessions) throw new Error(startupErrors.codex ?? 'Codex is not available.')",
-      "liveClaudeRegistryOn(host)",
-      "liveClaudeRegistryOn(host: string): Promise<string>",
-      "liveClaudeRegistryOn,",
       "queue: async (tabId, text, clientId) => d.codexSessions?.queueMessage(tabId, text, clientId),",
       "queue: queueCodexMessage,",
       "readonly codexSessions: {"

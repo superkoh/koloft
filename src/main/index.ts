@@ -370,6 +370,7 @@ import {
   whenMessagingSocket,
   whenMessagingSocketOnMachine
 } from '@agents/claude/main/claudeSessionRegistry'
+import { messageSocket } from '@agents/claude/main/messageSocket'
 import { GLOBAL_SCOPE, scopeName } from '@shared/scope'
 import { Commands } from '@core/commands'
 import { PLUGINS } from '@plugins/list'
@@ -1686,9 +1687,6 @@ async function liveClaudeRegistryOn(host: string): Promise<string> {
 }
 
 const messaging = sessionMessaging({
-  get tracker() {
-    return tracker
-  },
   get hosts() {
     return hosts
   },
@@ -1704,9 +1702,6 @@ const messaging = sessionMessaging({
   get sessionBackends() {
     return sessionBackends
   },
-  get writeLineInTurn() {
-    return writeLineInTurn
-  },
   get noteOfWhatKoloftSends() {
     return noteOfWhatKoloftSends
   },
@@ -1718,13 +1713,21 @@ const messaging = sessionMessaging({
   },
   ptyMgr,
   startupErrors,
-  remoteControlDir,
-  sessionOfTab,
   machineOfTab,
   storedOwnerOf,
-  liveClaudeRegistryOn,
-  whenMessagingSocket,
-  whenMessagingSocketOnMachine
+  sendPeerLine: messageSocket({
+    get tracker() {
+      return tracker
+    },
+    get writeLineInTurn() {
+      return writeLineInTurn
+    },
+    remoteControlDir,
+    sessionOfTab,
+    liveClaudeRegistryOn,
+    whenMessagingSocket,
+    whenMessagingSocketOnMachine
+  })
 })
 
 const syncRepoKeys = new GitRepoKeys(undefined, (machine, paths) =>

@@ -1,9 +1,8 @@
 import { backendIdOf } from '@shared/sessionBackend'
-import type { BackendId, SessionInfo } from '@shared/types'
+import type { BackendId } from '@shared/types'
 import type { ModeClass } from '@core/agent/sessionBackends'
 import type { SshHost } from './host/sshHost'
 import type { PtyManager } from './ptyManager'
-import { writeToMachineSocket } from './remote/ssh'
 
 type SentNote = Parameters<SshHost['noteSent']>[1]
 
@@ -24,7 +23,6 @@ export interface HandOverWiring {
 }
 
 export interface SessionMessagingDeps<HandOver> {
-  readonly tracker: { remoteOf(tabId: string): { host: string } | undefined }
   readonly hosts: { machine(host: string): Pick<SshHost, 'noteSent'> }
   readonly codexSessions: {
     queueMessage(tabId: string, text: string, clientId?: string): Promise<void>
@@ -32,11 +30,6 @@ export interface SessionMessagingDeps<HandOver> {
   readonly hookRegDir: string | undefined
   readonly butler: { firstWordsComing(tabId: string): void } | null
   readonly sessionBackends: { permissionClass(tabId: string): ModeClass }
-  readonly writeLineInTurn: (
-    receiver: string,
-    line: string,
-    write?: (line: string) => Promise<void>
-  ) => Promise<void>
   readonly noteOfWhatKoloftSends: (
     backend: BackendId | undefined,
     text: string,
@@ -46,19 +39,11 @@ export interface SessionMessagingDeps<HandOver> {
   readonly buildHandOver: (d: HandOverTabState & HandOverWiring) => HandOver
   ptyMgr: Pick<PtyManager, 'get' | 'type' | 'whenReady'>
   startupErrors: Partial<Record<BackendId, string>>
-  remoteControlDir: string
-  sessionOfTab(tabId: string): Pick<SessionInfo, 'sessionId'> | undefined
   machineOfTab(tabId: string): string | undefined
   storedOwnerOf(
     tabId: string
   ): { deliver(tabId: string, text: string): Promise<boolean> } | undefined
-  liveClaudeRegistryOn(host: string): Promise<string>
-  whenMessagingSocket(sessionId: string, ms: number): Promise<string | null>
-  whenMessagingSocketOnMachine(
-    sessionId: string,
-    ms: number,
-    readLiveRegistry: () => Promise<string>
-  ): Promise<string | null>
+  sendPeerLine(tabId: string, line: string, ms: number): Promise<void>
 }
 
 export interface SessionVerbsMessaging {
@@ -74,36 +59,7 @@ export function sessionMessaging<HandOver>(d: SessionMessagingDeps<HandOver>): {
   forSessionVerbs: SessionVerbsMessaging
   handOver(tabState: HandOverTabState, asks: { typable(tabId: string): boolean }): HandOver
 } {
-  const {
-    ptyMgr,
-    startupErrors,
-    remoteControlDir,
-    sessionOfTab,
-    machineOfTab,
-    storedOwnerOf,
-    liveClaudeRegistryOn,
-    whenMessagingSocket,
-    whenMessagingSocketOnMachine
-  } = d
-
-  // CC§13
-  async function sendPeerLine(tabId: string, line: string, ms: number): Promise<void> {
-    const sessionId = sessionOfTab(tabId)?.sessionId
-    const host = d.tracker.remoteOf(tabId)?.host
-    if (!sessionId) throw new Error(NO_MESSAGE_SOCKET)
-    if (!host) {
-      const socket = await whenMessagingSocket(sessionId, ms)
-      if (!socket) throw new Error(NO_MESSAGE_SOCKET)
-      return d.writeLineInTurn(socket, line)
-    }
-    const socket = await whenMessagingSocketOnMachine(sessionId, ms, () =>
-      liveClaudeRegistryOn(host)
-    )
-    if (!socket) throw new Error(NO_MESSAGE_SOCKET)
-    await d.writeLineInTurn(`${host}:${socket}`, line, (l) =>
-      writeToMachineSocket(host, socket, l, { controlDir: remoteControlDir })
-    )
-  }
+  const { ptyMgr, startupErrors, machineOfTab, storedOwnerOf, sendPeerLine } = d
 
   async function queueCodexMessage(tabId: string, text: string, clientId: string): Promise<void> {
     if (!d.codexSessions) throw new Error(startupErrors.codex ?? 'Codex is not available.')
@@ -152,5 +108,3 @@ export function sessionMessaging<HandOver>(d: SessionMessagingDeps<HandOver>): {
       })
   }
 }
-
-const NO_MESSAGE_SOCKET = 'Koloft could not find where that session takes messages.'

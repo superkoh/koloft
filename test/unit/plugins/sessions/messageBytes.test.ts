@@ -111,6 +111,7 @@ import {
 import { FROM_KOLOFT } from '../../../../src/plugins/sessions/main/messageOpenings'
 import { writeLineInTurn } from '../../../../src/agents/claude/main/crossSessionMessage'
 import { whenMessagingSocket } from '../../../../src/agents/claude/main/claudeSessionRegistry'
+import { messageSocket } from '../../../../src/agents/claude/main/messageSocket'
 import { butlersWords } from '../../../../src/plugins/butler/main/sessionHooks'
 import { withoutTheRelayTag } from '../../../../src/plugins/discord/main/sessionHooks'
 import { INBOX_SENDER } from '../../../../src/plugins/inbox/main/inbox'
@@ -542,9 +543,6 @@ async function stage(kind: Kind): Promise<Stage> {
   const noteSsh = recordingSsh()
   const machines = new Map<string, ReturnType<typeof machineIn>>()
   const messaging = sessionMessaging({
-    tracker: {
-      remoteOf: (tab) => (tab === TARGET_TAB && kind.remote ? { host: MACHINE } : undefined)
-    },
     hosts: {
       machine: (host) => {
         if (!machines.has(host)) machines.set(host, machineIn(world, host, { run: noteSsh.run }))
@@ -559,7 +557,6 @@ async function stage(kind: Kind): Promise<Stage> {
     sessionBackends: {
       permissionClass: (tab) => (tab === BUTLER_TAB || tab === TARGET_TAB ? 'bypass' : 'prompting')
     },
-    writeLineInTurn: writeLineAndSeeItTaken,
     noteOfWhatKoloftSends,
     noteSent,
     buildHandOver: (d) =>
@@ -573,20 +570,26 @@ async function stage(kind: Kind): Promise<Stage> {
       }),
     ptyMgr,
     startupErrors: { codex: '<why Codex could not start>' },
-    remoteControlDir: world.controlDir,
-    sessionOfTab,
     machineOfTab: (tab) =>
       tab === TARGET_TAB && kind.remote ? (codex?.machineOfTab(tab) ?? MACHINE) : undefined,
     storedOwnerOf: (tab) => (tab === TARGET_TAB ? (agy ?? codex ?? undefined) : undefined),
-    liveClaudeRegistryOn: async () =>
-      JSON.stringify({ sessionId: TARGET_SESSION, messagingSocketPath: SOCKET_ON_THE_MACHINE }) +
-      '\0',
-    whenMessagingSocket: (sessionId, ms) => whenMessagingSocket(sessionId, ms, registry),
-    whenMessagingSocketOnMachine: async (sessionId, ms, readLiveRegistry) => {
-      const { whenMessagingSocketOnMachine } =
-        await import('../../../../src/agents/claude/main/claudeSessionRegistry')
-      return whenMessagingSocketOnMachine(sessionId, ms, readLiveRegistry)
-    }
+    sendPeerLine: messageSocket({
+      tracker: {
+        remoteOf: (tab) => (tab === TARGET_TAB && kind.remote ? { host: MACHINE } : undefined)
+      },
+      writeLineInTurn: writeLineAndSeeItTaken,
+      remoteControlDir: world.controlDir,
+      sessionOfTab,
+      liveClaudeRegistryOn: async () =>
+        JSON.stringify({ sessionId: TARGET_SESSION, messagingSocketPath: SOCKET_ON_THE_MACHINE }) +
+        '\0',
+      whenMessagingSocket: (sessionId, ms) => whenMessagingSocket(sessionId, ms, registry),
+      whenMessagingSocketOnMachine: async (sessionId, ms, readLiveRegistry) => {
+        const { whenMessagingSocketOnMachine } =
+          await import('../../../../src/agents/claude/main/claudeSessionRegistry')
+        return whenMessagingSocketOnMachine(sessionId, ms, readLiveRegistry)
+      }
+    })
   })
 
   const started = new StartedSessions(() => path.join(world.home, 'started-sessions.json'))
