@@ -1,0 +1,52 @@
+=== the hooks file in the account's own folder (config/hooks.json) ===
+{
+  "koloft": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "/bin/sh '<home>/scripts/koloft-agy-hook' PostToolUse",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "PreInvocation": [
+      {
+        "command": "/bin/sh '<home>/scripts/koloft-agy-hook' PreInvocation",
+        "type": "command"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "/bin/sh '<home>/scripts/koloft-agy-hook' PreToolUse",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "SessionStart": [
+      {
+        "command": "/bin/sh '<home>/scripts/koloft-agy-hook' SessionStart",
+        "type": "command"
+      }
+    ],
+    "Stop": [
+      {
+        "command": "/bin/sh '<home>/scripts/koloft-agy-hook' Stop",
+        "type": "command"
+      }
+    ]
+  }
+}
+
+=== the status line in the account's settings file (antigravity-cli/settings.json) ===
+{
+  "command": "/bin/bash '<userData>/statusline/agy-run-<hash of this install>.sh'",
+  "stack_with_default": true,
+  "type": "command"
+}

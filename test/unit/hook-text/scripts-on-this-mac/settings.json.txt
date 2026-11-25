@@ -1,0 +1,87 @@
+{
+  "version": 3,
+  "lines": [
+    [
+      {
+        "id": "d2f479ac-df95-42cd-b7a4-1159d9afdfd4",
+        "type": "custom-command",
+        "backgroundColor": "bgBrightMagenta",
+        "commandPath": "echo $ANT_ACCOUNT"
+      },
+      {
+        "id": "6edf5b07-78f9-4bf8-bc6f-d6b0b235c90d",
+        "type": "context-percentage"
+      },
+      {
+        "id": "1d0acad2-a059-406f-810d-0ab46929d34d",
+        "type": "git-changes"
+      },
+      {
+        "id": "b329fb24-6efe-4f8d-b6ec-e9375fc1246c",
+        "type": "git-branch",
+        "backgroundColor": "bgBrightCyan"
+      },
+      {
+        "id": "cdf12122-7c89-4d9d-80cf-3f342232f59d",
+        "type": "git-worktree",
+        "backgroundColor": "bgBrightBlue"
+      }
+    ],
+    [
+      {
+        "id": "c2bac7fd-4ed4-4c7b-a07b-42de719cb731",
+        "type": "version"
+      },
+      {
+        "id": "caf386ef-9bb2-4a6b-84f1-f02ff9292b43",
+        "type": "model"
+      },
+      {
+        "id": "5a7c1e02-3b6d-4f8e-9c21-7d0e4b9a6f13",
+        "type": "thinking-effort"
+      },
+      {
+        "id": "2d3200c7-33ee-40c8-9910-76db5eb917c9",
+        "type": "session-cost"
+      },
+      {
+        "id": "c789245c-7aca-443c-9606-047a87f4f5d6",
+        "type": "git-review",
+        "backgroundColor": "bgYellow"
+      }
+    ],
+    [
+      {
+        "id": "3eb24189-c494-4770-8af8-07046a1c1948",
+        "type": "current-working-dir",
+        "metadata": {
+          "abbreviateHome": "true"
+        }
+      }
+    ]
+  ],
+  "flexMode": "full",
+  "compactThreshold": 60,
+  "colorLevel": 2,
+  "defaultPadding": " ",
+  "inheritSeparatorColors": false,
+  "globalBold": true,
+  "gitCacheTtlSeconds": 5,
+  "minimalistMode": true,
+  "powerline": {
+    "enabled": true,
+    "separators": [
+      ""
+    ],
+    "separatorInvertBackground": [
+      false
+    ],
+    "startCaps": [],
+    "endCaps": [
+      ""
+    ],
+    "theme": "nord-aurora",
+    "autoAlign": false,
+    "continueThemeAcrossLines": true
+  }
+}

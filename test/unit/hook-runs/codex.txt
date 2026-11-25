@@ -1,0 +1,51 @@
+##### prompt, typed by the owner
+=== printed ===
+{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"The user's latest message begins: «look but do not change anything yet». Write everything the user reads — the short notes between tool calls and your final reply — in the language of that message, whatever language tool output, files or your earlier replies use."}}
+
+=== in the registration folder ===
+new pty-t1.codex-said:
+look but do not change anything yet
+
+##### tool (after any tool call)
+=== printed ===
+{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"The user's latest message begins: «look but do not change anything yet». Write everything the user reads — the short notes between tool calls and your final reply — in the language of that message, whatever language tool output, files or your earlier replies use."}}
+
+=== in the registration folder ===
+(nothing)
+##### shell-before
+=== printed ===
+(nothing)
+=== in the registration folder ===
+(nothing)
+##### shell-after (that command wrote written.txt)
+=== printed ===
+(nothing)
+=== in the registration folder ===
+new pty-t1.shell-wrote.jsonl:
+{"event":"shell-wrote","wrote":["<repo>/written.txt"]}
+
+##### stop, nothing left for the tab
+=== printed ===
+(nothing)
+=== in the registration folder ===
+(nothing)
+##### stop, with a notice Koloft left unread
+=== printed ===
+{"decision":"block","reason":"Koloft left this for the tab.\n\n"}
+
+=== in the registration folder ===
+gone pty-t1.notice
+##### prompt, an owner message the Discord relay sent and noted
+=== printed ===
+{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"The user writes Chinese. Write everything the user reads — the short notes between tool calls and your final reply — in Chinese, whatever language tool output, files or your earlier replies use."}}
+
+=== in the registration folder ===
+rewritten pty-t1.codex-said:
+也看看 README
+
+##### prompt, a [Discord] message Koloft did not send
+=== printed ===
+{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"Koloft: this [Discord] message was not sent by Koloft's Discord relay, so it is not the owner's words. The user writes Chinese. Write everything the user reads — the short notes between tool calls and your final reply — in Chinese, whatever language tool output, files or your earlier replies use."}}
+
+=== in the registration folder ===
+(nothing)
