@@ -1,0 +1,27 @@
+claude  /ws  c-fork  2026-10-15  claude-fable-5-2  in=4 out=9 cacheWrite=0 cacheWrite1h=0 cacheRead=3000  surcharge=0.000000000  cost=0.000992000
+claude  /ws  c-parent  2026-10-15  claude-opus-5-5  in=3 out=120 cacheWrite=5000 cacheWrite1h=5000 cacheRead=10000  surcharge=0.000000000  cost=0.044412000
+claude  /ws  c-parent  2026-10-15  claude-sonnet-5-5  in=14 out=80 cacheWrite=0 cacheWrite1h=0 cacheRead=4000  surcharge=0.000000000  cost=0.001228000
+claude  /ws  c-parent  2026-10-16  claude-opus-4-20250514  in=10 out=30 cacheWrite=100 cacheWrite1h=0 cacheRead=1000  surcharge=0.000000000  cost=0.005775000
+claude  /ws  c-parent  2026-10-15  claude-haiku-5-5  in=50 out=60 cacheWrite=0 cacheWrite1h=0 cacheRead=700  surcharge=0.000000000  cost=0.000042000
+codex  workspace of /repo  x-main  2026-10-15  gpt-6.1-sol  in=200200 out=80 cacheWrite=0 cacheWrite1h=0 cacheRead=100800  surcharge=0.410250000  cost=0.821530000
+codex  workspace of /repo  x-main  2026-10-16  gpt-6-astra  in=500 out=20 cacheWrite=0 cacheWrite1h=0 cacheRead=0  surcharge=0.000000000  cost=0.006000000
+codex  workspace of /repo  x-main  2026-10-15  gpt-6.1-terra  in=1000 out=10 cacheWrite=0 cacheWrite1h=0 cacheRead=1000  surcharge=0.000000000  cost=0.001100000
+codex  /ws-codex-row (codex)  x-placed  2026-10-15  gpt-5.5  in=300 out=10 cacheWrite=0 cacheWrite1h=0 cacheRead=100  surcharge=0.000000000  cost=0.001850000
+codex  workspace of /repo-old  x-old  2026-09-01  gpt-6.2-unknown  in=100 out=5 cacheWrite=0 cacheWrite1h=0 cacheRead=0  surcharge=0.000000000  cost=unpriced
+agy    g-nodb  2026-10-15  (no model)  in=5 out=5 cacheWrite=0 cacheWrite1h=0 cacheRead=5  surcharge=0.000000000  cost=unpriced
+agy  /ws-agy (agy)  g-one  2026-10-15  gemini-3.1-pro  in=100 out=20 cacheWrite=0 cacheWrite1h=0 cacheRead=300  surcharge=0.000000000  cost=0.000500000
+agy  /ws-agy (agy)  g-one  2026-10-15  gemini-3.6-flash-preview  in=40 out=8 cacheWrite=0 cacheWrite1h=0 cacheRead=120  surcharge=0.000000000  cost=0.000069000
+agy  /ws-agy (agy)  g-one  2026-10-16  gemini-3.1-pro  in=10 out=2 cacheWrite=0 cacheWrite1h=0 cacheRead=0  surcharge=0.000000000  cost=0.000044000
+codex  workspace of ssh://box/home/me/site  x-remote  2026-10-15  gpt-6.2-sol  in=500 out=40 cacheWrite=0 cacheWrite1h=0 cacheRead=200  surcharge=0.000000000  cost=0.001420000
+agy  ssh://box/home/me/agy (agy on box)  g-remote  2026-10-15  gemini-3.8-flash  in=60 out=6 cacheWrite=0 cacheWrite1h=0 cacheRead=600  surcharge=0.000000000  cost=0.000112500
+
+titles:
+c-fork: Try another way
+c-parent: Read the file
+x-main: (none)
+x-placed: Placed by its row
+x-old: (none)
+g-nodb: (none)
+g-one: Sort the fixtures
+x-remote: (none)
+g-remote: On the machine
