@@ -564,6 +564,79 @@ describe('WorkspaceManager: which transcript writes rescan the list', () => {
       expect(latest(repo).rows.find((r) => r.id === codexRow.id)?.title).toBe('Codex task, renamed')
     )
   })
+
+  it("a Codex change in a claimed folder, which is listed but not pinned, rescans nothing; that folder's rows change with the next rescan", async () => {
+    const claimed = path.join(root, 'claimed')
+    fs.mkdirSync(claimed)
+    const helper = {
+      id: 'codex:local:helper',
+      title: 'Helper',
+      cwd: claimed,
+      worktree: 'main',
+      running: true,
+      invalidCwd: false,
+      mtime: 1
+    }
+    mgr.dispose()
+    mgr = new WorkspaceManager({
+      projectsRoot,
+      remoteProjectsRoot: () => projectsRoot,
+      loadLayout: () => layout,
+      saveLayout: (l) => {
+        layout = l
+      },
+      projectInfo: projectInfoFor,
+      runningBindings: () => bindings,
+      killTab: () => {},
+      pushRows: (p) => pushed.push(p),
+      claimedFolder: { path: claimed, by: 'butler', shownAs: 'Butler' },
+      additionalRows: (ws) => (ws === claimed ? [{ ...helper, backendId: 'codex' as const }] : []),
+      additionalMembers: () => new Set([helper.id])
+    })
+    mgr.start()
+    await mgr.firstScan
+    expect(latest(claimed).workspace.claim).toEqual({ by: 'butler', shownAs: 'Butler' })
+    expect(latest(claimed).rows.map((r) => r.title)).toEqual(['Helper'])
+    mgr.onAdditionalSessionsChanged()
+    await settle()
+
+    const before = pushed.length
+    helper.title = 'Helper, renamed'
+    mgr.onAdditionalSessionsChanged()
+    await settle()
+    expect(pushed.length).toBe(before)
+
+    mgr.refresh()
+    await vi.waitFor(() =>
+      expect(latest(claimed).rows.map((r) => r.title)).toEqual(['Helper, renamed'])
+    )
+  })
+
+  it('a rescan asked only because a known transcript grew drops no member and saves nothing; the next full one does both', async () => {
+    writeJsonl(repo, 'cold')
+    own('cold')
+    mgr.start()
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['cold']))
+    const coldFile = path.join(projectsRoot, encodeCwd(repo), 'cold.jsonl')
+    fs.utimesSync(coldFile, 1_000_000, 1_000_000)
+    await settle()
+    own('never-written')
+    const savesBefore = saves
+    const mtimeBefore = latest(repo).rows[0].mtime
+
+    fs.appendFileSync(coldFile, JSON.stringify({ type: 'assistant' }) + '\n')
+    await vi.waitFor(() => expect(latest(repo).rows[0].mtime).toBeGreaterThan(mtimeBefore))
+    expect(dropped).toEqual([])
+    expect(saves).toBe(savesBefore)
+    expect(layout.members).toContain('never-written')
+
+    mgr.refresh()
+    await vi.waitFor(() =>
+      expect(dropped).toEqual(['never-written: no transcript found and not running'])
+    )
+    expect(layout.members).toEqual(['cold'])
+    expect(saves).toBe(savesBefore + 1)
+  })
 })
 
 describe('WorkspaceManager: orphan worktree bucket (D2)', () => {
@@ -2046,6 +2119,137 @@ describe('mixed session backends', () => {
     mgr.restampLive()
     expect(latest(repo).rows.find((r) => r.id === codexKey)?.revealDir).toBeUndefined()
   })
+
+  function mixedMgr(
+    rowsOf: (ws: string) => Record<string, unknown>[],
+    members: string[],
+    extra: Record<string, unknown> = {}
+  ): WorkspaceManager {
+    mgr.dispose()
+    return new WorkspaceManager({
+      projectsRoot,
+      remoteProjectsRoot: (host: string) => path.join(root, 'remote', host, 'projects'),
+      loadLayout: () => layout,
+      saveLayout: (l) => {
+        layout = l
+      },
+      projectInfo: projectInfoFor,
+      runningBindings: () => bindings,
+      killTab: () => {},
+      pushRows: (p) => pushed.push(p),
+      additionalRows: rowsOf as never,
+      additionalMembers: () => new Set(members),
+      ...extra
+    })
+  }
+
+  function otherAgentRow(
+    backendId: 'codex' | 'agy',
+    id: string,
+    extra: Record<string, unknown> = {}
+  ): Record<string, unknown> {
+    return {
+      id,
+      backendId,
+      title: id,
+      cwd: repo,
+      worktree: 'main',
+      running: false,
+      invalidCwd: false,
+      mtime: 1,
+      ...extra
+    }
+  }
+
+  it('lists the starting rows first, Claude Code’s and then each other agent’s in the order of the list of agents, and rows created at the same moment in that order too', async () => {
+    const sameMoment = '2026-08-08T11:00:00.000Z'
+    const createdAt = Date.parse(sameMoment)
+    writeJsonl(repo, 'claude-session', sameMoment)
+    own('claude-session')
+    const rows = [
+      otherAgentRow('codex', 'codex-starting', { running: true, pending: true }),
+      otherAgentRow('codex', 'codex:local:same-moment', { createdAt }),
+      otherAgentRow('codex', 'codex:local:newer', { createdAt: createdAt + 1 }),
+      otherAgentRow('agy', 'agy-starting', { running: true, pending: true }),
+      otherAgentRow('agy', 'agy:local:same-moment', { createdAt }),
+      otherAgentRow('agy', 'agy:local:older', { createdAt: createdAt - 1 })
+    ]
+    mgr = mixedMgr(
+      (ws) => (ws === repo ? rows : []),
+      rows.map((r) => String(r.id))
+    )
+    mgr.launchStarted('claude-starting', repo)
+    mgr.start()
+    await mgr.firstScan
+    expect(latest(repo).rows.map((r) => r.id)).toEqual([
+      'claude-starting',
+      'codex-starting',
+      'agy-starting',
+      'codex:local:newer',
+      'claude-session',
+      'codex:local:same-moment',
+      'agy:local:same-moment',
+      'agy:local:older'
+    ])
+    expect(latest(repo).rows.map((r) => r.backendId)).toEqual([
+      'claude',
+      'codex',
+      'agy',
+      'codex',
+      'claude',
+      'codex',
+      'agy',
+      'agy'
+    ])
+  })
+
+  it('leaves out a starting row of another agent that is not among that agent’s members, and counts it as history', async () => {
+    mgr = mixedMgr(
+      (ws) =>
+        ws === repo ? [otherAgentRow('codex', 'stray-tab', { running: true, pending: true })] : [],
+      []
+    )
+    mgr.start()
+    await mgr.firstScan
+    expect(latest(repo).rows).toEqual([])
+    expect(latest(repo).workspace.hasHistory).toBe(true)
+    expect(latest(plain).workspace.hasHistory).toBe(false)
+  })
+
+  it('says a workspace has history when another agent knows a session there that is neither a member nor running, and knows which workspace that session is in', async () => {
+    mgr = mixedMgr(
+      (ws) =>
+        ws === repo
+          ? [otherAgentRow('agy', 'agy:local:kept'), otherAgentRow('agy', 'agy:local:past')]
+          : [],
+      ['agy:local:kept']
+    )
+    mgr.start()
+    await mgr.firstScan
+    expect(latest(repo).rows.map((r) => r.id)).toEqual(['agy:local:kept'])
+    expect(latest(repo).workspace.hasHistory).toBe(true)
+    expect(mgr.workspaceOf('agy:local:past')).toBe(repo)
+    expect(mgr.workspaceOf('agy:local:kept')).toBe(repo)
+    expect(mgr.workspaceOf('agy:local:unknown')).toBeUndefined()
+  })
+
+  it('shows another agent’s session as running when the machine of a remote workspace reports it alive, member or not', async () => {
+    layout.workspaces = [{ path: RKEY }]
+    mgr = mixedMgr(
+      (ws) =>
+        ws === RKEY
+          ? [
+              otherAgentRow('agy', 'on-the-machine', { cwd: RKEY }),
+              otherAgentRow('agy', 'stopped', { cwd: RKEY })
+            ]
+          : [],
+      [],
+      { remoteRunning: () => new Set(['on-the-machine']) }
+    )
+    mgr.start()
+    await mgr.firstScan
+    expect(latest(RKEY).rows.map((r) => [r.id, r.running])).toEqual([['on-the-machine', true]])
+  })
 })
 
 // CC§2
@@ -2108,6 +2312,44 @@ describe('WorkspaceManager: a running session that moved', () => {
     expect(rows.find((r) => r.id === 'left-1')).toMatchObject({ worktree: 'main', revealDir: repo })
     expect(rows.find((r) => r.id === 'in-1')).toMatchObject({ worktree: 'eng', revealDir: wt })
     expect(rows.find((r) => r.id === 'resumed-1')).toMatchObject({ worktree: 'eng' })
+  })
+
+  it('moves a row to where its session went as soon as the session list says so, with no rescan and no listing of the transcripts; and sends nothing while no session moved', async () => {
+    const PAST_RESCAN_DEBOUNCE_AND_FS_EVENT_LATENCY_MS = 1000
+    const settle = (): Promise<void> =>
+      new Promise((r) => setTimeout(r, PAST_RESCAN_DEBOUNCE_AND_FS_EVENT_LATENCY_MS))
+    const wt = path.join(repo, '.claude', 'worktrees', 'eng')
+    fs.mkdirSync(wt, { recursive: true })
+    writeJsonl(repo, 'moving')
+    layout = {
+      ...layout,
+      workspaces: [{ path: repo }],
+      members: ['moving'],
+      panels: { moving: SEEDED }
+    }
+    bindings.set('moving', 'tab-m')
+    live.set('moving', { treeRoot: repo })
+    mgr = liveMgr()
+    mgr.start()
+    await vi.waitFor(() => expect(latest(repo).rows.length).toBe(1))
+    expect(latest(repo).rows[0]).toMatchObject({ worktree: 'main', revealDir: repo })
+    await settle()
+    mgr.onTrackerUpdate()
+
+    const before = pushed.length
+    mgr.onTrackerUpdate()
+    expect(pushed.length).toBe(before)
+
+    const listed = vi.spyOn(fs.promises, 'readdir')
+    listed.mockClear()
+    live.set('moving', { treeRoot: wt, worktree: 'eng', relocated: true })
+    mgr.onTrackerUpdate()
+    expect(pushed.length).toBe(before + 1)
+    expect(latest(repo).rows[0]).toMatchObject({ worktree: 'eng', revealDir: wt })
+    await settle()
+    expect(pushed.length).toBe(before + 1)
+    expect(listed).not.toHaveBeenCalled()
+    listed.mockRestore()
   })
 
   it('hands back no folder for a RUNNING session whose folder was removed under it', async () => {
