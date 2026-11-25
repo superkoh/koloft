@@ -16,7 +16,7 @@ export interface ClaudeUsageStore {
 }
 
 class CallsCountedOnce {
-  private claudeOnce?: { generation: number; recordsByFile: Map<string, UsageRecord[]> }
+  private claudeOnce?: { unchangedSince: object; recordsByFile: Map<string, UsageRecord[]> }
   private readonly unpackedClaude = new WeakMap<
     ClaudeCalls,
     { keys: string[]; records: UsageRecord[] }
@@ -35,8 +35,8 @@ class CallsCountedOnce {
   }
 
   // CC§5
-  recordsOf(files: CachedUsageFile[], generation: number): Map<string, UsageRecord[]> {
-    if (this.claudeOnce?.generation === generation) return this.claudeOnce.recordsByFile
+  recordsOf(files: CachedUsageFile[], unchangedSince: object): Map<string, UsageRecord[]> {
+    if (this.claudeOnce?.unchangedSince === unchangedSince) return this.claudeOnce.recordsByFile
     const startOf = (e: CachedUsageFile): number => Date.parse(e.bornAt ?? '') || Infinity
     const oldestFirst = files
       .filter((e) => e.claudeCalls)
@@ -52,7 +52,7 @@ class CallsCountedOnce {
         copies.size ? recordsOfClaudeCalls(e.claudeCalls!, resolvePricing, copies) : records
       )
     }
-    this.claudeOnce = { generation, recordsByFile }
+    this.claudeOnce = { unchangedSince, recordsByFile }
     return recordsByFile
   }
 }
@@ -78,7 +78,7 @@ export function claudeUsage(store: () => ClaudeUsageStore | null): AgentUsage {
       const places = store()?.sessionPlaces()
       return { workspaceOf: (e) => e.workspace, titleOf: (id) => places?.get(id)?.title }
     },
-    recordsOf: (entries, generation) => once.recordsOf(entries, generation)
+    recordsOf: (entries, unchangedSince) => once.recordsOf(entries, unchangedSince)
   }
 }
 

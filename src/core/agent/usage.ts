@@ -46,7 +46,7 @@ export interface UsagePlaces {
 export interface AgentUsage {
   filesIn(machine?: string): Promise<UsageFile[]>
   placesNow(): UsagePlaces
-  recordsOf(entries: CachedUsageFile[], generation: number): Map<string, UsageRecord[]>
+  recordsOf(entries: CachedUsageFile[], unchangedSince: object): Map<string, UsageRecord[]>
 }
 
 export interface UsageWorkerScan {

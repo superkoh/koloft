@@ -28,7 +28,7 @@ const FILES_AT_ONCE = 16
 export class UsageCache {
   private reading = false
   private readonly cached: PrivateRecordFile<CachedUsageFile>
-  private readonly generations = new Map<BackendId, number>()
+  private readonly unchangedSince = new Map<BackendId, object>()
 
   constructor(private readonly deps: UsageCacheDeps) {
     this.cached = new PrivateRecordFile(deps.cacheFile)
@@ -44,7 +44,13 @@ export class UsageCache {
   }
 
   private changedFilesOf(backend: BackendId): void {
-    this.generations.set(backend, (this.generations.get(backend) ?? 0) + 1)
+    this.unchangedSince.set(backend, {})
+  }
+
+  private filesOfUnchangedSince(backend: BackendId): object {
+    let mark = this.unchangedSince.get(backend)
+    if (!mark) this.unchangedSince.set(backend, (mark = {}))
+    return mark
   }
 
   private async refresh(): Promise<void> {
@@ -102,7 +108,7 @@ export class UsageCache {
     const recordsByFile = new Map<string, UsageRecord[]>()
     for (const { id, usage } of agents) {
       const own = files.filter((e) => e.backend === id)
-      for (const [file, records] of usage.recordsOf(own, this.generations.get(id) ?? 0))
+      for (const [file, records] of usage.recordsOf(own, this.filesOfUnchangedSince(id)))
         recordsByFile.set(file, records)
     }
     const entries = files

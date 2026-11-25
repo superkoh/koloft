@@ -11,7 +11,7 @@ export function placedByOwnRowThenFolder(
       placeOf(e.sessionId ?? e.records[0].sessionId, e.host)?.workspace ??
       (e.cwd === undefined
         ? undefined
-        : workspaceOfFolder(e.host && e.cwd ? formatRemoteKey(e.host, e.cwd) : (e.cwd ?? ''))),
+        : workspaceOfFolder(e.host && e.cwd ? formatRemoteKey(e.host, e.cwd) : e.cwd)),
     titleOf: (id, host) => placeOf(id, host)?.title
   }
 }

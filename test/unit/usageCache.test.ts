@@ -122,6 +122,52 @@ describe('UsageCache', () => {
     expect(rows.map((r) => r.outTok).sort()).toEqual([50, 7])
   })
 
+  it('gives a usage cache reopened from its file its own Claude Code records, though another cache asked the same agents first', async () => {
+    const shared = agentsPlacingByThisTest()
+    const callOf = (session: string, out: number) =>
+      JSON.stringify({
+        type: 'assistant',
+        sessionId: session,
+        requestId: `req_${session}`,
+        timestamp: '2026-10-24T09:00:00.000Z',
+        message: {
+          id: `msg_${session}`,
+          model: 'claude-sonnet-5-5',
+          usage: { input_tokens: 1, output_tokens: out }
+        }
+      })
+    const F = '/p/ws/saved.jsonl'
+    const cacheOn = (name: string, files: UsageFile[], agents: () => AgentWithUsage[]) => {
+      const own: Run[] = []
+      const usage = new UsageCache({
+        cacheFile: () => path.join(dir, `${name}.json`),
+        listFiles: async () => files,
+        stat: async () => ({ mtimeMs: 1, size: 1 }),
+        scan: (files, scanned, ended) => void own.push({ files, scanned, ended }),
+        agents,
+        changed: () => {}
+      })
+      return { usage, own }
+    }
+    const saved = cacheOn('saved', [{ file: F, backend: 'claude', workspace: '/ws' }], () =>
+      agentsPlacingByThisTest()
+    )
+    await saved.usage.read()
+    saved.own[0].scanned({ file: F, records: [], claudeCalls: scanClaudeCalls(callOf('s', 9)) })
+    saved.own[0].ended()
+    await cacheOn('empty', [], () => shared).usage.read()
+
+    const reopened = cacheOn(
+      'saved',
+      [{ file: F, backend: 'claude', workspace: '/ws' }],
+      () => shared
+    )
+    const { rows } = await reopened.usage.read()
+
+    expect(reopened.own).toHaveLength(0)
+    expect(rows.map((r) => [r.sessionId, r.outTok])).toEqual([['s', 9]])
+  })
+
   it('drops the records of a file that is gone', async () => {
     const usage = cache()
     await usage.read()

@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { resolvePricing } from '../../src/core/agent/prices'
+import { AGENT_IDS, agentManifest } from '../../src/core/agent/registry'
+import { USAGE_WORKER_SCANS } from '../../src/agents/usageWorkerScans'
 import { MODEL_PRICING } from '../../src/agents/claude/shared/claudePrices'
 
 describe('resolvePricing — exact then longest-prefix match', () => {
@@ -187,5 +189,11 @@ describe('resolvePricing — exact then longest-prefix match', () => {
     ]) {
       expect(resolvePricing(id), id).toBeDefined()
     }
+  })
+
+  it("prices a scan in the usage worker with the same price list as each agent's manifest", () => {
+    for (const scan of USAGE_WORKER_SCANS)
+      expect(scan.priceOf, scan.id).toBe(agentManifest(scan.id).pureFunctions.priceOf)
+    expect(USAGE_WORKER_SCANS.map((scan) => scan.id)).toEqual(AGENT_IDS)
   })
 })
