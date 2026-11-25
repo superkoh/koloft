@@ -74,5 +74,16 @@ export const agent = {
     // CODEX§20
     questionToolTakesNoOptionDescriptions: false
   },
-  pureFunctions: { effortsAModelTakes: () => CRON_EFFORTS }
+  pureFunctions: { effortsAModelTakes: () => CRON_EFFORTS },
+  // CODEX§15
+  accountKinds: [
+    {
+      id: 'codex-home',
+      keychainServiceSuffix: '-codex-home',
+      isASignInFolder: true,
+      signsInThroughABrowser: true,
+      storesAPastedKeyItself: true,
+      takesAnEndpoint: false
+    }
+  ]
 } as const satisfies AgentManifest
