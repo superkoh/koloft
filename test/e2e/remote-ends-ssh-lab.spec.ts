@@ -163,7 +163,7 @@ async function workspaceDefaultsWritten(page: Page, wsName: string): Promise<voi
   await page.locator('.menu .mi', { hasText: 'Session defaults…' }).click()
   const dlg = page.getByRole('dialog', { name: 'Session defaults' })
   await dlg.getByRole('textbox', { name: 'How agents pick' }).fill('Pick haiku for small jobs.')
-  await dlg.getByRole('textbox', { name: 'Instructions' }).fill('Answer in plain words.')
+  await dlg.getByRole('textbox', { name: 'Instructions' }).fill(OWNER_TEXT_WRITTEN)
   await dlg.locator('.btn-primary', { hasText: 'Save' }).click()
   await expect(dlg).toHaveCount(0)
 }
@@ -175,8 +175,15 @@ const textFilesOfTabOn = (lab: SshLab, user: string, tabId: string): string[] =>
 
 const WHILE_CLAUDE_RUNS = (tabId: string): unknown[] => [
   `${tabId}.json`,
-  expect.stringMatching(new RegExp(`^${tabId}\\.prompt\\.\\d+\\.md$`))
+  expect.stringMatching(/\.prompt\.\d+\.md$/)
 ]
+
+const OWNER_TEXT_WRITTEN = 'Answer in plain words.'
+
+const claudesHandedTheOwnerTextOn = (lab: SshLab, user: string): number =>
+  lines(runOnTarget(lab, user, 'ps -eo args= || true')).filter(
+    (args) => args.includes('--append-system-prompt ') && args.includes(OWNER_TEXT_WRITTEN)
+  ).length
 
 async function claudeAnswersOnScreen(page: Page, tabId: string, words: string): Promise<void> {
   await runIn(page, centerTerm(page), `/answer ${words}`)
@@ -246,6 +253,7 @@ test.describe('how a Claude Code and a Codex session on a real sshd machine behi
       const { tabId, sessionId } = await claudeTabOnKtKey(page, true)
       expect(tmuxSessionsOn(lab, 'kuser')).toEqual([`k-${sessionId}`])
       expect(tabScriptsRunningOn(lab, 'kuser').length).toBeGreaterThan(0)
+      expect(claudesHandedTheOwnerTextOn(lab, 'kuser')).toBeGreaterThan(0)
       expect(textFilesOfTabOn(lab, 'kuser', tabId)).toEqual(WHILE_CLAUDE_RUNS(tabId))
 
       await sendShortcut(app, 'shortcut:close-tab')

@@ -3551,7 +3551,8 @@ sessions.
   bullet above (Koloft's `claudeTabSpec` + `writeTabPackage` rendered from this repo, run
   as `ssh -tt <lab> 'sh "$HOME/.koloft/tabs/<tab>.sh" start 120 40'`, packages in with
   `docker cp`), the text handed as Koloft hands it, in the tab's `.owner.md` file that the
-  tab script reads into `--append-system-prompt "$(cat …)"`. It was two blocks of 9,845
+  tab script then read into `--append-system-prompt "$(cat …)"` (since 2026-11-25 it reads
+  the file into a shell variable, removes it, and passes the same bytes). It was two blocks of 9,845
   and 9,844 bytes under their headings, each at the 10,000-byte limit as Koloft counts
   it, made of lines holding Chinese, `$HOME`, backticks, `{{x}}`, `'`, `"`, `%s`, `!!`,
   `$(id)`, curly quotes and an emoji (19,691 bytes). The request's last `system` block
