@@ -7,6 +7,7 @@ export function worktreesOfOneAgent(store: () => SessionStore): WorktreesOfEvery
       store()
         .listResources()
         .some((r) => r.worktreePath === dir),
+    occupantOf: () => null,
     preparing: new Map()
   }
 }

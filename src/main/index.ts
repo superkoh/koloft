@@ -2852,6 +2852,7 @@ app.whenReady().then(() => {
     remoteTreeIo: machineTreeIo,
     worktreesOfEveryAgent: {
       recorded: (dir: string) => sessionBackends.worktreeRecords.recorded(dir),
+      occupantOf: (dir: string) => sessionBackends.occupantOf(dir),
       preparing: worktreesBeingPrepared
     },
     realFilesOn,

@@ -108,6 +108,7 @@ async function ignoredFilesSameAsRoot(io: TreeIo, root: string, tree: string): P
 
 export interface WorktreesOfEveryAgent {
   recorded(worktreePath: string): boolean
+  occupantOf(dir: string): string | null
   readonly preparing: Map<string, Promise<unknown>>
 }
 
@@ -273,7 +274,7 @@ export class SessionWorktrees {
   private async createAt(root: string, name: string, base: string): Promise<WorktreeResource> {
     const io = this.io(root)
     const target = `${root}/${SESSION_WORKTREES_FOLDER}/${name}`
-    if (this.everyAgent.preparing.has(preparedKeyOf(target)))
+    if (this.everyAgent.preparing.has(preparedKeyOf(target)) || this.everyAgent.occupantOf(target))
       throw new Error(A_FOLDER_BEING_PREPARED)
     if (await io.exists(target)) throw new Error('Worktree directory already exists')
     const branch = `worktree-${name}`

@@ -218,7 +218,6 @@ interface StartingLaunch {
   folder: string
   name: string
   tabId?: string
-  freeTheName?: () => void
 }
 
 const notStartedYet = (): StartingLaunch => ({ folder: '', name: '' })
@@ -418,10 +417,26 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   private startingIn(dir: string): string | null {
+    this.forgetLaunchesTheTrackerLists()
     if (!this.startingLaunches.size) return null
     const folder = preparedKeyOf(dir)
     for (const launch of this.startingLaunches) if (launch.folder === folder) return launch.name
     return null
+  }
+
+  private forgetLaunchesTheTrackerLists(): void {
+    for (const launch of this.startingLaunches)
+      if (this.listedInItsFolder(launch)) this.letGo(launch)
+  }
+
+  private listedInItsFolder(launch: StartingLaunch): boolean {
+    const s = launch.tabId ? this.d.tracker.infoOf(launch.tabId) : undefined
+    if (!s?.alive) return false
+    const remote = s.remote
+    const there = (p: string | undefined): boolean =>
+      !!p && preparedKeyOf(remote ? formatRemoteKey(remote.host, p) : p) === launch.folder
+    const bound = s.sessionId ? this.d.store()?.findRow(s.sessionId)?.worktreeState : undefined
+    return there(s.treeRoot) || there(bound?.worktreePath) || (!!remote && there(s.cwd))
   }
 
   private startIn(folder: string, sessionId: string | undefined, launch: StartingLaunch): void {
@@ -431,13 +446,13 @@ export class ClaudeBackend implements SessionBackend {
     this.startingLaunches.add(launch)
   }
 
-  private async untilItsTabIsBound<R extends { ok: boolean; id?: string }>(
+  private async untilItsTabIsListed<R extends { ok: boolean; id?: string }>(
     launch: StartingLaunch,
     start: () => Promise<R>
   ): Promise<R> {
     try {
       const r = await start()
-      if (r.ok && r.id && !this.d.tracker.infoOf(r.id)?.sessionId) launch.tabId = r.id
+      if (r.ok && r.id) launch.tabId = r.id
       else this.letGo(launch)
       return r
     } catch (error) {
@@ -457,10 +472,10 @@ export class ClaudeBackend implements SessionBackend {
 
   private letGo(launch: StartingLaunch): void {
     this.startingLaunches.delete(launch)
-    launch.freeTheName?.()
   }
 
   private letGoOfTab(tabId: string): void {
+    if (this.d.pty.get(tabId)?.alive) return
     for (const launch of this.startingLaunches) if (launch.tabId === tabId) this.letGo(launch)
   }
 
@@ -537,7 +552,6 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   stop(tabId: string): void {
-    this.letGoOfTab(tabId)
     const sessionId = this.sessionIdOf(tabId)
     const remote = this.d.tracker.remoteOf(tabId)
     if (sessionId && !remote) this.rememberClosedClaude(sessionId)
@@ -1075,7 +1089,7 @@ export class ClaudeBackend implements SessionBackend {
       obj.account || '',
       obj.source || ''
     )
-    this.letGoOfTab(obj.tabId)
+    this.forgetLaunchesTheTrackerLists()
     this.d.pty.clearResumeIntent(obj.tabId)
     const nextId = this.sessionIdOf(obj.tabId)
     if (prevId && nextId && nextId !== prevId) {
@@ -1106,9 +1120,9 @@ export class ClaudeBackend implements SessionBackend {
     const asked = typeof opts.cwd === 'string' ? opts.cwd : ''
     const root = hostOf(asked) === 'ssh' ? asked : (this.homeOf(opts.resumeSessionId) ?? asked)
     const launch = notStartedYet()
-    const folder = opts.worktree ? await this.holdANewName(root, opts.worktree, launch) : root
-    this.startIn(folder, opts.resumeSessionId, launch)
-    return this.untilItsTabIsBound(launch, () =>
+    if (opts.worktree) await this.claimANewName(root, opts.worktree, opts.resumeSessionId, launch)
+    else this.startIn(this.boundFolderOr(opts.resumeSessionId, root), opts.resumeSessionId, launch)
+    return this.untilItsTabIsListed(launch, () =>
       this.createTab({
         tabId: opts.tabId,
         root,
@@ -1134,7 +1148,7 @@ export class ClaudeBackend implements SessionBackend {
   async resume(req: SessionResumeRequest): Promise<SessionResumeResult> {
     const launch = notStartedYet()
     try {
-      return await this.untilItsTabIsBound(launch, () => this.resumeTab(req, launch))
+      return await this.untilItsTabIsListed(launch, () => this.resumeTab(req, launch))
     } catch (error) {
       return { ok: false, code: 'backend', message: errorText(error) }
     }
@@ -1159,17 +1173,16 @@ export class ClaudeBackend implements SessionBackend {
     let cwd = host.keyed(asked)
     const mode = req.mode ?? 'direct'
     let worktree: string | undefined
-    let newTree: string | undefined
     if (mode === 'renamed') {
       if (typeof req.worktree !== 'string' || !isValidWorktreeName(req.worktree)) {
         return { ok: false, code: 'invalid-args' }
       }
       worktree = req.worktree
-      newTree = await this.holdANewName(cwd, worktree, launch)
+      await this.claimANewName(cwd, worktree, sid, launch)
     }
     const bound = this.d.store()?.findRow(sid)?.worktreeState
-    const goesInto = newTree ?? host.keyed(mode === 'main' ? cwd : (bound?.worktreePath ?? cwd))
-    this.startIn(goesInto, sid, launch)
+    if (!worktree)
+      this.startIn(host.keyed(mode === 'main' ? cwd : (bound?.worktreePath ?? cwd)), sid, launch)
     const rebuildable = !home || !!bound
     const { worktreesBeingPrepared } = this.d
     await whenNobodyPrepares(
@@ -1205,6 +1218,7 @@ export class ClaudeBackend implements SessionBackend {
         const wt = this.d.store()?.findRow(sid)?.worktreeState?.worktreePath
         const root = wt ? worktreeHomeRoot(wt) : null
         if (root && dirExistsSync(root)) cwd = root
+        launch.folder = preparedKeyOf(cwd)
       }
       if (!dirExistsSync(cwd)) return { ok: false, code: 'cwd-missing' }
     }
@@ -1225,21 +1239,23 @@ export class ClaudeBackend implements SessionBackend {
     return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
   }
 
-  private async holdANewName(where: string, name: string, launch: StartingLaunch): Promise<string> {
+  private async claimANewName(
+    where: string,
+    name: string,
+    sessionId: string | undefined,
+    launch: StartingLaunch
+  ): Promise<void> {
     const root = isRemoteKey(where) ? await this.mainCheckoutOn(where) : projectInfoFor(where).root
     const tree = `${root}/${SESSION_WORKTREES_FOLDER}/${name}`
     if (this.d.resumeProbes.recorded?.(tree)) throw new Error(A_NAME_WITH_A_RECOVERY_RECORD)
-    const key = preparedKeyOf(tree)
-    const preparing = this.d.worktreesBeingPrepared
-    if (preparing.has(key)) throw new Error(A_FOLDER_BEING_PREPARED)
-    let release = (): void => {}
-    const held = new Promise<void>((r) => (release = r))
-    preparing.set(key, held)
-    launch.freeTheName = () => {
-      if (preparing.get(key) === held) preparing.delete(key)
-      release()
-    }
-    return tree
+    if (this.d.worktreesBeingPrepared.has(preparedKeyOf(tree)) || this.startingIn(tree))
+      throw new Error(A_FOLDER_BEING_PREPARED)
+    this.startIn(tree, sessionId, launch)
+  }
+
+  private boundFolderOr(sessionId: string | undefined, root: string): string {
+    const bound = sessionId ? this.d.store()?.findRow(sessionId)?.worktreeState : undefined
+    return bound ? this.d.hosts.of(root).keyed(bound.worktreePath) : root
   }
 
   private async mainCheckoutOn(where: string): Promise<string> {

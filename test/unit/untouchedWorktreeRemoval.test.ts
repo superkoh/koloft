@@ -136,7 +136,11 @@ describe.each(SIDES)(
         { id: A, worktreeRecords: mine.records },
         { id: B, worktreeRecords: theirs.records }
       ])
-      everyAgent = { recorded: (dir) => records.recorded(dir), preparing: new Map() }
+      everyAgent = {
+        recorded: (dir) => records.recorded(dir),
+        occupantOf: () => null,
+        preparing: new Map()
+      }
       mine = new SessionWorktrees(myStore, everyAgent, side.io)
       theirs = new SessionWorktrees(theirStore, everyAgent, side.io)
       close = (owner, resource) =>

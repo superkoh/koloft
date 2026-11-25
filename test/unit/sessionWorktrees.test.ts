@@ -207,6 +207,7 @@ describe.each(SIDES)(
       everyAgent = {
         recorded: (dir: string) =>
           [store, otherStore].some((s) => s.listResources().some((r) => r.worktreePath === dir)),
+        occupantOf: () => null,
         preparing: new Map<string, Promise<unknown>>()
       }
       mine = side.make(store, everyAgent)
@@ -243,7 +244,11 @@ const LONG_ENOUGH_TO_ADOPT_A_FOLDER_MS = 1000
 describe('while one agent is still making a worktree folder over ssh, after its git worktree add', () => {
   async function caughtAfterAdd(addThenFails = false) {
     const otherStore = new SessionStore(path.join(directory, 'other-sessions.json'))
-    const everyAgent: WorktreesOfEveryAgent = { recorded: () => true, preparing: new Map() }
+    const everyAgent: WorktreesOfEveryAgent = {
+      recorded: () => true,
+      occupantOf: () => null,
+      preparing: new Map()
+    }
     const at = formatRemoteKey(MACHINE, repo)
     const theirs = await new SessionWorktrees(
       otherStore,
@@ -326,6 +331,7 @@ it('an agent that found the folder missing just before another agent finished re
   const otherStore = new SessionStore(path.join(directory, 'other-sessions.json'))
   const everyAgent: WorktreesOfEveryAgent = {
     recorded: () => true,
+    occupantOf: () => null,
     preparing: new Map<string, Promise<unknown>>()
   }
   let otherDone!: () => void

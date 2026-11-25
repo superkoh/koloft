@@ -122,7 +122,11 @@ function sharedFolder(
   const records = worktreeRecordsOfEveryAgent(() => [
     { id: OTHER, worktreeRecords: theirs.records }
   ])
-  const everyAgent: WorktreesOfEveryAgent = { recorded: (dir) => records.recorded(dir), preparing }
+  const everyAgent: WorktreesOfEveryAgent = {
+    recorded: (dir) => records.recorded(dir),
+    occupantOf: (dir) => claude.occupantOf(dir),
+    preparing
+  }
   theirs = new SessionWorktrees(store, everyAgent, side.io)
   const claudeRepo = side.io ? fs.realpathSync(repo) : repo
   const tree = path.join(claudeRepo, '.claude', 'worktrees', 'foo')
@@ -165,9 +169,21 @@ function sharedFolder(
     tracker: {
       list: () => [],
       remoteOf: () => undefined,
-      infoOf: (id: string) =>
-        boundTabs.has(id) ? { sessionId: boundTabs.get(id), title: '' } : undefined,
-      bindSession: (id: string, _transcript: string, sid: string) => void boundTabs.set(id, sid),
+      infoOf: (id: string) => {
+        const bound = boundTabs.get(id)
+        return bound && liveTabs.has(id)
+          ? {
+              sessionId: SID,
+              title: '',
+              alive: true,
+              cwd: bound,
+              treeRoot: bound,
+              ...(side.io ? { remote: { host: MACHINE } } : {})
+            }
+          : undefined
+      },
+      bindSession: (id: string, _transcript: string, _sid: string, cwd: string) =>
+        void boundTabs.set(id, cwd),
       untrack: (id: string) => void boundTabs.delete(id),
       setAlive: () => {}
     },
@@ -226,8 +242,10 @@ function sharedFolder(
           cwd
         })
       )
-      await vi.waitFor(() => expect(boundTabs.get(CLAUDE_TAB)).toBe(SID))
+      await vi.waitFor(() => expect(boundTabs.get(CLAUDE_TAB)).toBe(cwd))
     },
+    oldProcessOfTheTabEnds: () =>
+      claude.tabExited({ tabId: CLAUDE_TAB, exitCode: 1, crashed: false }),
     claudeTabEnds: () => {
       liveTabs.delete(CLAUDE_TAB)
       claude.tabExited({ tabId: CLAUDE_TAB, exitCode: 1, crashed: false })
@@ -502,7 +520,7 @@ const folderThere = (made: WorktreeResource): boolean =>
 describe.each(SIDES)(
   'a Claude Code tab still starting in an untouched worktree another agent made, $where',
   (side) => {
-    it('closing the other agent’s tab keeps the folder while a Claude Code resume into it starts and until its tab is bound, then removes it', async () => {
+    it('closing the other agent’s tab keeps the folder while a Claude Code resume into it starts and until its tab is listed in it, then removes it', async () => {
       const s = sharedFolder(side)
       const made = await s.theirs.create(side.at(repo), 'foo')
       const launch = holdTheLaunch(s)
@@ -536,6 +554,15 @@ describe.each(SIDES)(
       expect(fs.existsSync(barePath(made.worktreePath))).toBe(false)
     })
 
+    it('a Claude Code tab restarted in the same tab keeps the folder when the old process’s exit arrives after the new start', async () => {
+      const s = sharedFolder(side)
+      const made = await s.theirs.create(side.at(repo), 'foo')
+      await expect(s.claudeStartsInTheFolder()).resolves.toMatchObject({ ok: true })
+      s.oldProcessOfTheTabEnds()
+      await s.theirCloseOf(made)
+      expect(folderThere(made)).toBe(true)
+    })
+
     it('a Claude Code launch into the folder that fails leaves nobody in it, and the close removes it', async () => {
       const s = sharedFolder(side)
       const made = await s.theirs.create(side.at(repo), 'foo')
@@ -558,11 +585,12 @@ describe.each(SIDES)(
 describe.each(SIDES)(
   'a new Claude Code worktree session on a name nobody uses yet, $where',
   (side) => {
-    it('another agent asking for that name while Claude Code starts is refused with the words it already shows, until the Claude Code tab is bound in the folder it made', async () => {
+    it('another agent asking for that name while Claude Code starts is refused with the words it already shows, until the Claude Code tab is listed in the folder it made, and nothing is left for other agents to wait on', async () => {
       const s = sharedFolder(side)
       const launch = holdTheLaunch(s)
       const starting = s.claudeStartsIn('foo')
       await launch.reached()
+      expect(s.preparing.size).toBe(0)
       await expect(s.theirs.create(side.at(repo), 'foo')).rejects.toThrow(
         'Worktree preparation is already in progress'
       )
@@ -573,7 +601,6 @@ describe.each(SIDES)(
       )
       git('worktree', 'add', '-q', '-b', 'worktree-foo', s.tree)
       await s.claudeBinds(s.tree)
-      expect(s.preparing.size).toBe(0)
       await expect(s.theirs.create(side.at(repo), 'foo')).rejects.toThrow(
         'Worktree directory already exists'
       )
@@ -586,7 +613,6 @@ describe.each(SIDES)(
         'Worktree preparation is already in progress'
       )
       s.claudeTabEnds()
-      expect(s.preparing.size).toBe(0)
       await expect(s.theirs.create(side.at(repo), 'foo')).resolves.toMatchObject({
         state: 'ready'
       })
@@ -596,23 +622,29 @@ describe.each(SIDES)(
       const s = sharedFolder(side)
       s.launch.fails = true
       await expect(s.claudeStartsIn('foo')).resolves.toMatchObject({ ok: false })
-      expect(s.preparing.size).toBe(0)
       await expect(s.theirs.create(side.at(repo), 'foo')).resolves.toMatchObject({
         state: 'ready'
       })
     })
 
-    it('a Claude Code resume into a new worktree of that name holds the name the same way', async () => {
+    it('a Claude Code resume into a new worktree of that name holds the name the same way, also after its start hook names the folder it was launched from, until its tab is listed in the new folder', async () => {
       const s = sharedFolder(side)
       git('worktree', 'add', '-q', '-b', 'worktree-foo', s.tree)
       const launch = holdTheLaunch(s)
       const resumed = s.claudeResumesRenamed('foo-2')
       await launch.reached()
-      await expect(s.theirs.create(side.at(repo), 'foo-2')).rejects.toThrow(
-        'Worktree preparation is already in progress'
-      )
+      const refused = 'Worktree preparation is already in progress'
+      await expect(s.theirs.create(side.at(repo), 'foo-2')).rejects.toThrow(refused)
       launch.release()
       await expect(resumed).resolves.toMatchObject({ ok: true })
+      await s.claudeBinds(s.tree)
+      await expect(s.theirs.create(side.at(repo), 'foo-2')).rejects.toThrow(refused)
+      const renamed = path.join(path.dirname(s.tree), 'foo-2')
+      git('worktree', 'add', '-q', '-b', 'worktree-foo-2', renamed)
+      await s.claudeBinds(renamed)
+      await expect(s.theirs.create(side.at(repo), 'foo-2')).rejects.toThrow(
+        'Worktree directory already exists'
+      )
     })
   }
 )
