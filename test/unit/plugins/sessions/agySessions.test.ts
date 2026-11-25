@@ -30,6 +30,7 @@ import { PROGRAM_STATUS_REPLY } from '../../../../src/main/programStatus'
 import type { SessionEvent } from '../../../../src/shared/sessionEvent'
 import { NO_USABLE_ACCOUNT } from '../../../../src/shared/accountUsage'
 import { koloftPrompt } from '../../../../src/plugins/sessions/api'
+import { keepSkillsIn } from '../../../../src/main/agentPlugin'
 import { appendConversation, ownerTyped, writeSummaries } from '../../helpers/agyStore'
 const mocks = vi.hoisted(() => ({ runtime: vi.fn() }))
 vi.mock('../../../../src/main/cliRuntime', () => ({ resolveCliRuntime: mocks.runtime }))
@@ -309,6 +310,7 @@ beforeEach(() => {
     openShimRoot: path.join(home, 'agy-open'),
     scriptsDir: path.join(home, 'scripts'),
     ownersGemini: () => gemini,
+    keepSkillsIn,
     pickHome: () => picked,
     apiKeyOf: async () => apiKey,
     playwrightBin: tools,
