@@ -24,7 +24,7 @@ vi.mock('child_process', async (importOriginal) => ({
 import { app } from 'electron'
 import type { AccountKind, AccountMeta, AccountView, CodexLimits } from '@shared/types'
 import { AccountPicker, type PickDeps } from '../../src/main/accountPicker'
-import { HomeAccountPicker } from '../../src/agents/codex/main/codexAccounts'
+import { HomeAccountPicker } from '../../src/agents/kit/main/homeAccountPicker'
 import { keychainDelete, keychainRead, keychainWrite } from '../../src/main/accounts'
 import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
 

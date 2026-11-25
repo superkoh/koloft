@@ -2,8 +2,17 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { execFile } from 'child_process'
-import type { QuotaBucket } from '@shared/types'
-import { FIVE_HOUR_MINUTES, WEEK_MINUTES, windowLabel } from '@shared/accountUsage'
+import type { AccountKind, AccountView, QuotaBucket } from '@shared/types'
+import {
+  AUTO_PROBE_MS,
+  FIVE_HOUR_MINUTES,
+  WEEK_MINUTES,
+  launchLine,
+  windowLabel
+} from '@shared/accountUsage'
+import { HomeAccountPicker } from '../../kit/main/homeAccountPicker'
+import type { HomeAccountsDeps } from '../../kit/main/homeAccounts'
+import type { AgyHomePick, AgySessions } from './agySessions'
 import { agyListedModels, type ListedModel } from '@shared/sessionPicks'
 import { record } from '@core/unknownValue'
 import { readJson, writeWholeBeforeVisible } from '../../../main/jsonDrops'
@@ -369,4 +378,140 @@ export function agyTrustsFolder(home: string, dir: string): boolean {
 export function anyAccountHomeTrusts(home: string, dir: string): boolean {
   const homes = path.dirname(home)
   return fs.readdirSync(homes).some((name) => agyTrustsFolder(path.join(homes, name), dir))
+}
+
+export interface AgyHomeAccountsDeps extends HomeAccountsDeps {
+  keychainRead(kind: AccountKind, name: string): Promise<string | null>
+  keychainWrite(kind: AccountKind, name: string, secret: string): Promise<boolean>
+  ownersGemini(): string
+  agySessions(): AgySessions | null
+}
+
+export function agyHomeAccounts(deps: AgyHomeAccountsDeps) {
+  const {
+    app,
+    accountViews,
+    allLimitedNotice,
+    findAccount,
+    foldHomeSignIn,
+    keychainRead,
+    keychainWrite,
+    listAccounts,
+    ownersGemini,
+    pushHomeAccount,
+    savedHomeUsageOf,
+    usageViews,
+    viewKey
+  } = deps
+  const agyPicker = new HomeAccountPicker('agy-home', savedHomeUsageOf)
+  const agyProbedAt = new Map<string, number>()
+  const preparedAgyHomes = new Set<string>()
+
+  // AGY§4
+  function agyHomeFor(name: string): string {
+    const home = agyHomeOf(app.getPath('userData'), name)
+    if (preparedAgyHomes.has(home)) return home
+    prepareAgyHome(home, ownersGemini())
+    preparedAgyHomes.add(home)
+    return home
+  }
+
+  async function agyApiKeyOf(name: string): Promise<string | undefined> {
+    return (await keychainRead('agy-home', name)) ?? undefined
+  }
+
+  // ADR-0030
+  function pickAgyHome(resumeSessionId?: string, onlyAsking?: boolean): AgyHomePick | undefined {
+    const agySessions = deps.agySessions()
+    const sessionAccounts = deps.sessionAccounts()
+    const views = accountViews()
+    const picked = onlyAsking
+      ? agyPicker.peek(views)
+      : agyPicker.pick(
+          views,
+          sessionAccounts?.of('agy', resumeSessionId),
+          agySessions?.launchedSessions()
+        )
+    const stale = (a: AccountView): boolean =>
+      Date.now() - (agyProbedAt.get(a.name) ?? 0) > AUTO_PROBE_MS
+    if (!onlyAsking && views.some((a) => a.kind === 'agy-home' && a.enabled && stale(a)))
+      void probeAgyAccounts()
+    return (
+      picked && {
+        account: picked.name,
+        home: agyHomeFor(picked.name),
+        banner: launchLine(picked, Date.now()),
+        notice: allLimitedNotice(picked, 'agy')
+      }
+    )
+  }
+
+  // AGY§5 AGY§6
+  async function probeAgyAccount(name: string): Promise<void> {
+    const acct = findAccount(name, 'agy-home')
+    if (!acct) return
+    agyProbedAt.set(name, Date.now())
+    const home = agyHomeFor(name)
+    const apiKey = await agyApiKeyOf(name)
+    const signedIn = agySignedIn(home, !!apiKey)
+    foldHomeSignIn(name, 'agy-home', signedIn)
+    const key = viewKey(name, 'agy-home')
+    if (apiKey) usageViews.set(key, { apiKey: true })
+    else if (signedIn) {
+      const quota = await agyUsage(home)
+      usageViews.set(
+        key,
+        quota ? { quota, quotaAt: Date.now() } : { ...usageViews.get(key), probeError: 'network' }
+      )
+    }
+    pushHomeAccount(name, 'agy-home')
+  }
+
+  async function agyBinary(): Promise<string | undefined> {
+    const agySessions = deps.agySessions()
+    return ((await agySessions?.availability())?.available && agySessions?.cliBinary) || undefined
+  }
+
+  async function agyUsage(home: string): Promise<QuotaBucket[] | undefined> {
+    const agySessions = deps.agySessions()
+    const binary = await agyBinary()
+    if (!binary) return undefined
+    return readAgyQuota(binary, { ...agySessions?.defaultEnv, ...agyAccountEnv() }, home)
+  }
+
+  let agyProbeRound: Promise<void> | null = null
+
+  function probeAgyAccounts(): Promise<void> {
+    agyProbeRound ??= Promise.all(
+      listAccounts()
+        .filter((a) => a.kind === 'agy-home' && a.enabled)
+        .map((a) => probeAgyAccount(a.name))
+    ).then(() => {
+      agyProbeRound = null
+    })
+    return agyProbeRound
+  }
+
+  return {
+    agyPicker,
+    agyHomeFor,
+    agyApiKeyOf,
+    pickAgyHome,
+    agyBinary,
+    probeAgyAccounts,
+    // AGY§5 AGY§7
+    homeLogin: async (name: string) => {
+      const binary = await agyBinary()
+      const home = agyHomeFor(name)
+      const apiKey = await agyApiKeyOf(name)
+      setAgyApiKeyRoute(home, !!apiKey)
+      return { binary, env: agyAccountEnv(apiKey), args: [`--gemini_dir=${home}`] }
+    },
+    probeHomeAccount: (name: string) => probeAgyAccount(name),
+    // AGY§6
+    storeHomeKey: async (name: string, key: string) => {
+      if (!(await keychainWrite('agy-home', name, key))) throw new Error('Keychain write failed.')
+      setAgyApiKeyRoute(agyHomeFor(name), true)
+    }
+  }
 }
