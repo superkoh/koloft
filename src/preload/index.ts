@@ -18,6 +18,7 @@ import type {
   GitLoginProgress,
   LoginProgress,
   SignInFailure,
+  SignInNews,
   Settings,
   UpdateProgress,
   UpdateCheckResult,
@@ -207,6 +208,15 @@ const api: KoloftApi = {
       ipcRenderer.on(CH.accounts.loginProgress, handler)
       return () => ipcRenderer.removeListener(CH.accounts.loginProgress, handler)
     },
+    beginSignIn: (kind, name, again) =>
+      ipcRenderer.invoke(CH.accounts.beginSignIn, kind, name, again),
+    heldSignInFailure: () => ipcRenderer.invoke(CH.accounts.signInProgress),
+    onSignInProgress: (cb) => {
+      const handler = (_e: unknown, news: SignInNews): void => cb(news)
+      ipcRenderer.on(CH.accounts.signInProgress, handler)
+      return () => ipcRenderer.removeListener(CH.accounts.signInProgress, handler)
+    },
+    endSignIn: (kind, name) => ipcRenderer.send(CH.accounts.endSignIn, kind, name),
     onUpdate: (cb) => {
       const handler = (_e: unknown, a: AccountView[]): void => cb(a)
       ipcRenderer.on(CH.accounts.update, handler)

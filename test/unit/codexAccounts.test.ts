@@ -12,6 +12,7 @@ import { HomeAccountPicker } from '../../src/agents/kit/main/homeAccountPicker'
 import { allLimitedNotice } from '../../src/main/accountPicker'
 import { windowLabel } from '../../src/shared/accountUsage'
 import type { AccountView } from '../../src/shared/types'
+import type { AgentAccounts } from '../../src/core/agent/agentsMain'
 
 const account = (name: string, over: Partial<AccountView> = {}): AccountView => ({
   name,
@@ -508,7 +509,10 @@ describe('probeCodexAccounts (a probe round of every Codex account)', () => {
       viewKey: (name, kind) => `${kind}:${name}`,
       sessionAccounts: () => undefined,
       codexSharedConfig: () => '/nowhere/config.toml',
-      codexSessions: () => ({ readAccount }) as unknown as CodexSessions
+      codexSessions: () => ({ readAccount }) as unknown as CodexSessions,
+      signInInATab: async () => {
+        throw new Error('no sign-in here')
+      }
     })
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
     await probeCodexAccounts()
@@ -516,5 +520,47 @@ describe('probeCodexAccounts (a probe round of every Codex account)', () => {
     logged.mockRestore()
     await probeCodexAccounts()
     expect(readAccount).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('signing in to a Codex account', () => {
+  it('signs in in a terminal tab, and has nothing running to cancel: the sign-in is that tab, which ends when the user closes it', async () => {
+    const touched: string[] = []
+    const signInInATab = vi.fn(async () => ({ ok: false as const, error: 'duplicate' as const }))
+    const touch = (dep: string) => (): undefined => {
+      touched.push(dep)
+      return undefined
+    }
+    const { accounts }: { accounts: AgentAccounts } = codexHomeAccounts({
+      app: { getPath: () => '/nowhere' },
+      accountViews: () => [],
+      allLimitedNotice: touch('allLimitedNotice'),
+      findAccount: touch('findAccount'),
+      foldHomeSignIn: touch('foldHomeSignIn'),
+      listAccounts: () => [],
+      noteHomeAccount: touch('noteHomeAccount'),
+      pushHomeAccount: touch('pushHomeAccount'),
+      savedHomeUsageOf: touch('savedHomeUsageOf'),
+      usageViews: new Map(),
+      viewKey: (name, kind) => `${kind}:${name}`,
+      sessionAccounts: touch('sessionAccounts'),
+      codexSharedConfig: () => '/nowhere/config.toml',
+      codexSessions: () => {
+        touched.push('codexSessions')
+        return null
+      },
+      signInInATab
+    })
+
+    expect(await accounts.signIn('codex-home', 'work', true)).toEqual({
+      ok: false,
+      error: 'duplicate'
+    })
+    expect(signInInATab).toHaveBeenCalledWith('codex-home', 'work', true, {
+      homeLogin: expect.any(Function),
+      probeHomeAccount: expect.any(Function)
+    })
+    accounts.cancelSignIn('codex-home', 'work')
+    expect(touched).toEqual([])
   })
 })
