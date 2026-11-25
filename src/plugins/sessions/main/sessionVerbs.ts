@@ -68,9 +68,9 @@ import {
 import {
   OWNER_WORDS_QUOTED_CHARS,
   handoverInOwnersLanguage,
-  withHandover,
   type SessionCaller
 } from './handoverPreamble'
+import { withHandover } from '@core/handOver'
 import { distinctTitle, titleForTask, worktreeNameForTask } from './sessionTitle'
 import type { Assist } from '@core/assistModels'
 import type { SessionsAssistJobId } from '../shared/assistJobs'

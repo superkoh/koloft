@@ -11,10 +11,8 @@ import {
   writeAgyScripts,
   type AgyScripts
 } from '../../../../src/agents/agy/main/agyHooks'
-import {
-  handoverPreamble,
-  withHandover
-} from '../../../../src/plugins/sessions/main/handoverPreamble'
+import { handoverPreamble } from '../../../../src/plugins/sessions/main/handoverPreamble'
+import { withHandover } from '../../../../src/core/handOver'
 import { LineTail } from '../../../../src/main/lineTail'
 import {
   A_HELPER_HAS_IT,

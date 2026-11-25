@@ -34,7 +34,7 @@ import { REMOTE_CLAUDE_PROJECTS } from '../../../main/remote/paths'
 import type { RemoteTab } from '../../../main/host/host'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
 import { claudeWroteIt, commandOutputOf, type CommandOutput } from './claudeCommandOutput'
-import { withoutHandover } from '@plugins/sessions/main/handoverPreamble'
+import { withoutHandover } from './handoverCut'
 import { messageText } from '@plugins/sessions/main/messageText'
 import {
   parseRecord,
