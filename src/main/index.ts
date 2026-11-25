@@ -349,19 +349,7 @@ import { within } from '@core/within'
 import { clicksTheMouse, pressesAKey, typeKeys } from '@core/typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import { sleep } from '@core/sleep'
-import { claudeJsonPath, claudeProjectKey } from '@agents/claude/main/claudeTrust'
-import {
-  AGY_PROJECT_MCP_FILE,
-  PROJECT_MCP_FILE,
-  claudeServers,
-  codexServers,
-  foldersUpToRepoTop,
-  foldersUpToRoot,
-  jsonServers,
-  ownersClaudePlaywrightMcp,
-  textOrNull,
-  type ConfigText
-} from './mcpServers'
+import { mcpServersIn, ownersClaudePlaywrightMcp } from './mcpServers'
 import type { McpServer } from '@shared/types'
 import {
   LIVE_REGISTRY_ON_A_MACHINE_SH,
@@ -1531,38 +1519,7 @@ async function mcpServersNow(): Promise<McpServer[]> {
     ...(workspaceMgr?.pinnedPathList() ?? []).filter((p) => !isRemoteKey(p)),
     conductorFolder(app.getPath('userData'))
   ]
-  const walks = await Promise.all(
-    folders.map(async (onlyIn) => ({
-      onlyIn,
-      toRoot: foldersUpToRoot(onlyIn),
-      toRepoTop: await foldersUpToRepoTop(onlyIn, isGitCheckoutAsync)
-    }))
-  )
-  const inFolders = (file: string, walk: 'toRoot' | 'toRepoTop'): Promise<ConfigText[]> =>
-    Promise.all(
-      walks.flatMap((w) =>
-        w[walk].map(async (folder) => ({
-          onlyIn: w.onlyIn,
-          text: await textOrNull(path.join(folder, file))
-        }))
-      )
-    )
-  const [claudeJson, projectFiles, agyProjectFiles, codexToml, agy] = await Promise.all([
-    textOrNull(claudeJsonPath()),
-    inFolders(PROJECT_MCP_FILE, 'toRoot'),
-    inFolders(AGY_PROJECT_MCP_FILE, 'toRepoTop'),
-    textOrNull(codexSharedConfig()),
-    textOrNull(path.join(ownersGemini(), 'config', 'mcp_config.json'))
-  ])
-  const claudeFolders = folders.map((folder) => ({
-    folder,
-    projectKey: claudeProjectKey(folder)
-  }))
-  return [
-    ...claudeServers(claudeJson, projectFiles, claudeFolders),
-    ...codexServers(codexToml),
-    ...jsonServers('agy', [{ text: agy }, ...agyProjectFiles])
-  ]
+  return mcpServersIn(folders, codexSharedConfig, ownersGemini)
 }
 
 function pinnedWorkspaceOfTab(tabId: string): string | undefined {

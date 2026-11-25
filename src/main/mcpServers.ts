@@ -3,7 +3,7 @@ import path from 'path'
 import type { BackendId, McpServer } from '@shared/types'
 import { runsPlaywrightMcp } from './browserControlEnv'
 import { claudeJsonPath, claudeProjectKey } from '@agents/claude/main/claudeTrust'
-import { realpathSafe } from './projectInfo'
+import { isGitCheckoutAsync, realpathSafe } from './projectInfo'
 
 export interface ConfigText {
   text: string | null
@@ -98,6 +98,45 @@ export function claudePlaywrightServers(
 
 export const textOrNull = (file: string): Promise<string | null> =>
   fs.promises.readFile(file, 'utf8').catch(() => null)
+
+export async function mcpServersIn(
+  folders: string[],
+  codexSharedConfig: () => string,
+  ownersGemini: () => string
+): Promise<McpServer[]> {
+  const walks = await Promise.all(
+    folders.map(async (onlyIn) => ({
+      onlyIn,
+      toRoot: foldersUpToRoot(onlyIn),
+      toRepoTop: await foldersUpToRepoTop(onlyIn, isGitCheckoutAsync)
+    }))
+  )
+  const inFolders = (file: string, walk: 'toRoot' | 'toRepoTop'): Promise<ConfigText[]> =>
+    Promise.all(
+      walks.flatMap((w) =>
+        w[walk].map(async (folder) => ({
+          onlyIn: w.onlyIn,
+          text: await textOrNull(path.join(folder, file))
+        }))
+      )
+    )
+  const [claudeJson, projectFiles, agyProjectFiles, codexToml, agy] = await Promise.all([
+    textOrNull(claudeJsonPath()),
+    inFolders(PROJECT_MCP_FILE, 'toRoot'),
+    inFolders(AGY_PROJECT_MCP_FILE, 'toRepoTop'),
+    textOrNull(codexSharedConfig()),
+    textOrNull(path.join(ownersGemini(), 'config', 'mcp_config.json'))
+  ])
+  const claudeFolders = folders.map((folder) => ({
+    folder,
+    projectKey: claudeProjectKey(folder)
+  }))
+  return [
+    ...claudeServers(claudeJson, projectFiles, claudeFolders),
+    ...codexServers(codexToml),
+    ...jsonServers('agy', [{ text: agy }, ...agyProjectFiles])
+  ]
+}
 
 // ADR-0048 CC§22 CC§24
 export async function ownersClaudePlaywrightMcp(cwd: string): Promise<string[]> {
