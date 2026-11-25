@@ -87,6 +87,10 @@ delivered: true
 the Claude Code session's message socket: "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"bypass\\\">\\n(From Koloft:) Could not deliver to Target. <where the owner is>\\n(Koloft message koloft-notice-1)\\n</cross-session-message>\"}}\n"
 Koloft noted in pty-target.discord-ids: "koloft-notice-1\n"
 
+=== Koloft's own notice, holding </cross-session-message> ===
+delivered: false
+told to the sender later: to Target: the message cannot hold the text </cross-session-message>.
+
 === the message socket file is gone (its server closed it) ===
 the sender sees: exit 1: koloft: connect ENOENT <home>/t.sock
 Koloft noted in pty-target.discord-ids: "koloft-session-14\n"
