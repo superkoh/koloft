@@ -1,0 +1,24 @@
+=== the line typed into the tab on this Mac ===
+exec /usr/sbin/taskpolicy -a claude --model pinned-model --effort xhigh --permission-mode acceptEdits
+=== the environment the launch adds to the tab ===
+CLAUDE_CODE_DECSTBM=1
+CLAUDE_CODE_FORCE_SYNC_OUTPUT=1
+KOLOFT_AGENT_PLUGIN=<home>/koloft/agent-plugin
+KOLOFT_AGENT_PROMPT=<home>/koloft/agent-prompts/<hash of the prompt text>.md
+KOLOFT_DOCS_PLUGIN=<home>/koloft/docs-plugin
+KOLOFT_FIRST_PROMPT=FIRST PROMPT
+KOLOFT_OWNER_TEXT=OWNER TEXT
+KOLOFT_SESSION_NAME=PinnedName
+=== file pty-t1.said ===
+The owner's own words, with a ' in them
+=== file pty-t1.said.task-first ===
+
+=== Claude Code's own file in the home folder ===
+{
+  "hasCompletedOnboarding": true,
+  "projects": {
+    "<home>/repo": {
+      "hasTrustDialogAccepted": true
+    }
+  }
+}
