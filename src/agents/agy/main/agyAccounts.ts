@@ -331,31 +331,28 @@ export function oneShotAgyHome(
     fs.rmSync(dir, { recursive: true, force: true })
     throw err
   }
-  const carryBack = (): void => {
-    agyOneShotTokensToCarryBack.delete(carryBack)
-    try {
-      const after = before !== undefined ? fs.readFileSync(copy, 'utf8') : undefined
-      if (after && after !== before) {
-        writeWholeBeforeVisible(token, after)
-        fs.chmodSync(token, 0o600)
-      }
-    } catch {}
-  }
-  agyOneShotTokensToCarryBack.add(carryBack)
   return {
     dir,
     done: () => {
-      carryBack()
+      try {
+        const after = before !== undefined ? fs.readFileSync(copy, 'utf8') : undefined
+        if (after && after !== before) {
+          writeWholeBeforeVisible(token, after)
+          fs.chmodSync(token, 0o600)
+        }
+      } catch {}
       fs.rm(dir, { recursive: true, force: true }, () => {})
     }
   }
 }
 
-const agyOneShotTokensToCarryBack = new Set<() => void>()
-
+// AGY§6
 export function endAgyOneShots(tmpRoot: string): void {
-  for (const carryBack of agyOneShotTokensToCarryBack) carryBack()
-  fs.rmSync(tmpRoot, { recursive: true, force: true })
+  try {
+    fs.rmSync(tmpRoot, { recursive: true, force: true })
+  } catch (err) {
+    console.error('[koloft] could not remove the Antigravity one-shot folders:', err)
+  }
 }
 
 export function trustsIn(dir: string, ...settings: Record<string, unknown>[]): boolean {

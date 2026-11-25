@@ -308,15 +308,25 @@ describe('oneShotAgyHome (a throwaway folder for one agy -p run, AGY§6 AGY§20)
     expect(fs.readdirSync(tmpRoot())).toEqual([])
   })
 
-  it('at quit, carries a refreshed token back and removes every folder still in use at once', () => {
+  it("at quit, removes every folder still in use at once and never writes its copy over the account's token, as agy may be part-way through writing it", () => {
     fs.mkdirSync(path.dirname(agyTokenFile(home)), { recursive: true })
     fs.writeFileSync(agyTokenFile(home), 'old token', { mode: 0o600 })
     const shot = oneShotAgyHome(home, tmpRoot(), false)
-    fs.writeFileSync(agyTokenFile(shot.dir), 'refreshed token')
+    fs.writeFileSync(agyTokenFile(shot.dir), 'half a tok')
     oneShotAgyHome(home, tmpRoot(), true)
     endAgyOneShots(tmpRoot())
     expect(fs.existsSync(tmpRoot())).toBe(false)
-    expect(fs.readFileSync(agyTokenFile(home), 'utf8')).toBe('refreshed token')
+    expect(fs.readFileSync(agyTokenFile(home), 'utf8')).toBe('old token')
+  })
+
+  it('a folder that cannot be removed does not stop Koloft starting or quitting', () => {
+    oneShotAgyHome(home, tmpRoot(), true)
+    fs.chmodSync(tmpRoot(), 0o500)
+    try {
+      expect(() => endAgyOneShots(tmpRoot())).not.toThrow()
+    } finally {
+      fs.chmodSync(tmpRoot(), 0o700)
+    }
   })
 
   it("at start-up, removes every folder a quit or crash left, with its token copy, and leaves the account's own folder alone", () => {
