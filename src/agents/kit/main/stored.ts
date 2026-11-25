@@ -17,6 +17,8 @@ export function storedBackend<R extends StoredRun, H extends HistoryEntry, P>(
     | 'peerNames'
     | 'runningElsewhere'
     | 'worktreeExitWatch'
+    | 'send'
+    | 'mightNotTakeAMessageNow'
   >,
   machineProbes?: (cwd: string) => ResumeProbes
 ): SessionBackend {

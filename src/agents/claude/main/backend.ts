@@ -19,12 +19,21 @@ import { hasUsableAccount } from '@shared/accountUsage'
 import type { Turn } from '@shared/turns'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import type {
+  MessageToSend,
   ModeClass,
+  SendOutcome,
   SessionBackend,
+  SessionMessages,
   TabExit,
   WorktreeExitWatch
 } from '@core/agent/sessionBackends'
 import { claudeWorktreeExitWatch } from './claudeWorktreeExitWatch'
+import {
+  claudeMessages,
+  messageSocket,
+  type ClaudeMessageDeps,
+  type MessageSocketDeps
+} from './messageSocket'
 import { KEEPS_NO_WORKTREE_RECORDS } from '@core/agent/worktreeRecords'
 import {
   A_PASS_WITH_NO_ROWS,
@@ -150,6 +159,7 @@ export interface ClaudeBackendDeps {
   messaged(tabId: string, fromSessionId: string): void
   error(message: string): void
   machineOfTab(tabId: string): string | undefined
+  messages: Omit<MessageSocketDeps, 'tracker'> & Pick<ClaudeMessageDeps, 'noteKoloftSent'>
   otherTabOnMachine?(machine: string, tmuxName: string, launchTab: string): string | undefined
   projectRules?(workspace: string): Promise<string | undefined>
   workspaceInstructions?(workspace: string): Promise<string[]>
@@ -282,6 +292,7 @@ export class ClaudeBackend implements SessionBackend {
   private launchedBypassing = new Set<string>()
   private closedClaudes = new Map<string, { pids: Set<number>; until: number }>()
   private heldBeforeStartup = new Map<string, string>()
+  private messages?: SessionMessages
   agentReply?: (
     tabId: string | undefined,
     raw: unknown,
@@ -289,6 +300,24 @@ export class ClaudeBackend implements SessionBackend {
   ) => Promise<AgentReply>
 
   constructor(private d: ClaudeBackendDeps) {}
+
+  private messagesNow(): SessionMessages {
+    return (this.messages ??= claudeMessages({
+      sendPeerLine: messageSocket({ ...this.d.messages, tracker: this.d.tracker }),
+      noteKoloftSent: (tabId, note) => this.d.messages.noteKoloftSent(tabId, note)
+    }))
+  }
+
+  send(tabId: string, m: MessageToSend): Promise<SendOutcome> {
+    return this.messagesNow().send(tabId, m)
+  }
+
+  mightNotTakeAMessageNow(
+    tabId: string,
+    turnHasEnded: (tabId: string) => Promise<boolean>
+  ): Promise<boolean> {
+    return this.messagesNow().mightNotTakeAMessageNow(tabId, turnHasEnded)
+  }
 
   async availability(): Promise<BackendAvailability> {
     const { found } = await probeClaude()

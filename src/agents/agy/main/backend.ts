@@ -4,6 +4,7 @@ import type { SessionBackend } from '@core/agent/sessionBackends'
 import type { AgySessions } from './agySessions'
 import type { ResumeProbes } from '../../../main/resumePlan'
 import { storedBackend } from '@agents/kit/main/stored'
+import { agyMessages } from './agyMessages'
 
 export function agyBackend(
   sessions: AgySessions,
@@ -20,7 +21,8 @@ export function agyBackend(
       peerNames: () => async () => null,
       runningElsewhere: () => false,
       // AGY§35
-      worktreeExitWatch: () => undefined
+      worktreeExitWatch: () => undefined,
+      ...agyMessages((tabId, text) => sessions.deliver(tabId, text))
     },
     machineProbes
   )

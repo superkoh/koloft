@@ -49,7 +49,8 @@ function everyAgent(
   const codex = codexBackend(
     { id: 'codex', ...SESSIONS_NOT_ASKED_HERE } as unknown as Parameters<typeof codexBackend>[0],
     NO_RESUME_IS_PLANNED_HERE,
-    () => NO_RESUME_IS_PLANNED_HERE
+    () => NO_RESUME_IS_PLANNED_HERE,
+    async () => {}
   )
   const agy = agyBackend(
     { id: 'agy', ...SESSIONS_NOT_ASKED_HERE } as unknown as Parameters<typeof agyBackend>[0],

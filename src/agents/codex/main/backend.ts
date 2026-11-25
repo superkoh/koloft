@@ -4,11 +4,13 @@ import type { SessionBackend } from '@core/agent/sessionBackends'
 import type { CodexSessions } from './codexSessions'
 import type { ResumeProbes } from '../../../main/resumePlan'
 import { storedBackend } from '@agents/kit/main/stored'
+import { codexMessages, type CodexMessageDeps } from './codexMessages'
 
 export function codexBackend(
   sessions: CodexSessions,
   resumeProbes: ResumeProbes,
-  machineProbes: (cwd: string) => ResumeProbes
+  machineProbes: (cwd: string) => ResumeProbes,
+  noteKoloftSent: CodexMessageDeps['noteKoloftSent']
 ): SessionBackend {
   return storedBackend(
     sessions,
@@ -20,7 +22,11 @@ export function codexBackend(
       peerNames: () => async () => null,
       runningElsewhere: () => false,
       // CODEX§6
-      worktreeExitWatch: () => undefined
+      worktreeExitWatch: () => undefined,
+      ...codexMessages({
+        queue: (tabId, text, clientId) => sessions.queueMessage(tabId, text, clientId),
+        noteKoloftSent
+      })
     },
     machineProbes
   )

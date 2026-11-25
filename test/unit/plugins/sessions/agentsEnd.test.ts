@@ -53,7 +53,9 @@ const ITS_OWN_ANSWERS: Parameters<typeof storedBackend>[2] = {
   turns: async () => [],
   peerNames: () => async () => null,
   runningElsewhere: () => false,
-  worktreeExitWatch: () => undefined
+  worktreeExitWatch: () => undefined,
+  send: async () => 'taken',
+  mightNotTakeAMessageNow: async () => false
 }
 
 function backendsOf(
