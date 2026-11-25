@@ -104,39 +104,6 @@ describe('PtyManager per-tab environment', () => {
     expect(Object.keys(env).some((k) => k.startsWith('ANTIGRAVITY_'))).toBe(false)
   })
 
-  it('keeps the hook log and notice a launch sets for its own tab, and strips the same names when they are only given to it, as a remote tab starting without its own is', () => {
-    const mgr = new PtyManager()
-    const envOf = (args: Parameters<PtyManager['create']>[0]): Record<string, string> => {
-      mocks.spawn.mockClear()
-      mgr.create(args)
-      return spawnedEnv()
-    }
-    const ownVariables = { KOLOFT_AGY_LOG: '/tab/agy.jsonl', KOLOFT_NOTICE: '/tab/pty-1.notice' }
-    const setForItself = envOf({
-      kind: 'agy',
-      koloftShim: false,
-      cwd: os.tmpdir(),
-      processEnv: { PATH: '/usr/bin:/bin' },
-      envSetForThisTab: ownVariables
-    })
-    expect(setForItself.KOLOFT_AGY_LOG).toBe('/tab/agy.jsonl')
-    expect(setForItself.KOLOFT_NOTICE).toBe('/tab/pty-1.notice')
-    expect(setForItself.ANTIGRAVITY_CONVERSATION_ID).toBeUndefined()
-
-    const onlyGiven = envOf({
-      kind: 'agy',
-      koloftShim: false,
-      cwd: os.tmpdir(),
-      processEnv: { PATH: '/usr/bin:/bin', ...ownVariables }
-    })
-    expect(onlyGiven.KOLOFT_AGY_LOG).toBeUndefined()
-    expect(onlyGiven.KOLOFT_NOTICE).toBeUndefined()
-
-    const remoteAgy = envOf({ kind: 'agy', koloftShim: SHIM, cwd: os.tmpdir() })
-    expect(remoteAgy.KOLOFT_AGY_LOG).toBeUndefined()
-    expect(remoteAgy.KOLOFT_NOTICE).toBeUndefined()
-  })
-
   it("a Workbench shell's processes carry its session tab's id, so what they start counts as the session's after its tab id changes; a placeholder id such as a sleeping tab's asleep-1, which later runs hand out again, is never carried", () => {
     const mgr = new PtyManager()
     const session = mgr.create({ kind: 'claude', koloftShim: SHIM, cwd: os.tmpdir() })
@@ -149,7 +116,7 @@ describe('PtyManager per-tab environment', () => {
     expect(envOf('asleep-1').KOLOFT_HOLD_TAB).toBeUndefined()
   })
 
-  it("a Claude launch's synchronized-output switches outlive the strip of every inherited CLAUDE_CODE_* variable", () => {
+  it("what a launch sets for its own tab outlives the strip of the same names inherited from an agent's session — Claude Code's synchronized-output switches, Antigravity's hook log and notice — and a tab that sets none gets none of them", () => {
     const outer = process.env.CLAUDE_CODE_FORCE_SYNC_OUTPUT
     process.env.CLAUDE_CODE_FORCE_SYNC_OUTPUT = 'inherited'
     try {
@@ -158,13 +125,21 @@ describe('PtyManager per-tab environment', () => {
         kind: 'claude',
         koloftShim: SHIM,
         cwd: os.tmpdir(),
-        envSetForThisTab: { CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1', CLAUDE_CODE_DECSTBM: '1' }
+        envSetForThisTab: {
+          CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1',
+          CLAUDE_CODE_DECSTBM: '1',
+          KOLOFT_AGY_LOG: '/tab/agy.jsonl',
+          KOLOFT_NOTICE: '/tab/pty-1.notice'
+        }
       })
       expect(spawnedEnv().CLAUDE_CODE_FORCE_SYNC_OUTPUT).toBe('1')
       expect(spawnedEnv().CLAUDE_CODE_DECSTBM).toBe('1')
+      expect(spawnedEnv().KOLOFT_AGY_LOG).toBe('/tab/agy.jsonl')
+      expect(spawnedEnv().KOLOFT_NOTICE).toBe('/tab/pty-1.notice')
       mocks.spawn.mockClear()
       mgr.create({ kind: 'shell', koloftShim: SHIM, cwd: os.tmpdir() })
       expect(spawnedEnv().CLAUDE_CODE_FORCE_SYNC_OUTPUT).toBeUndefined()
+      expect(spawnedEnv().KOLOFT_AGY_LOG).toBeUndefined()
     } finally {
       if (outer === undefined) delete process.env.CLAUDE_CODE_FORCE_SYNC_OUTPUT
       else process.env.CLAUDE_CODE_FORCE_SYNC_OUTPUT = outer
