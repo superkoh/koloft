@@ -264,6 +264,7 @@ async function aTabOfEveryAgent() {
       sent: agySent,
       killed: agyTerminal.killed,
       machineNamed: agyTerminal.machineNamed,
+      openTerminals: agyTerminal.open,
       ranOverSsh: ssh.ran
     },
     whenTornDown,
@@ -519,7 +520,7 @@ describe('the tmux session a tab runs in on a machine, as each of the three real
     })
   })
 
-  it('the tab that runs a tmux session on a machine: Claude Code names its tab there while that tab’s terminal is open, Antigravity names its tab there, Codex names none as its tab runs in no tmux session there; none names one on another machine or for a tmux session not its own; and the Antigravity tab’s terminal names that machine, so its tab id alone already finds it there', async () => {
+  it('the tab that runs a tmux session on a machine: Claude Code and Antigravity each name their tab there only while that tab’s terminal is open, Codex names none as its tab runs in no tmux session there; none names one on another machine or for a tmux session not its own; and the Antigravity tab’s terminal names that machine, so its tab id alone already finds it there', async () => {
     const a = await aTabOfEveryAgent()
     const CLAUDE_TAB_ON_THE_MACHINE = 'pty-claude-on-the-machine'
     a.claude.tracker.track(CLAUDE_TAB_ON_THE_MACHINE, ON_THE_MACHINE, {
@@ -542,8 +543,10 @@ describe('the tmux session a tab runs in on a machine, as each of the three real
           asked.map(([host, name]) => a[id].backend.tabOfTmuxSession(host, name))
         ])
       )
-    expect(answers().claude).toEqual([undefined, undefined, undefined, undefined, undefined])
+    const NONE = [undefined, undefined, undefined, undefined, undefined]
+    expect(answers()).toEqual({ claude: NONE, codex: NONE, agy: NONE })
     a.claude.openTerminals.add(CLAUDE_TAB_ON_THE_MACHINE)
+    a.agy.openTerminals.add(AGY_TAB)
     expect(answers()).toEqual({
       claude: [CLAUDE_TAB_ON_THE_MACHINE, undefined, undefined, undefined, undefined],
       codex: [undefined, undefined, undefined, undefined, undefined],

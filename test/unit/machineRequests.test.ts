@@ -28,12 +28,13 @@ const MACHINE_TABS = {
 const CODEX_TABS = { 'pty-cx': 'devbox', 'pty-cy': 'otherbox' } as Record<string, string>
 
 const AGY_TABS = {
-  'pty-g': { host: 'devbox', tmuxName: 'k-sg' },
-  'pty-h': { host: 'otherbox', tmuxName: 'k-sh' }
-} as Record<string, { host: string; tmuxName: string }>
+  'pty-g': { host: 'devbox', tmuxName: 'k-sg', alive: true },
+  'pty-g-exited': { host: 'devbox', tmuxName: 'k-sg-exited', alive: false },
+  'pty-h': { host: 'otherbox', tmuxName: 'k-sh', alive: true }
+} as Record<string, { host: string; tmuxName: string; alive: boolean }>
 
 const agyTabOfTmuxSession = (host: string, name: string): string | undefined =>
-  Object.entries(AGY_TABS).find(([, t]) => t.host === host && t.tmuxName === name)?.[0]
+  Object.entries(AGY_TABS).find(([, t]) => t.host === host && t.tmuxName === name && t.alive)?.[0]
 
 const WORKBENCH_SHELLS = {
   'pty-wa': { util: true, ownerTabId: 'pty-a' },
@@ -58,7 +59,9 @@ function machineBackend(): {
   const pty = {
     get: (id: string) =>
       WORKBENCH_SHELLS[id] ??
-      (MACHINE_TABS[id] || CODEX_TABS[id] || AGY_TABS[id] ? { alive: true } : undefined),
+      (MACHINE_TABS[id] || CODEX_TABS[id]
+        ? { alive: true }
+        : AGY_TABS[id] && { alive: AGY_TABS[id].alive }),
     clearResumeIntent: () => {}
   }
   const remoteTargets = (): { host: string; paths: string[] }[] => [{ host: 'devbox', paths: [] }]
@@ -285,20 +288,25 @@ describe('koloft requests from a session on a remote machine', () => {
     expect(m.sent[1]).toEqual(['devbox', 'g5', replyJson(refused(NOT_ITS_PASS))])
   })
 
-  it('a request with no pass that runs in a Claude Code or Antigravity tab’s tmux session but names another live tab on that machine counts as the tab whose tmux session it runs in', async () => {
+  async function keylessAnswer(tmux: string): Promise<string | null> {
     const m = machineBackend()
-    markStartedBeforeTabPasses('pty-g', true)
-    markStartedBeforeTabPasses('pty-a', true)
-    m.drop('req-g6.json', keyless('pty-b', 'k-sg'))
-    m.drop('req-g7.json', keyless('pty-b', 'k-sa'))
-    await vi.waitFor(() => expect(m.sent).toHaveLength(2), { timeout: 5000 })
-    markStartedBeforeTabPasses('pty-g', false)
-    markStartedBeforeTabPasses('pty-a', false)
+    const preTabPasses = ['pty-a', 'pty-g', 'pty-g-exited']
+    for (const id of preTabPasses) markStartedBeforeTabPasses(id, true)
+    try {
+      m.drop('req-r17.json', keyless('pty-a', tmux))
+      await vi.waitFor(() => expect(m.sent).toHaveLength(1), { timeout: 5000 })
+      return m.sent[0][2]
+    } finally {
+      for (const id of preTabPasses) markStartedBeforeTabPasses(id, false)
+    }
+  }
 
-    expect(Object.fromEntries(m.sent.map(([, id, reply]) => [id, reply]))).toEqual({
-      g6: replyJson(answered('for pty-g')),
-      g7: replyJson(answered('for pty-a'))
-    })
+  it('a request with no pass is found by the tmux session it runs in, asked of every agent, before the tab id it names: one in an Antigravity tab’s tmux session naming another live tab on that machine counts as the Antigravity tab', async () => {
+    expect(await keylessAnswer('k-sg')).toBe(replyJson(answered('for pty-g')))
+  })
+
+  it('a request with no pass in the tmux session of an Antigravity tab whose terminal has exited is found by the tab id it names', async () => {
+    expect(await keylessAnswer('k-sg-exited')).toBe(replyJson(answered('for pty-a')))
   })
 
   it('answers a request from a Workbench shell on that machine as the session tab that owns the shell, Claude or Codex, and one whose owner is gone at once, with no tab, instead of leaving it to time out', async () => {

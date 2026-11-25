@@ -1519,7 +1519,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   tabOfTmuxSession(host: string, name: string): string | undefined {
     for (const run of this.runs.values()) {
       if (run.remote?.host !== host || run.explicitStop) continue
-      if (run.remote.tmuxName === name) return run.tabId
+      if (run.remote.tmuxName === name)
+        return this.deps.pty.get(run.tabId)?.alive ? run.tabId : undefined
     }
     return undefined
   }

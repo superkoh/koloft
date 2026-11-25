@@ -110,7 +110,7 @@ export class MachineRequests {
   ): string | undefined {
     const tmux = typeof r.tmux === 'string' ? r.tmux : ''
     const byTmux = tmux && this.d.tabOfTmuxSession(machine, tmux)
-    if (byTmux && this.d.pty.get(byTmux)) return byTmux
+    if (byTmux) return byTmux
     const asked = typeof r.tabId === 'string' ? r.tabId : ''
     const facts = this.d.pty.get(asked)
     return this.liveTabOnMachine(machine, facts ? tabSpokenFor(asked, facts) : asked)
