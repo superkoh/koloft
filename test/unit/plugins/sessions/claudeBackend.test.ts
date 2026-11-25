@@ -281,6 +281,65 @@ describe('ClaudeBackend: a local tab binds once both of its start notes are on d
   })
 })
 
+describe('ClaudeBackend: resuming a session on a remote machine into a worktree another Claude Code tab there works in', () => {
+  const SID = '0d7c1f40-1a5e-4b8e-9a51-6f0d2c3e4b5a'
+  const TREE = '/srv/repo/.claude/worktrees/w1'
+
+  function planWith(other: { cwd: string; treeRoot: string; alive: boolean }) {
+    const backend = new ClaudeBackend({
+      tracker: {
+        list: () => [
+          {
+            tabId: 'other-tab',
+            sessionId: 'other-session',
+            title: 'Other session at work',
+            remote: { host: 'lab' },
+            ...other
+          }
+        ],
+        remoteOf: () => undefined
+      },
+      store: () => ({
+        findRow: (id: string) =>
+          id === SID
+            ? {
+                id: SID,
+                cwd: TREE,
+                worktreeState: {
+                  worktreePath: TREE,
+                  worktreeName: 'w1',
+                  originalCwd: '/srv/repo',
+                  worktreeBranch: 'worktree-w1'
+                }
+              }
+            : undefined,
+        workspaceOf: () => 'ssh://lab/srv/repo',
+        bucketDirOf: () => undefined
+      }),
+      hosts: {
+        of: () => ({
+          dirExists: async () => true,
+          keyed: (p: string) => `ssh://lab${p}`
+        })
+      }
+    } as unknown as ClaudeBackendDeps)
+    return backend.resumePlan(SID)
+  }
+
+  it('asks where to resume while that tab works in the worktree, also after it moved into a subfolder of it, and not once its tab has exited', async () => {
+    await expect(planWith({ cwd: TREE, treeRoot: TREE, alive: true })).resolves.toMatchObject({
+      action: 'dialog',
+      occupiedBy: 'Other session at work'
+    })
+    await expect(
+      planWith({ cwd: `${TREE}/src`, treeRoot: TREE, alive: true })
+    ).resolves.toMatchObject({ action: 'dialog', occupiedBy: 'Other session at work' })
+    await expect(
+      planWith({ cwd: `${TREE}/src`, treeRoot: TREE, alive: false })
+    ).resolves.toMatchObject({ action: 'direct' })
+  })
+})
+
 describe('ClaudeBackend: the resume check before a restart', () => {
   it('takes a transcript the session list already found without listing every project folder, and asks the tracker once that file is gone', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-backend-listed-'))

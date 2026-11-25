@@ -10,6 +10,11 @@ import {
   type CodexSessionDeps
 } from '../../../../src/agents/codex/main/codexSessions'
 import { storedBackend } from '../../../../src/agents/kit/main/stored'
+import { ClaudeBackend, type ClaudeBackendDeps } from '../../../../src/agents/claude/main/backend'
+import { removeUntouchedWorktreeWith } from '../../../../src/main/untouchedWorktreeRemoval'
+import { worktreeRecordsOfEveryAgent } from '../../../../src/core/agent/worktreeRecords'
+import { TreeRemovals } from '../../../../src/main/treeRemovals'
+import { removeTree } from '../../../../src/plugins/sessions/main/sessionClose'
 import { codexSessionKey } from '../../../../src/agents/kit/main/sessionStore'
 import type { WorktreeResource } from '../../../../src/core/agent/worktreeRecords'
 import type {
@@ -1095,6 +1100,180 @@ describe('CodexSessions', () => {
       backend.resume({ sessionId: key, cwd: worktree, mode: 'direct' })
     ).resolves.toEqual({ ok: false, code: 'cwd-missing' })
   })
+
+  const gitIn = (dir: string, ...args: string[]) =>
+    execFileSync('git', ['-C', dir, '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], {
+      encoding: 'utf8'
+    }).trim()
+
+  async function untouchedWorktreeFoo(): Promise<WorktreeResource> {
+    gitIn(repo, 'init', '-q', '--initial-branch=main')
+    fs.writeFileSync(path.join(repo, 'file.txt'), 'initial\n')
+    gitIn(repo, 'add', 'file.txt')
+    gitIn(repo, 'commit', '-q', '-m', 'base')
+    return sessions.worktrees.create(repo, 'foo')
+  }
+
+  const closeTheOtherTabIn = (made: WorktreeResource): Promise<void> =>
+    removeUntouchedWorktreeWith(
+      {
+        sleeperTrees: () => [],
+        cronRunner: null,
+        sessionBackends: {
+          occupantOf: (dir) => sessions.occupantOf(dir),
+          worktreeRecords: worktreeRecordsOfEveryAgent(() => [
+            { id: 'codex', worktreeRecords: sessions.worktrees.records }
+          ])
+        },
+        worktreesOfEveryAgent: deps.worktreesOfEveryAgent,
+        treeRemovals: new TreeRemovals(),
+        removeTree,
+        hostGitOut: localGitOut,
+        dirExists: async (dir) => fs.existsSync(dir),
+        toast: (text) => {
+          throw new Error(text)
+        }
+      },
+      { id: 'codex' },
+      made
+    )
+
+  it('a resume sent to the main folder does not keep its old untouched worktree while it starts, so closing the other tab there removes it', async () => {
+    const made = await untouchedWorktreeFoo()
+    addMember(A, made.worktreePath, made.id)
+    const held = deferred<void>()
+    const reached = deferred<void>()
+    vi.spyOn(sessions, 'availability').mockImplementation(async () => {
+      reached.resolve()
+      await held.promise
+      return { id: 'codex', available: true }
+    })
+
+    const starting = sessions.resume({
+      sessionId: codexSessionKey(A),
+      cwd: made.worktreePath,
+      mode: 'main'
+    })
+    await reached.promise
+    await closeTheOtherTabIn(made)
+    held.resolve()
+
+    expect(fs.existsSync(made.worktreePath)).toBe(false)
+    await expect(starting).resolves.toMatchObject({ cwd: repo })
+  })
+
+  it.each([
+    { moment: 'still checks that Codex is there', holds: 'availability' },
+    { moment: 'has taken the folder over and reads the project rules', holds: 'projectRules' },
+    { moment: 'is a resume that waits for the folder to settle', holds: 'whenSettled' }
+  ] as const)(
+    'closing a tab whose untouched worktree a second session of the same agent is starting in keeps the folder while that session $moment',
+    async ({ holds }) => {
+      const made = await untouchedWorktreeFoo()
+      const projectInfo = deps.projectInfo
+      deps.projectInfo = (p) =>
+        p === made.worktreePath ? { root: repo, treeRoot: p, worktreeName: 'foo' } : projectInfo(p)
+      const held = deferred<void>()
+      const reached = deferred<void>()
+      if (holds === 'availability')
+        vi.spyOn(sessions, 'availability').mockImplementation(async () => {
+          reached.resolve()
+          await held.promise
+          return { id: 'codex', available: true }
+        })
+      else if (holds === 'projectRules')
+        deps.projectRules = async () => {
+          reached.resolve()
+          await held.promise
+          return undefined
+        }
+      else {
+        addMember(A, made.worktreePath, made.id)
+        vi.spyOn(sessions.worktrees, 'whenSettled').mockImplementation(async () => {
+          reached.resolve()
+          await held.promise
+        })
+      }
+
+      const starting =
+        holds === 'whenSettled'
+          ? sessions.resume({ sessionId: codexSessionKey(A), cwd: made.worktreePath })
+          : sessions.launch({ kind: 'codex', cwd: made.worktreePath })
+      await reached.promise
+      await closeTheOtherTabIn(made)
+      held.resolve()
+
+      expect(fs.existsSync(path.join(made.worktreePath, 'file.txt'))).toBe(true)
+      expect(gitIn(repo, 'branch', '--list', 'worktree-foo')).not.toBe('')
+      await expect(starting).resolves.toMatchObject({ cwd: made.worktreePath })
+    }
+  )
+
+  it.each([
+    { where: 'on this Mac', machine: undefined },
+    { where: 'on another machine', machine: 'box' }
+  ])(
+    'a resume into a worktree a Claude Code tab on the same machine works in asks where to resume, $where',
+    async ({ machine }) => {
+      const at = (p: string): string => keyedOn(machine, p)!
+      const worktree = '/srv/repo/.claude/worktrees/w1'
+      const resource: WorktreeResource = {
+        id: randomUUID(),
+        originalCwd: at('/srv/repo'),
+        worktreePath: at(worktree),
+        worktreeName: 'w1',
+        worktreeBranch: 'worktree-w1',
+        originalHeadCommit: 'a'.repeat(40),
+        state: 'ready',
+        managed: true
+      }
+      sessions.store.putResource(resource)
+      const key = codexSessionKey(A, machine)
+      sessions.store.upsertMember({
+        id: A,
+        key,
+        workspacePath: at('/srv/repo'),
+        cwd: at(worktree),
+        title: 'Saved',
+        createdAt: 1,
+        updatedAt: 1,
+        worktreeResourceId: resource.id
+      })
+      const claudeCode = new ClaudeBackend({
+        tracker: {
+          list: () => [
+            {
+              tabId: 'claude-tab',
+              sessionId: 'claude-session',
+              title: 'Claude Code at work',
+              alive: true,
+              cwd: worktree,
+              treeRoot: worktree,
+              ...(machine ? { remote: { host: machine } } : {})
+            }
+          ]
+        },
+        store: () => undefined
+      } as unknown as ClaudeBackendDeps)
+      const probes = {
+        dirExists: (p: string) => p === at(worktree),
+        occupantOf: (dir: string) => claudeCode.occupantOf(dir),
+        ...gitProbes(localGitOut)
+      }
+      const backend = storedBackend(
+        sessions,
+        probes,
+        { runningElsewhere: async () => false } as never,
+        () => probes
+      )
+
+      await expect(backend.resumePlan(key)).resolves.toMatchObject({
+        action: 'dialog',
+        worktreePath: at(worktree),
+        occupiedBy: 'Claude Code at work'
+      })
+    }
+  )
 
   it('a session in a deleted .claude/worktrees folder Koloft has no record of, even one reached through a symlink, is rebuilt there on resume, on its worktree-<name> branch while that lives, and is recorded from then on, as a Claude Code one is; a rebuild that fails records nothing', async () => {
     const gitIn = (dir: string, ...args: string[]) =>

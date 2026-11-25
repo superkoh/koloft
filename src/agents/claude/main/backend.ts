@@ -14,7 +14,13 @@ import type {
   SessionRow
 } from '@shared/types'
 import type { SessionEvent } from '@shared/sessionEvent'
-import { formatRemoteKey, hostOf, isAbsoluteOnHost, parseRemoteKey } from '@shared/remoteKey'
+import {
+  formatRemoteKey,
+  hostOf,
+  isAbsoluteOnHost,
+  isRemoteKey,
+  parseRemoteKey
+} from '@shared/remoteKey'
 import { hasUsableAccount } from '@shared/accountUsage'
 import type { Turn } from '@shared/turns'
 import { isValidWorktreeName } from '@shared/worktreeName'
@@ -371,6 +377,7 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   occupantOf(dir: string): string | null {
+    if (isRemoteKey(dir)) return this.machineOccupantOf(dir)
     const target = path.resolve(dir)
     for (const s of this.d.tracker.list()) {
       if (!s.alive || s.remote) continue
@@ -1148,7 +1155,7 @@ export class ClaudeBackend implements SessionBackend {
     for (const s of this.d.tracker.list()) {
       if (!s.alive || !s.remote) continue
       const onMachine = (p: string): string => formatRemoteKey(s.remote!.host, p)
-      if (onMachine(s.cwd) === dir) return occupantName(s)
+      if (onMachine(s.cwd) === dir || onMachine(s.treeRoot) === dir) return occupantName(s)
       const bound = s.sessionId ? this.d.store()?.findRow(s.sessionId)?.worktreeState : undefined
       if (bound && onMachine(bound.worktreePath) === dir) return occupantName(s)
     }
