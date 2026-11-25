@@ -122,6 +122,35 @@ describe('SessionSearch', () => {
     ])
   })
 
+  it('sends a transcript hit at once, while what the other agents found waits for all of their answers and goes out together', async () => {
+    const otherRow = (id: string, backendId: 'codex' | 'agy'): SearchCandidate => ({
+      row: { ...row(id, 'Quiet', 1), backendId },
+      workspacePath: '/repo'
+    })
+    let answer!: (said: { id: string; snippet: string }[]) => void
+    const { search, sent, scans } = harness(
+      [
+        { row: row('a', 'A', 1), workspacePath: '/repo', file: '/t/a.jsonl' },
+        otherRow('codex:x', 'codex'),
+        otherRow('agy:y', 'agy')
+      ],
+      { backendSnippets: () => new Promise((resolve) => (answer = resolve)) }
+    )
+    search.start(1, 'needle')
+    scans[0].found('a', snippet('needle'))
+    await vi.waitFor(() => expect(ids(sent)).toEqual(['a']))
+    expect(sent.at(-1)?.done).toBe(false)
+    answer([
+      { id: 'codex:x', snippet: 'a needle' },
+      { id: 'agy:y', snippet: 'needle too' }
+    ])
+    scans[0].finish()
+    await vi.waitFor(() => expect(sent.at(-1)?.done).toBe(true))
+    const batchOf = (id: string) => sent.findIndex((s) => s.hits.some((h) => h.row.id === id))
+    expect(ids(sent)).toEqual(['a', 'codex:x', 'agy:y'])
+    expect(batchOf('codex:x')).toBe(batchOf('agy:y'))
+  })
+
   it('a Codex search that fails still ends the search with the Claude hits', async () => {
     const { search, sent, scans } = harness(
       [{ row: row('a', 'A', 1), workspacePath: '/repo', file: '/t/a.jsonl' }],
