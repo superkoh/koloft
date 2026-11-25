@@ -1,0 +1,228 @@
+# Asks two questions at once, each taking one pick
+
+## Claude Code, its ask held by its hook (a tab on this Mac that Discord or the owner-asleep butler answers)
+the raw ask: PermissionRequest hook input: {"hook_event_name":"PermissionRequest","session_id":"11111111-1111-4111-8111-111111111111","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Which colour do you prefer?","header":"Colour","options":[{"label":"Red","description":"Choose red."},{"label":"Green","description":"Choose green."}],"multiSelect":false},{"question":"Which size?","header":"Size","options":[{"label":"Small"},{"label":"Large"}],"multiSelect":false}]}}
+the session row's small line: Asks: Which colour do you prefer?
+Discord card: body:
+    Which colour do you prefer?
+    1. Red — Choose red.
+    2. Green — Choose green.
+    
+    Which size?
+    1. Small
+    2. Large
+Discord card: footnote: -# Reply with one line per question: a number or your own answer.
+Discord card: buttons: (nothing)
+Inbox card: title: “Fix the docs” is waiting for you in its tab
+Inbox card: quote: (nothing)
+Inbox card: questions: (nothing)
+Inbox card: text: Koloft cannot show what it asks here. Open the session to answer it.
+Inbox card: buttons: (nothing)
+the butler's owner-asleep report, the part that says what was asked: asked the owner "Which colour do you prefer? 1. Red — Choose red. 2. Green — Choose green. Which size? 1. Small 2. Large"
+this ask's id: the hook's own process id, only in the name of its file claude-tab.<pid>.ask.json; the "someone asked" moment is never announced for it
+--- replied "1\n2" in the session's Discord room ---
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: the hook printed to Claude Code: {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedInput":{"questions":[{"question":"Which colour do you prefer?","header":"Colour","options":[{"label":"Red","description":"Choose red."},{"label":"Green","description":"Choose green."}],"multiSelect":false},{"question":"Which size?","header":"Size","options":[{"label":"Small"},{"label":"Large"}],"multiSelect":false}],"answers":{"Which colour do you prefer?":"Red","Which size?":"Large"}}}}}
+--- answered "1\n2" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: the hook printed to Claude Code: {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedInput":{"questions":[{"question":"Which colour do you prefer?","header":"Colour","options":[{"label":"Red","description":"Choose red."},{"label":"Green","description":"Choose green."}],"multiSelect":false},{"question":"Which size?","header":"Size","options":[{"label":"Small"},{"label":"Large"}],"multiSelect":false}],"answers":{"Which colour do you prefer?":"Red","Which size?":"Large"}}}}}
+--- replied "1" in the session's Discord room ---
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: the hook printed to Claude Code: {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedInput":{"questions":[{"question":"Which colour do you prefer?","header":"Colour","options":[{"label":"Red","description":"Choose red."},{"label":"Green","description":"Choose green."}],"multiSelect":false},{"question":"Which size?","header":"Size","options":[{"label":"Small"},{"label":"Large"}],"multiSelect":false}],"answers":{"Which colour do you prefer?":"Red","Which size?":"Small"}}}}}
+--- answered "1" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: the hook printed to Claude Code: {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedInput":{"questions":[{"question":"Which colour do you prefer?","header":"Colour","options":[{"label":"Red","description":"Choose red."},{"label":"Green","description":"Choose green."}],"multiSelect":false},{"question":"Which size?","header":"Size","options":[{"label":"Small"},{"label":"Large"}],"multiSelect":false}],"answers":{"Which colour do you prefer?":"Red","Which size?":"Small"}}}}}
+--- replied "Blue\nLarge" in the session's Discord room ---
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: the hook printed to Claude Code: {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedInput":{"questions":[{"question":"Which colour do you prefer?","header":"Colour","options":[{"label":"Red","description":"Choose red."},{"label":"Green","description":"Choose green."}],"multiSelect":false},{"question":"Which size?","header":"Size","options":[{"label":"Small"},{"label":"Large"}],"multiSelect":false}],"answers":{"Which colour do you prefer?":"Blue","Which size?":"Large"}}}}}
+--- answered "Blue\nLarge" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: the hook printed to Claude Code: {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedInput":{"questions":[{"question":"Which colour do you prefer?","header":"Colour","options":[{"label":"Red","description":"Choose red."},{"label":"Green","description":"Choose green."}],"multiSelect":false},{"question":"Which size?","header":"Size","options":[{"label":"Small"},{"label":"Large"}],"multiSelect":false}],"answers":{"Which colour do you prefer?":"Blue","Which size?":"Large"}}}}}
+
+## Claude Code, its ask not held (a tab on this Mac nobody answers from elsewhere; a tab on another machine, whose hook only records, takes this path too: inferred, not checked): Koloft answers by keys
+the raw ask: PermissionRequest hook input: {"hook_event_name":"PermissionRequest","session_id":"11111111-1111-4111-8111-111111111111","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Which colour do you prefer?","header":"Colour","options":[{"label":"Red","description":"Choose red."},{"label":"Green","description":"Choose green."}],"multiSelect":false},{"question":"Which size?","header":"Size","options":[{"label":"Small"},{"label":"Large"}],"multiSelect":false}]}}
+the session row's small line: Asks: Which colour do you prefer?
+Discord card: body:
+    Which colour do you prefer?
+    1. Red — Choose red.
+    2. Green — Choose green.
+    
+    Which size?
+    1. Small
+    2. Large
+Discord card: footnote: -# Reply with one line per question: a number or your own answer.
+Discord card: buttons: (nothing)
+Inbox card: title: “Fix the docs” asks 2 questions
+Inbox card: quote: (nothing)
+Inbox card: questions:
+    “Which colour do you prefer?”: options Red | Green; several picks: no; own-words box: yes
+    “Which size?”: options Small | Large; several picks: no; own-words box: yes
+Inbox card: text: (nothing)
+Inbox card: buttons: Send answers
+the butler's owner-asleep report, the part that says what was asked: asked the owner "Which colour do you prefer? 1. Red — Choose red. 2. Green — Choose green. Which size? 1. Small 2. Large"
+this ask's id: Claude Code's hook reported an ask (id 1)
+--- replied "1\n2" in the session's Discord room ---
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: keys pressed: "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[A" "\u0015" "\u001b[A" "1" "2" "1"
+--- answered "1\n2" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: keys pressed: "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[A" "\u0015" "\u001b[A" "1" "2" "1"
+--- replied "1" in the session's Discord room ---
+Discord said: under the message: Reply with one line per question: a number or your own answer.
+handed to the session as a message: (nothing)
+what reached the agent: (nothing)
+--- answered "1" with koloft session answer ---
+Koloft said: Reply with one line per question: a number or your own answer.
+what reached the agent: (nothing)
+--- replied "Blue\nLarge" in the session's Discord room ---
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: keys pressed: "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[A" "\u0015" "Blue" "\r" "2" "1"
+--- answered "Blue\nLarge" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: keys pressed: "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[A" "\u0015" "Blue" "\r" "2" "1"
+
+## Codex (its app-server's request, read on the TUI's connection; the tab runs on the stand-in machine of agentTabs)
+the raw ask: app-server frame: {"id":7,"method":"item/tool/requestUserInput","params":{"threadId":"22222222-2222-4222-8222-222222222222","turnId":"t1","itemId":"call_1","questions":[{"id":"colour","header":"colour","question":"Which colour do you prefer?","isOther":true,"isSecret":false,"options":[{"label":"Red","description":"Choose red."},{"label":"Green","description":"Choose green."}]},{"id":"size","header":"size","question":"Which size?","isOther":true,"isSecret":false,"options":[{"label":"Small"},{"label":"Large"}]}],"isBlocking":true,"autoResolutionMs":null}}
+the session row's small line: Asks: Which colour do you prefer?
+Discord card: body:
+    Which colour do you prefer?
+    1. Red — Choose red.
+    2. Green — Choose green.
+    
+    Which size?
+    1. Small
+    2. Large
+Discord card: footnote: -# Reply with one line per question: a number or your own answer.
+Discord card: buttons: (nothing)
+Inbox card: title: “Fix the docs” asks 2 questions
+Inbox card: quote: (nothing)
+Inbox card: questions:
+    “Which colour do you prefer?”: options Red | Green; several picks: no; own-words box: yes
+    “Which size?”: options Small | Large; several picks: no; own-words box: yes
+Inbox card: text: (nothing)
+Inbox card: buttons: Send answers
+the butler's owner-asleep report, the part that says what was asked: asked the owner "Which colour do you prefer? 1. Red — Choose red. 2. Green — Choose green. Which size? 1. Small 2. Large"
+this ask's id: the app-server's request id: 7
+--- replied "1\n2" in the session's Discord room ---
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: keys pressed: "1" "2"
+--- answered "1\n2" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: keys pressed: "1" "2"
+--- replied "1" in the session's Discord room ---
+Discord said: under the message: Reply with one line per question: a number or your own answer.
+handed to the session as a message: (nothing)
+what reached the agent: (nothing)
+--- answered "1" with koloft session answer ---
+Koloft said: Reply with one line per question: a number or your own answer.
+what reached the agent: (nothing)
+--- replied "Blue\nLarge" in the session's Discord room ---
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: keys pressed: "\u001b[B" "\u001b[B" "\t" "Blue" "\r" "2"
+--- answered "Blue\nLarge" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: keys pressed: "\u001b[B" "\u001b[B" "\t" "Blue" "\r" "2"
+
+## Antigravity, read through its API (a tab on this Mac)
+the raw ask:
+    PreToolUse hook input: {"conversationId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","workspacePaths":["<home>/repo"],"toolCall":{"name":"ask_question","args":{"questions":[{"question":"Which colour do you prefer?","options":["Red","Green"]},{"question":"Which size?","options":["Small","Large"]}]}}}
+    7501 status: state=blocked, kind=question, msg="Which colour do you prefer?"
+    its API's trajectory: {"trajectoryId":"t9","steps":[{"userInput":{"userConfig":{"plannerConfig":{"planModel":"M36"}}}},{"status":"CORTEX_STEP_STATUS_DONE"},{"status":"CORTEX_STEP_STATUS_WAITING","requestedInteraction":{"askQuestion":{"questions":[{"question":"Which colour do you prefer?","options":[{"id":"a","text":"Red"},{"id":"b","text":"Green"}]},{"question":"Which size?","options":[{"id":"a","text":"Small"},{"id":"b","text":"Large"}]}]}}}]}
+the session row's small line: Asks: Which colour do you prefer?
+Discord card: body:
+    Which colour do you prefer?
+    1. Red
+    2. Green
+    
+    Which size?
+    1. Small
+    2. Large
+Discord card: footnote: -# Reply with one line per question: a number or your own answer.
+Discord card: buttons: (nothing)
+Inbox card: title: “Fix the docs” asks 2 questions
+Inbox card: quote: (nothing)
+Inbox card: questions:
+    “Which colour do you prefer?”: options Red | Green; several picks: no; own-words box: yes
+    “Which size?”: options Small | Large; several picks: no; own-words box: yes
+Inbox card: text: (nothing)
+Inbox card: buttons: Send answers
+the butler's owner-asleep report, the part that says what was asked: asked the owner "Which colour do you prefer? 1. Red 2. Green Which size? 1. Small 2. Large"
+this ask's id: the ids it had, in turn: hook:<when it was read> → t9:2
+--- replied "1\n2" in the session's Discord room ---
+Discord said: reacted ⏳
+handed to the session as a message:
+    [Discord] 1
+    2
+what reached the agent: (nothing)
+--- answered "1\n2" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which colour do you prefer?","selectedOptionIds":["a"]},{"question":"Which size?","selectedOptionIds":["b"]}]}}}
+--- replied "1" in the session's Discord room ---
+Discord said: reacted ⏳
+handed to the session as a message: [Discord] 1
+what reached the agent: (nothing)
+--- answered "1" with koloft session answer ---
+Koloft said: Reply with one line per question: a number or your own answer.
+what reached the agent: (nothing)
+--- replied "Blue\nLarge" in the session's Discord room ---
+Discord said: reacted ⏳
+handed to the session as a message:
+    [Discord] Blue
+    Large
+what reached the agent: (nothing)
+--- answered "Blue\nLarge" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which colour do you prefer?","writeInResponse":"Blue"},{"question":"Which size?","selectedOptionIds":["b"]}]}}}
+
+## Antigravity, read from its tool call and 7501 status only, its API not answering (a tab on another machine has no API client and reads this way: inferred, not checked): Koloft answers by keys
+the raw ask:
+    PreToolUse hook input: {"conversationId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","workspacePaths":["<home>/repo"],"toolCall":{"name":"ask_question","args":{"questions":[{"question":"Which colour do you prefer?","options":["Red","Green"]},{"question":"Which size?","options":["Small","Large"]}]}}}
+    7501 status: state=blocked, kind=question, msg="Which colour do you prefer?"
+the session row's small line: Asks: Which colour do you prefer?
+Discord card: body:
+    Which colour do you prefer?
+    1. Red
+    2. Green
+    
+    Which size?
+    1. Small
+    2. Large
+Discord card: footnote: -# Reply with one line per question: a number or your own answer.
+Discord card: buttons: (nothing)
+Inbox card: title: “Fix the docs” asks 2 questions
+Inbox card: quote: (nothing)
+Inbox card: questions:
+    “Which colour do you prefer?”: options Red | Green; several picks: no; own-words box: yes
+    “Which size?”: options Small | Large; several picks: no; own-words box: yes
+Inbox card: text: (nothing)
+Inbox card: buttons: Send answers
+the butler's owner-asleep report, the part that says what was asked: asked the owner "Which colour do you prefer? 1. Red 2. Green Which size? 1. Small 2. Large"
+this ask's id: the ids it had, in turn: hook:<when it was read>
+--- replied "1\n2" in the session's Discord room ---
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: keys pressed: "1" "2"
+--- answered "1\n2" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: keys pressed: "1" "2"
+--- replied "1" in the session's Discord room ---
+Discord said: under the message: Reply with one line per question: a number or your own answer.
+handed to the session as a message: (nothing)
+what reached the agent: (nothing)
+--- answered "1" with koloft session answer ---
+Koloft said: Reply with one line per question: a number or your own answer.
+what reached the agent: (nothing)
+--- replied "Blue\nLarge" in the session's Discord room ---
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: keys pressed: "3" "Blue" "\r" "2"
+--- answered "Blue\nLarge" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: keys pressed: "3" "Blue" "\r" "2"

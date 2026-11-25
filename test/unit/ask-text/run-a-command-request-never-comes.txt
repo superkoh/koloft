@@ -1,0 +1,37 @@
+# Waits for an approval whose request never arrives
+
+## Claude Code, its ask held by its hook (a tab on this Mac that Discord or the owner-asleep butler answers)
+never asks this: Claude Code's ask is its hook's input itself; no state of it comes first (CC§14)
+
+## Claude Code, its ask not held (a tab on this Mac nobody answers from elsewhere; a tab on another machine, whose hook only records, takes this path too: inferred, not checked): Koloft answers by keys
+never asks this: Claude Code's ask is its hook's input itself; no state of it comes first (CC§14)
+
+## Codex (its app-server's request, read on the TUI's connection; the tab runs on the stand-in machine of agentTabs)
+the sample: `thread/status/changed` with `activeFlags: ["waitingOnApproval"]` and no request after it; constructed
+the raw ask:
+    app-server frame: {"method":"thread/status/changed","params":{"threadId":"22222222-2222-4222-8222-222222222222","status":{"type":"active","activeFlags":["waitingOnApproval"]}}}
+    (no request follows)
+the session row's small line: (nothing)
+Discord card: body: Koloft cannot read this question from here. Ask Alfred to press its keys for you.
+Discord card: footnote: (nothing)
+Discord card: buttons: (nothing)
+Inbox card: title: “Fix the docs” is waiting for you in its tab
+Inbox card: quote: (nothing)
+Inbox card: questions: (nothing)
+Inbox card: text: Koloft cannot show what it asks here. Open the session to answer it.
+Inbox card: buttons: (nothing)
+the butler's owner-asleep report, the part that says what was asked: (nothing)
+this ask's id: none: Koloft holds no ask it can read
+--- replied "yes" in the session's Discord room ---
+Discord said: reacted ⏳
+handed to the session as a message: [Discord] yes
+what reached the agent: (nothing)
+--- answered "yes" with koloft session answer ---
+Koloft said: Koloft sees no question or approval in it right now.
+what reached the agent: (nothing)
+
+## Antigravity, read through its API (a tab on this Mac)
+never asks this: Antigravity has no request to trail its state: Koloft reads the ask when its 7501 status arrives (AGY§10)
+
+## Antigravity, read from its tool call and 7501 status only, its API not answering (a tab on another machine has no API client and reads this way: inferred, not checked): Koloft answers by keys
+never asks this: Antigravity has no request to trail its state: Koloft reads the ask when its 7501 status arrives (AGY§10)

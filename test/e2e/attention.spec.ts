@@ -591,4 +591,56 @@ test.describe('attention markers come from real session-status transitions (shim
       await quitAndClose(app)
     }
   })
+
+  test('after a relaunch, a waiting mark of last run whose session no row can show — of an agent Koloft no longer has, or with no transcript left — leaves the Dock badge and the saved marks, while a real session’s mark stays', async ({
+    env
+  }) => {
+    test.setTimeout(120_000)
+    const first = await launchApp(env)
+    let kept = ''
+    try {
+      const page = await first.firstWindow()
+      await waitBooted(page)
+      await startSessionIn(page, 'ws-a')
+      await expect
+        .poll(() => pendingAttention(page), { timeout: 25_000 })
+        .toMatchObject([{ kind: 'turn-done' }])
+      kept = (await pendingAttention(page))[0].sessionId!
+    } finally {
+      await quitAndClose(first)
+    }
+    const file = path.join(env.userData, 'attention.json')
+    const ofAGoneAgent = 'muse:local:00000000-0000-4000-8000-000000000001'
+    const withNoTranscript = '00000000-0000-4000-8000-000000000002'
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8')) as { sessionId?: string }[]
+    fs.writeFileSync(
+      file,
+      JSON.stringify([
+        ...saved,
+        { tabId: 'gone-1', kind: 'turn-done', at: 1, title: 'Muse', sessionId: ofAGoneAgent },
+        { tabId: 'gone-2', kind: 'turn-done', at: 2, title: 'Deleted', sessionId: withNoTranscript }
+      ])
+    )
+
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await expect
+        .poll(async () => (await pendingAttention(page)).map((m) => m.sessionId), {
+          timeout: 20_000
+        })
+        .toEqual([kept])
+      expect((await osOutlets(app)).dockBadge).toBe('1')
+      await expect
+        .poll(() =>
+          (JSON.parse(fs.readFileSync(file, 'utf8')) as { sessionId?: string }[]).map(
+            (m) => m.sessionId
+          )
+        )
+        .toEqual([kept])
+    } finally {
+      await quitAndClose(app)
+    }
+  })
 })
