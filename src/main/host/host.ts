@@ -2,14 +2,12 @@ import type {
   BackendId,
   BaseChoice,
   ContentHit,
-  CronEffort,
   DirChangeListener,
   DirEntry,
   EditCreateResult,
   EditOpenResult,
   EditWriteResult,
   GitChanges,
-  LaunchPermission,
   SearchHit,
   SkillSuggestion
 } from '@shared/types'
@@ -31,65 +29,11 @@ export interface ShellLaunch {
   resized?: (tabId: string, cols: number, rows: number) => void
 }
 
-export interface ClaudeLaunch {
-  root: string
-  cwd?: string
-  fallbackCwd?: string
-  resumeSessionId?: string
-  worktree?: string
-  model?: string
-  effort?: CronEffort
-  permission?: LaunchPermission
-  firstPrompt?: string
-  ownerWords?: string
-  name?: string
-  role?: string
-  ownerText?: string
-  conductor?: boolean
-  trustFolder?: boolean
-  projectRules?: string
-  workspaceParts?: string[]
-}
-
 export interface RemoteTab {
   host: string
   projectsRoot: string
   tmuxName: string
 }
-
-export interface MachineTab {
-  tracking: RemoteTab
-  cwd: string
-  root: string
-  hookMirror: string
-  attachTo?: string
-  pickKey?: string
-  skipsPermissionChecks: boolean
-}
-
-export type ClaudeLaunchPlan =
-  | { ok: false; code: 'invalid-args' }
-  | {
-      ok: true
-      spawnCwd: string
-      cwd: string
-      shell?: string
-      launchCommand: (tabId: string) => string
-      resized?: (tabId: string, cols: number, rows: number) => void
-      conductor: boolean
-      extraEnv?: {
-        KOLOFT_FIRST_PROMPT?: string
-        KOLOFT_SESSION_NAME?: string
-        KOLOFT_PICTURE_FOLDER?: string
-        KOLOFT_PORT_OFFSET?: string
-        KOLOFT_AGENT_PLUGIN?: string
-        KOLOFT_AGENT_PROMPT?: string
-        KOLOFT_OWNER_TEXT?: string
-        KOLOFT_DOCS_PLUGIN?: string
-      }
-      envSetForThisTab?: Record<string, string>
-      machine?: MachineTab
-    }
 
 export interface Host {
   listDir(dir: string, opts?: ShowIgnored): Promise<DirEntry[]>
@@ -133,8 +77,6 @@ export interface Host {
   ): void
   unwatchFile(file: string): void
   shell(cwd: string): ShellLaunch
-  launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan>
-  trustsFolder(dir: string): Promise<boolean>
   listSkills(root: string, backend: BackendId): Promise<SkillSuggestion[]>
   keyed(p: string): string
   gitOut: GitOut

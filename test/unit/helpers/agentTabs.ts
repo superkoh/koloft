@@ -1,10 +1,18 @@
+import { spawn } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { SessionEvent } from '@shared/sessionEvent'
+import { docsWritingOn } from '@plugins/docs-writing/api'
+import {
+  saidFile,
+  seedHandedOverOwnerWords,
+  writeConductorMarker
+} from '@plugins/sessions/main/hooks'
 import { AgySessions, type AgySessionDeps } from '../../../src/agents/agy/main/agySessions'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../../src/agents/claude/main/backend'
+import type { MachineAccount } from '../../../src/agents/claude/main/claudeLaunch'
 import { trustCodexFolder } from '../../../src/agents/codex/main/backend'
 import { CodexSessions, type CodexSessionDeps } from '../../../src/agents/codex/main/codexSessions'
 import { SessionRuntime } from '../../../src/core/agent/sessionRuntime'
@@ -12,12 +20,8 @@ import { GithubRepos } from '../../../src/main/githubRepos'
 import type { RemoteTab } from '../../../src/main/host/host'
 import { Hosts } from '../../../src/main/host/hosts'
 import { localHost } from '../../../src/main/host/localHost'
-import {
-  SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST,
-  SshHost,
-  type MachineAccount
-} from '../../../src/main/host/sshHost'
-import type { BytesResult } from '../../../src/main/remote/ssh'
+import { SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST, SshHost } from '../../../src/main/host/sshHost'
+import { answerOf, type BytesResult } from '../../../src/main/remote/ssh'
 import { tabPushed } from '../../../src/main/remote/launch'
 import { standInMachine, type MachineSaid } from './standInMachine'
 
@@ -104,6 +108,28 @@ function readableCommand(cmd: string, input?: Buffer): string {
   return input ? `${text}\n--- its stdin ---\n${input.toString('utf8')}` : text
 }
 
+export function shellOnThisMacAsTheMachine(
+  machineHome: () => string,
+  loginShell: () => string
+): SshRun {
+  return (cmd, opts) =>
+    new Promise((resolve) => {
+      const c = spawn(loginShell(), ['-c', cmd], {
+        env: { HOME: machineHome(), PATH: '/usr/bin:/bin' },
+        stdio: ['pipe', 'pipe', 'pipe']
+      })
+      const out: Buffer[] = []
+      let err = ''
+      c.stdout.on('data', (d: Buffer) => out.push(d))
+      c.stderr.on('data', (d: Buffer) => (err += String(d)))
+      c.on('close', (code) =>
+        resolve({ code, stdout: answerOf(cmd, Buffer.concat(out)), stderr: err })
+      )
+      c.stdin.on('error', () => {})
+      c.stdin.end(opts?.input)
+    })
+}
+
 export interface RecordedSsh {
   ran: string[]
   run: SshRun
@@ -188,10 +214,11 @@ export interface MachineSetup {
   run: SshRun
   alive?: () => ReadonlySet<string>
   firstHeartbeatDone?: () => Promise<void>
-  pickAccount?: () => Promise<MachineAccount | undefined>
+  pickAccount?: (launchKey: string, resumeSessionId?: string) => Promise<MachineAccount | undefined>
   noAccountMessage?: () => string
   loginPath?: () => Promise<string>
   agentTools?: boolean
+  skipPermissions?: boolean
   machinePackageName?: () => string
   hookSettings?: (
     tabId: string,
@@ -207,7 +234,7 @@ export function machineIn(world: World, name: string, m: MachineSetup): SshHost 
     watch: () => {},
     unwatch: () => {},
     github: {},
-    claude: {
+    tabs: {
       userData: world.userData,
       controlDir: world.controlDir,
       machinePackage: () => ({
@@ -216,12 +243,6 @@ export function machineIn(world: World, name: string, m: MachineSetup): SshHost 
       }),
       alive: m.alive ?? (() => new Set()),
       firstHeartbeatDone: m.firstHeartbeatDone ?? (async () => {}),
-      realPath: (p) => p,
-      settings: () => ({ skipPermissions: false }),
-      agentTools: () => m.agentTools ?? true,
-      pickAccount: m.pickAccount ?? (async () => ({ env: {}, banner: '' })),
-      noAccountMessage: m.noAccountMessage ?? (() => NO_USABLE_ACCOUNT.claude),
-      hookSettings: m.hookSettings ?? (() => ({})),
       loginPath: m.loginPath ?? (async () => '')
     }
   })
@@ -232,6 +253,8 @@ export interface ClaudeSetup {
   withPlugin?: boolean
   projectRules?: string
   remoteTab?: RemoteTab
+  workspaceOfEverySession?: string
+  tracker?: Partial<Pick<ClaudeBackendDeps['tracker'], 'track' | 'movePick' | 'bindSession'>>
 }
 
 export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): ClaudeBackend {
@@ -244,21 +267,35 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
       untrack: () => {},
       list: () => [],
       infoOf: () => undefined,
-      remoteOf: () => c.remoteTab
+      remoteOf: () => c.remoteTab,
+      ...c.tracker
     },
     hosts: new Hosts(
-      localHost(new GithubRepos(), {
-        hookRegDir: () => world.regDir,
-        agentPlugin: () =>
-          c.withPlugin === false ? undefined : path.join(world.home, 'koloft', 'agent-plugin'),
-        docsPlugin: () => path.join(world.home, 'koloft', 'docs-plugin'),
-        assistOf: () => undefined,
-        agentHomes: () => ({ codexHome: '/nowhere' }),
-        pastedPicturesDir: () => path.join(world.userData, 'palette-pictures')
-      }),
+      localHost(new GithubRepos(), { agentHomes: () => ({ codexHome: '/nowhere' }) }),
       (machine) => machineIn(world, machine, c.machine)
     ),
-    store: () => null,
+    launchHere: {
+      writeConductorMarker: (tabId: string, role: string) =>
+        writeConductorMarker(world.regDir, tabId, role),
+      handOverOwnerWords: (tabId: string, words: string) =>
+        seedHandedOverOwnerWords(saidFile(world.regDir, tabId), words),
+      agentPlugin: () =>
+        c.withPlugin === false ? undefined : path.join(world.home, 'koloft', 'agent-plugin'),
+      docsPlugin: () => path.join(world.home, 'koloft', 'docs-plugin'),
+      assistOf: () => undefined,
+      pastedPicturesDir: () => path.join(world.userData, 'palette-pictures')
+    },
+    launchOnMachine: {
+      realPath: (_machine: string, p: string) => p,
+      settings: () => ({ skipPermissions: c.machine.skipPermissions ?? false }),
+      agentTools: () => c.machine.agentTools ?? true,
+      docsWritingOn,
+      pickAccount: c.machine.pickAccount ?? (async () => ({ env: {}, banner: '' })),
+      noAccountMessage: c.machine.noAccountMessage ?? (() => NO_USABLE_ACCOUNT.claude),
+      hookSettings: c.machine.hookSettings ?? (() => ({}))
+    },
+    store: () =>
+      c.workspaceOfEverySession ? { workspaceOf: () => c.workspaceOfEverySession } : null,
     remoteSync: () => null,
     userData: () => world.userData,
     setupLine: () => undefined,

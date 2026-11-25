@@ -66,7 +66,7 @@ describe('a remote Changes refresh on a slow machine', () => {
       watch: () => {},
       unwatch: () => {},
       github: {},
-      claude: {} as never
+      tabs: {} as never
     })
     const changes = await host.gitChanges(`ssh://slowbox${repo}`, 'merge-base')
     expect(changes.status).toEqual({ [`ssh://slowbox${path.join(repo, 'a.txt')}`]: 'modified' })

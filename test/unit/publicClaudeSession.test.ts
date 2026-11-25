@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { publicClaudeSession } from '../../src/main/host/hosts'
+import { publicClaudeSession } from '../../src/agents/claude/main/publicClaudeSession'
 import type { ClaudeSessionInfo } from '../../src/shared/types'
 
 const SCRATCH = '/home/me/.claude-tmp/-repo/sid/scratchpad'
