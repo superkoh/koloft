@@ -90,16 +90,20 @@ function terminalOf(tabId: string): {
   pty: unknown
   killed: string[]
   machineNamed: (string | undefined)[]
+  open: Set<string>
 } {
   const killed: string[] = []
   const machineNamed: (string | undefined)[] = []
+  const open = new Set<string>()
   const { pty } = recordingPty(tabId)
   const recorded = pty as { create(args: { remoteHost?: string }): unknown }
   return {
     killed,
     machineNamed,
+    open,
     pty: {
       ...(pty as object),
+      get: (id: string) => (open.has(id) ? { alive: true } : undefined),
       create: (args: { remoteHost?: string }) => {
         machineNamed.push(args.remoteHost)
         return recorded.create(args)
@@ -169,8 +173,9 @@ async function aTabOfEveryAgent() {
     runningBindings: () => new Map()
   })
   stops.push(() => store.dispose())
+  const claudeTerminal = terminalOf(CLAUDE_TAB)
   const claude = new ClaudeBackend({
-    pty: terminalOf(CLAUDE_TAB).pty,
+    pty: claudeTerminal.pty,
     tracker,
     store: () => store,
     userData: () => world.userData,
@@ -239,7 +244,14 @@ async function aTabOfEveryAgent() {
   })
   return {
     lifecycle,
-    claude: { backend: claude, tracker, store, sent: claudeSent, rowsReread: () => rowsReread },
+    claude: {
+      backend: claude,
+      tracker,
+      store,
+      sent: claudeSent,
+      rowsReread: () => rowsReread,
+      openTerminals: claudeTerminal.open
+    },
     codex: {
       backend: codexAsABackend,
       sessions: codex,
@@ -507,15 +519,36 @@ describe('the tmux session a tab runs in on a machine, as each of the three real
     })
   })
 
-  it('Antigravity names its tab on a machine as the one running that tmux session there, or as the tab asked about when it runs there, and none on another machine or for a tmux session and tab not its own; that tab’s terminal names the same machine, so its tab id alone already finds it there', async () => {
+  it('the tab that runs a tmux session on a machine: Claude Code names its tab there while that tab’s terminal is open, Antigravity names its tab there, Codex names none as its tab runs in no tmux session there; none names one on another machine or for a tmux session not its own; and the Antigravity tab’s terminal names that machine, so its tab id alone already finds it there', async () => {
     const a = await aTabOfEveryAgent()
-    const tmux = a.agy.backend.tmuxOfTab(AGY_TAB)!
-    expect([
-      a.agy.sessions.tabOnMachine(MACHINE, tmux, 'pty-not-its-own'),
-      a.agy.sessions.tabOnMachine(MACHINE, '', AGY_TAB),
-      a.agy.sessions.tabOnMachine('otherbox', tmux, AGY_TAB),
-      a.agy.sessions.tabOnMachine(MACHINE, 'k-not-its-own', 'pty-not-its-own')
-    ]).toEqual([AGY_TAB, AGY_TAB, undefined, undefined])
+    const CLAUDE_TAB_ON_THE_MACHINE = 'pty-claude-on-the-machine'
+    a.claude.tracker.track(CLAUDE_TAB_ON_THE_MACHINE, ON_THE_MACHINE, {
+      host: MACHINE,
+      projectsRoot: path.join(world.home, 'mirror', MACHINE),
+      tmuxName: 'k-a-claude-session'
+    })
+    stops.push(() => a.claude.tracker.untrack(CLAUDE_TAB_ON_THE_MACHINE))
+    const asked: [string, string][] = [
+      [MACHINE, 'k-a-claude-session'],
+      [MACHINE, a.agy.backend.tmuxOfTab(AGY_TAB)!],
+      ['otherbox', 'k-a-claude-session'],
+      ['otherbox', a.agy.backend.tmuxOfTab(AGY_TAB)!],
+      [MACHINE, 'k-not-its-own']
+    ]
+    const answers = (): Record<string, (string | undefined)[]> =>
+      Object.fromEntries(
+        SESSION_BACKENDS.map((id) => [
+          id,
+          asked.map(([host, name]) => a[id].backend.tabOfTmuxSession(host, name))
+        ])
+      )
+    expect(answers().claude).toEqual([undefined, undefined, undefined, undefined, undefined])
+    a.claude.openTerminals.add(CLAUDE_TAB_ON_THE_MACHINE)
+    expect(answers()).toEqual({
+      claude: [CLAUDE_TAB_ON_THE_MACHINE, undefined, undefined, undefined, undefined],
+      codex: [undefined, undefined, undefined, undefined, undefined],
+      agy: [undefined, AGY_TAB, undefined, undefined, undefined]
+    })
     expect(a.agy.machineNamed).toEqual([MACHINE])
   })
 })

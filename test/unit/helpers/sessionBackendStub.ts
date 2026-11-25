@@ -46,6 +46,7 @@ export function stubBackend(
     noticeRemoteExits: () => {},
     mirrorPulled: () => {},
     tmuxOfTab: () => undefined,
+    tabOfTmuxSession: () => undefined,
     showsAPanel: async () => undefined,
     send: async () => 'taken' as const,
     mightNotTakeAMessageNow: async () => false,

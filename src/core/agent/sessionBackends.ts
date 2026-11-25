@@ -87,6 +87,7 @@ export interface SessionBackend extends SessionRowsSource, SessionMessages {
   noticeRemoteExits(host: string, sessionIds: string[]): void
   mirrorPulled(host: string): void
   tmuxOfTab(tabId: string): string | undefined
+  tabOfTmuxSession(host: string, name: string): string | undefined
   showsAPanel(tabId: string, screen?: string[]): Promise<boolean | undefined>
 }
 
@@ -359,6 +360,14 @@ export class SessionBackends {
     for (const backend of this.builtInListOrder()) {
       const name = backend.tmuxOfTab(tabId)
       if (name !== undefined) return name
+    }
+    return undefined
+  }
+
+  tabOfTmuxSession(host: string, name: string): string | undefined {
+    for (const backend of this.builtInListOrder()) {
+      const tabId = backend.tabOfTmuxSession(host, name)
+      if (tabId !== undefined) return tabId
     }
     return undefined
   }

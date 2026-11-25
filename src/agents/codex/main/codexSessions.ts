@@ -574,6 +574,11 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     return undefined
   }
 
+  // ADR-0039 CODEX§16
+  tabOfTmuxSession(): undefined {
+    return undefined
+  }
+
   async answer(): Promise<false> {
     return false
   }

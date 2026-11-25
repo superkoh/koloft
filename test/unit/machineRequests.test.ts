@@ -32,10 +32,8 @@ const AGY_TABS = {
   'pty-h': { host: 'otherbox', tmuxName: 'k-sh' }
 } as Record<string, { host: string; tmuxName: string }>
 
-const agyTabOnMachine = (machine: string, tmux: string, launchTab: string): string | undefined =>
-  Object.entries(AGY_TABS).find(
-    ([tabId, t]) => t.host === machine && ((tmux && t.tmuxName === tmux) || tabId === launchTab)
-  )?.[0]
+const agyTabOfTmuxSession = (host: string, name: string): string | undefined =>
+  Object.entries(AGY_TABS).find(([, t]) => t.host === host && t.tmuxName === name)?.[0]
 
 const WORKBENCH_SHELLS = {
   'pty-wa': { util: true, ownerTabId: 'pty-a' },
@@ -98,9 +96,8 @@ function machineBackend(): {
     remoteTargets,
     userData: () => userData,
     machineOfTab: (id: string) => MACHINE_TABS[id]?.host ?? CODEX_TABS[id] ?? AGY_TABS[id]?.host,
-    tabRunningTmux: (tmuxName: string, machine: string) =>
-      backend.tabRunningTmux(tmuxName, machine),
-    otherTabOnMachine: agyTabOnMachine
+    tabOfTmuxSession: (host: string, name: string) =>
+      backend.tabOfTmuxSession(host, name) ?? agyTabOfTmuxSession(host, name)
   } as unknown as MachineRequestDeps)
   const callerSeen: (RequestCallerState | undefined)[] = []
   const callerChecks: string[] = []
@@ -288,7 +285,7 @@ describe('koloft requests from a session on a remote machine', () => {
     expect(m.sent[1]).toEqual(['devbox', 'g5', replyJson(refused(NOT_ITS_PASS))])
   })
 
-  it('a request with no pass that runs in an Antigravity tab’s tmux session but names another live tab on that machine counts as the tab it names, while one in a Claude Code tab’s tmux session counts as that tab', async () => {
+  it('a request with no pass that runs in a Claude Code or Antigravity tab’s tmux session but names another live tab on that machine counts as the tab whose tmux session it runs in', async () => {
     const m = machineBackend()
     markStartedBeforeTabPasses('pty-g', true)
     markStartedBeforeTabPasses('pty-a', true)
@@ -299,7 +296,7 @@ describe('koloft requests from a session on a remote machine', () => {
     markStartedBeforeTabPasses('pty-a', false)
 
     expect(Object.fromEntries(m.sent.map(([, id, reply]) => [id, reply]))).toEqual({
-      g6: replyJson(refused(NOT_ITS_PASS)),
+      g6: replyJson(answered('for pty-g')),
       g7: replyJson(answered('for pty-a'))
     })
   })

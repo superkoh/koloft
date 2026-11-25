@@ -721,7 +721,11 @@ export class ClaudeBackend implements SessionBackend {
     return report.tmux ? this.tabRunningTmux(report.tmux) : undefined
   }
 
-  tabRunningTmux(tmuxName: string, machine?: string): string | undefined {
+  tabOfTmuxSession(host: string, name: string): string | undefined {
+    return this.tabRunningTmux(name, host)
+  }
+
+  private tabRunningTmux(tmuxName: string, machine?: string): string | undefined {
     const { pty, tracker } = this.d
     for (const s of tracker.list()) {
       const remote = s.alive ? tracker.remoteOf(s.tabId) : undefined

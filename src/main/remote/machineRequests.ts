@@ -13,8 +13,7 @@ export interface MachineRequestDeps {
   remoteTargets(): { host: string; paths: string[] }[]
   userData(): string
   machineOfTab(tabId: string): string | undefined
-  tabRunningTmux(tmuxName: string, machine: string): string | undefined
-  otherTabOnMachine?(machine: string, tmuxName: string, launchTab: string): string | undefined
+  tabOfTmuxSession(host: string, name: string): string | undefined
 }
 
 class CallerOnTheMachine {
@@ -110,10 +109,8 @@ export class MachineRequests {
     return isStartedBeforeTabPasses(named) ? { tabId: named } : { refusal: NOT_ITS_PASS }
   }
 
-  private liveTabOnMachine(machine: string, tabId: string, tmux = ''): string | undefined {
-    if (this.d.machineOfTab(tabId) === machine && this.d.pty.get(tabId)) return tabId
-    const other = this.d.otherTabOnMachine?.(machine, tmux, tabId)
-    return other && this.d.pty.get(other) ? other : undefined
+  private liveTabOnMachine(machine: string, tabId: string): string | undefined {
+    return this.d.machineOfTab(tabId) === machine && this.d.pty.get(tabId) ? tabId : undefined
   }
 
   private namedOnMachine(
@@ -121,11 +118,11 @@ export class MachineRequests {
     r: { tabId?: unknown; tmux?: unknown }
   ): string | undefined {
     const tmux = typeof r.tmux === 'string' ? r.tmux : ''
-    const byTmux = tmux && this.d.tabRunningTmux(tmux, machine)
-    if (byTmux) return byTmux
+    const byTmux = tmux && this.d.tabOfTmuxSession(machine, tmux)
+    if (byTmux && this.d.pty.get(byTmux)) return byTmux
     const asked = typeof r.tabId === 'string' ? r.tabId : ''
     const facts = this.d.pty.get(asked)
-    return this.liveTabOnMachine(machine, facts ? tabSpokenFor(asked, facts) : asked, tmux)
+    return this.liveTabOnMachine(machine, facts ? tabSpokenFor(asked, facts) : asked)
   }
 
   private fromOwnWorkbenchShell(raw: unknown): boolean {
