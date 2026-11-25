@@ -1,6 +1,7 @@
 import { GenIcon, type IconType } from 'react-icons'
 import type { AgentAccountsUiOf, AgentUi } from '@core/agent/agentUi'
 import { agent } from '../agent'
+import { usage } from './usage'
 import './ui.css'
 
 const AntigravityMark: IconType = GenIcon({
@@ -52,5 +53,6 @@ export const ui: AgentUi = {
   },
   settings: {
     whatItRunsOn: 'a Google sign-in or a Gemini API key'
-  }
+  },
+  usage
 }

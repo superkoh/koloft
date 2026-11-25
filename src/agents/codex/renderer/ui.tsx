@@ -1,6 +1,7 @@
 import { BsOpenai } from 'react-icons/bs'
 import type { AgentAccountsUiOf, AgentUi } from '@core/agent/agentUi'
 import { agent } from '../agent'
+import { usage } from './usage'
 import './ui.css'
 
 const accounts = {
@@ -38,5 +39,6 @@ export const ui: AgentUi = {
   },
   settings: {
     whatItRunsOn: 'a Codex account'
-  }
+  },
+  usage
 }

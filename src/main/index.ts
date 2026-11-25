@@ -1725,7 +1725,7 @@ function syncSessionsOf(all: SessionInfo[]): SyncSession[] {
 
 function noticeOf(tabId: string): NoticeFile | undefined {
   const host = machineOfTab(tabId)
-  if (host) return hosts.machine(host).notice(tabId)
+  if (host) return hosts.machine(host).notice(tabIdsOf(tabId))
   return hookRegDir ? localNotice(noticeFile(hookRegDir, tabId)) : undefined
 }
 
