@@ -63,6 +63,8 @@ function run(command: string, input: string, env: Record<string, string> = {}): 
 const entry = (): Record<string, unknown[]> =>
   koloftHookEntry(runWithSh(scripts.hook)) as Record<string, unknown[]>
 
+const underDashCommand = (): string => runWithSh(scripts.hook).replace(/^\/bin\/sh /, '/bin/dash ')
+
 function commandFor(event: string): string {
   const [first] = entry()[event] as Record<string, unknown>[]
   const hooks = (first.hooks ?? [first]) as { command: string }[]
@@ -217,13 +219,13 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
       ownerSays('先别改代码'),
       modelSays('Let me run the tests first.')
     )
-    expect(toldBeforeModelCall(transcript, `/bin/dash ${scripts.hook} PreInvocation`)).toMatch(
+    expect(toldBeforeModelCall(transcript, `${underDashCommand()} PreInvocation`)).toMatch(
       /^Your last note to the user, «Let me run the tests first\.», is not in Chinese\./
     )
     const start = path.join(dir, 'start.json')
     fs.writeFileSync(start, 'START')
     const underDash = (event: string): string =>
-      run(`/bin/dash ${scripts.hook} ${event}`, JSON.stringify({ conversationId: C1 }), {
+      run(`${underDashCommand()} ${event}`, JSON.stringify({ conversationId: C1 }), {
         KOLOFT_AGY_LOG: log,
         KOLOFT_AGY_START: start
       })
@@ -430,7 +432,7 @@ describe('after a gh pr command the status line asks GitHub again', () => {
   })
 
   it('does the same on a machine whose sh is dash', () => {
-    ran('gh pr merge 89 --squash', 'merge it', `/bin/dash ${scripts.hook}`)
+    ran('gh pr merge 89 --squash', 'merge it', underDashCommand())
     expect(mtime()).toBeLessThan(OLDER_THAN_THE_CACHE_TTL)
   })
 
