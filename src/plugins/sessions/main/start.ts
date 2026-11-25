@@ -40,10 +40,10 @@ type TrackerDeps = Pick<
 type BackendHooks = Partial<
   Pick<
     SessionBackends,
-    | 'isOverseerSession'
+    | 'isKoloftsOwnSession'
     | 'turnOver'
     | 'askingOf'
-    | 'docVerdictsOf'
+    | 'verdictsOnFilesOf'
     | 'noAccountMessage'
     | 'turnedOff'
   >
@@ -86,7 +86,7 @@ export const start: PluginStart<
       tracker: SessionTracker
       sessionBackends: SessionBackends
       claudeBackend: ClaudeBackend
-      subscribeTabSubsystems: BuildLater<Omit<TabSubsystems, 'attention' | 'claude' | 'tracker'>>
+      subscribeTabSubsystems: BuildLater<Omit<TabSubsystems, 'attention' | 'backends'>>
       startedSessions: StartedSessions
       newsJudge: NewsJudge
       slash: SlashCommands
@@ -163,8 +163,7 @@ export const start: PluginStart<
       subscribeTabSubsystems(tabLifecycle, {
         ...deps,
         attention,
-        claude: claudeBackend,
-        tracker
+        backends: sessionBackends
       }),
     startedSessions,
     newsJudge,

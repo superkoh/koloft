@@ -171,8 +171,7 @@
       "src/main/index.ts": { "src/agents/kit/main/storedSessions.ts": "B3" },
       "src/main/sessionWorktrees.ts": { "src/agents/kit/main/sessionStore.ts": "B3" },
       "src/plugins/sessions/api.ts": { "src/agents/kit/main/storedSessions.ts": "B3" },
-      "src/plugins/sessions/main/channels.ts": { "src/agents/kit/main/storedSessions.ts": "B3" },
-      "src/plugins/sessions/main/tabLifecycle.ts": { "src/agents/kit/main/storedSessions.ts": "B3" }
+      "src/plugins/sessions/main/channels.ts": { "src/agents/kit/main/storedSessions.ts": "B3" }
     },
     "plugin-into-agent": {
       "src/plugins/sessions/main/appHelpers.ts": {
@@ -202,10 +201,6 @@
         "src/agents/claude/main/sessionTracker.ts": "D1",
         "src/agents/codex/main/backend.ts": "D1",
         "src/agents/codex/main/codexSessions.ts": "D1"
-      },
-      "src/plugins/sessions/main/tabLifecycle.ts": {
-        "src/agents/claude/main/backend.ts": "B3",
-        "src/agents/claude/main/sessionTracker.ts": "B3"
       }
     }
   },
@@ -216,7 +211,6 @@
       "SessionsWithStore.deliver": "B3",
       "SessionsWithStore.followMirrors": "B3",
       "SessionsWithStore.noticeRemoteExits": "B3",
-      "SessionsWithStore.showsPromptBeforeBind": "B3",
       "SessionsWithStore.tabOnMachine": "B3",
       "SessionsWithStore.tmuxOfTab": "B3",
       "StoredSessionDeps.leftWorktree": "D1",
