@@ -22,7 +22,7 @@ import { FROM_KOLOFT } from '../../../../src/plugins/sessions/main/messageOpenin
 
 const DEADLINE_MS = 1000
 const CLAUDE_KEY = 's1'
-const CODEX_KEY = 'codex:019a-thread'
+const CODEX_KEY = 'codex:local:019a-thread'
 const REMOVED_AGENTS_KEY = 'muse:local:00000000-0000-4000-8000-000000000001'
 
 let userData: string
@@ -766,8 +766,8 @@ describe('the butler', () => {
     expect(session.lastSessionKey).toBe(CODEX_KEY)
   })
 
-  it.each([REMOVED_AGENTS_KEY, 'muse:019a-thread'])(
-    'a last conversation of an agent this Koloft no longer has (%s) is never resumed as another agent’s: the next open starts a new conversation and says so',
+  it.each([REMOVED_AGENTS_KEY, 'muse:019a-thread', 'codex:019a-thread', `${CODEX_KEY}:more`])(
+    'a last conversation whose key is nobody’s session (%s: an agent this Koloft no longer has, or an agent on the list without three parts) is never resumed as another agent’s: the next open starts a new conversation and says so',
     async (key) => {
       session = { sessionIds: [key], lastSessionKey: key }
       transcripts.add(key)

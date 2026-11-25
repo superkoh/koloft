@@ -74,6 +74,40 @@ describe('Koloft Assist', () => {
     expect(reply?.trim()).toBe('From Claude')
   })
 
+  it('runs on the next tool when making the chosen one’s target throws', async () => {
+    const claude = recordingBinary('claude', 'From Claude')
+    const reply = await koloftAssist({
+      picks: picksOf({ backend: 'agy' }),
+      enabled: () => true,
+      target: async (backend) => {
+        if (backend === 'agy') throw new Error('ENOSPC: no space left on device, mkdtemp')
+        if (backend === 'claude') return { binary: claude.bin, env: {}, done: nothingToCleanUp }
+        return null
+      },
+      onThisAccount: async (_backend, asked) => asked
+    })(JOB)
+    expect(reply?.trim()).toBe('From Claude')
+  })
+
+  it('never runs the next tool of a job cancelled while the target that throws was being made', async () => {
+    const claude = recordingBinary('claude', 'From Claude')
+    const cancel = new AbortController()
+    const reply = await koloftAssist({
+      picks: picksOf({ backend: 'agy' }),
+      enabled: () => true,
+      target: async (backend) => {
+        if (backend === 'agy') {
+          cancel.abort()
+          throw new Error('ENOSPC: no space left on device, mkdtemp')
+        }
+        return backend === 'claude' ? { binary: claude.bin, env: {}, done: nothingToCleanUp } : null
+      },
+      onThisAccount: async (_backend, asked) => asked
+    })({ ...JOB, signal: cancel.signal })
+    expect(reply).toBeNull()
+    expect(read(claude.log + '.argv')).toBeNull()
+  })
+
   it('never runs a tool turned off in Settings ▸ Sessions, even when it is the chosen one', async () => {
     const codex = recordingBinary('codex', 'From Codex')
     const claude = recordingBinary('claude', 'From Claude')
