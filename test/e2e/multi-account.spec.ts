@@ -20,11 +20,13 @@ import {
   centerTerm,
   clickAppMenuItem,
   openMenu,
+  sendShortcut,
   startSessionIn,
   termIds,
   terminalText,
   waitBooted
 } from './helpers/p1'
+import { untilTheActiveTabsTranscriptIsWritten } from './helpers/restartNoAccount'
 import { noAccountLine, SHIM_FOUND_NO_ACCOUNT_NOTICE } from '../../src/shared/accountUsage'
 
 const TOKENS: Record<string, string> = {
@@ -907,6 +909,69 @@ for (const resume of RESUMES) {
     }
   })
 }
+
+test('E9c: a session resumed the moment it has bound — by Restart Session, or by quitting Koloft and reopening it — stays on the account it ran on, though with no usage known a fresh pick takes the other one', async ({
+  env
+}) => {
+  test.setTimeout(180_000)
+  env.launchEnv.KOLOFT_PROBE_BASE_URL = 'http://127.0.0.1:1'
+  seedKeychain(env)
+  seedSettings(env, { accounts: [acct('alpha'), acct('bravo')], hintsOff: true })
+  const tokenOf = (c: CallRecord): string | null => c.oauthToken
+  const activeTab = (page: Page): Promise<string | null> =>
+    page
+      .locator('.ws .ws-tab.active')
+      .first()
+      .getAttribute('data-tab-id', { timeout: 1_000 })
+      .catch(() => null)
+  const startOne = async (page: Page): Promise<{ sessionId: string; token: string | null }> => {
+    const before = readCalls(env).length
+    const wasActive = await activeTab(page)
+    await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
+    await page.locator('.menu .mi', { hasText: 'New session' }).click()
+    await expect.poll(() => activeTab(page)).not.toBe(wasActive)
+    const sessionId = await untilTheActiveTabsTranscriptIsWritten(page)
+    const fresh = readCalls(env)
+      .slice(before)
+      .filter((c) => c.sessionId === sessionId && !c.argv.includes('--resume'))
+    expect(fresh).toHaveLength(1)
+    return { sessionId, token: tokenOf(fresh[0]) }
+  }
+  const resumedOf = (sessionId: string, after: number): CallRecord[] =>
+    readCalls(env)
+      .slice(after)
+      .filter((c) => c.argv.includes('--resume') && c.argv.includes(sessionId))
+  let { app, page } = await launchConfigured(env)
+  try {
+    await waitBooted(page)
+    let onTheSecond = await startOne(page)
+    for (let tries = 1; onTheSecond.token !== TOKENS.bravo && tries < 3; tries++)
+      onTheSecond = await startOne(page)
+    expect(onTheSecond.token, 'a fresh pick takes the other account').toBe(TOKENS.bravo)
+    await quitAndClose(app)
+    let before = readCalls(env).length
+    ;({ app, page } = await launchConfigured(env))
+    await waitBooted(page)
+    await expect
+      .poll(() => resumedOf(onTheSecond.sessionId, before).length, { timeout: 30_000 })
+      .toBeGreaterThan(0)
+    expect(
+      new Set(resumedOf(onTheSecond.sessionId, before).map(tokenOf)),
+      'quit and reopened'
+    ).toEqual(new Set([TOKENS.bravo]))
+    for (let i = 0; i < 3; i++) {
+      const started = await startOne(page)
+      before = readCalls(env).length
+      await sendShortcut(app, 'shortcut:restart-session')
+      await expect.poll(() => resumedOf(started.sessionId, before).length).toBeGreaterThan(0)
+      expect(resumedOf(started.sessionId, before).map(tokenOf), `restart ${i + 1}`).toEqual([
+        started.token
+      ])
+    }
+  } finally {
+    await quitAndClose(app)
+  }
+})
 
 test('E11: an expired account recovers in place via “Sign in again”, keeping its position and the user’s disable', async ({
   env
