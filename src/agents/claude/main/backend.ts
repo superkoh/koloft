@@ -59,7 +59,7 @@ import {
 import { holdsPass, isStartedBeforeTabPasses } from '../../../main/tabPass'
 import { refused, type AgentReply } from '@core/command'
 import { errorText } from '@core/errorText'
-import { accountEnv, sessionIdOfTmux, tmuxSessionName } from '../../../main/remote/launch'
+import { sessionIdOfTmux, tmuxSessionName } from '../../../main/remote/launch'
 import {
   dq,
   mirrorHookDir,
@@ -80,8 +80,7 @@ import {
   TO_SESSION_FIELD
 } from '@plugins/sessions/main/hooks'
 import type { StatusLineSetting } from '../../../main/statusline'
-import { keychainRead, listAccounts } from '../../../main/accounts'
-import type { PickResponse } from '../../../main/accountPicker'
+import { listAccounts } from '../../../main/accounts'
 import { SESSION_ID_RE } from './claudeArgs'
 import {
   claudeTrustsFolderHere,
@@ -90,8 +89,7 @@ import {
   launchClaudeOnMachine,
   type ClaudeHereDeps,
   type ClaudeLaunch,
-  type ClaudeOnMachineDeps,
-  type MachineAccount
+  type ClaudeOnMachineDeps
 } from './claudeLaunch'
 import { publicClaudeSession } from './publicClaudeSession'
 import { forgetClaudeProbe, probeClaude } from './claudeProbe'
@@ -1392,19 +1390,6 @@ function transcriptEnding(file: string): { exists: boolean; continuedIn?: string
 
 function hostGit(host: Host): GitOut {
   return (dir, args) => host.gitOut(host.keyed(dir), args)
-}
-
-export async function pickMachineAccount(
-  pick: () => Promise<{ res: PickResponse; endpoint?: { baseUrl?: string; model?: string } }>
-): Promise<MachineAccount | undefined> {
-  const { res, endpoint } = await pick()
-  if (!res.account) return undefined
-  const secret = await keychainRead(res.kind, res.account)
-  if (!secret) return undefined
-  return {
-    env: accountEnv(res.kind, res.account, secret, endpoint),
-    banner: res.warning ? `${res.banner}\n${res.warning}` : res.banner
-  }
 }
 
 export function machineHookSettings(
