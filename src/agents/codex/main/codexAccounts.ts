@@ -1,7 +1,11 @@
 import fs from 'fs'
 import path from 'path'
-import type { CodexLimits, CodexLimitWindow } from '@shared/types'
+import { AUTO_PROBE_MS, launchLine } from '@shared/accountUsage'
+import type { AccountView, CodexLimits, CodexLimitWindow, CodexResetOutcome } from '@shared/types'
+import { HomeAccountPicker } from '../../kit/main/homeAccountPicker'
+import type { HomeAccountsDeps } from '../../kit/main/homeAccounts'
 import { joinProjectTables } from './codexTrust'
+import type { CodexSessions } from './codexSessions'
 
 const CODEX_HOMES = 'codex-homes'
 
@@ -136,5 +140,128 @@ function resetsFrom(value: unknown): CodexLimits['resets'] {
   return {
     available: s.availableCount,
     ...(expiries.length > 0 && { firstExpiresAt: Math.min(...expiries) })
+  }
+}
+
+export interface CodexHomeAccountsDeps extends HomeAccountsDeps {
+  codexSharedConfig(): string
+  codexSessions(): CodexSessions | null
+}
+
+export function codexHomeAccounts(deps: CodexHomeAccountsDeps) {
+  const {
+    app,
+    accountViews,
+    allLimitedNotice,
+    codexSharedConfig,
+    findAccount,
+    foldHomeSignIn,
+    listAccounts,
+    pushHomeAccount,
+    savedHomeUsageOf,
+    usageViews,
+    viewKey
+  } = deps
+  const codexPicker = new HomeAccountPicker('codex-home', savedHomeUsageOf)
+
+  // CODEX§15
+  function pickCodexHome(
+    resumeSessionId?: string
+  ): { account: string; home: string; banner: string; notice?: string } | undefined {
+    const codexSessions = deps.codexSessions()
+    const sessionAccounts = deps.sessionAccounts()
+    const views = accountViews()
+    const picked = codexPicker.pick(
+      views,
+      sessionAccounts?.of('codex', resumeSessionId),
+      codexSessions?.launchedSessions()
+    )
+    if (!picked) return undefined
+    const stale = (a: AccountView): boolean =>
+      a.apiKey ? !!a.probeError : !a.limits || Date.now() - a.limits.at > AUTO_PROBE_MS
+    if (views.some((a) => a.kind === 'codex-home' && a.enabled && stale(a)))
+      void probeCodexAccounts()
+    const home = codexHomeOf(app.getPath('userData'), picked.name)
+    prepareCodexHome(home, codexSharedConfig())
+    return {
+      account: picked.name,
+      home,
+      banner: launchLine(picked, Date.now()),
+      notice: allLimitedNotice(picked, 'codex')
+    }
+  }
+
+  async function probeCodexAccount(name: string): Promise<void> {
+    const codexSessions = deps.codexSessions()
+    const acct = findAccount(name, 'codex-home')
+    if (!acct || !codexSessions) return
+    const key = viewKey(name, 'codex-home')
+    try {
+      const r = await codexSessions.readAccount(codexHomeOf(app.getPath('userData'), name))
+      foldHomeSignIn(name, 'codex-home', r.signedIn)
+      usageViews.set(
+        key,
+        r.apiKey
+          ? { apiKey: true }
+          : {
+              limits:
+                (r.signedIn && limitsFrom(r.limits, Date.now())) || usageViews.get(key)?.limits
+            }
+      )
+    } catch {
+      usageViews.set(key, { ...usageViews.get(key), probeError: 'network' })
+    }
+    pushHomeAccount(name, 'codex-home')
+  }
+
+  async function codexUseReset(name: string): Promise<CodexResetOutcome> {
+    const codexSessions = deps.codexSessions()
+    if (!findAccount(name, 'codex-home') || !codexSessions) return 'failed'
+    const outcome = await codexSessions
+      .useResetCredit(codexHomeOf(app.getPath('userData'), name))
+      .catch((): CodexResetOutcome => 'failed')
+    await probeCodexAccount(name)
+    return outcome
+  }
+
+  let codexProbeRound: Promise<void> | null = null
+
+  function probeCodexAccounts(): Promise<void> {
+    codexProbeRound ??= Promise.all(
+      listAccounts()
+        .filter((a) => a.kind === 'codex-home' && a.enabled)
+        .map((a) => probeCodexAccount(a.name))
+    ).then(() => {
+      codexProbeRound = null
+    })
+    return codexProbeRound
+  }
+
+  return {
+    codexPicker,
+    pickCodexHome,
+    codexUseReset,
+    probeCodexAccounts,
+    // CODEX§15
+    homeLogin: async (name: string) => {
+      const codexSessions = deps.codexSessions()
+      const available = (await codexSessions?.availability())?.available
+      const home = codexHomeOf(app.getPath('userData'), name)
+      prepareCodexHome(home, codexSharedConfig())
+      return { binary: available ? codexSessions?.cliBinary : undefined, env: { CODEX_HOME: home } }
+    },
+    probeHomeAccount: async (name: string) => {
+      const codexSessions = deps.codexSessions()
+      await codexSessions?.rereadSignIn(codexHomeOf(app.getPath('userData'), name))
+      await probeCodexAccount(name)
+    },
+    // CODEX§15
+    storeHomeKey: async (name: string, key: string) => {
+      const codexSessions = deps.codexSessions()
+      if (!codexSessions) throw new Error('Codex is not set up.')
+      const home = codexHomeOf(app.getPath('userData'), name)
+      prepareCodexHome(home, codexSharedConfig())
+      await codexSessions.storeApiKey(home, key)
+    }
   }
 }
