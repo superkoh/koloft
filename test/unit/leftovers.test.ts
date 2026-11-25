@@ -3,12 +3,8 @@ import { spawnSync } from 'child_process'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import {
-  ownedByThisRun,
-  removeFoldersLeftByEndedRuns,
-  scanLeftovers,
-  stopLeftover
-} from '../../src/main/leftovers'
+import { ownedByThisRun, removeFoldersLeftByEndedRuns } from '../../src/main/leftovers'
+import { scanLeftovers, stopLeftover } from '../../src/main/leftoverProcesses'
 import { CODEX_TMP_FOLDER } from '../../src/agents/codex/main/codexLeftovers'
 import { parseProcessTable } from '../../src/main/processTable'
 

@@ -18,7 +18,7 @@ import {
   touchedItem,
   type FileAcc
 } from '../../../main/touchedFiles'
-import { CODEX_OPEN_SENT } from '../../../main/openShimScript'
+import { TAB_OPEN_SHIM_SENT } from '../../../main/openShimScript'
 import type { CodexFrameHead } from './codexTransport'
 import { TurnLog, type SaidLine } from '@shared/turns'
 import {
@@ -640,7 +640,7 @@ export class CodexObservation {
         typeof action.command === 'string' ? openTarget(action.command, item.cwd) : null
       return target ? [target] : []
     })
-    if (!targets.length || String(item.aggregatedOutput ?? '').includes(CODEX_OPEN_SENT)) return
+    if (!targets.length || String(item.aggregatedOutput ?? '').includes(TAB_OPEN_SHIM_SENT)) return
     for (const target of targets) this.emit({ type: 'open', target })
   }
 

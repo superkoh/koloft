@@ -2726,7 +2726,7 @@ Codex's own full-screen screen from one that prints and exits.
   `app-server daemon pid-update-loop` from `$CODEX_HOME/packages/app-server-daemon/`,
   and both were still running after the TUI quit. A bare `agents` on 0.166.0 was not
   run. Koloft starts no `agents`: a Workbench terminal refuses it as a line that opens
-  the TUI (`agents` is not on `CODEX_SUBCOMMANDS_WITHOUT_A_TUI`, `shim.ts`; read from
+  the TUI (`agents` is not on `CODEX_SUBCOMMANDS_WITHOUT_A_TUI`, `codexShim.ts`; read from
   the code, not run), and a Codex tab's own line is never `agents`.
 - **Subcommands that print or run and exit:** `exec` (alias `e`, "Run Codex
   non-interactively"), `review` ("non-interactively"), `login`, `logout`, `mcp`, `plugin`,

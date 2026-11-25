@@ -12,7 +12,9 @@ vi.mock('electron', async () => {
   return { app: { getPath: () => base, getName: () => 'koloft-dev', isPackaged: false } }
 })
 
-import { registeredByTabRoot, setupShim } from '../../src/main/shim'
+import { setupShim } from '../../src/main/shim'
+import { everyAgentsShimScripts } from './helpers/agentShims'
+import { registeredByTabRoot } from '../../src/agents/claude/main/claudeShim'
 import { MIN_CLAUDE_VERSION } from '../../src/agents/claude/main/claudeMinimum'
 import { NO_USABLE_ACCOUNT, SHIM_FOUND_NO_ACCOUNT_EXIT } from '../../src/shared/accountUsage'
 
@@ -30,7 +32,8 @@ beforeAll(() => {
   gitAuthDir = path.join(os.tmpdir(), `koloft-shim-git-${process.pid}`)
   ;({ shimDir, regDir, pickDir, gitHelper, ghWrapper } = setupShim(
     gitAuthDir,
-    '/nonexistent-butler-folder'
+    '/nonexistent-butler-folder',
+    everyAgentsShimScripts()
   ))
   base = path.dirname(shimDir)
   realBin = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-realbin-'))
@@ -1361,7 +1364,7 @@ describe('claude shim (Koloft browser endpoint)', () => {
   it('removes a retired muse guard left in the shim folder from an earlier Koloft', () => {
     const retired = path.join(shimDir, 'muse')
     fs.writeFileSync(retired, '#!/bin/sh\nexit 1\n', { mode: 0o755 })
-    setupShim(gitAuthDir, '/nonexistent-butler-folder')
+    setupShim(gitAuthDir, '/nonexistent-butler-folder', everyAgentsShimScripts())
     expect(fs.existsSync(retired)).toBe(false)
   })
 })
