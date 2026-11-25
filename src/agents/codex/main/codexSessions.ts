@@ -126,6 +126,7 @@ import {
   type StoredSessionDeps
 } from '@agents/kit/main/storedSessions'
 import { promptParts, type LaunchIdentity } from '../../../main/launchPrompt'
+import type { HistoryStore } from '../../../main/historyWatch'
 
 const MACHINE_HISTORY_FRESH_MS = 15_000
 
@@ -139,6 +140,16 @@ export const CODEX_TAB_ENV = {
 } as const
 
 const sourceKinds = ['cli', 'vscode', 'appServer']
+
+// CODEX§15
+const CODEX_LISTS_A_NEW_ROLLOUT_WITHIN_MS = 1000
+
+// CODEX§15
+export const CODEX_HISTORY_STORE: HistoryStore = {
+  dir: (env) => path.join(path.dirname(codexConfigFile(env)), 'sessions'),
+  holdsASession: () => true,
+  settleMs: CODEX_LISTS_A_NEW_ROLLOUT_WITHIN_MS
+}
 
 // CODEX§15
 const rolloutFiles = (listedPath: string): string[] => [listedPath, listedPath + '.zst']
@@ -322,6 +333,7 @@ interface CodexLaunch {
 
 export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLaunch> {
   readonly id = 'codex'
+  readonly historyStore = CODEX_HISTORY_STORE
   private crashLeftoversEnded?: Promise<void>
   private listedHooks = new Map<string, ListedHook>()
   private resumedInDefaultHome = new Map<string, Promise<void>>()

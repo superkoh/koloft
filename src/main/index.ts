@@ -433,6 +433,7 @@ import {
   type TurnOver
 } from '@core/moment'
 import type { MainIpc } from '@core/ipc'
+import type { WorktreeResource } from '@core/agent/worktreeRecords'
 import { ClaudeDialogWatch } from '@agents/claude/main/claudeDialogWatch'
 import { docsWritingOn } from '@plugins/docs-writing/api'
 import { koloftPrompt, type SessionsWithStore } from '@plugins/sessions/api'
@@ -467,7 +468,6 @@ type SlashTarget = Parameters<SessionsStarted['slash']['typeWhenIdle']>[0]
 type SlashReplyTo = Parameters<SessionsStarted['slash']['typeWhenIdle']>[2]
 type Recipient = Parameters<ReturnType<SessionsStarted['buildHandOver']>['tell']>[0]
 type MergedHeads = NonNullable<Parameters<SessionsStarted['whatIsLeft']>[2]>
-type WorktreeResource = Parameters<SessionsWithStore['worktrees']['untouched']>[0]
 type NoticeFile = ReturnType<SessionsStarted['localNotice']>
 type SyncSession = Parameters<SessionsStarted['sessionSync']['observe']>[0][number]
 type CodexAsk = Parameters<SessionsStarted['codexDialog']>[0]
@@ -4169,9 +4169,7 @@ app.whenReady().then(() => {
     gitDirExists: (root) => hosts.of(root).dirExists(`${root}/.git`),
     worktreeDirExists: (root, name) => hosts.of(root).dirExists(`${worktreeHomeOf(root)}/${name}`),
     worktreeRecorded: (root, name) =>
-      storedSessions().some((s) =>
-        s.worktrees.recorded(`${worktreeHomeOf(realpathSafe(root))}/${name}`)
-      ),
+      sessionBackends.worktreeRecords.recorded(`${worktreeHomeOf(realpathSafe(root))}/${name}`),
     branchExists: (root, branch) => branchExists(hostGitOut, root, branch),
     listRunFolders,
     runLeftovers,
@@ -4715,12 +4713,11 @@ function killTabPty(tabId: string, restarting = false): Promise<boolean> {
   if (sleeper) {
     forgetSleeper(tabId)
     const tree = projectInfoFor(sleeper.cwd).treeRoot
-    const owner = restarting ? undefined : storedSessions().find((s) => s.id === sleeper.kind)
-    const resource = owner?.store.listResources().find((r) => r.worktreePath === tree)
+    const resource = restarting ? undefined : sessionBackends.worktreeRecords.at(sleeper.kind, tree)
     if (!restarting) cronRunner?.onTabGone({ treeRoot: tree, sessionId: sleeper.sessionId })
-    return (resource ? removeUntouchedWorktree(owner, resource) : Promise.resolve()).then(
-      () => true
-    )
+    return (
+      resource ? removeUntouchedWorktree({ id: sleeper.kind }, resource) : Promise.resolve()
+    ).then(() => true)
   }
   return stopTabProcess(tabId, restarting)
 }
@@ -4882,7 +4879,7 @@ async function endAndRemove(
     return false
   }
   archiveSession(target.sessionId)
-  for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
+  sessionBackends.worktreeRecords.forgetUnusedAt(info.treeRoot)
   // CC§9
   closedSessionsStoppedUntil.set(
     target.sessionId,
@@ -4893,12 +4890,13 @@ async function endAndRemove(
 }
 
 async function removeUntouchedWorktree(
-  owner: SessionsWithStore | null | undefined,
+  owner: { readonly id: BackendId } | null | undefined,
   resource: WorktreeResource
 ): Promise<void> {
   const tree = resource.worktreePath
   if (sleeperTrees().includes(tree) || cronRunner?.tidiesFolder(tree)) return
-  if (sessionBackends.occupantOf(tree) || !(await owner?.worktrees.untouched(resource))) return
+  if (sessionBackends.occupantOf(tree)) return
+  if (!owner || !(await sessionBackends.worktreeRecords.untouched(owner.id, resource))) return
   if (treeRemovals.has(tree)) return
   const problem = await treeRemovals.run(tree, () =>
     removeTree(hostGitOut, {
@@ -5016,8 +5014,7 @@ async function tidyRun(root: string, worktree: string, sessionId?: string): Prom
   const result = await treeRemovals.run(info.treeRoot, () =>
     tidyTree(hostGitOut, info, (d) => hosts.of(d).dirExistsOrThrow(d), mergedHeads)
   )
-  if (result.removed)
-    for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
+  if (result.removed) sessionBackends.worktreeRecords.forgetUnusedAt(info.treeRoot)
   return result
 }
 
@@ -5445,7 +5442,7 @@ function cronBindDeadlineMs(): number {
 const resumeProbes: ResumeProbes = {
   dirExists: dirExistsSync,
   occupantOf: (dir) => sessionBackends.occupantOf(dir),
-  recorded: (dir) => storedSessions().some((s) => s.worktrees.recorded(dir)),
+  recorded: (dir) => sessionBackends.worktreeRecords.recorded(dir),
   ...gitProbes(localGitOut)
 }
 
@@ -6173,7 +6170,6 @@ const startedPlugins: PluginsStarted = startPlugins(
           return { ok: true }
         },
         worktrees: async (p) => (await workspaceMgr?.worktrees(p)) ?? [],
-        storedSessions,
         dirExists: (dir) => hosts.of(dir).dirExists(dir)
       }
     },

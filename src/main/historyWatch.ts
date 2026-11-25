@@ -1,33 +1,11 @@
 import fs from 'fs'
 import path from 'path'
-import type { BackendAvailability, BackendId } from '@shared/types'
-import { AGY_APP_DIR, ownersGeminiDir } from '@agents/agy/main/agyStore'
-import { codexConfigFile } from '@agents/codex/main/codexTrust'
+import type { BackendAvailability } from '@shared/types'
 
 export interface HistoryStore {
   dir(env: NodeJS.ProcessEnv): string
   holdsASession(rel: string): boolean
   settleMs: number
-}
-
-// CODEX§15
-const CODEX_LISTS_A_NEW_ROLLOUT_WITHIN_MS = 1000
-// AGY§8
-const AGY_LISTS_A_NEW_CONVERSATION_WITHIN_MS = 1500
-
-export const HISTORY_STORES: Record<Exclude<BackendId, 'claude'>, HistoryStore> = {
-  // CODEX§15
-  codex: {
-    dir: (env) => path.join(path.dirname(codexConfigFile(env)), 'sessions'),
-    holdsASession: () => true,
-    settleMs: CODEX_LISTS_A_NEW_ROLLOUT_WITHIN_MS
-  },
-  // AGY§8
-  agy: {
-    dir: (env) => path.join(ownersGeminiDir(env), AGY_APP_DIR, 'conversations'),
-    holdsASession: (rel) => !rel.includes(path.sep) && rel.endsWith('.db'),
-    settleMs: AGY_LISTS_A_NEW_CONVERSATION_WITHIN_MS
-  }
 }
 
 // PLATFORM§40
@@ -96,7 +74,7 @@ export function watchHistory(store: HistoryStore, dir: string, relist: () => voi
 }
 
 export interface ListsHistory {
-  readonly id: Exclude<BackendId, 'claude'>
+  readonly historyStore: HistoryStore
   readonly defaultEnv: NodeJS.ProcessEnv | undefined
   availability(): Promise<BackendAvailability>
   refreshHistoryStartedNow(): Promise<void>
@@ -104,7 +82,7 @@ export interface ListsHistory {
 
 export async function watchHistoryOf(sessions: ListsHistory): Promise<void> {
   await sessions.availability()
-  const store = HISTORY_STORES[sessions.id]
+  const store = sessions.historyStore
   watchHistory(
     store,
     store.dir(sessions.defaultEnv ?? process.env),
