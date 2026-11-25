@@ -452,6 +452,7 @@ describe('probeAgyAccounts (a probe round of every Antigravity account)', () => 
       findAccount: () => acct,
       foldHomeSignIn: () => {},
       listAccounts: () => [acct],
+      noteHomeAccount: () => {},
       pushHomeAccount: () => {},
       savedHomeUsageOf: () => undefined,
       usageViews: new Map(),

@@ -501,6 +501,7 @@ describe('probeCodexAccounts (a probe round of every Codex account)', () => {
       findAccount: () => acct,
       foldHomeSignIn: () => {},
       listAccounts: () => [acct],
+      noteHomeAccount: () => {},
       pushHomeAccount,
       savedHomeUsageOf: () => undefined,
       usageViews: new Map(),
