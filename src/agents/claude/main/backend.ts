@@ -218,7 +218,10 @@ interface StartingLaunch {
   folder: string
   name: string
   tabId?: string
+  freeTheName?: () => void
 }
+
+const notStartedYet = (): StartingLaunch => ({ folder: '', name: '' })
 
 interface RemoteExitDrop {
   name: string
@@ -421,16 +424,11 @@ export class ClaudeBackend implements SessionBackend {
     return null
   }
 
-  private startIn(
-    folder: string,
-    sessionId?: string,
-    launch: StartingLaunch = { folder: '', name: '' }
-  ): StartingLaunch {
+  private startIn(folder: string, sessionId: string | undefined, launch: StartingLaunch): void {
     const row = sessionId ? this.d.store()?.findRow(sessionId) : undefined
     launch.folder = preparedKeyOf(folder)
     launch.name = occupantName({ title: row?.title ?? '', sessionId: sessionId ?? '' })
     this.startingLaunches.add(launch)
-    return launch
   }
 
   private async untilItsTabIsBound<R extends { ok: boolean; id?: string }>(
@@ -459,6 +457,7 @@ export class ClaudeBackend implements SessionBackend {
 
   private letGo(launch: StartingLaunch): void {
     this.startingLaunches.delete(launch)
+    launch.freeTheName?.()
   }
 
   private letGoOfTab(tabId: string): void {
@@ -1106,10 +1105,9 @@ export class ClaudeBackend implements SessionBackend {
   async create(opts: CreateTabOptions): Promise<CreateTabResult> {
     const asked = typeof opts.cwd === 'string' ? opts.cwd : ''
     const root = hostOf(asked) === 'ssh' ? asked : (this.homeOf(opts.resumeSessionId) ?? asked)
-    const folder = opts.worktree
-      ? await this.refuseANameAnotherAgentHolds(root, opts.worktree)
-      : root
-    const launch = this.startIn(folder, opts.resumeSessionId)
+    const launch = notStartedYet()
+    const folder = opts.worktree ? await this.holdANewName(root, opts.worktree, launch) : root
+    this.startIn(folder, opts.resumeSessionId, launch)
     return this.untilItsTabIsBound(launch, () =>
       this.createTab({
         tabId: opts.tabId,
@@ -1134,7 +1132,7 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async resume(req: SessionResumeRequest): Promise<SessionResumeResult> {
-    const launch: StartingLaunch = { folder: '', name: '' }
+    const launch = notStartedYet()
     try {
       return await this.untilItsTabIsBound(launch, () => this.resumeTab(req, launch))
     } catch (error) {
@@ -1167,7 +1165,7 @@ export class ClaudeBackend implements SessionBackend {
         return { ok: false, code: 'invalid-args' }
       }
       worktree = req.worktree
-      newTree = await this.refuseANameAnotherAgentHolds(cwd, worktree)
+      newTree = await this.holdANewName(cwd, worktree, launch)
     }
     const bound = this.d.store()?.findRow(sid)?.worktreeState
     const goesInto = newTree ?? host.keyed(mode === 'main' ? cwd : (bound?.worktreePath ?? cwd))
@@ -1227,12 +1225,20 @@ export class ClaudeBackend implements SessionBackend {
     return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
   }
 
-  private async refuseANameAnotherAgentHolds(where: string, name: string): Promise<string> {
+  private async holdANewName(where: string, name: string, launch: StartingLaunch): Promise<string> {
     const root = isRemoteKey(where) ? await this.mainCheckoutOn(where) : projectInfoFor(where).root
     const tree = `${root}/${SESSION_WORKTREES_FOLDER}/${name}`
     if (this.d.resumeProbes.recorded?.(tree)) throw new Error(A_NAME_WITH_A_RECOVERY_RECORD)
-    if (this.d.worktreesBeingPrepared.has(preparedKeyOf(tree)))
-      throw new Error(A_FOLDER_BEING_PREPARED)
+    const key = preparedKeyOf(tree)
+    const preparing = this.d.worktreesBeingPrepared
+    if (preparing.has(key)) throw new Error(A_FOLDER_BEING_PREPARED)
+    let release = (): void => {}
+    const held = new Promise<void>((r) => (release = r))
+    preparing.set(key, held)
+    launch.freeTheName = () => {
+      if (preparing.get(key) === held) preparing.delete(key)
+      release()
+    }
     return tree
   }
 

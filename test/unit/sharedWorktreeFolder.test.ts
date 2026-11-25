@@ -532,3 +532,65 @@ describe.each(SIDES)(
     })
   }
 )
+
+describe.each(SIDES)(
+  'a new Claude Code worktree session on a name nobody uses yet, $where',
+  (side) => {
+    it('another agent asking for that name while Claude Code starts is refused with the words it already shows, until the Claude Code tab is bound in the folder it made', async () => {
+      const s = sharedFolder(side)
+      const launch = holdTheLaunch(s)
+      const starting = s.claudeStartsIn('foo')
+      await launch.reached()
+      await expect(s.theirs.create(side.at(repo), 'foo')).rejects.toThrow(
+        'Worktree preparation is already in progress'
+      )
+      launch.release()
+      await expect(starting).resolves.toMatchObject({ ok: true })
+      await expect(s.theirs.create(side.at(repo), 'foo')).rejects.toThrow(
+        'Worktree preparation is already in progress'
+      )
+      git('worktree', 'add', '-q', '-b', 'worktree-foo', s.tree)
+      await s.claudeBinds(s.tree)
+      expect(s.preparing.size).toBe(0)
+      await expect(s.theirs.create(side.at(repo), 'foo')).rejects.toThrow(
+        'Worktree directory already exists'
+      )
+    })
+
+    it('a second Claude Code session on that name is refused the same way while the first starts, and the name is free again once that tab ends without making the folder', async () => {
+      const s = sharedFolder(side)
+      await expect(s.claudeStartsIn('foo')).resolves.toMatchObject({ ok: true })
+      await expect(s.claudeStartsIn('foo')).rejects.toThrow(
+        'Worktree preparation is already in progress'
+      )
+      s.claudeTabEnds()
+      expect(s.preparing.size).toBe(0)
+      await expect(s.theirs.create(side.at(repo), 'foo')).resolves.toMatchObject({
+        state: 'ready'
+      })
+    })
+
+    it('a Claude Code launch on that name that fails frees the name at once', async () => {
+      const s = sharedFolder(side)
+      s.launch.fails = true
+      await expect(s.claudeStartsIn('foo')).resolves.toMatchObject({ ok: false })
+      expect(s.preparing.size).toBe(0)
+      await expect(s.theirs.create(side.at(repo), 'foo')).resolves.toMatchObject({
+        state: 'ready'
+      })
+    })
+
+    it('a Claude Code resume into a new worktree of that name holds the name the same way', async () => {
+      const s = sharedFolder(side)
+      git('worktree', 'add', '-q', '-b', 'worktree-foo', s.tree)
+      const launch = holdTheLaunch(s)
+      const resumed = s.claudeResumesRenamed('foo-2')
+      await launch.reached()
+      await expect(s.theirs.create(side.at(repo), 'foo-2')).rejects.toThrow(
+        'Worktree preparation is already in progress'
+      )
+      launch.release()
+      await expect(resumed).resolves.toMatchObject({ ok: true })
+    })
+  }
+)
