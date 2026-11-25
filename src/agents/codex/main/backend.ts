@@ -30,6 +30,8 @@ export function codexBackend(
       turns: async (key, n) => sessions.turnsOf(key, n) ?? sessions.readTurns(key, n),
       peerNames: () => async () => null,
       runningElsewhere: () => false,
+      // CODEX§17
+      handOverLaunch: (handOver, task) => ({ role: handOver, firstPrompt: task }),
       ...codexMessages({
         queue: (tabId, text, clientId) => sessions.queueMessage(tabId, text, clientId),
         noteKoloftSent

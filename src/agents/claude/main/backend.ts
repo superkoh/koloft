@@ -18,6 +18,7 @@ import { hasUsableAccount } from '@shared/accountUsage'
 import type { Turn } from '@shared/turns'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import type {
+  HandOverLaunch,
   MessageToSend,
   ModeClass,
   SendOutcome,
@@ -25,6 +26,7 @@ import type {
   SessionMessages,
   TabExit
 } from '@core/agent/sessionBackends'
+import { withHandover } from '@core/handOver'
 import {
   claudeMessages,
   messageSocket,
@@ -314,6 +316,10 @@ export class ClaudeBackend implements SessionBackend {
     turnHasEnded: (tabId: string) => Promise<boolean>
   ): Promise<boolean> {
     return this.messagesNow().mightNotTakeAMessageNow(tabId, turnHasEnded)
+  }
+
+  handOverLaunch(handOver: string, task: string): HandOverLaunch {
+    return { firstPrompt: withHandover(handOver, task) }
   }
 
   async availability(): Promise<BackendAvailability> {

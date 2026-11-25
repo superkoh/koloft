@@ -54,7 +54,8 @@ const ITS_OWN_ANSWERS: Parameters<typeof storedBackend>[2] = {
   peerNames: () => async () => null,
   runningElsewhere: () => false,
   send: async () => 'taken',
-  mightNotTakeAMessageNow: async () => false
+  mightNotTakeAMessageNow: async () => false,
+  handOverLaunch: (_handOver, task) => ({ firstPrompt: task })
 }
 
 function backendsOf(

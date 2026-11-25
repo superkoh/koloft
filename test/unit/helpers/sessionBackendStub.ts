@@ -48,6 +48,7 @@ export function stubBackend(
     tmuxOfTab: () => undefined,
     send: async () => 'taken' as const,
     mightNotTakeAMessageNow: async () => false,
+    handOverLaunch: (_handOver: string, task: string) => ({ firstPrompt: task }),
     ...rowsKeptInMemory({
       rows: () => [],
       members: () => new Set<string>(),
