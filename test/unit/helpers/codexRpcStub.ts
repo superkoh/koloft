@@ -39,7 +39,7 @@ export class CodexRpcThatTrustsEveryHookItIsGiven {
             cwd,
             hooks: this.hooks.map((hook, i) => ({
               ...hook,
-              key: `/<session-flags>/config.toml:${hook.eventName}:${i}:0`,
+              key: `/<session-flags>/config.toml:${hook.eventName}:${this.hooks.slice(0, i).filter((h) => h.eventName === hook.eventName).length}:0`,
               source: 'sessionFlags',
               currentHash: 'sha256:pinned',
               trustStatus: 'trusted'

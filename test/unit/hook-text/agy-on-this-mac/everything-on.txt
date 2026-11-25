@@ -43,6 +43,7 @@
     ]
   }
 }
+
 === the status line in the account's settings file (antigravity-cli/settings.json) ===
 {
   "command": "/bin/bash '<userData>/statusline/agy-run-<hash of this install>.sh'",

@@ -84,7 +84,10 @@ const folderNow = (): Folder =>
     fs
       .readdirSync(reg)
       .sort()
-      .map((name) => [name, fs.readFileSync(path.join(reg, name), 'utf8')])
+      .map((name) => {
+        const file = path.join(reg, name)
+        return [name, fs.statSync(file).isFile() ? fs.readFileSync(file, 'utf8') : '(a named pipe)']
+      })
   )
 
 function whatChanged(before: Folder, after: Folder): string {
@@ -102,18 +105,19 @@ function whatChanged(before: Folder, after: Folder): string {
 
 interface Run {
   printed: string
+  outside?: string
 }
 
 class Steps {
   private steps: string[] = []
   step(title: string, run: () => Run): void {
     const before = folderNow()
-    const { printed } = run()
-    this.note(title, printed, whatChanged(before, folderNow()))
+    const { printed, outside } = run()
+    this.note(title, printed, whatChanged(before, folderNow()), outside)
   }
-  note(title: string, printed: string, folder: string): void {
+  note(title: string, printed: string, folder: string, outside?: string): void {
     this.steps.push(
-      `##### ${title}\n=== printed ===\n${printed || '(nothing)'}\n=== in the registration folder ===\n${folder}`
+      `##### ${title}\n=== printed ===\n${printed || '(nothing)'}\n=== in the registration folder ===\n${folder}${outside ? `\n=== outside it ===\n${outside}` : ''}`
     )
   }
   text(): string {
@@ -178,12 +182,13 @@ describe("Claude Code's hook script on this Mac, run as Claude Code runs it for 
         timeout: A_HELD_ASK_IS_SEEN_WITHIN_MS
       })
       const whileHeld = whatChanged(before, folderNow())
+      const answer = path.join(reg, `${TAB}.${child.pid}.answer.json`)
       fs.writeFileSync(
-        path.join(reg, `${TAB}.${child.pid}.answer.json`),
+        `${answer}.whole`,
         '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}'
       )
+      fs.renameSync(`${answer}.whole`, answer)
       await vi.waitFor(() => ended, { timeout: A_HELD_ASK_IS_SEEN_WITHIN_MS })
-      await ended
       r.note(
         'ask, in a tab Koloft can answer: it holds the dialog until Koloft writes the answer',
         printed,
@@ -227,13 +232,17 @@ describe("Claude Code's hook script on this Mac, run as Claude Code runs it for 
     r.step('shell-after (that Bash call wrote written.txt)', () =>
       fire('shell-after', { hook_event_name: 'PostToolUse', tool_use_id: 'toolu_1', cwd: repo })
     )
-    r.step('posttool (a Bash call that changed a pull request)', () =>
-      fire('posttool', {
+    const prStatus = path.join(home, '.cache', 'ccstatusline', 'git-review', 'cached.json')
+    fs.mkdirSync(path.dirname(prStatus), { recursive: true })
+    fs.writeFileSync(prStatus, '{}')
+    r.step('posttool (a Bash call that changed a pull request)', () => ({
+      ...fire('posttool', {
         hook_event_name: 'PostToolUse',
         tool_name: 'Bash',
         tool_input: { command: 'gh pr create --fill' }
-      })
-    )
+      }),
+      outside: `the status line's cached pull request status in <home>/.cache/ccstatusline/git-review/ now dates from ${fs.statSync(prStatus).mtime.getFullYear()}`
+    }))
     fs.mkdirSync(path.join(home, '.claude', 'sessions'), { recursive: true })
     fs.writeFileSync(
       path.join(home, '.claude', 'sessions', `${process.pid}.json`),
@@ -455,7 +464,7 @@ describe("Antigravity's hook script on this Mac, run as agy runs each hook", () 
   })
 })
 
-describe('#2436: a message the butler passes on, which Koloft proves it sent, and the file of the owner’s last words', () => {
+describe('a message the butler passes on, which Koloft proves it sent, and the file of the owner’s last words', () => {
   const said = (file: string): string | undefined =>
     fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined
 

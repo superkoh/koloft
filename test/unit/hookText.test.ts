@@ -119,9 +119,6 @@ const pinTab = (text: string, name: string): Promise<void> =>
 const readOrNothing = (file: string): string | undefined =>
   fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined
 
-const pretty = (json: string | undefined): string | undefined =>
-  json === undefined ? undefined : JSON.stringify(JSON.parse(json), null, 2)
-
 describe('the full text of every hook script and status line script Koloft writes on this Mac, read back from disk, pinned so that moving the code that builds them changes no character', () => {
   it("Claude Code's hook script and Codex's reply-language script", async () => {
     const { hookScript, codexReplyLanguage } = setupHooks(noPeerInstance)
@@ -158,6 +155,7 @@ interface Switches {
 }
 const EVERYTHING_ON: Switches = { statusLine: true, agentTools: true }
 const EVERYTHING_OFF: Switches = { statusLine: false, agentTools: false }
+const STATUS_LINE_ONLY: Switches = { statusLine: true, agentTools: false }
 
 async function claudeOnThisMac(s: Switches): Promise<string> {
   const hookPaths = setupHooks(noPeerInstance)
@@ -181,7 +179,7 @@ async function claudeOnThisMac(s: Switches): Promise<string> {
   if (!made.ok) throw new Error(`launch refused: ${made.code}`)
   return part(
     `the settings file the tab is handed (${written && path.basename(written)})`,
-    pretty(written && readOrNothing(written))
+    written && readOrNothing(written)
   )
 }
 
@@ -201,7 +199,7 @@ async function claudeOverSsh(s: Switches): Promise<string> {
   if (!made.ok) throw new Error(`launch refused: ${made.code}`)
   return part(
     `file ${TAB}.json, the settings the tab is handed on the machine`,
-    pretty(readOrNothing(path.join(tabPackageDir(world.userData, TAB), `${TAB}.json`)))
+    readOrNothing(path.join(tabPackageDir(world.userData, TAB), `${TAB}.json`))
   )
 }
 
@@ -257,7 +255,7 @@ async function agyOnThisMac(s: Switches): Promise<string> {
   return [
     part(
       "the hooks file in the account's own folder (config/hooks.json)",
-      pretty(readOrNothing(path.join(home, 'config', 'hooks.json')))
+      readOrNothing(path.join(home, 'config', 'hooks.json'))
     ),
     part(
       "the status line in the account's settings file (antigravity-cli/settings.json)",
@@ -282,10 +280,12 @@ async function agyOverSsh(s: Switches): Promise<string> {
   )
 }
 
-describe('the hook settings and the status line each kind of tab is started with, as the launch really writes them, pinned so that moving the code that builds them changes no character', () => {
+describe("the hook settings and the status line each kind of tab is started with, written by each agent's real launch with the settings writers wired in as the entry file wires them, pinned so that moving the code that builds them changes no character", () => {
   describe('Claude Code on this Mac', () => {
     it('status line and agent tools on', async () =>
       pinTab(await claudeOnThisMac(EVERYTHING_ON), 'claude-on-this-mac/everything-on'))
+    it('status line on, agent tools off', async () =>
+      pinTab(await claudeOnThisMac(STATUS_LINE_ONLY), 'claude-on-this-mac/status-line-only'))
     it('status line and agent tools off', async () =>
       pinTab(await claudeOnThisMac(EVERYTHING_OFF), 'claude-on-this-mac/everything-off'))
   })
@@ -293,6 +293,8 @@ describe('the hook settings and the status line each kind of tab is started with
   describe('Claude Code over SSH', () => {
     it('status line and agent tools on', async () =>
       pinTab(await claudeOverSsh(EVERYTHING_ON), 'claude-over-ssh/everything-on'))
+    it('status line on, agent tools off', async () =>
+      pinTab(await claudeOverSsh(STATUS_LINE_ONLY), 'claude-over-ssh/status-line-only'))
     it('status line and agent tools off', async () =>
       pinTab(await claudeOverSsh(EVERYTHING_OFF), 'claude-over-ssh/everything-off'))
   })
@@ -300,6 +302,8 @@ describe('the hook settings and the status line each kind of tab is started with
   describe('Codex on this Mac', () => {
     it('status line and agent tools on', async () =>
       pinTab(await codexOnThisMac(EVERYTHING_ON), 'codex-on-this-mac/everything-on'))
+    it('status line on, agent tools off', async () =>
+      pinTab(await codexOnThisMac(STATUS_LINE_ONLY), 'codex-on-this-mac/status-line-only'))
     it('status line and agent tools off', async () =>
       pinTab(await codexOnThisMac(EVERYTHING_OFF), 'codex-on-this-mac/everything-off'))
   })
@@ -314,6 +318,8 @@ describe('the hook settings and the status line each kind of tab is started with
   describe('Antigravity on this Mac', () => {
     it('status line and agent tools on', async () =>
       pinTab(await agyOnThisMac(EVERYTHING_ON), 'agy-on-this-mac/everything-on'))
+    it('status line on, agent tools off', async () =>
+      pinTab(await agyOnThisMac(STATUS_LINE_ONLY), 'agy-on-this-mac/status-line-only'))
     it('status line and agent tools off', async () =>
       pinTab(await agyOnThisMac(EVERYTHING_OFF), 'agy-on-this-mac/everything-off'))
   })

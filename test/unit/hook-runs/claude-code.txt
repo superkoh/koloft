@@ -42,6 +42,8 @@ appended to pty-t1.status.jsonl:
 (nothing)
 === in the registration folder ===
 (nothing)
+=== outside it ===
+the status line's cached pull request status in <home>/.cache/ccstatusline/git-review/ now dates from 2000
 ##### sent (a SendMessage that reached the running session named peer)
 === printed ===
 (nothing)
@@ -96,7 +98,7 @@ while it waits:
 new pty-t1.<pid of the hook>.ask.json:
 {"session_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"rm -rf build"}}
 new pty-t1.<pid of the hook>.tick:
-
+(a named pipe)
 once answered:
 (nothing)
 ##### stop, with a background task still running and no wakeups
