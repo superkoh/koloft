@@ -1,8 +1,13 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { describe, expect, it } from 'vitest'
-import { limitsFrom, prepareCodexHome } from '../../src/agents/codex/main/codexAccounts'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  codexHomeAccounts,
+  limitsFrom,
+  prepareCodexHome
+} from '../../src/agents/codex/main/codexAccounts'
+import type { CodexSessions } from '../../src/agents/codex/main/codexSessions'
 import { HomeAccountPicker } from '../../src/agents/kit/main/homeAccountPicker'
 import { allLimitedNotice } from '../../src/main/accountPicker'
 import { windowLabel } from '../../src/shared/accountUsage'
@@ -479,5 +484,36 @@ describe('prepareCodexHome', () => {
     expect(fs.readlinkSync(path.join(home, 'config.toml'))).toBe(shared)
     expect(fs.readFileSync(shared, 'utf8')).toBe('')
     fs.rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+describe('probeCodexAccounts (a probe round of every Codex account)', () => {
+  it('probes again on the next call after a round in which one account failed', async () => {
+    const acct = account('work')
+    const readAccount = vi.fn(async () => ({ signedIn: false }))
+    const pushHomeAccount = vi.fn<() => void>().mockImplementationOnce(() => {
+      throw new Error('could not push')
+    })
+    const { probeCodexAccounts } = codexHomeAccounts({
+      app: { getPath: () => '/nowhere' },
+      accountViews: () => [],
+      allLimitedNotice: () => undefined,
+      findAccount: () => acct,
+      foldHomeSignIn: () => {},
+      listAccounts: () => [acct],
+      pushHomeAccount,
+      savedHomeUsageOf: () => undefined,
+      usageViews: new Map(),
+      viewKey: (name, kind) => `${kind}:${name}`,
+      sessionAccounts: () => undefined,
+      codexSharedConfig: () => '/nowhere/config.toml',
+      codexSessions: () => ({ readAccount }) as unknown as CodexSessions
+    })
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await probeCodexAccounts()
+    expect(logged).toHaveBeenCalledOnce()
+    logged.mockRestore()
+    await probeCodexAccounts()
+    expect(readAccount).toHaveBeenCalledTimes(2)
   })
 })
