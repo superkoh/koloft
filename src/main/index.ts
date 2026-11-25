@@ -5456,14 +5456,9 @@ const githubOptions: GithubReposOptions = {
 
 const hosts = new Hosts(
   localHost(new GithubRepos(githubOptions), {
-    hookRegDir: () => hookRegDir ?? '',
-    agentPlugin: () => (agentToolsOn() ? claudeAgentPlugin : undefined),
-    docsPlugin: docsPluginWhileOn,
-    assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
     agentHomes: () => ({
       codexHome: path.dirname(codexSharedConfig())
-    }),
-    pastedPicturesDir
+    })
   }),
   (machine) =>
     new SshHost(machine, {
@@ -5495,20 +5490,12 @@ const hosts = new Hosts(
         }
       },
       github: githubOptions,
-      claude: {
+      tabs: {
         userData: app.getPath('userData'),
         controlDir: remoteControlDir,
         machinePackage,
         alive: () => remoteSync?.alive(machine) ?? new Set(),
         firstHeartbeatDone: () => remoteSync?.firstRoundDone(machine) ?? Promise.resolve(),
-        realPath: (p) => workspaceMgr?.realRemotePath({ host: machine, path: p }) ?? p,
-        settings: loadSettings,
-        pickAccount: (launchKey, resumeSessionId) =>
-          pickMachineAccount(() => pickForLaunch(launchKey, resumeSessionId)),
-        noAccountMessage: () => noAccountNow('claude'),
-        agentTools: agentToolsOn,
-        hookSettings: (tabId, dir, allowKoloft) =>
-          machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft),
         loginPath: () => gitAccounts?.machineLoginPath(machine) ?? Promise.resolve('')
       }
     })
@@ -5517,6 +5504,26 @@ const hosts = new Hosts(
 const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
   pty: ptyMgr,
   hosts,
+  launchHere: {
+    writeConductorMarker: (tabId, role) => writeConductorMarker(hookRegDir ?? '', tabId, role),
+    handOverOwnerWords: (tabId, words) =>
+      seedHandedOverOwnerWords(saidFile(hookRegDir ?? '', tabId), words),
+    agentPlugin: () => (agentToolsOn() ? claudeAgentPlugin : undefined),
+    docsPlugin: docsPluginWhileOn,
+    assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
+    pastedPicturesDir
+  },
+  launchOnMachine: {
+    realPath: (machine, p) => workspaceMgr?.realRemotePath({ host: machine, path: p }) ?? p,
+    settings: loadSettings,
+    pickAccount: (launchKey, resumeSessionId) =>
+      pickMachineAccount(() => pickForLaunch(launchKey, resumeSessionId)),
+    noAccountMessage: () => noAccountNow('claude'),
+    agentTools: agentToolsOn,
+    docsWritingOn,
+    hookSettings: (tabId, dir, allowKoloft) =>
+      machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)
+  },
   remoteTargets: () => workspaceMgr?.remoteTargets() ?? [],
   sessionRebound: (prevId, nextId, source) => workspaceMgr?.onSessionRebind(prevId, nextId, source),
   remoteSync: () => remoteSync,
@@ -6370,7 +6377,10 @@ const {
   noticeFile,
   pruneStale,
   quotedPrompt,
+  saidFile,
+  seedHandedOverOwnerWords,
   setupHooks,
+  writeConductorMarker,
   writeTabHookSettings,
   resolveWorkspace,
   closingTree,
