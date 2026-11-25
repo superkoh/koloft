@@ -310,6 +310,7 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
       c.workspaceOfEverySession ? { workspaceOf: () => c.workspaceOfEverySession } : null,
     remoteSync: () => null,
     resumeProbes: { recorded: () => false },
+    worktreesBeingPrepared: new Map(),
     userData: () => world.userData,
     setupLine: () => undefined,
     hookSettings: c.hookSettings ?? (() => undefined),

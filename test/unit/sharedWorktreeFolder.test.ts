@@ -25,7 +25,7 @@ import { TreeRemovals } from '../../src/main/treeRemovals'
 import { localGitOut, localGitRun, localHost } from '../../src/main/host/localHost'
 import { GithubRepos } from '../../src/main/githubRepos'
 import { removeTree } from '../../src/plugins/sessions/main/sessionClose'
-import { removingTheWorktree } from '../../src/main/worktreesBeingPrepared'
+import { preparedKeyOf, removingTheWorktree } from '../../src/main/worktreesBeingPrepared'
 import { dirExistsSync, gitProbes } from '../../src/main/resumePlan'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/agents/claude/main/backend'
 import { barePath, formatRemoteKey, isRemoteKey } from '../../src/shared/remoteKey'
@@ -198,6 +198,18 @@ describe.each(SIDES)(
       expect(s.launched).toEqual([])
       await expect(s.claudeStartsIn('bar')).resolves.toMatchObject({ ok: true })
       expect(s.launched).toEqual([expect.objectContaining({ worktree: 'bar' })])
+    })
+
+    it('is refused with the words the other agents use while any agent prepares or removes that folder', async () => {
+      const s = sharedFolder(side)
+      let done = (): void => {}
+      const tree = side.at(path.join(fs.realpathSync(repo), '.claude', 'worktrees', 'foo'))
+      s.preparing.set(preparedKeyOf(tree), new Promise<void>((r) => (done = r)))
+      await expect(s.claudeStartsIn('foo')).rejects.toThrow(
+        'Worktree preparation is already in progress'
+      )
+      done()
+      expect(s.launched).toEqual([])
     })
 
     it('is refused the same way when the workspace is a subfolder of the repository', async () => {

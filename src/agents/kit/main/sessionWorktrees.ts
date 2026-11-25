@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto'
 import { isValidWorktreeName, SESSION_WORKTREES_FOLDER } from '@shared/worktreeName'
 import { barePath, isRemoteKey } from '@shared/remoteKey'
 import {
+  A_FOLDER_BEING_PREPARED,
   A_NAME_WITH_A_RECOVERY_RECORD,
   type WorktreeRecords,
   type WorktreeResource
@@ -259,8 +260,7 @@ export class SessionWorktrees {
   }
 
   private async afterOtherAgentsPreparing(worktreePath: string): Promise<void> {
-    if (this.preparingHere.has(worktreePath))
-      throw new Error('Worktree preparation is already in progress')
+    if (this.preparingHere.has(worktreePath)) throw new Error(A_FOLDER_BEING_PREPARED)
     await this.everyAgent.preparing.get(preparedKeyOf(worktreePath))
   }
 
@@ -274,7 +274,7 @@ export class SessionWorktrees {
     const io = this.io(root)
     const target = `${root}/${SESSION_WORKTREES_FOLDER}/${name}`
     if (this.everyAgent.preparing.has(preparedKeyOf(target)))
-      throw new Error('Worktree preparation is already in progress')
+      throw new Error(A_FOLDER_BEING_PREPARED)
     if (await io.exists(target)) throw new Error('Worktree directory already exists')
     const branch = `worktree-${name}`
     if (await branchExists(io, root, branch)) throw new Error('Worktree branch already exists')
@@ -299,10 +299,10 @@ export class SessionWorktrees {
     const { preparing } = this.everyAgent
     const at = resource.worktreePath
     const key = preparedKeyOf(at)
-    if (this.preparingHere.has(at)) throw new Error('Worktree preparation is already in progress')
+    if (this.preparingHere.has(at)) throw new Error(A_FOLDER_BEING_PREPARED)
     const running = preparing.get(key)
     if (running) {
-      if (!reuseBranch) throw new Error('Worktree preparation is already in progress')
+      if (!reuseBranch) throw new Error(A_FOLDER_BEING_PREPARED)
       await running
       return this.materialize(resource, reuseBranch)
     }

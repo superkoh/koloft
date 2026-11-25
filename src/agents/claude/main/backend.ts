@@ -43,6 +43,7 @@ import {
   type MessageSocketDeps
 } from './messageSocket'
 import {
+  A_FOLDER_BEING_PREPARED,
   A_NAME_WITH_A_RECOVERY_RECORD,
   KEEPS_NO_WORKTREE_RECORDS
 } from '@core/agent/worktreeRecords'
@@ -1039,7 +1040,7 @@ export class ClaudeBackend implements SessionBackend {
   async create(opts: CreateTabOptions): Promise<CreateTabResult> {
     const asked = typeof opts.cwd === 'string' ? opts.cwd : ''
     const root = hostOf(asked) === 'ssh' ? asked : (this.homeOf(opts.resumeSessionId) ?? asked)
-    if (opts.worktree) await this.refuseANameAnotherAgentRecords(root, opts.worktree)
+    if (opts.worktree) await this.refuseANameAnotherAgentHolds(root, opts.worktree)
     return this.createTab({
       tabId: opts.tabId,
       root,
@@ -1089,7 +1090,7 @@ export class ClaudeBackend implements SessionBackend {
         return { ok: false, code: 'invalid-args' }
       }
       worktree = req.worktree
-      await this.refuseANameAnotherAgentRecords(cwd, worktree)
+      await this.refuseANameAnotherAgentHolds(cwd, worktree)
     }
     const bound = this.d.store()?.findRow(sid)?.worktreeState
     const rebuildable = !home || !!bound
@@ -1147,11 +1148,12 @@ export class ClaudeBackend implements SessionBackend {
     return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
   }
 
-  private async refuseANameAnotherAgentRecords(where: string, name: string): Promise<void> {
-    const home = `/${SESSION_WORKTREES_FOLDER}/`
+  private async refuseANameAnotherAgentHolds(where: string, name: string): Promise<void> {
     const root = isRemoteKey(where) ? await this.mainCheckoutOn(where) : projectInfoFor(where).root
-    if (this.d.resumeProbes.recorded?.(`${root}${home}${name}`))
-      throw new Error(A_NAME_WITH_A_RECOVERY_RECORD)
+    const tree = `${root}/${SESSION_WORKTREES_FOLDER}/${name}`
+    if (this.d.resumeProbes.recorded?.(tree)) throw new Error(A_NAME_WITH_A_RECOVERY_RECORD)
+    if (this.d.worktreesBeingPrepared.has(preparedKeyOf(tree)))
+      throw new Error(A_FOLDER_BEING_PREPARED)
   }
 
   private async mainCheckoutOn(where: string): Promise<string> {
