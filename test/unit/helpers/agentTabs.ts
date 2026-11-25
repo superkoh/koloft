@@ -2,6 +2,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
+import type { SessionEvent } from '@shared/sessionEvent'
 import { AgySessions, type AgySessionDeps } from '../../../src/agents/agy/main/agySessions'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../../src/agents/claude/main/backend'
 import { trustCodexFolder } from '../../../src/agents/codex/main/backend'
@@ -11,7 +12,11 @@ import { GithubRepos } from '../../../src/main/githubRepos'
 import type { RemoteTab } from '../../../src/main/host/host'
 import { Hosts } from '../../../src/main/host/hosts'
 import { localHost } from '../../../src/main/host/localHost'
-import { SshHost, type MachineAccount } from '../../../src/main/host/sshHost'
+import {
+  SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST,
+  SshHost,
+  type MachineAccount
+} from '../../../src/main/host/sshHost'
 import type { BytesResult } from '../../../src/main/remote/ssh'
 
 export const MACHINE = 'devbox'
@@ -269,6 +274,7 @@ export interface AgySetup {
   agentTools?: boolean
   apiKey?: string
   signedInOnTheWeb?: boolean
+  events?: (tabId: string, event: SessionEvent) => void
 }
 
 export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessions {
@@ -300,7 +306,10 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
     }),
     remoteDirExists: async () => true,
     changed: () => {},
-    events: (tabId, event) => sessions?.observe(tabId, event),
+    events: (tabId, event) => {
+      a.events?.(tabId, event)
+      sessions?.observe(tabId, event)
+    },
     error: () => {},
     noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],
     koloftPrompt: standInForKoloftsPrompt,
@@ -319,6 +328,7 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
     gitAccounts: { configEnv: (env) => env, ghWrapper: path.join(tools, 'gh') },
     remote: {
       machine,
+      saidWhenTheMachineWantsAPasswordFirst: SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST,
       hosts: () => [MACHINE],
       keyed: (host, p) => `ssh://${host}${p}`,
       mirrorDir: () => mirror,
@@ -327,8 +337,7 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
       connected: () => true,
       nextPull: async () => undefined,
       setupLine: () => undefined,
-      hookSettings: () => undefined,
-      machineName: () => a.machine.machinePackageName?.() ?? MACHINE_PACKAGE
+      hookSettings: () => undefined
     }
   }
   sessions = new AgySessions(path.join(world.home, 'agy-sessions.json'), deps)
@@ -339,6 +348,7 @@ export interface CodexSetup {
   run(machine: string, readable: string): { code: number | null; stdout: string; stderr: string }
   ranOnTheMachine: string[]
   agentTools?: boolean
+  events?: (tabId: string, event: SessionEvent) => void
 }
 
 export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): CodexSessions {
@@ -375,7 +385,7 @@ export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): Code
       loginPath: async () => LOGIN_PATH_ON_THE_MACHINE
     },
     changed: () => {},
-    events: () => {},
+    events: (tabId, event) => c.events?.(tabId, event),
     error: () => {},
     noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],
     koloftPrompt: standInForKoloftsPrompt,

@@ -239,7 +239,7 @@ class CallerOnTheMachine {
 
   private check(): Promise<void> {
     this.checking ??= this.host
-      .agentCallerWaits(this.requestId, this.pid)
+      .requestCallerWaits(this.requestId, this.pid)
       .catch(() => undefined)
       .then((seen) => {
         this.checking = undefined
@@ -432,7 +432,7 @@ export class ClaudeBackend implements SessionBackend {
     const title = id && this.d.store()?.findRow(id)?.title
     void this.d.hosts
       .machine(machine)
-      .endTmuxSession(tmuxName, tabId)
+      .tmux.end(tmuxName, tabId)
       .then((problem) => {
         if (problem) {
           const which = title ? `“${title}”` : 'a session'
@@ -758,7 +758,7 @@ export class ClaudeBackend implements SessionBackend {
     const host = this.d.hosts.machine(machine)
     const noOneWaits = (raw as { reply?: unknown } | null)?.reply === false
     if (!this.agentReply || (!tabId && !refusal && !this.fromOwnWorkbenchShell(raw))) {
-      if (noOneWaits) void host.answerAgent(requestId, null)
+      if (noOneWaits) void host.answerRequest(requestId, null)
       return
     }
     const pid = (raw as { pid?: unknown } | null)?.pid
@@ -771,7 +771,7 @@ export class ClaudeBackend implements SessionBackend {
       : this.agentReply(tabId, raw, caller?.stillWaiting)
     void replied.then(async (reply) => {
       const nobodyReads = noOneWaits || !!(await caller?.stoppedWaiting())
-      await host.answerAgent(requestId, nobodyReads ? null : replyJson(reply))
+      await host.answerRequest(requestId, nobodyReads ? null : replyJson(reply))
     })
   }
 
@@ -862,7 +862,7 @@ export class ClaudeBackend implements SessionBackend {
     const to = tmuxSessionName(sessionId)
     void this.d.hosts
       .machine(remote.host)
-      .renameTmuxSession(tabId, from, to)
+      .tmux.rename(tabId, from, to)
       .then((renamed) => {
         if (renamed && remote.tmuxName === from) this.d.tracker.setRemoteTmuxName(tabId, to)
       })

@@ -52,8 +52,7 @@ import {
   readAgyConversationTitle,
   readAgyTurns,
   saidInTranscript,
-  TranscriptFollower,
-  type SummaryRow
+  TranscriptFollower
 } from './agyStore'
 import {
   agyAccountEnv,
@@ -87,11 +86,17 @@ import {
   agyLogName,
   agyLogPointer,
   agyTab,
-  runMachineScript,
-  type AgyMachineLaunch,
-  type AgyMachinePlan,
-  type RemoteAgyConfig
+  runMachineScript
 } from './agyTab'
+import {
+  agyConversations,
+  agyConversationTitle,
+  agyHeldElsewhere,
+  agySend,
+  launchAgy,
+  readAgyConfig
+} from './agyMachine'
+import type { Machine } from '../../../main/host/machine'
 import { keepSkillsIn } from '../../../main/agentPlugin'
 import { seedAssistMemory } from '../../../main/assistMemory'
 import { NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from '@plugins/sessions/main/hooks'
@@ -152,20 +157,9 @@ export interface AgySessionDeps extends StoredSessionDeps {
   remote: AgyRemoteDeps
 }
 
-export interface AgyMachine {
-  launchAgy(spec: AgyMachineLaunch): Promise<AgyMachinePlan>
-  readAgyConfig(account: string): Promise<RemoteAgyConfig>
-  agyHeldElsewhere(conversationId: string): Promise<boolean>
-  agyConversationTitle?(conversationId: string): Promise<string | undefined>
-  agyConversations(): Promise<SummaryRow[]>
-  agySend(tmuxName: string, conversationId: string, text: string): Promise<boolean>
-  endTmuxSession(tmuxName: string, tabId?: string): Promise<string | undefined>
-  endedByKoloft(sessionId: string): Promise<boolean>
-  runScript(script: string, args: string[]): Promise<string | null>
-}
-
 export interface AgyRemoteDeps {
-  machine(host: string): AgyMachine
+  machine(host: string): Machine
+  saidWhenTheMachineWantsAPasswordFirst: string
   hosts(): string[]
   keyed(host: string, pathOnMachine: string): string
   mirrorDir(host: string): string
@@ -175,7 +169,6 @@ export interface AgyRemoteDeps {
   nextPull(host: string): Promise<void>
   setupLine(): string | undefined
   hookSettings(tabId: string): string | undefined
-  machineName(): string
 }
 
 interface AgyLaunch {
@@ -714,10 +707,12 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const picked = this.deps.pickHome(undefined, true)
     if (!picked) return false
     if (!key) return this.trustedHere(picked.home, dir)
-    return this.deps.remote
-      .machine(key.host)
-      .readAgyConfig(picked.account)
-      .then((config) => trustsIn(key.path, config.ownSettings, config.ownersSettings))
+    const { remote } = this.deps
+    return readAgyConfig(
+      remote.machine(key.host),
+      picked.account,
+      remote.saidWhenTheMachineWantsAPasswordFirst
+    ).then((config) => trustsIn(key.path, config.ownSettings, config.ownersSettings))
   }
 
   // AGY§5
@@ -740,10 +735,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       hosts
         .filter((host) => remote.connected(host))
         .map(async (host) => {
-          const rows = await remote
-            .machine(host)
-            .agyConversations()
-            .catch(() => undefined)
+          const rows = await agyConversations(remote.machine(host)).catch(() => undefined)
           if (!rows) return
           this.remoteHistory.set(
             host,
@@ -1003,13 +995,13 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const firstLine = firstLineToType(opts, resumeId)
     if (
       resumeId &&
-      (remote.gone(where.host, resumeId) || (await machine.endedByKoloft(resumeId))) &&
-      (await machine.agyHeldElsewhere(resumeId))
+      (remote.gone(where.host, resumeId) || (await machine.tmux.endedByKoloft(resumeId))) &&
+      (await agyHeldElsewhere(machine, resumeId))
     )
       throw new Error(HELD_ELSEWHERE)
     const [apiKey, config] = await Promise.all([
       this.deps.apiKeyOf(pick.account),
-      machine.readAgyConfig(pick.account)
+      readAgyConfig(machine, pick.account, remote.saidWhenTheMachineWantsAPasswordFirst)
     ])
     this.assertStarting()
     const tabId = opts.tabId ?? this.deps.pty.nextId()
@@ -1022,7 +1014,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     // ADR-0026 AGY§5
     const resumeInFolderAnAccountTrusts =
       !!resumeId && trustsIn(where.path, ...config.accountsSettings)
-    const m = remote.machineName()
+    const m = machine.packageName()
     const agentTools = this.deps.agent.enabled()
     const settings = mergedAgySettings(config.ownSettings, config.ownersSettings, {
       trust: trusted ? trust : resumeInFolderAnAccountTrusts ? [where.path] : [],
@@ -1045,7 +1037,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       ownerTextFor(ctx, false)
     ).join('\n\n')
     const ownerTitle = titleCommandIn(config.ownersSettings)
-    const plan = await machine.launchAgy({
+    const plan = await launchAgy(machine, {
       tabId,
       cwd,
       resumeId,
@@ -1134,7 +1126,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const machine = this.deps.remote.machine(host)
     // ADR-0044
     const named = await machine.runScript(TAB_TMUX_NAME_SH, [run.tabId])
-    const problem = await machine.endTmuxSession(named?.trim() || tmuxName, run.tabId)
+    const problem = await machine.tmux.end(named?.trim() || tmuxName, run.tabId)
     if (problem)
       this.deps.error(
         `Could not stop Antigravity on ${host}: ${problem}. It is still running there.`
@@ -2709,11 +2701,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   private readRemoteTitle(host: string, id: string): Promise<string | undefined> {
-    const machine = this.deps.remote.machine(host)
-    if (machine.agyConversationTitle) return machine.agyConversationTitle(id)
-    return machine
-      .agyConversations()
-      .then((rows) => historyEntries(rows).find((e) => e.id === id)?.name ?? undefined)
+    return agyConversationTitle(this.deps.remote.machine(host), id)
   }
 
   // AGY§8 AGY§11
@@ -3066,7 +3054,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const id = run?.info?.nativeSessionId
     if (!run || !id) return false
     const sent = run.remote
-      ? this.deps.remote.machine(run.remote.host).agySend(run.remote.tmuxName, id, text)
+      ? agySend(this.deps.remote.machine(run.remote.host), run.remote.tmuxName, id, text)
       : run.api?.send(id, text)
     return (await sent?.catch(() => false)) ?? false
   }

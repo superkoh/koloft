@@ -123,8 +123,6 @@
         "src/agents/claude/main/claudeTrust.ts": "B4"
       },
       "src/main/host/sshHost.ts": {
-        "src/agents/agy/main/agyStore.ts": "C10",
-        "src/agents/agy/main/agyTab.ts": "C10",
         "src/agents/claude/main/claudeArgs.ts": "B4",
         "src/agents/claude/main/claudeTrustJs.ts": "B4"
       },

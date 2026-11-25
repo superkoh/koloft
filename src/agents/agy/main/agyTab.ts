@@ -6,11 +6,10 @@ import { AGY_LOG_ENV, AGY_LOG_POINTER_SUFFIX, AGY_START_ENV } from './agyHooks'
 import { NOTICE_ENV, remoteNoticeFile } from '@plugins/sessions/main/hooks'
 import { CSRF_HEADER, SERVICE } from './agyApi'
 import { remoteAnswerCommand, remoteShCommand } from '../../../main/remote/install'
+import type { TabProgram } from '../../../main/host/machine'
 import {
   EXEC_ARGS_THROUGH_THE_STATUS_RELAY,
-  machineToolProgram,
-  skillsFromMachineLine,
-  type TabProgram
+  skillsFromMachineLine
 } from '../../../main/remote/launch'
 import {
   REMOTE_COMPILE_CACHE,
@@ -100,6 +99,8 @@ export interface AgyTabSpec {
 // AGY§31
 export const AGY_SKILLS = `${AGY_APP_DIR}/skills`
 
+const SIGN_IN_FILE_GOES_WHEN_THE_SCRIPT_ENDS = `trap 'rm -f "$T.auth.json"' EXIT\n`
+
 // AGY§4 AGY§5 AGY§6
 export function agyTab(s: AgyTabSpec): TabProgram {
   const own = `$A/${AGY_APP_DIR}`
@@ -136,13 +137,19 @@ export function agyTab(s: AgyTabSpec): TabProgram {
     ...EXEC_ARGS_THROUGH_THE_STATUS_RELAY
   ]
   const file = (name: string): string => `${s.tabId}.${name}`
-  return machineToolProgram('agy', run.map((line) => `  ${line}\n`).join(''), {
-    [file('settings.json')]: s.settings,
-    [file('hooks.json')]: s.hooks,
-    ...(s.onboarding ? { [file('onboarding.json')]: s.onboarding } : {}),
-    ...(s.token ? { [file('auth.json')]: s.token } : {}),
-    ...(s.start ? { [file('start.json')]: s.start } : {})
-  })
+  return {
+    run: run.map((line) => `  ${line}\n`).join(''),
+    beforeEnsure: SIGN_IN_FILE_GOES_WHEN_THE_SCRIPT_ENDS,
+    ensureTool: 'agy',
+    beforeTmux: '',
+    files: {
+      [file('settings.json')]: s.settings,
+      [file('hooks.json')]: s.hooks,
+      ...(s.onboarding ? { [file('onboarding.json')]: s.onboarding } : {}),
+      ...(s.token ? { [file('auth.json')]: s.token } : {}),
+      ...(s.start ? { [file('start.json')]: s.start } : {})
+    }
+  }
 }
 
 const CONFIG_SPLIT = '\u0001'

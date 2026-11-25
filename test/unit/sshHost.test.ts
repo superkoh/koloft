@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 import { execFileSync, spawn, spawnSync } from 'child_process'
 import { machineClaudeArgs, SshHost, type MachineClaudeDeps } from '../../src/main/host/sshHost'
-import { killSessionCmd, machineToolProgram, renameSessionCmd } from '../../src/main/remote/launch'
+import { killSessionCmd, renameSessionCmd } from '../../src/main/remote/launch'
 import { tabPackageDir } from '../../src/main/remote/paths'
 import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { localHost } from '../../src/main/host/localHost'
@@ -425,9 +425,9 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       fs.writeFileSync(path.join(hookDir, 'req-r3.json'), '{}')
       const reply = '{"exit":0,"text":"it\'s \\"done\\""}'
 
-      await machine().answerAgent('r1', reply)
-      await machine().answerAgent('r2', reply)
-      await machine().answerAgent('r3', null)
+      await machine().answerRequest('r1', reply)
+      await machine().answerRequest('r2', reply)
+      await machine().answerRequest('r3', null)
 
       expect(fs.readdirSync(hookDir)).toEqual(['res-r1.json'])
       expect(fs.readFileSync(path.join(hookDir, 'res-r1.json'), 'utf8')).toBe(reply)
@@ -839,27 +839,21 @@ describe('accounts for remote launches started together', () => {
   })
 
   // PLATFORM§33
-  it("writes the machine's login-shell PATH into the script of a Claude Code or Antigravity tab it starts there, and none into the script of one that re-attaches to a session still running there", async () => {
+  it("writes the machine's login-shell PATH into the script of a Claude Code tab it starts there, and none into the script of one that re-attaches to a session still running there", async () => {
     const live = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
     const host = machine(runOnMachine, {
       loginPath: async () => '/opt/rc-only/bin',
       alive: () => new Set([live])
     })
-    const scriptOf = (tabId: string): string =>
-      fs.readFileSync(path.join(tabPackageDir(home, tabId), `${tabId}.sh`), 'utf8')
-    const program = machineToolProgram('agy', '  exec agy\n', {})
-    const scripts = async (resume?: string): Promise<string[]> => {
-      const tag = resume ? 'again' : 'new'
+    const script = async (tabId: string, resume?: string): Promise<string> => {
       const claude = await host.launch({ root: keyed('/w'), resumeSessionId: resume })
       if (!claude.ok) throw new Error('launch refused')
-      claude.launchCommand(`claude-${tag}`)
-      const agy = { tabId: `agy-${tag}`, cwd: keyed('/w'), env: {}, program, resumeId: resume }
-      ;(await host.launchAgy(agy)).launchCommand()
-      return ['claude', 'agy'].map((kind) => scriptOf(`${kind}-${tag}`))
+      claude.launchCommand(tabId)
+      return fs.readFileSync(path.join(tabPackageDir(home, tabId), `${tabId}.sh`), 'utf8')
     }
     const handed = `PATH="$PATH":'/opt/rc-only/bin'`
-    for (const started of await scripts()) expect(started).toContain(handed)
-    for (const reattached of await scripts(live)) expect(reattached).not.toContain(handed)
+    expect(await script('claude-new')).toContain(handed)
+    expect(await script('claude-again', live)).not.toContain(handed)
   })
 
   it('a remote launch says whether its claude skips permission checks, from the launch’s own permission or else Settings, so a message the owner sends it can claim its real class (ADR-0028)', async () => {
@@ -938,6 +932,26 @@ it("a launch decided before the machine's first heartbeat this run waits for it,
   expect(plan.machine?.attachTo).toBe(live)
 })
 
+describe('the basic actions an agent builds its own launch from', () => {
+  it("the line that sends a tab's files copies the tab's own folder on this Mac to the machine, names the machine package to push first when it is missing there, and removes the folder on this Mac afterwards", () => {
+    const { dir, pushedLine } = machine().tabFiles('pty-9')
+    expect(dir).toBe(tabPackageDir(home, 'pty-9'))
+    const line = pushedLine()
+    expect(line).toContain(`-C '${dir}' .`)
+    expect(line).toContain('test -d m-0000000000000000 || mv m.tmp.pty-9 m-0000000000000000')
+    expect(line.endsWith(`rm -rf '${dir}'; `)).toBe(true)
+  })
+
+  it('ssh arguments for work in the background never stop to ask for a password, the ones for a tab the owner watches may, and asking for either makes the folder the shared connection lives in', () => {
+    const controlDir = path.join(home, 'control')
+    const host = machine(runOnMachine, { controlDir })
+    expect(host.sshArgs(true)).toContain('BatchMode=yes')
+    expect(fs.statSync(controlDir).isDirectory()).toBe(true)
+    expect(host.sshArgs(false)).not.toContain('BatchMode=yes')
+    expect(host.sshArgs(false)).toContain(`ControlPath=${controlDir}/%C`)
+  })
+})
+
 describe('ending a session that runs on the machine', () => {
   const live = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
   const tmux = `k-${live}`
@@ -958,21 +972,21 @@ describe('ending a session that runs on the machine', () => {
       255,
       'ssh: connect to host devbox: Connection refused\n'
     )
-    expect(await host.endTmuxSession(tmux)).toBe('ssh: connect to host devbox: Connection refused')
+    expect(await host.tmux.end(tmux)).toBe('ssh: connect to host devbox: Connection refused')
     await host.launch({ root: keyed('/w'), resumeSessionId: live })
     expect(pickAccount).not.toHaveBeenCalled()
   })
 
   it('a kill that timed out says so, and the next launch attaches', async () => {
     const { host, pickAccount } = killAnswering(null)
-    expect(await host.endTmuxSession(tmux)).toBe('ssh timed out')
+    expect(await host.tmux.end(tmux)).toBe('ssh timed out')
     await host.launch({ root: keyed('/w'), resumeSessionId: live })
     expect(pickAccount).not.toHaveBeenCalled()
   })
 
   it('a kill of a session already gone (tmux exits 1) is no failure, and the next launch starts afresh', async () => {
     const { host, pickAccount } = killAnswering(1, "can't find session: " + tmux + '\n')
-    expect(await host.endTmuxSession(tmux)).toBeUndefined()
+    expect(await host.tmux.end(tmux)).toBeUndefined()
     await host.launch({ root: keyed('/w'), resumeSessionId: live })
     expect(pickAccount).toHaveBeenCalled()
   })
@@ -1008,7 +1022,7 @@ printf '%s\\n' "\${5:-the session tmux picked}" >> ${JSON.stringify(killed)}
       const pickAccount = vi.fn(async () => ({ env: {}, banner: '' }))
       const host = machine(runOnMachine, { alive: () => new Set([cleared]), pickAccount })
 
-      const kill = host.endTmuxSession(tmux, 'pty-1')
+      const kill = host.tmux.end(tmux, 'pty-1')
       await host.launch({ root: keyed('/w'), resumeSessionId: cleared })
       expect(await kill).toBeUndefined()
       expect(fs.readFileSync(killed, 'utf8')).toBe(`k-${cleared}\n`)
@@ -1019,7 +1033,7 @@ printf '%s\\n' "\${5:-the session tmux picked}" >> ${JSON.stringify(killed)}
       const killed = tmuxWhoseOnlySessionIs(`k-${cleared}`)
       tabNameFile('pty-1', '')
 
-      expect(await machine().endTmuxSession(tmux, 'pty-1')).toBeUndefined()
+      expect(await machine().tmux.end(tmux, 'pty-1')).toBeUndefined()
       expect(fs.existsSync(killed)).toBe(false)
     })
   })
@@ -1043,9 +1057,9 @@ printf '%s\\n' "\${5:-the session tmux picked}" >> ${JSON.stringify(killed)}
             cmd === renameSessionCmd('pty-1', tmux, renamed) ? neverBack : runOnMachine(cmd, opts),
           { alive: () => new Set([moved]), pickAccount }
         )
-        void host.renameTmuxSession('pty-1', tmux, renamed)
+        void host.tmux.rename('pty-1', tmux, renamed)
 
-        expect(await host.endTmuxSession(tmux)).toBeUndefined()
+        expect(await host.tmux.end(tmux)).toBeUndefined()
         expect(fs.readFileSync(killed, 'utf8')).toBe(`${nameOnTheMachine}\n`)
         await host.launch({ root: keyed('/w'), resumeSessionId: moved })
         expect(pickAccount).toHaveBeenCalled()
