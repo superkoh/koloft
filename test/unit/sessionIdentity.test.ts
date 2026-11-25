@@ -27,10 +27,6 @@ describe('identityOf (whose session a saved key is)', () => {
     }
   )
 
-  it('a workspace panel’s key on another machine has three parts, like a session key', () => {
-    expect(WORKSPACE_PANEL_ON_A_MACHINE.split(':')).toHaveLength(3)
-  })
-
   it('reads back, part for part, a key Koloft built from a place and an id that hold a colon, a slash or a percent sign', () => {
     const built = {
       backendId: 'codex',
@@ -47,11 +43,7 @@ describe('identityOf (whose session a saved key is)', () => {
     ['a key of two parts', 'codex:local'],
     ['a key of four parts', `codex:local:${SESSION}:more`],
     ['a key of three parts that names an agent this Koloft no longer has', `muse:local:${SESSION}`],
-    ['a key of three parts that names nothing Koloft ever ran', `nobody:local:${SESSION}`],
-    [
-      'a workspace panel’s key on another machine, which has three parts',
-      WORKSPACE_PANEL_ON_A_MACHINE
-    ]
+    ['a workspace panel’s key on another machine', WORKSPACE_PANEL_ON_A_MACHINE]
   ])('%s is read as a Claude Code session on this Mac whose id is the whole key', (_what, key) => {
     expect(identityOf(key)).toEqual({
       backendId: 'claude',

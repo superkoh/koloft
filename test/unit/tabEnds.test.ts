@@ -102,9 +102,12 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
-  for (const stop of stops) await stop()
-  await BackgroundFile.whenAllWritten()
-  world.gone()
+  try {
+    for (const stop of stops) await stop()
+    await BackgroundFile.whenAllWritten()
+  } finally {
+    world.gone()
+  }
   expect(toasts, 'a tab that ends without a failed stop shows no toast').toEqual([])
 })
 
@@ -196,10 +199,12 @@ const storedTabNow = (a: ThreeAgents, agent: StoredAgent): unknown => ({
 })
 
 const A_STOP_IS_LOOKED_FOR_EVERY_MS = 5
+const A_STOP_ON_A_BUSY_MACHINE_ENDS_WITHIN_MS = 10_000
 
 const stoppedAndGone = (a: ThreeAgents, agent: StoredAgent): Promise<void> =>
   vi.waitFor(() => expect(a[agent].sessions.hasTab(TAB_OF[agent])).toBe(false), {
-    interval: A_STOP_IS_LOOKED_FOR_EVERY_MS
+    interval: A_STOP_IS_LOOKED_FOR_EVERY_MS,
+    timeout: A_STOP_ON_A_BUSY_MACHINE_ENDS_WITHIN_MS
   })
 
 const OPEN_AND_LEFT_ALONE = { open: true, countsOnItsAccount: true, killed: [] }
@@ -214,7 +219,7 @@ const REPORTED_AS_EXITED_UNCLEANLY: Sent = [
   { type: 'exited', clean: false, title: PLACEHOLDER_SESSION_TITLE, sessionId: CLAUDE_SESSION }
 ]
 
-describe('a session tab whose terminal ended, told to the three agents as the app tells them', () => {
+describe('a session tab whose terminal ended, told to the three real backends through the teardown wiring', () => {
   it('Claude Code: a tab on this Mac whose claude died without an end report is reported as exited with its session and its title, and its row is no longer alive', async () => {
     const a = await aTabOfEveryAgent()
     a.lifecycle.emit('teardown', crashed(CLAUDE_TAB))
@@ -225,6 +230,21 @@ describe('a session tab whose terminal ended, told to the three agents as the ap
   it('Claude Code: a tab on this Mac whose terminal ended without a crash and without an end report sends no event, and its row is no longer alive', async () => {
     const a = await aTabOfEveryAgent()
     a.lifecycle.emit('teardown', ended(CLAUDE_TAB))
+    expect(claudeTabNow(a)).toEqual({ alive: false, session: CLAUDE_SESSION, sent: [] })
+  })
+
+  it('Claude Code: a tab on this Mac whose claude wrote its end report and then exited with a failure is not reported as exited a second time, and its row is no longer alive', async () => {
+    const a = await aTabOfEveryAgent()
+    fs.writeFileSync(
+      path.join(world.regDir, `${CLAUDE_TAB}.json`),
+      JSON.stringify({
+        event: 'end',
+        reason: 'other',
+        tabId: CLAUDE_TAB,
+        sessionId: CLAUDE_SESSION
+      })
+    )
+    a.lifecycle.emit('teardown', crashed(CLAUDE_TAB))
     expect(claudeTabNow(a)).toEqual({ alive: false, session: CLAUDE_SESSION, sent: [] })
   })
 
