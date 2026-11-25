@@ -2,6 +2,7 @@ import type { BackendId } from '@shared/types'
 import type { GitOut } from '@core/worktree'
 import type { WorktreeRecordsOfEveryAgent, WorktreeResource } from '@core/agent/worktreeRecords'
 import type { TreeRemovals } from './treeRemovals'
+import { preparedKeyOf } from './worktreesBeingPrepared'
 
 export interface UntouchedWorktreeRemovalDeps {
   sleeperTrees(): string[]
@@ -34,11 +35,12 @@ export async function removeUntouchedWorktreeWith(
     !!cronRunner?.tidiesFolder(tree) ||
     !!sessionBackends.occupantOf(tree) ||
     sessionBackends.worktreeRecords.recordedByAnother(id, tree)
-  if (!owner || preparing.has(tree) || someoneElseIsIn(owner.id)) return
+  const key = preparedKeyOf(tree)
+  if (!owner || preparing.has(key) || someoneElseIsIn(owner.id)) return
   if (treeRemovals.has(tree)) return
   let release = (): void => {}
   const held = new Promise<void>((r) => (release = r))
-  preparing.set(tree, held)
+  preparing.set(key, held)
   let problem: string | null = null
   try {
     if (!(await sessionBackends.worktreeRecords.untouched(owner.id, resource))) return
@@ -52,7 +54,7 @@ export async function removeUntouchedWorktreeWith(
       })
     )
   } finally {
-    if (preparing.get(tree) === held) preparing.delete(tree)
+    if (preparing.get(key) === held) preparing.delete(key)
     release()
   }
   if (problem && (await d.dirExists(tree))) d.toast(problem)

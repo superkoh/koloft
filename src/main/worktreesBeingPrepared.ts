@@ -1,0 +1,55 @@
+import fs from 'fs'
+import path from 'path'
+import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
+import { worktreeFolderAround } from './resumePlan'
+import type { TreeRemovals } from './treeRemovals'
+
+export type WorktreesBeingPrepared = Map<string, Promise<unknown>>
+
+function realThroughTheNearestFolderThere(p: string): string {
+  try {
+    return fs.realpathSync(p)
+  } catch {
+    const parent = path.dirname(p)
+    return parent === p ? p : path.join(realThroughTheNearestFolderThere(parent), path.basename(p))
+  }
+}
+
+export function preparedKeyOf(dir: string): string {
+  const remote = parseRemoteKey(dir)
+  const asked = remote ? remote.path : dir
+  const tree = worktreeFolderAround(asked) ?? asked
+  return remote ? formatRemoteKey(remote.host, tree) : realThroughTheNearestFolderThere(tree)
+}
+
+export async function whenNobodyPrepares(
+  preparing: WorktreesBeingPrepared,
+  key: string
+): Promise<void> {
+  for (let p = preparing.get(key); p; p = preparing.get(key)) await p.catch(() => undefined)
+}
+
+export async function holdingTheFolder<T>(
+  preparing: WorktreesBeingPrepared,
+  key: string,
+  work: () => Promise<T>
+): Promise<T> {
+  for (let p = preparing.get(key); p; p = preparing.get(key)) await p.catch(() => undefined)
+  let release = (): void => {}
+  const held = new Promise<void>((r) => (release = r))
+  preparing.set(key, held)
+  try {
+    return await work()
+  } finally {
+    if (preparing.get(key) === held) preparing.delete(key)
+    release()
+  }
+}
+
+export function removingTheWorktree<T>(
+  d: { preparing: WorktreesBeingPrepared; treeRemovals: Pick<TreeRemovals, 'run'> },
+  tree: string,
+  work: () => Promise<T>
+): Promise<T> {
+  return holdingTheFolder(d.preparing, preparedKeyOf(tree), () => d.treeRemovals.run(tree, work))
+}
