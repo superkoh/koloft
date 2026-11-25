@@ -107,9 +107,9 @@ import {
   runSsh,
   runSshBytes,
   problemOf,
-  sshOptions,
-  writeToMachineSocket
+  sshOptions
 } from './remote/ssh'
+import { sessionMessaging } from './sessionMessaging'
 import { BrowserTunnels } from './remote/browserTunnel'
 import { anyFreeMacPort, macPortFree, PageForwards } from './remote/portForward'
 import { MACHINE_PLAYWRIGHT_CLI } from './remote/playwrightCli'
@@ -1789,28 +1789,47 @@ async function liveClaudeRegistryOn(host: string): Promise<string> {
   return r.stdout
 }
 
-// CC§13
-async function sendPeerLine(tabId: string, line: string, ms: number): Promise<void> {
-  const sessionId = sessionOfTab(tabId)?.sessionId
-  const host = tracker.remoteOf(tabId)?.host
-  if (!sessionId) throw new Error(NO_MESSAGE_SOCKET)
-  if (!host) {
-    const socket = await whenMessagingSocket(sessionId, ms)
-    if (!socket) throw new Error(NO_MESSAGE_SOCKET)
-    return writeLineInTurn(socket, line)
-  }
-  const socket = await whenMessagingSocketOnMachine(sessionId, ms, () => liveClaudeRegistryOn(host))
-  if (!socket) throw new Error(NO_MESSAGE_SOCKET)
-  await writeLineInTurn(`${host}:${socket}`, line, (l) =>
-    writeToMachineSocket(host, socket, l, { controlDir: remoteControlDir })
-  )
-}
-const NO_MESSAGE_SOCKET = 'Koloft could not find where that session takes messages.'
-
-async function queueCodexMessage(tabId: string, text: string, clientId: string): Promise<void> {
-  if (!codexSessions) throw new Error(startupErrors.codex ?? 'Codex is not available.')
-  await codexSessions.queueMessage(tabId, text, clientId)
-}
+const messaging = sessionMessaging({
+  get tracker() {
+    return tracker
+  },
+  get hosts() {
+    return hosts
+  },
+  get codexSessions() {
+    return codexSessions
+  },
+  get hookRegDir() {
+    return hookRegDir
+  },
+  get butler() {
+    return butler
+  },
+  get sessionBackends() {
+    return sessionBackends
+  },
+  get writeLineInTurn() {
+    return writeLineInTurn
+  },
+  get noteOfWhatKoloftSends() {
+    return noteOfWhatKoloftSends
+  },
+  get noteSent() {
+    return noteSent
+  },
+  get buildHandOver() {
+    return buildHandOver
+  },
+  ptyMgr,
+  startupErrors,
+  remoteControlDir,
+  sessionOfTab,
+  machineOfTab,
+  storedOwnerOf,
+  liveClaudeRegistryOn,
+  whenMessagingSocket,
+  whenMessagingSocketOnMachine
+})
 
 const syncRepoKeys = new GitRepoKeys(undefined, (machine, paths) =>
   Promise.all(
@@ -1837,23 +1856,6 @@ function syncSessionsOf(all: SessionInfo[]): SyncSession[] {
         ]
       : []
   )
-}
-
-// ADR-0028
-async function noteSentByKoloft(
-  tabId: string,
-  text: string,
-  id: string | undefined
-): Promise<void> {
-  const note = noteOfWhatKoloftSends(backendIdOf(ptyMgr.get(tabId)?.kind), text, id)
-  if (!note) return
-  const host = machineOfTab(tabId)
-  if (host) return hosts.machine(host).noteSent(tabId, note)
-  if (hookRegDir) noteSent(hookRegDir, tabId, note)
-}
-
-async function deliverViaOwner(tabId: string, text: string): Promise<boolean> {
-  return (await storedOwnerOf(tabId)?.deliver(tabId, text)) ?? false
 }
 
 function noticeOf(tabId: string): NoticeFile | undefined {
@@ -1987,7 +1989,7 @@ const sessionDeps: SessionVerbDeps = {
     return launchQuietTab(options, title, { launch: options })
   },
   assist,
-  queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
+  ...messaging.forSessionVerbs,
   get startedSessions() {
     return startedSessions
   },
@@ -2022,14 +2024,6 @@ const sessionDeps: SessionVerbDeps = {
   ready: tabTypable,
   bound: tabBound,
   asking: asksTheOwner,
-  sendLine: sendPeerLine,
-  press: async (tabId, keys) => {
-    butler?.firstWordsComing(tabId)
-    await ptyMgr.type(tabId, keys)
-  },
-  deliver: deliverViaOwner,
-  noteSent: noteSentByKoloft,
-  modeOf: (tabId) => sessionBackends.permissionClass(tabId),
   stop: killTabFromMain,
   answer: answerSession,
   undelivered: (callerTab, target, why) => {
@@ -3975,16 +3969,7 @@ app.whenReady().then(() => {
     respond: (i, body) => link.respond(i, body)
   })
   const attachmentsDir = path.join(userData, 'discord-attachments')
-  const handOverNow = buildHandOver({
-    ...tabState,
-    alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
-    typable: (tabId) => asks.typable(tabId),
-    ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
-    queue: queueCodexMessage,
-    sendLine: sendPeerLine,
-    modeOf: (tabId) => sessionBackends.permissionClass(tabId),
-    noteSent: noteSentByKoloft
-  })
+  const handOverNow = messaging.handOver(tabState, asks)
   handOver = handOverNow
   discordRelay = buildDiscordRelay({
     ...tabState,
