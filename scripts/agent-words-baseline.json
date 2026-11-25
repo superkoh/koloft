@@ -166,7 +166,6 @@
       "claudeAskOf,",
       "claudeAsked,",
       "claudeBackend,",
-      "claudeBackend.agentReply = (tabId, raw, stillWaiting) =>",
       "claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),",
       "claudeBackend.forgetAvailability()",
       "claudeBackend.watchLocalHooks(hookPaths.regDir)",

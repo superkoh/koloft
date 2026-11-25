@@ -176,7 +176,6 @@ export interface SessionsWithStore {
   answerable?(tabId: string): Promise<void>
   answer(tabId: string, reply: string): Promise<SentAnswer | false>
   deliver(tabId: string, text: string): Promise<boolean>
-  tabOnMachine?(host: string, tmuxName: string, launchTab: string): string | undefined
 }
 
 type Place = ProjectInfo & { missing: boolean }
@@ -335,6 +334,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   abstract mirrorPulled(host: string): void
   abstract foldersToMirrorFrom(host: string, landing: string): MirrorFolder[]
   abstract tmuxOfTab(tabId: string): string | undefined
+  abstract tabOfTmuxSession(host: string, name: string): string | undefined
   abstract answer(tabId: string, reply: string): Promise<SentAnswer | false>
   abstract deliver(tabId: string, text: string): Promise<boolean>
 
