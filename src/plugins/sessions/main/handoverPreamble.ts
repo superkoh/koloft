@@ -1,6 +1,7 @@
 import { OWNER_QUOTE_MARKS } from '@core/ownerWords'
 import type { Assist } from '@core/assistModels'
 import { composePrompt } from '@core/prompt'
+import { HANDOVER_OPENING, RESULT_PLACEHOLDER } from '@core/handOver'
 import type { SessionsAssistJobId } from '../shared/assistJobs'
 
 export interface SessionCaller {
@@ -11,10 +12,7 @@ export interface SessionCaller {
   ownerWords?: string
 }
 
-export const HANDOVER_OPENING = 'Koloft started you because '
 export const OWNER_WORDS_QUOTED_CHARS = 150
-const OLDER_SEND_MESSAGE_ENDING = 'with your SendMessage tool.'
-const RESULT_PLACEHOLDER = '"<your result>"'
 const CALLER_SLOT = '{caller}'
 const OWNER_WORDS_SLOT = '{owner}'
 
@@ -74,17 +72,4 @@ export async function handoverInOwnersLanguage(
   const holdsEachSlotOnce =
     holdsOnce(translation, CALLER_SLOT) && holdsOnce(translation, OWNER_WORDS_SLOT)
   return preambleFrom(caller, !ownerWroteEnglish && holdsEachSlotOnce ? translation : english)
-}
-
-export function withHandover(preamble: string, prompt: string): string {
-  return `${preamble}\n\n${prompt}`
-}
-
-// CC§9
-const HANDOVER_THEN_TASK = new RegExp(
-  `^(?:${HANDOVER_OPENING}[\\s\\S]*?${OLDER_SEND_MESSAGE_ENDING.replace('.', '\\.')}|[\\s\\S]*?koloft session send \\S+ ${RESULT_PLACEHOLDER})\\n\\n`
-)
-
-export function withoutHandover(text: string): string {
-  return text.replace(HANDOVER_THEN_TASK, '')
 }
