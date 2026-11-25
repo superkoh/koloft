@@ -1549,7 +1549,7 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` itself; it steps aside when either name is already
   in the env, so the pins the shim passes for a custom endpoint with a model set stay
   (`strings`, not run: inferred, not checked). A custom-endpoint account with no model
-  gets no pins from the shim (`src/main/shim.ts`), so there the mix could pick a
+  gets no pins from the shim (`src/agents/claude/main/claudeShim.ts`), so there the mix could pick a
   subagent model the endpoint does not serve; whether the server sends the mix to such
   an endpoint is not probed yet.
   `CLAUDE_CODE_DISABLE_NESTED_SESSION_ID` (2.1.317 changelog: a `claude -p` run inside
@@ -1780,7 +1780,7 @@ Evidence: probe edge shapes curl-verified 2026-08-17; latency measured 2026-08-1
 classifier fallback seen 2026-08-20. Koloft dependents:
 `src/agents/claude/main/claudeAccountProbe.ts` (marked `CC§7`; its parse rules are this section),
 `src/agents/claude/main/claudeAccountPicker.ts`, `src/shared/accountUsage.ts`, the shim's inject section
-in `src/main/shim.ts` and `accountEnv` in `src/agents/claude/main/claudeAccountEnv.ts` (the remote
+in `src/agents/claude/main/claudeShim.ts` and `accountEnv` in `src/agents/claude/main/claudeAccountEnv.ts` (the remote
 launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.parse/score`, `accountPicker`,
 `accountUsage` unit suites and `test/e2e/multi-account.spec.ts`.
 
@@ -2537,10 +2537,10 @@ other bullets of §9 were not re-measured on this build.
   Desktop app or VS Code.
 
 Koloft dependents: the scheduled-jobs runner's launch line and the shim's new-session
-branch (`src/main/shim.ts`), `src/agents/claude/main/claudeArgs.ts`, the skill folders in `src/agents/claude/agent.ts`,
+branch (`src/agents/claude/main/claudeShim.ts`), `src/agents/claude/main/claudeArgs.ts`, the skill folders in `src/agents/claude/agent.ts`,
 `src/agents/claude/main/claudeTrust.ts`, the env scrubs in `src/main/ptyManager.ts` and
 `scripts/code-review.mjs`,
-`src/main/leftovers.ts`, the warm-up `claude -p ok --max-turns 1` in
+`src/main/leftoverProcesses.ts`, the warm-up `claude -p ok --max-turns 1` in
 `src/main/remote/launch.ts`, the remote launch and trust check in
 `src/main/host/sshHost.ts`, and the remote trust write, which the tab script in
 `src/main/remote/launch.ts` runs with node once `ensure.sh` has put node there.
