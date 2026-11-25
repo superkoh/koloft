@@ -267,6 +267,7 @@ function saveErrors(
   else if (c.task.length > 4096) errs.push(CRON_SAVE_MESSAGES.taskLong)
   errs.push(...scheduleErrors(schedule, now, saved))
   if (c.model !== undefined && !isValidModelName(c.model)) errs.push(CRON_SAVE_MESSAGES.model)
+  if (!c.backend) errs.push(AGENT_NO_LONGER_SUPPORTED_NOTE)
   return errs
 }
 

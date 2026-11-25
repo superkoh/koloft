@@ -766,16 +766,19 @@ describe('the butler', () => {
     expect(session.lastSessionKey).toBe(CODEX_KEY)
   })
 
-  it('a last conversation of an agent this Koloft no longer has is never resumed as another agent’s: the next open starts a new conversation and says so', async () => {
-    session = { sessionIds: [REMOVED_AGENTS_KEY], lastSessionKey: REMOVED_AGENTS_KEY }
-    transcripts.add(REMOVED_AGENTS_KEY)
-    const c = make()
-    await opened(c)
-    expect(started[0].backend).toBe('claude')
-    expect(resumed).toEqual([])
-    expect(toasts).toEqual(['Alfred now runs on Claude, so it starts a new conversation.'])
-    expect(c.isButlerSession(REMOVED_AGENTS_KEY)).toBe(true)
-  })
+  it.each([REMOVED_AGENTS_KEY, 'muse:019a-thread'])(
+    'a last conversation of an agent this Koloft no longer has (%s) is never resumed as another agent’s: the next open starts a new conversation and says so',
+    async (key) => {
+      session = { sessionIds: [key], lastSessionKey: key }
+      transcripts.add(key)
+      const c = make()
+      await opened(c)
+      expect(started[0].backend).toBe('claude')
+      expect(resumed).toEqual([])
+      expect(toasts).toEqual(['Alfred now runs on Claude, so it starts a new conversation.'])
+      expect(c.isButlerSession(key)).toBe(true)
+    }
+  )
 
   // AGY§21
   it('says which model it runs on in place of the picked one: under its own name, or in the same line as why it starts a new conversation', async () => {

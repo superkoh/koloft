@@ -87,10 +87,11 @@ describe.each(EVERY_AGENT)('a Koloft that no longer has %s', (gone) => {
   const left = EVERY_AGENT.filter((agent) => agent !== gone)
   const ownerOfUnnamedOldDataIsLeft = gone !== OWNER_OF_UNNAMED_OLD_DATA
 
-  it('reports its saved session keys as unavailable, here and on a machine, and still reads every other agent’s', async () => {
+  it('reports its saved session keys as unavailable, here and on a machine and in the old two-part form, and still reads every other agent’s', async () => {
     const { identityOf } = await koloftWithout(gone)
     expect(identityOf(keyOf(gone))).toBeUndefined()
     expect(identityOf(keyOf(gone, 'devbox'))).toBeUndefined()
+    expect(identityOf(`${gone}:019a-thread`)).toBeUndefined()
     for (const agent of left) {
       expect(identityOf(keyOf(agent, 'devbox'))).toEqual({
         backendId: agent,
@@ -248,5 +249,26 @@ describe('a Koloft that no longer has the owner of unnamed old data: a scheduled
       { state: 'failed', note: AGENT_NO_LONGER_SUPPORTED_NOTE }
     ])
     expect(toasts).toEqual([`⏰ Old task could not start: ${AGENT_NO_LONGER_SUPPORTED_NOTE}`])
+  })
+
+  it('cannot be saved until an agent is picked for it: the save is refused with that note, and one that names an agent left is saved', async () => {
+    const { CronRunner, AGENT_NO_LONGER_SUPPORTED_NOTE } =
+      await koloftWithout(OWNER_OF_UNNAMED_OLD_DATA)
+    const jobs = [job({ enabled: false })]
+    const runner = new CronRunner({
+      now: () => A_RUN_AT,
+      bootTime: A_RUN_AT,
+      store: { load: () => ({ jobs, notes: {} }), save: () => {} },
+      isPinned: () => true,
+      gitDirExists: () => false,
+      push: () => {}
+    } as unknown as RunnerDeps)
+    const edited = { ...jobs[0], enabled: true }
+    expect(runner.save(edited)).toEqual({ ok: false, errors: [AGENT_NO_LONGER_SUPPORTED_NOTE] })
+    expect(jobs[0].enabled).toBe(false)
+    expect(runner.save({ ...edited, backend: kept })).toMatchObject({
+      ok: true,
+      job: { backend: kept, enabled: true }
+    })
   })
 })
