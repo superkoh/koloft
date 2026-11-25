@@ -100,8 +100,12 @@ async function ignoredFilesSameAsRoot(io: TreeIo, root: string, tree: string): P
   return true
 }
 
+export interface WorktreesOfEveryAgent {
+  recorded(worktreePath: string): boolean
+  readonly preparing: Set<string>
+}
+
 export class SessionWorktrees {
-  private readonly preparing = new Set<string>()
   readonly records: WorktreeRecords = {
     of: (workspace) => this.store.listResources().filter((r) => r.originalCwd === workspace),
     at: (dir) => this.store.listResources().find((r) => r.worktreePath === dir),
@@ -111,6 +115,7 @@ export class SessionWorktrees {
 
   constructor(
     private readonly store: SessionStore,
+    private readonly everyAgent: WorktreesOfEveryAgent,
     private readonly remoteIo?: (cwd: string) => TreeIo
   ) {}
 
@@ -182,10 +187,6 @@ export class SessionWorktrees {
     }
   }
 
-  recorded(worktreePath: string): boolean {
-    return this.store.listResources().some((r) => r.worktreePath === worktreePath)
-  }
-
   async rebuild(resourceId: string): Promise<WorktreeResource> {
     const resource = this.requiredResource(resourceId)
     if (await this.io(resource.worktreePath).exists(resource.worktreePath)) {
@@ -243,7 +244,7 @@ export class SessionWorktrees {
     if (await io.exists(target)) throw new Error('Worktree directory already exists')
     const branch = `worktree-${name}`
     if (await branchExists(io, root, branch)) throw new Error('Worktree branch already exists')
-    if (this.recorded(target)) {
+    if (this.everyAgent.recorded(target)) {
       throw new Error(
         'This worktree name has a recovery record; recover it or choose a different name'
       )
@@ -265,15 +266,18 @@ export class SessionWorktrees {
     resource: WorktreeResource,
     reuseBranch = true
   ): Promise<WorktreeResource> {
-    if (this.preparing.has(resource.worktreePath))
+    const { preparing } = this.everyAgent
+    if (preparing.has(resource.worktreePath))
       throw new Error('Worktree preparation is already in progress')
-    this.preparing.add(resource.worktreePath)
+    preparing.add(resource.worktreePath)
     const pending: WorktreeResource = { ...resource, state: 'creating', error: undefined }
     try {
+      if (reuseBranch && (await this.io(resource.worktreePath).exists(resource.worktreePath)))
+        return await this.adopt(resource.originalCwd, resource.worktreePath)
       this.store.putResource(pending)
       return await this.materializeRecorded(pending, reuseBranch)
     } finally {
-      this.preparing.delete(resource.worktreePath)
+      preparing.delete(resource.worktreePath)
     }
   }
 

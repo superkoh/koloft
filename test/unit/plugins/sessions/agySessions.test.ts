@@ -31,6 +31,7 @@ import type { SessionEvent } from '../../../../src/shared/sessionEvent'
 import { NO_USABLE_ACCOUNT } from '../../../../src/shared/accountUsage'
 import { koloftPrompt } from '../../../../src/plugins/sessions/api'
 import { appendConversation, ownerTyped, writeSummaries } from '../../helpers/agyStore'
+import { worktreesOfOneAgent } from '../../helpers/worktreesOfOneAgent'
 const mocks = vi.hoisted(() => ({ runtime: vi.fn() }))
 vi.mock('../../../../src/main/cliRuntime', () => ({ resolveCliRuntime: mocks.runtime }))
 vi.mock('../../../../src/agents/agy/main/agyMachine', () => ({
@@ -299,6 +300,7 @@ beforeEach(() => {
     runtime,
     projectInfo: (p) => ({ root: p.startsWith('ssh://') ? REMOTE_WS : repo, treeRoot: p }),
     remoteDirExists: async () => true,
+    worktreesOfEveryAgent: worktreesOfOneAgent(() => sessions.store),
     changed: vi.fn(),
     pinnedWorkspaces: () => [],
     rereadRows: () => {},
