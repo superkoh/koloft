@@ -29,6 +29,7 @@ export interface UsageBadge {
 
 export interface UsageAction {
   id: string
+  offered: boolean
   label: string
   ask: { before: string; name: string; after: string }
   go: string

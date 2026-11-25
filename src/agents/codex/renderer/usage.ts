@@ -56,10 +56,10 @@ const RESET_OUTCOMES: UsageAction['outcomes'] = {
   failed: 'Could not reach Codex. Try again.'
 }
 
-function resetAction(a: AccountView): UsageAction | null {
-  if (!codexResetOffered(a)) return null
+function resetAction(a: AccountView): UsageAction {
   return {
     id: 'useReset',
+    offered: codexResetOffered(a),
     label: 'Use a reset',
     ask: {
       before: `Use 1 of ${a.limits?.resets?.available} saved resets on `,

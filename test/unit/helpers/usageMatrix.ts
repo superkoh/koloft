@@ -148,6 +148,14 @@ export const CODEX_SETS: Record<string, AccountView[]> = {
     view('byok', 'codex-home', { apiKey: true }),
     view('badkey', 'codex-home', { apiKey: true, probeError: 'expired' })
   ],
+  codexKeyWithOldWindowsBesideAnUnreadSignIn: [
+    view('new', 'codex-home'),
+    view('oldkey', 'codex-home', {
+      apiKey: true,
+      probeError: 'network',
+      limits: limits({ credits: { unlimited: false, balance: 40 } })
+    })
+  ],
   codexAllWalled: [
     view('a', 'codex-home', { limits: limits({ windows: cappedWindows }) }),
     view('b', 'codex-home', {

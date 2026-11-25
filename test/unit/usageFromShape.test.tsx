@@ -22,9 +22,13 @@ function anyApi(): unknown {
 let shown: AccountView[] = []
 let fromShape = false
 let answerReset: () => Promise<string> = () => Promise.resolve('reset')
+let pushAccounts: (next: AccountView[]) => void = () => {}
 const accounts = {
   list: () => Promise.resolve(shown),
-  onUpdate: () => () => {},
+  onUpdate: (cb: (next: AccountView[]) => void) => {
+    pushAccounts = cb
+    return () => {}
+  },
   probe: () => Promise.resolve(shown),
   signInFailure: () => Promise.resolve(null),
   onSignInFailure: () => () => {},
@@ -82,6 +86,19 @@ async function topBar(set: AccountView[], shape: boolean): Promise<string[]> {
 
 const OUTCOMES = ['reset', 'nothingToReset', 'noCredit', 'alreadyRedeemed', 'failed']
 
+function readAgainAfterTheReset(a: AccountView): AccountView {
+  if (!a.limits) return a
+  return {
+    ...a,
+    limits: {
+      ...a.limits,
+      reached: false,
+      windows: a.limits.windows.map((w) => ({ ...w, used: 0 })),
+      resets: { available: 0 }
+    }
+  }
+}
+
 async function resetFlow(
   set: AccountView[],
   shape: boolean,
@@ -95,6 +112,9 @@ async function resetFlow(
   fireEvent.click(document.querySelectorAll('.tbu-pop button.acct-relogin')[row])
   shots.push(html('.tbu-pop'))
   fireEvent.click(document.querySelector('.tbu-pop .acct-confirm button.danger')!)
+  shots.push(html('.tbu-pop'))
+  act(() => pushAccounts(set.map(readAgainAfterTheReset)))
+  await settle()
   shots.push(html('.tbu-pop'))
   answer(outcome)
   await settle()

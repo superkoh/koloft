@@ -6,6 +6,7 @@ import type { AgentId } from '@core/agent/registry'
 import type {
   PillLayers,
   UsageAccount,
+  UsageAction,
   UsageBadge,
   UsageBar,
   UsageColumn,
@@ -109,7 +110,7 @@ function totalLook(t: UsageTotal, nowMs: number): PillLook | null {
   return layered(t, stale)
 }
 
-export function PillBar({ look: g, total }: { look: PillLook; total?: boolean }): JSX.Element {
+function PillBar({ look: g, total }: { look: PillLook; total?: boolean }): JSX.Element {
   const stale = (g.kind === 'walled' || g.kind === 'bar') && g.stale
   const fillPct = g.kind === 'bar' ? Math.round(g.frac * 100) : 0
   const second = g.kind === 'bar' && g.second && g.second.frac > g.frac ? g.second : null
@@ -334,17 +335,17 @@ function TopBarRow({
   now: number
   onAct: ActOnAccount
 }): JSX.Element {
-  const [confirm, setConfirm] = useState<'ask' | 'using' | { said: string } | null>(null)
+  const [confirm, setConfirm] = useState<{ using: boolean } | { said: string } | null>(null)
   const dead = a.status !== 'ok'
   const age = u.ageShownFrom === null ? null : ageLabel(u.ageShownFrom, now)
-  const action = u.action
-  const act = async (): Promise<void> => {
-    if (!action) return
-    setConfirm('using')
+  const asked = u.action
+  const act = async (action: UsageAction): Promise<void> => {
+    setConfirm({ using: true })
     const said = action.outcomes[await onAct(a, action.id)] ?? null
     setConfirm(said === null ? null : { said })
   }
-  const lined = u.topBar.instead !== null || columns.length > 0
+  const grid = u.bars.some((b) => b.column !== '')
+  const lined = u.topBar.instead !== null || grid
   return (
     <div className={'tbu-row' + (dead ? ' dim' : '')}>
       <div className="tbu-row-head">
@@ -362,16 +363,16 @@ function TopBarRow({
         {a.status === 'expired' && <span className="acct-status expired">EXPIRED</span>}
         {a.status === 'unverified' && <span className="acct-status unverified">UNVERIFIED</span>}
         {!dead && u.walled && <span className="acct-status walled">WALLED</span>}
-        {action && !confirm && (
-          <button className="acct-relogin" onClick={() => setConfirm('ask')}>
-            {action.label}
+        {u.action?.offered && !confirm && (
+          <button className="acct-relogin" onClick={() => setConfirm({ using: false })}>
+            {u.action.label}
           </button>
         )}
         {age && <span className="tbu-age">{age}</span>}
       </div>
       {u.topBar.instead !== null ? (
         <RowNote text={u.topBar.instead} />
-      ) : columns.length > 0 ? (
+      ) : grid ? (
         <div className={'tbu-grid' + twoAcross(columns)}>
           {columns.map((c) => {
             const bar = u.bars.find((b) => b.column === c.id)
@@ -387,9 +388,9 @@ function TopBarRow({
         <Bars bars={u.bars} after={u.topBar.after} />
       )}
       {lined && u.topBar.after.map((n) => <RowNote key={n} text={n} />)}
-      {confirm && (typeof confirm === 'object' || action) && (
+      {confirm && (
         <div className="acct-confirm">
-          {typeof confirm === 'object' ? (
+          {'said' in confirm ? (
             <>
               <span>{confirm.said}</span>
               <button className="mini" onClick={() => setConfirm(null)}>
@@ -397,25 +398,21 @@ function TopBarRow({
               </button>
             </>
           ) : (
-            action && (
+            asked && (
               <>
                 <span>
-                  {action.ask.before}
-                  <b>{action.ask.name}</b>
-                  {action.ask.after}
+                  {asked.ask.before}
+                  <b>{asked.ask.name}</b>
+                  {asked.ask.after}
                 </span>
                 <button
                   className="mini danger"
-                  disabled={confirm === 'using'}
-                  onClick={() => void act()}
+                  disabled={confirm.using}
+                  onClick={() => void act(asked)}
                 >
-                  {confirm === 'using' ? action.going : action.go}
+                  {confirm.using ? asked.going : asked.go}
                 </button>
-                <button
-                  className="mini"
-                  disabled={confirm === 'using'}
-                  onClick={() => setConfirm(null)}
-                >
+                <button className="mini" disabled={confirm.using} onClick={() => setConfirm(null)}>
                   Cancel
                 </button>
               </>
