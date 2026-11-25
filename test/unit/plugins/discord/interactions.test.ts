@@ -114,6 +114,13 @@ describe('Discord slash commands', () => {
     ])
   })
 
+  it('the /run command’s box shows Discord, word for word, an example of a command and of one with its choice after it', () => {
+    expect(SLASH_COMMANDS.flatMap((c) => c.options ?? []).map((o) => o.description)).toEqual([
+      'The command, like /context or /model haiku',
+      'What the summary should keep'
+    ])
+  })
+
   it('a button pressed is handed on as a press, never run as a command', async () => {
     const { interactions, runs, pressed } = setup()
     await interactions.handle(interaction({ type: 3, customId: 'ask:x:0' }))

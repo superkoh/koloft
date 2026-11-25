@@ -6,6 +6,7 @@ import path from 'path'
 import {
   LIVE_REGISTRY_ON_A_MACHINE_SH,
   claudePeerNames,
+  claudeShowsAPanel,
   claudeShowsAPanelOnMachine,
   messagingSocketOf,
   tabSocketOnMachine,
@@ -73,6 +74,25 @@ describe("claude's own session registry: the name other sessions reach it by", (
   it('has no name for a session that is not running', async () => {
     entry(92355, SID, START, 'docs-fixer')
     expect(await claudePeerNames(dir, async () => null)(SID)).toBeNull()
+  })
+})
+
+// CC§11
+describe("claude's own session registry: whether a panel is open in a session on this Mac", () => {
+  it('says a panel is open while the live entry reads waiting, not while a hard-killed one’s still does, and cannot say without a live entry', async () => {
+    const write = (pid: number, procStart: string, status: string): void =>
+      fs.writeFileSync(
+        path.join(dir, `${pid}.json`),
+        JSON.stringify({ pid, sessionId: SID, procStart, status })
+      )
+    const startOf = async (pid: number): Promise<string | null> => (pid === 29948 ? START : null)
+    expect(await claudeShowsAPanel(SID, dir, startOf)).toBeUndefined()
+    write(12345, 'Mon Sep 21 08:00:00 2026', 'waiting')
+    expect(await claudeShowsAPanel(SID, dir, startOf)).toBeUndefined()
+    write(29948, START, 'idle')
+    expect(await claudeShowsAPanel(SID, dir, startOf)).toBe(false)
+    write(29948, START, 'waiting')
+    expect(await claudeShowsAPanel(SID, dir, startOf)).toBe(true)
   })
 })
 

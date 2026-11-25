@@ -316,9 +316,20 @@ describe('a slash command typed into a session', () => {
     expect(typed.slice(3)).toEqual(['\x1b'])
     slash.output(TAB, { kind: 'printed', text: 'Kept model as Haiku 4.5' })
     await vi.advanceTimersByTimeAsync(MORE_OUTPUT_SETTLES_MS)
-    expect(posts[0]).toMatch(
-      /^⌨️ \*\*fix-login\*\* ran \/model:\nKept model as Haiku 4\.5\n\nNothing came back/
+    expect(posts[0]).toBe(
+      '⌨️ **fix-login** ran /model:\nKept model as Haiku 4.5\n\nNothing came back within 8 seconds, so Koloft pressed Esc to close any menu it had opened. A command that asks you to pick something needs its choice written after it, like /model haiku.'
     )
+  })
+
+  it('in a tab whose agent Koloft cannot tell, Esc goes before Enter, one Esc when nothing comes back, and no second Enter whatever the screen shows', async () => {
+    expect(commandKeys('/context', undefined)).toEqual(['/context', '\x1b', '\r'])
+    const { slash, typed } = setup({
+      backendOf: () => undefined,
+      screen: async () => [RULE, '❯ /context', RULE]
+    })
+    await slash.typeWhenIdle(child, '/context', CALLER)
+    await vi.advanceTimersByTimeAsync(NOTHING_CAME_BACK_MS)
+    expect(typed).toEqual(['/context', '\x1b', '\r', '\x1b'])
   })
 
   it('in Codex, also closes a pager and empties the box, since Esc alone leaves an unknown command typed there, and posts the screen as it was before those keys', async () => {
