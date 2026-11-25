@@ -184,7 +184,10 @@ export function koloftAssist(deps: AssistDeps): Assist {
     for (const backend of assistBackendsFor(job.row, picks)) {
       if (!deps.enabled(backend)) continue
       const target = await deps.target(backend)
-      if (job.signal?.aborted) return null
+      if (job.signal?.aborted) {
+        target?.done()
+        return null
+      }
       if (!target) continue
       const shot = ONE_SHOT[backend]
       const launch = assistLaunchOn(job.row, backend, picks)
