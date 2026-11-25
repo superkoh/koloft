@@ -6,6 +6,7 @@ import { EVERY_ACCOUNT_TAKES, type Assist, type ModelAndEffort } from '@core/ass
 import { takenEffort } from '@shared/cronModels'
 import { envMs } from '@core/agent/sessionRuntime'
 import type { AgentOneShot, OneShotTarget } from '@core/agent/agentsMain'
+import { oneShotsEnded, untilKoloftQuits } from './oneShotsAtQuit'
 
 const ASSIST_TIMEOUT_MS = envMs('KOLOFT_ASSIST_TIMEOUT_MS', 15_000)
 export const ASSIST_ANSWERS_WITHIN_MS = 2 * ASSIST_TIMEOUT_MS
@@ -24,17 +25,19 @@ function runOnce(
   target: OneShotTarget,
   argv: string[],
   input: string,
-  signal: AbortSignal | undefined,
+  jobSignal: AbortSignal | undefined,
   timeoutMs: number,
   quitSaying?: (said: string) => void
 ): Promise<string | null> {
+  if (oneShotsEnded()) return Promise.resolve(null)
+  const signal = untilKoloftQuits(jobSignal)
   return new Promise((resolve) => {
     const child = execFile(
       target.binary,
       argv,
       { env: target.env, cwd: os.tmpdir(), timeout: timeoutMs, signal },
       (err, stdout, stderr) => {
-        if (err && !signal?.aborted) {
+        if (err && !signal.aborted) {
           console.error(
             '[koloft] Assist one-shot failed:',
             target.binary,
@@ -90,6 +93,7 @@ export function koloftAssist(deps: AssistDeps): Assist {
       if (!deps.enabled(backend)) continue
       const shot = deps.oneShot(backend)
       if (!shot) continue
+      if (oneShotsEnded()) return null
       const target = await deps.target(backend).catch((err: unknown) => {
         console.error('[koloft] Assist could not make its one-shot target:', backend, err)
         return null
