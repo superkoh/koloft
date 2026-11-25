@@ -496,10 +496,13 @@ const NOTE_SENT_ID = appendToTheFileOfEveryTab(remoteSentIdsFile)
 const NOTE_SENT_WORDS = appendToTheFileOfEveryTab(remoteSentWordsFile)
 const LEAVE_NOTICE_UNDER_EVERY_TAB_ID = `mkdir -p "${REMOTE_HOOK_DIR}" || exit 1
 IFS= read -r fresh; IFS= read -r merged
-k=fresh; [ -n "$merged" ] && k=merged
+t="$fresh"; k=fresh
+if [ -n "$merged" ]; then
+  t="$merged"; k=merged
+  for id in "$@"; do [ -f "${remoteNoticeFile('$id')}" ] || { t="$fresh"; k=fresh; }; done
+fi
 for id in "$@"; do
   f="${remoteNoticeFile('$id')}"
-  if [ -n "$merged" ] && [ -f "$f" ]; then t="$merged"; else t="$fresh"; k=fresh; fi
   printf '%s' "$t" > "$f.part" && mv -f "$f.part" "$f" || exit 1
 done
 printf '%s' "$k"`

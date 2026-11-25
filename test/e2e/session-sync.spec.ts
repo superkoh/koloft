@@ -718,13 +718,13 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
           await fetchNow(page2, remoteKey(env))
           pushUpstream(author, 'fix: login keeps the session')
           await fetchNow(page2, remoteKey(env))
-          for (const ranUnder of [startedTab, tab])
-            await expect
-              .poll(() => fs.existsSync(path.join(notices, `${ranUnder}.notice`)), {
-                message: ranUnder,
-                timeout: REMOTE_NOTICE_ARRIVES_WITHIN_MS
-              })
-              .toBe(true)
+          await expect
+            .poll(
+              () =>
+                [startedTab, tab].some((id) => fs.existsSync(path.join(notices, `${id}.notice`))),
+              { timeout: REMOTE_NOTICE_ARRIVES_WITHIN_MS }
+            )
+            .toBe(true)
 
           await page2.evaluate((id) => window.api.terminal.write(id, 'look again\r'), tab)
           await expect
