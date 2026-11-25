@@ -54,7 +54,7 @@ const binaryGone = (error: unknown): boolean =>
   (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
 
 export const hostOfKey = (key: string): string | undefined => {
-  const { sourceId } = identityOf(key)
+  const sourceId = identityOf(key)?.sourceId
   return sourceId === 'local' ? undefined : sourceId
 }
 
@@ -738,7 +738,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   protected nativeId(key: string): string {
     const identity = identityOf(key)
     if (
-      identity.backendId !== this.id ||
+      identity?.backendId !== this.id ||
       this.keyOf(identity.nativeSessionId, hostOfKey(key)) !== key
     ) {
       throw new Error(`A ${this.label} session is required.`)

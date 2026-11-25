@@ -114,13 +114,17 @@ describe('session backend boundary', () => {
     expect(identityOf(codex)).toEqual({ backendId: 'codex', sourceId: 'local', nativeSessionId })
     const agy = sessionKey({ backendId: 'agy', sourceId: 'local', nativeSessionId })
     expect(identityOf(agy)).toEqual({ backendId: 'agy', sourceId: 'local', nativeSessionId })
-    expect(identityOf(nativeSessionId).backendId).toBe('claude')
+    expect(identityOf(nativeSessionId)?.backendId).toBe('claude')
   })
 
   it('refuses a launch with no method before reaching any backend, and hands a Codex launch here or on a machine to Codex', async () => {
     const registry = new SessionBackends(lifecycle())
     const create = vi.fn(async () => ({ ok: true as const, id: 'tab', cwd: '/repo' }))
-    const backend: SessionBackend = { ...stubBackend('codex'), create }
+    const backend: SessionBackend = {
+      ...stubBackend('codex'),
+      create,
+      aliveTabFor: (key) => `tab of ${key}`
+    }
     registry.register(backend)
     await expect(registry.create({ kind: undefined as never, cwd: '/repo' })).resolves.toEqual({
       ok: false,
@@ -134,8 +138,8 @@ describe('session backend boundary', () => {
       registry.create({ kind: 'codex', cwd: 'ssh://server/repo' })
     ).resolves.toMatchObject({ ok: true })
     expect(create).toHaveBeenCalledTimes(2)
-    expect(registry.forSession('codex:local:id')).toBe(backend)
-    expect(registry.forSession('codex:server:id')).toBe(backend)
+    expect(registry.aliveTabFor('codex:local:id')).toBe('tab of codex:local:id')
+    expect(registry.aliveTabFor('codex:server:id')).toBe('tab of codex:server:id')
   })
 
   // ADR-0030

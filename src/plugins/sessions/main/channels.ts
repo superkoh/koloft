@@ -21,17 +21,12 @@ import type { InstructionAskView } from '../shared/instructionAsks'
 import type { InstructionAsks } from './instructionAsks'
 import type { WorktreeRecordsOfEveryAgent } from '@core/agent/worktreeRecords'
 
-interface SessionBackend {
-  id: BackendId
+export interface Backends {
   aliveTabFor(key: string): string | undefined
   transcriptExists(key: string): boolean | Promise<boolean>
+  noAccountToResume(key: string): string | null
   resumePlan(key: string): Promise<ResumePlan>
   resume(request: SessionResumeRequest): Promise<SessionResumeResult>
-}
-
-export interface Backends {
-  forSession(key: string): SessionBackend
-  noUsableAccount(kind: BackendId): string | null
   forgetAvailability(): void
   worktreeRecords: Pick<WorktreeRecordsOfEveryAgent, 'of'>
 }
@@ -90,7 +85,7 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
   })
   ipc.handle(CHANNELS.forceClose, async (id: unknown): Promise<{ ok: boolean }> => {
     if (typeof id !== 'string' || !id) return { ok: false }
-    const tabId = backends.forSession(id).aliveTabFor(id)
+    const tabId = backends.aliveTabFor(id)
     if (!tabId) return { ok: false }
     return { ok: await deps.killTab(tabId) }
   })
@@ -107,11 +102,11 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
   // CC§2
   ipc.handle(CHANNELS.transcriptExists, (id: unknown): boolean | Promise<boolean> => {
     if (typeof id !== 'string' || !id) return false
-    return backends.forSession(id).transcriptExists(id)
+    return backends.transcriptExists(id)
   })
   ipc.handle(CHANNELS.noAccountToResume, (id: unknown): string | null => {
     if (typeof id !== 'string' || !id) return null
-    return backends.noUsableAccount(backends.forSession(id).id)
+    return backends.noAccountToResume(id)
   })
   ipc.on(CHANNELS.search, (searchId: unknown, term: unknown) => {
     if (typeof searchId !== 'number' || typeof term !== 'string') return
@@ -130,11 +125,11 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
     if (typeof id !== 'string' || !id) {
       return Promise.resolve({ action: 'unavailable', reason: 'not-found' })
     }
-    return backends.forSession(id).resumePlan(id)
+    return backends.resumePlan(id)
   })
   ipc.handle(CHANNELS.resume, (req: SessionResumeRequest) => {
     if (typeof req?.sessionId !== 'string') return { ok: false, code: 'invalid-args' }
-    return backends.forSession(req.sessionId).resume(req)
+    return backends.resume(req)
   })
   ipc.handle(CHANNELS.attentionList, () => deps.attention())
   ipc.on(CHANNELS.activeTab, (id: string | null) => {

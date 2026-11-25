@@ -131,7 +131,12 @@ export function CronJobsDialog({
 
   const backends = SESSION_BACKENDS.filter((b) => settings.sessionMethods.enabled[b])
   const defaultBackend = effectiveBackend(settings.sessionMethods, new Set(backends))
-  const mixed = mixesBackends(jobs.map((j) => ({ backendId: cronBackend(j) })))
+  const mixed = mixesBackends(
+    jobs.flatMap((j) => {
+      const backendId = cronBackend(j)
+      return backendId ? [{ backendId }] : []
+    })
+  )
 
   const [selectedId, setSelectedId] = useState<string | null>(initialJobId ?? null)
   const selected = jobs.find((j) => j.id === selectedId)
@@ -209,7 +214,7 @@ export function CronJobsDialog({
   }
 
   const edit = (job: CronJob): void => {
-    const f = emptyFields(cronBackend(job))
+    const f = emptyFields(cronBackend(job) ?? defaultBackend)
     setFields({
       ...f,
       ...scheduleToFields(job.schedule),
@@ -299,6 +304,11 @@ export function CronJobsDialog({
     )
   }
 
+  const agentLabel = (job: CronJob): string => {
+    const backend = cronBackend(job)
+    return backend ? BACKEND_LABEL[backend] : ''
+  }
+
   const renderCard = (job: CronJob): JSX.Element => (
     <div
       className={'job-row' + (job.enabled ? '' : ' off') + (job.id === selected?.id ? ' on' : '')}
@@ -318,7 +328,7 @@ export function CronJobsDialog({
         <div className="job-name">{job.name}</div>
         <div className="job-task">
           {[
-            mixed ? BACKEND_LABEL[cronBackend(job)] : '',
+            mixed ? agentLabel(job) : '',
             job.task,
             job.model,
             job.effort,

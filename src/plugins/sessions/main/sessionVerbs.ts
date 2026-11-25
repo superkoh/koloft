@@ -1512,7 +1512,8 @@ export function sessionVerb(d: SessionVerbDeps): {
     const backend =
       backendIdOf(spec.backend) ??
       about?.backendId ??
-      (aboutRow ? identityOf(aboutRow).backendId : AGENT_PICKED_ON_FIRST_OPEN)
+      (aboutRow ? identityOf(aboutRow)?.backendId : undefined) ??
+      AGENT_PICKED_ON_FIRST_OPEN
     const held =
       spec.name && namedAtLaunch(backend, isRemoteKey(workspace)) ? names.own(spec.name) : undefined
     let tabId: string | null = null

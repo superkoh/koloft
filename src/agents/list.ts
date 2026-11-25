@@ -7,4 +7,4 @@ export const AGENTS = [claude, codex, agy] as const
 
 export const PICKED_ON_FIRST_OPEN = claude
 
-export const OWNER_OF_UNNAMED_OLD_DATA = 'claude'
+export const OWNER_OF_UNNAMED_OLD_DATA: string = 'claude'

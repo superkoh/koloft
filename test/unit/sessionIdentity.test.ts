@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { formatRemoteKey } from '@shared/remoteKey'
-import { identityOf, sessionKey } from '@shared/sessionBackend'
+import { agentSessionId, identityOf, sessionKey } from '@shared/sessionBackend'
 import { workspaceWorkbenchKey } from '@shared/workbenchState'
 
 const SESSION = '00000000-0000-4000-8000-000000000001'
+const WORKSPACE_PANEL_ON_THIS_MAC = workspaceWorkbenchKey('/Users/me/proj')
+const WORKSPACE_PANEL_THROUGH_A_PORT = workspaceWorkbenchKey(
+  formatRemoteKey('me@devbox:2222', '/home/me/proj')
+)
 const WORKSPACE_PANEL_ON_A_MACHINE = workspaceWorkbenchKey(
   formatRemoteKey('devbox', '/home/me/proj')
 )
@@ -41,9 +45,7 @@ describe('identityOf (whose session a saved key is)', () => {
     ['an id with no prefix, as saved when Claude Code was the only agent', SESSION],
     ['an empty key', ''],
     ['a key of two parts', 'codex:local'],
-    ['a key of four parts', `codex:local:${SESSION}:more`],
-    ['a key of three parts that names an agent this Koloft no longer has', `muse:local:${SESSION}`],
-    ['a workspace panel’s key on another machine', WORKSPACE_PANEL_ON_A_MACHINE]
+    ['a key of four parts', `codex:local:${SESSION}:more`]
   ])('%s is read as a Claude Code session on this Mac whose id is the whole key', (_what, key) => {
     expect(identityOf(key)).toEqual({
       backendId: 'claude',
@@ -51,4 +53,19 @@ describe('identityOf (whose session a saved key is)', () => {
       nativeSessionId: key
     })
   })
+
+  it.each([
+    ['a key of three parts that names an agent this Koloft no longer has', `muse:local:${SESSION}`],
+    ['a key of two parts that names one', 'muse:019a-thread'],
+    ['a key of four parts that names one', `muse:local:${SESSION}:more`],
+    ['a workspace panel’s key on another machine', WORKSPACE_PANEL_ON_A_MACHINE],
+    ['a workspace panel’s key on a machine reached through a port', WORKSPACE_PANEL_THROUGH_A_PORT],
+    ['a workspace panel’s key on this Mac', WORKSPACE_PANEL_ON_THIS_MAC]
+  ])(
+    '%s, whose part before the first colon is no agent on the list, is nobody’s session: it is unavailable, and the text shown for it is the key as it is',
+    (_what, key) => {
+      expect(identityOf(key)).toBeUndefined()
+      expect(agentSessionId(key)).toBe(key)
+    }
+  )
 })

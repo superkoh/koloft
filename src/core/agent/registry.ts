@@ -47,4 +47,6 @@ export const AGENT_SETTINGS_KEPT_ON_RESET: readonly string[] = OWN_SETTINGS.filt
 
 export const AGENT_PICKED_ON_FIRST_OPEN: AgentId = PICKED_ON_FIRST_OPEN.id
 
-export const AGENT_OF_UNNAMED_OLD_DATA: AgentId = OWNER_OF_UNNAMED_OLD_DATA
+export const AGENT_OF_UNNAMED_OLD_DATA: AgentId | undefined = AGENT_IDS.find(
+  (id) => id === OWNER_OF_UNNAMED_OLD_DATA
+)

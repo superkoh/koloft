@@ -220,7 +220,7 @@ test.describe(() => {
           .toEqual([kind.backend])
         const [started] = await aliveSessions(page)
         if (kind.remote)
-          expect(started.remote?.host ?? identityOf(started.sessionId).sourceId).toBe(REMOTE_HOST)
+          expect(started.remote?.host ?? identityOf(started.sessionId)?.sourceId).toBe(REMOTE_HOST)
         else expect(kind.launches(env)[2].cwd).toBe(env.workspaces.a)
       } finally {
         await quitAndClose(app)
