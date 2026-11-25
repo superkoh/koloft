@@ -1555,6 +1555,33 @@ test.describe('Antigravity CLI sessions through the real agent chooser, OSC 7501
     }
   })
 
+  // AGY§6 AGY§20
+  test("a throwaway Gemini folder a crash left is removed at start-up, and one still there at quit is removed at quit, with its copy of the sign-in token, and the account's own folder is left alone", async ({
+    env
+  }) => {
+    const shots = path.join(env.userData, 'agy-one-shots')
+    const token = (dir: string): string =>
+      path.join(dir, 'antigravity-cli', 'antigravity-oauth-token')
+    const account = token(path.join(env.userData, 'agy-homes', 'work'))
+    const leaveFolder = (name: string): void => {
+      fs.mkdirSync(path.dirname(token(path.join(shots, name))), { recursive: true })
+      fs.writeFileSync(token(path.join(shots, name)), 'fake token')
+    }
+    fs.mkdirSync(path.dirname(account), { recursive: true })
+    fs.writeFileSync(account, 'fake token')
+    leaveFolder('agy-crash')
+    const app = await launchApp(env)
+    try {
+      await waitBooted(await app.firstWindow())
+      expect(fs.existsSync(shots)).toBe(false)
+      leaveFolder('agy-running')
+    } finally {
+      await quitAndClose(app)
+    }
+    expect(fs.existsSync(shots)).toBe(false)
+    expect(fs.readFileSync(account, 'utf8')).toBe('fake token')
+  })
+
   // AGY§21
   test('an Assist job set to Gemini 4 Carbon runs agy -p on Neon when the account has no Carbon, and says so once', async ({
     env
