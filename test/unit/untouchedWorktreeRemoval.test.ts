@@ -165,6 +165,16 @@ describe.each(SIDES)(
       expect(stillThere(made.worktreePath)).toBe(true)
     })
 
+    it('a session of any agent that asks for the folder while the closing tab still checks whether it is untouched waits until the removal is over', async () => {
+      const made = await mine.create(side.at(repo), 'foo')
+      const closing = close(A, made)
+      let closed = false
+      void closing.then(() => (closed = true))
+      await mine.whenSettled(made.worktreePath)
+      expect(closed).toBe(true)
+      expect(fs.existsSync(barePath(made.worktreePath))).toBe(false)
+    })
+
     async function whileTheRemovalRuns<T>(
       made: Parameters<typeof removeUntouchedWorktreeWith>[2],
       meanwhile: () => Promise<T>

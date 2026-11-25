@@ -315,7 +315,7 @@ export class SessionWorktrees {
     try {
       return await work
     } finally {
-      preparing.delete(at)
+      if (preparing.get(at) === work) preparing.delete(at)
       this.preparingHere.delete(at)
     }
   }

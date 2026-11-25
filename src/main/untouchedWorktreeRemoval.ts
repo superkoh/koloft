@@ -29,29 +29,31 @@ export async function removeUntouchedWorktreeWith(
   const { sleeperTrees, cronRunner, sessionBackends, treeRemovals, removeTree, hostGitOut } = d
   const { preparing } = d.worktreesOfEveryAgent
   const tree = resource.worktreePath
-  const anotherNeedsIt = (id: BackendId): boolean =>
-    preparing.has(tree) || sessionBackends.worktreeRecords.recordedByAnother(id, tree)
-  if (sleeperTrees().includes(tree) || cronRunner?.tidiesFolder(tree)) return
-  if (sessionBackends.occupantOf(tree)) return
-  if (!owner || anotherNeedsIt(owner.id)) return
-  if (!(await sessionBackends.worktreeRecords.untouched(owner.id, resource))) return
-  if (anotherNeedsIt(owner.id) || sessionBackends.occupantOf(tree)) return
+  const someoneElseIsIn = (id: BackendId): boolean =>
+    sleeperTrees().includes(tree) ||
+    !!cronRunner?.tidiesFolder(tree) ||
+    !!sessionBackends.occupantOf(tree) ||
+    sessionBackends.worktreeRecords.recordedByAnother(id, tree)
+  if (!owner || preparing.has(tree) || someoneElseIsIn(owner.id)) return
   if (treeRemovals.has(tree)) return
-  const removal = treeRemovals.run(tree, () =>
-    removeTree(hostGitOut, {
-      root: resource.originalCwd,
-      treeRoot: tree,
-      worktreeName: resource.worktreeName,
-      branches: [`worktree-${resource.worktreeName}`]
-    })
-  )
-  const held = removal.catch(() => null)
+  let release = (): void => {}
+  const held = new Promise<void>((r) => (release = r))
   preparing.set(tree, held)
-  let problem: string | null
+  let problem: string | null = null
   try {
-    problem = await removal
+    if (!(await sessionBackends.worktreeRecords.untouched(owner.id, resource))) return
+    if (someoneElseIsIn(owner.id)) return
+    problem = await treeRemovals.run(tree, () =>
+      removeTree(hostGitOut, {
+        root: resource.originalCwd,
+        treeRoot: tree,
+        worktreeName: resource.worktreeName,
+        branches: [`worktree-${resource.worktreeName}`]
+      })
+    )
   } finally {
     if (preparing.get(tree) === held) preparing.delete(tree)
+    release()
   }
   if (problem && (await d.dirExists(tree))) d.toast(problem)
 }
