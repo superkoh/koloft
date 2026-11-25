@@ -1,15 +1,10 @@
 import fs from 'fs'
 import path from 'path'
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
-import { worktreeHomeRoot } from './resumePlan'
+import { worktreeFolderAround } from './resumePlan'
 import type { TreeRemovals } from './treeRemovals'
 
 export type WorktreesBeingPrepared = Map<string, Promise<unknown>>
-
-function worktreeFolderAround(dir: string): string {
-  for (let d = dir; path.dirname(d) !== d; d = path.dirname(d)) if (worktreeHomeRoot(d)) return d
-  return dir
-}
 
 function realThroughTheNearestFolderThere(p: string): string {
   try {
@@ -22,7 +17,8 @@ function realThroughTheNearestFolderThere(p: string): string {
 
 export function preparedKeyOf(dir: string): string {
   const remote = parseRemoteKey(dir)
-  const tree = worktreeFolderAround(remote ? remote.path : dir)
+  const asked = remote ? remote.path : dir
+  const tree = worktreeFolderAround(asked) ?? asked
   return remote ? formatRemoteKey(remote.host, tree) : realThroughTheNearestFolderThere(tree)
 }
 
