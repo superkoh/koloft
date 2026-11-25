@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
+import { SessionBackends } from '../../../../src/core/agent/sessionBackends'
 import type { Moment, TabEnded } from '../../../../src/core/moment'
+import {
+  lifecycle as nothingListensToTheSessions,
+  stubBackend
+} from '../../helpers/sessionBackendStub'
 import {
   TabLifecycle,
   subscribeTabSubsystems,
@@ -19,11 +24,15 @@ function wired(over: Partial<TabSubsystems> = {}): { lifecycle: TabLifecycle; ca
       clear: say('attention.clear'),
       tabStopping: say('attention.tabStopping')
     },
-    claude: { onPtyExit: say('claude.onPtyExit'), launchEnded: say('claude.launchEnded') },
-    tracker: { setAlive: say('tracker.setAlive') },
-    storedOwnerOf: () => ({
-      stop: async (tabId, code) => say('owner.stop')(tabId, code)
-    }),
+    backends: {
+      tabExited: ({ tabId, exitCode, signal, crashed }) =>
+        say('backends.tabExited')(
+          tabId,
+          `code ${exitCode}`,
+          `signal ${signal}`,
+          `crashed ${crashed}`
+        )
+    },
     toast: say('toast'),
     workspaces: () => ({
       sessionsChanged: say('workspaces.sessionsChanged')
@@ -55,32 +64,32 @@ describe('TabLifecycle', () => {
     }
   })
 
-  it('teardown clears attention before Claude Code can mark a crash, and the plugins hear it only after core has marked the tab dead and stopped its session', () => {
+  it('teardown clears attention before any agent can mark a crash, and the plugins hear it only after the agents were told how the tab’s terminal ended', () => {
     const { lifecycle, calls } = wired()
-    lifecycle.emit('teardown', exitOf({ crashed: true, exitCode: 1, left: { treeRoot: '/repo' } }))
+    lifecycle.emit(
+      'teardown',
+      exitOf({ crashed: true, exitCode: 1, signal: 15, left: { treeRoot: '/repo' } })
+    )
     expect(calls).toEqual([
       'attention.clear t1',
-      'claude.onPtyExit t1 true',
-      'tracker.setAlive t1 false',
-      'owner.stop t1 1',
-      'claude.launchEnded t1',
+      'backends.tabExited t1 code 1 signal 15 crashed true',
       'announce tab-torn-down t1'
     ])
   })
 
-  it('a stored session killed by a signal is stopped with code -1, and a failed stop is a toast', async () => {
-    const { lifecycle, calls } = wired({
-      storedOwnerOf: () => ({
-        stop: async (tabId, code) => {
-          calls.push(`owner.stop ${tabId} ${code}`)
-          throw new Error('stop failed')
-        }
-      })
+  it('an agent whose ending of the tab fails some time after it was told is a toast, and the plugins have heard of the teardown by then', async () => {
+    const backends = new SessionBackends(nothingListensToTheSessions())
+    backends.register({
+      ...stubBackend('codex'),
+      tabExited: async () => {
+        throw new Error('stop failed')
+      }
     })
-    lifecycle.emit('teardown', exitOf({ exitCode: 0, signal: 15 }))
+    const { lifecycle, calls } = wired({ backends })
+    lifecycle.emit('teardown', exitOf())
+    expect(calls).toEqual(['attention.clear t1', 'announce tab-torn-down t1'])
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(calls).toContain('owner.stop t1 -1')
-    expect(calls).toContain('toast Error: stop failed')
+    expect(calls.slice(2)).toEqual(['toast Error: stop failed'])
   })
 
   it('a tab put to sleep or woken refreshes the workspaces list', () => {

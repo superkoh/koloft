@@ -939,6 +939,20 @@ describe('WorkspaceManager: pending launches', () => {
     await vi.waitFor(() => expect(latest(repo).rows).toEqual([]))
   })
 
+  it('told that a tab ended which is not one of its starting tabs, as another agent’s tab or a plain terminal is, asks for no new list and keeps the Starting… row of the tab that is', async () => {
+    startRows()
+    claude.launchStarted('tab-1', repo)
+    await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['tab-1']))
+    const askedForANewList = vi.spyOn(mgr, 'refresh')
+
+    claude.launchEnded('a-tab-of-another-agent')
+    expect(askedForANewList).not.toHaveBeenCalled()
+
+    claude.launchEnded('tab-1')
+    expect(askedForANewList).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(latest(repo).rows).toEqual([]))
+  })
+
   // CC§2
   it('relabels a pending launch from the cwd its SessionStart hook reported, before any jsonl exists', async () => {
     const { repoDir, wtDir } = gitRepoWithWorktree('bugfix')

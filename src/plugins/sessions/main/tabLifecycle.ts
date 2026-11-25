@@ -8,10 +8,8 @@ import {
   type Moment,
   type TabEnded
 } from '@core/moment'
+import type { SessionBackends } from '@core/agent/sessionBackends'
 import type { AttentionTracker } from './attention'
-import type { ClaudeBackend } from '@agents/claude/main/backend'
-import type { SessionTracker } from '@agents/claude/main/sessionTracker'
-import type { SessionsWithStore } from '@agents/kit/main/storedSessions'
 import type { WorkspaceManager } from './workspaces'
 
 export class TabLifecycle extends EventEmitter<{
@@ -25,9 +23,7 @@ export class TabLifecycle extends EventEmitter<{
 
 export interface TabSubsystems {
   attention: Pick<AttentionTracker, 'clear' | 'tabStopping'>
-  claude: Pick<ClaudeBackend, 'onPtyExit' | 'launchEnded'>
-  tracker: Pick<SessionTracker, 'setAlive'>
-  storedOwnerOf: (tabId: string) => Pick<SessionsWithStore, 'stop'> | undefined
+  backends: Pick<SessionBackends, 'tabExited'>
   toast: (message: string) => void
   workspaces: MadeLater<Pick<WorkspaceManager, 'sessionsChanged'>>
   announce: <T>(moment: Moment<T>, m: T) => void
@@ -40,15 +36,7 @@ export function subscribeTabSubsystems(lifecycle: TabLifecycle, s: TabSubsystems
   lifecycle.on('exit', (exit) => s.announce(TAB_EXITED, exit))
 
   lifecycle.on('teardown', ({ tabId }) => s.attention.clear(tabId))
-  lifecycle.on('teardown', ({ tabId, crashed }) => s.claude.onPtyExit(tabId, crashed))
-  lifecycle.on('teardown', ({ tabId }) => s.tracker.setAlive(tabId, false))
-  lifecycle.on('teardown', ({ tabId, exitCode, signal }) => {
-    void s
-      .storedOwnerOf(tabId)
-      ?.stop(tabId, signal ? -1 : exitCode)
-      .catch((error) => s.toast(String(error)))
-  })
-  lifecycle.on('teardown', ({ tabId }) => s.claude.launchEnded(tabId))
+  lifecycle.on('teardown', (exit) => s.backends.tabExited(exit, (error) => s.toast(String(error))))
   lifecycle.on('teardown', (exit) => s.announce(TAB_TORN_DOWN, exit))
 
   lifecycle.on('slept', () => s.workspaces()?.sessionsChanged())

@@ -17,7 +17,7 @@ import { formatRemoteKey, hostOf, isAbsoluteOnHost, parseRemoteKey } from '@shar
 import { hasUsableAccount } from '@shared/accountUsage'
 import type { Turn } from '@shared/turns'
 import { isValidWorktreeName } from '@shared/worktreeName'
-import type { ModeClass, SessionBackend } from '@core/agent/sessionBackends'
+import type { ModeClass, SessionBackend, TabExit } from '@core/agent/sessionBackends'
 import {
   A_PASS_WITH_NO_ROWS,
   type RowsPass,
@@ -310,8 +310,28 @@ export class ClaudeBackend implements SessionBackend {
     return this.d.store()?.liveKey() ?? ''
   }
 
-  launchEnded(tabId: string): void {
+  tabExited({ tabId, crashed }: TabExit): void {
+    this.onPtyExit(tabId, crashed)
+    this.d.tracker.setAlive(tabId, false)
     this.d.store()?.launchEnded(tabId)
+  }
+
+  quitWaitsForIt(): boolean {
+    return false
+  }
+
+  async endBeforeQuit(): Promise<void> {}
+
+  flushSync(): void {}
+
+  async beforeWorkspaceRemoved(): Promise<void> {}
+
+  showsPromptBeforeBind(): boolean {
+    return false
+  }
+
+  sessionGone(): boolean {
+    return true
   }
 
   hasTab(tabId: string): boolean {
