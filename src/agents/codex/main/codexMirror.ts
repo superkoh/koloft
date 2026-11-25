@@ -1,6 +1,6 @@
 import path from 'path'
 import type { MirrorFolder } from '@core/agent/mirrorFolders'
-import { CODEX_ROLLOUT_FOLDERS } from '../../../main/usageCache'
+import { CODEX_ROLLOUT_FOLDERS } from './codexUsage'
 import { remoteBase } from '../../../main/remote/paths'
 import { REMOTE_CODEX_HOME } from './codexMachine'
 

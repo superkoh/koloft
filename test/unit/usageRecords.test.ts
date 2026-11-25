@@ -14,12 +14,10 @@ import {
 } from '../../src/main/usageCache'
 import { machineUsageDirs } from '../../src/main/remote/usageMirror'
 import { grouped } from '../../src/renderer/src/usageModel'
-import {
-  GEMINI_PRICING,
-  MODEL_PRICING,
-  OPENAI_PRICING,
-  resolvePricing
-} from '../../src/shared/pricing'
+import { resolvePricing } from '../../src/shared/pricing'
+import { MODEL_PRICING } from '../../src/agents/claude/shared/claudePrices'
+import { OPENAI_PRICING } from '../../src/agents/codex/shared/codexPrices'
+import { GEMINI_PRICING } from '../../src/agents/agy/shared/agyPrices'
 import type { UsageRead } from '../../src/shared/types'
 
 const GOLDEN = path.join(__dirname, 'usage-records')

@@ -2,10 +2,16 @@ import fs from 'fs'
 import path from 'path'
 import type { BackendId, UsageRead, UsageRecord, UsageRow } from '@shared/types'
 import { formatRemoteKey } from '@shared/remoteKey'
-import { AGY_APP_DIR, agyTranscript, conversationDb } from '@agents/agy/main/agyStore'
 import { PrivateRecordFile } from '@core/privateFile'
 import { mapAtMost } from '@core/mapAtMost'
-import { claudeCallKeys, recordsOfClaudeCalls, type ClaudeCalls } from './usageScan'
+import { jsonlUnder } from '@agents/kit/main/usageFiles'
+import {
+  claudeCallKeys,
+  recordsOfClaudeCalls,
+  type ClaudeCalls
+} from '@agents/claude/main/usageWorkerScan'
+import { codexFiles } from '@agents/codex/main/codexUsage'
+import { agyFiles } from '@agents/agy/main/agyUsage'
 
 export interface UsageFile {
   file: string
@@ -51,7 +57,6 @@ export interface UsageCacheDeps {
 }
 
 const FILES_AT_ONCE = 16
-export const CODEX_ROLLOUT_FOLDERS = ['sessions', 'archived_sessions']
 export class UsageCache {
   private reading = false
   private readonly cached: PrivateRecordFile<CachedFile>
@@ -187,49 +192,6 @@ export interface UsageHome {
   host?: string
   codexHome: string
   geminiDir: string
-}
-
-// CODEX§13
-async function codexFiles({ host, codexHome }: UsageHome): Promise<UsageFile[]> {
-  const found = await Promise.all(
-    CODEX_ROLLOUT_FOLDERS.map((folder) => jsonlUnder(path.join(codexHome, folder), 'rollout-'))
-  )
-  return found.flat().map((file) => ({ file, backend: 'codex' as const, workspace: '', host }))
-}
-
-// AGY§8
-async function agyFiles({ host, geminiDir }: UsageHome): Promise<UsageFile[]> {
-  let ids: string[]
-  try {
-    ids = await fs.promises.readdir(path.join(geminiDir, AGY_APP_DIR, 'brain'))
-  } catch {
-    return []
-  }
-  return ids.map((id) => ({
-    file: agyTranscript(geminiDir, id),
-    backend: 'agy' as const,
-    workspace: '',
-    sessionId: id,
-    db: conversationDb(geminiDir, id),
-    host
-  }))
-}
-
-async function jsonlUnder(dir: string, namePrefix: string): Promise<string[]> {
-  let entries: fs.Dirent[]
-  try {
-    entries = await fs.promises.readdir(dir, { withFileTypes: true })
-  } catch {
-    return []
-  }
-  const found = await Promise.all(
-    entries.map(async (e) => {
-      const p = path.join(dir, e.name)
-      if (e.isDirectory()) return jsonlUnder(p, namePrefix)
-      return e.isFile() && e.name.startsWith(namePrefix) && e.name.endsWith('.jsonl') ? [p] : []
-    })
-  )
-  return found.flat()
 }
 
 // CC§2 CODEX§13

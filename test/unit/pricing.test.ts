@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { resolvePricing, MODEL_PRICING } from '../../src/shared/pricing'
+import { resolvePricing } from '../../src/shared/pricing'
+import { MODEL_PRICING } from '../../src/agents/claude/shared/claudePrices'
 
 describe('resolvePricing — exact then longest-prefix match', () => {
   it('resolves a bare current model id exactly', () => {

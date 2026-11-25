@@ -3,7 +3,7 @@ import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { UsageCache, type ScannedFile, type UsageFile } from '../../src/main/usageCache'
-import { scanClaudeCalls } from '../../src/main/usageScan'
+import { scanClaudeCalls } from '../../src/agents/claude/main/usageWorkerScan'
 import { costUsdOf, resolvePricing } from '../../src/shared/pricing'
 import type { UsageRead, UsageRecord } from '../../src/shared/types'
 

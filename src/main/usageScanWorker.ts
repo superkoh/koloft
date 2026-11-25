@@ -1,61 +1,9 @@
-import fs from 'fs'
-import readline from 'readline'
 import { parentPort, workerData } from 'worker_threads'
-import {
-  AGY_USAGE_WORDS,
-  CLAUDE_USAGE_WORDS,
-  CODEX_USAGE_WORDS,
-  protobufString,
-  scanAgyLines,
-  scanClaudeCalls,
-  scanCodexLines,
-  topLevelTimestampOf
-} from './usageScan'
+import { linesWithAny } from '@agents/kit/main/usageLines'
+import { CLAUDE_USAGE_WORDS, scanClaudeCalls } from '@agents/claude/main/usageWorkerScan'
+import { CODEX_USAGE_WORDS, scanCodexLines } from '@agents/codex/main/usageWorkerScan'
+import { AGY_USAGE_WORDS, agyModels, scanAgyLines } from '@agents/agy/main/usageWorkerScan'
 import type { ScannedFile, UsageFile } from './usageCache'
-
-const AGY_CALL_MODEL = [1, 19]
-const AGY_CONFIGURED_MODEL = [10, 1, 28]
-
-async function linesWithAny(
-  file: string,
-  words: string[],
-  wantsStart = false
-): Promise<{ text: string; bornAt?: string }> {
-  const kept: string[] = []
-  let bornAt: string | undefined
-  let looking = wantsStart
-  const lines = readline.createInterface({ input: fs.createReadStream(file), crlfDelay: Infinity })
-  for await (const line of lines) {
-    if (looking && line.includes('"timestamp"')) {
-      bornAt = topLevelTimestampOf(line)
-      looking = bornAt === undefined
-    }
-    if (words.some((w) => line.includes(w))) kept.push(line)
-  }
-  return { text: kept.join('\n'), bornAt }
-}
-
-// AGY§8
-async function agyModels(db = ''): Promise<{ calls: string[]; configured: string }> {
-  if (!fs.existsSync(db)) return { calls: [], configured: '' }
-  const { DatabaseSync } = await import('node:sqlite')
-  const sqlite = new DatabaseSync(db, { readOnly: true })
-  try {
-    const blobs = (table: string): Uint8Array[] =>
-      (sqlite.prepare(`select data from ${table} order by idx`).all() as { data: unknown }[])
-        .map((r) => r.data)
-        .filter((d): d is Uint8Array => d instanceof Uint8Array)
-    const configured = blobs('executor_metadata')
-      .map((b) => protobufString(b, AGY_CONFIGURED_MODEL))
-      .find(Boolean)
-    return {
-      calls: blobs('gen_metadata').map((b) => protobufString(b, AGY_CALL_MODEL) ?? ''),
-      configured: configured ?? ''
-    }
-  } finally {
-    sqlite.close()
-  }
-}
 
 async function scan(f: UsageFile): Promise<Omit<ScannedFile, 'file'>> {
   const sessionId = f.sessionId ?? ''

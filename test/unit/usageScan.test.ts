@@ -1,15 +1,14 @@
 process.env.TZ = 'America/Los_Angeles'
 
 import { describe, expect, it } from 'vitest'
+import { topLevelTimestampOf } from '../../src/agents/kit/main/usageLines'
 import {
   claudeCallKeys,
-  protobufString,
   recordsOfClaudeCalls,
-  scanAgyLines,
-  scanClaudeCalls,
-  scanCodexLines,
-  topLevelTimestampOf
-} from '../../src/main/usageScan'
+  scanClaudeCalls
+} from '../../src/agents/claude/main/usageWorkerScan'
+import { scanCodexLines } from '../../src/agents/codex/main/usageWorkerScan'
+import { protobufString, scanAgyLines } from '../../src/agents/agy/main/usageWorkerScan'
 import { costUsdOf, resolvePricing } from '../../src/shared/pricing'
 
 const scanClaudeLines = (text: string) => recordsOfClaudeCalls(scanClaudeCalls(text))
