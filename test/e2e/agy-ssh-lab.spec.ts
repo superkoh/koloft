@@ -32,6 +32,7 @@ import {
   dockerAvailable,
   everyLoginOnTargetGets,
   installCurlOnTarget,
+  installCurlThatNeverAnswersOnTarget,
   installLabSsh,
   installOnTarget,
   remoteKeyFor,
@@ -156,6 +157,9 @@ const tabFilesOn = (lab: SshLab, user: string): string[] =>
 
 const filesHoldingTheKeyOn = (lab: SshLab, user: string): string[] =>
   lines(runOnTarget(lab, user, KEY_HOLDERS(E2E_AGY_ACCOUNT_KEY)))
+
+const tabScriptsRunningOn = (lab: SshLab, user: string): string[] =>
+  lines(runOnTarget(lab, user, "ps -eo args= | grep -e '[.]koloft/tabs/' || true"))
 
 const agyLaunchesOn = (lab: SshLab, user: string): AgyCall[] =>
   lines(runOnTarget(lab, user, 'cat fake-agy-calls.jsonl 2>/dev/null || true'))
@@ -301,7 +305,7 @@ test.describe('Antigravity sessions on real sshd machines behind a company jump 
   })
 
   // AGY§3
-  test('E-SSH-A3: an Antigravity start that fails before agy runs, on a machine with no agy and no curl, wget or sudo to install it, and one where agy quits at once, each keep the tab with what the machine said and the exit code on its row, and leave no tmux session and no process there', async ({
+  test('E-SSH-A3: an Antigravity start that fails before agy runs, on a machine with no agy and no curl, wget or sudo to install it, and one where agy quits at once, each keep the tab with what the machine said and the exit code on its row, and leave no tmux session and no process there; the one that failed before tmux leaves the account’s key in no file there, before and after its tab closes', async ({
     env
   }) => {
     await withLab(env, async ({ app, page, lab }) => {
@@ -318,8 +322,10 @@ test.describe('Antigravity sessions on real sshd machines behind a company jump 
         'exited (code 4)'
       )
       await nothingOfTheTabRunsOn(lab, 'kuser')
+      expect(filesHoldingTheKeyOn(lab, 'kuser')).toEqual([])
       await sendShortcut(app, 'shortcut:close-tab')
       await expect(wsRows(page, 'kt-key')).toHaveCount(0)
+      expect(filesHoldingTheKeyOn(lab, 'kuser')).toEqual([])
 
       fakeAgyOnTheMachine(lab, ['kuser'])
       runOnTarget(lab, 'kuser', 'printf 3 > fake-agy-exit')
@@ -372,7 +378,7 @@ test.describe('Antigravity sessions on real sshd machines behind a company jump 
   })
 
   // AGY§29
-  test('E-SSH-A5: an Antigravity tab on the machine keeps its agy running in tmux there while Koloft is closed; the reopened Koloft attaches to that same agy, reads done from the turn that already ended, and follows its next turn', async ({
+  test('E-SSH-A5: an Antigravity tab on the machine keeps its agy running in tmux there while Koloft is closed; the reopened Koloft attaches to that same agy, reads done from the turn that already ended, and follows its next turn, with the account’s key in no file there', async ({
     env
   }) => {
     await withLab(
@@ -403,11 +409,31 @@ test.describe('Antigravity sessions on real sshd machines behind a company jump 
         await promptShowsWorkingThenDone(page, row, 'after the quit')
         expect(agyPidOn(lab, 'kuser')).toBe(agy)
         expect(agyLaunchesOn(lab, 'kuser')).toHaveLength(1)
+        expect(filesHoldingTheKeyOn(lab, 'kuser')).toEqual([])
       },
       (lab) => {
         fakeAgyOnTheMachine(lab, ['kuser'])
         turnsTakeLongerThanAMirrorPull(lab, 'kuser')
       }
+    )
+  })
+
+  test('E-SSH-A7: Koloft closed while an Antigravity start is still installing agy on the machine, before tmux, leaves the account’s key in no file there', async ({
+    env
+  }) => {
+    await withLab(
+      env,
+      async ({ page, lab, quitKoloft }) => {
+        await addMachine(page, 'kt-key', 'kuser')
+        const tabId = await newAgyTabOn(page, 'kt-key')
+        await screenOf(page, tabId, AGY_DRAWS_ITS_PROMPT_MS).toContain(
+          '[Koloft] installing agy (official installer)'
+        )
+        await quitKoloft()
+        await expect.poll(() => tabScriptsRunningOn(lab, 'kuser'), { timeout: 30_000 }).toEqual([])
+        expect(filesHoldingTheKeyOn(lab, 'kuser')).toEqual([])
+      },
+      (lab) => installCurlThatNeverAnswersOnTarget(lab)
     )
   })
 

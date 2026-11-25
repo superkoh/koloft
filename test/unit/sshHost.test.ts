@@ -839,27 +839,37 @@ describe('accounts for remote launches started together', () => {
   })
 
   // PLATFORM§33
-  it("writes the machine's login-shell PATH into the script of a Claude Code or Antigravity tab it starts there, and none into the script of one that re-attaches to a session still running there", async () => {
+  it("writes the machine's login-shell PATH into the script of a Claude Code or Antigravity tab it starts there, and the account's key beside it, and neither for one that re-attaches to a session still running there", async () => {
     const live = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
     const host = machine(runOnMachine, {
       loginPath: async () => '/opt/rc-only/bin',
-      alive: () => new Set([live])
+      alive: () => new Set([live]),
+      pickAccount: async () => ({ env: { ANTHROPIC_API_KEY: 'claude-key' }, banner: '' })
     })
-    const scriptOf = (tabId: string): string =>
-      fs.readFileSync(path.join(tabPackageDir(home, tabId), `${tabId}.sh`), 'utf8')
+    const packageOf = (tabId: string): { script: string; key: boolean } => ({
+      script: fs.readFileSync(path.join(tabPackageDir(home, tabId), `${tabId}.sh`), 'utf8'),
+      key: fs.existsSync(path.join(tabPackageDir(home, tabId), `${tabId}.env`))
+    })
     const program = machineToolProgram('agy', '  exec agy\n', {})
-    const scripts = async (resume?: string): Promise<string[]> => {
+    const packages = async (resume?: string): Promise<{ script: string; key: boolean }[]> => {
       const tag = resume ? 'again' : 'new'
       const claude = await host.launch({ root: keyed('/w'), resumeSessionId: resume })
       if (!claude.ok) throw new Error('launch refused')
       claude.launchCommand(`claude-${tag}`)
-      const agy = { tabId: `agy-${tag}`, cwd: keyed('/w'), env: {}, program, resumeId: resume }
+      const env = { KOLOFT_AGY_KEY: 'agy-key' }
+      const agy = { tabId: `agy-${tag}`, cwd: keyed('/w'), env, program, resumeId: resume }
       ;(await host.launchAgy(agy)).launchCommand()
-      return ['claude', 'agy'].map((kind) => scriptOf(`${kind}-${tag}`))
+      return ['claude', 'agy'].map((kind) => packageOf(`${kind}-${tag}`))
     }
     const handed = `PATH="$PATH":'/opt/rc-only/bin'`
-    for (const started of await scripts()) expect(started).toContain(handed)
-    for (const reattached of await scripts(live)) expect(reattached).not.toContain(handed)
+    for (const started of await packages()) {
+      expect(started.script).toContain(handed)
+      expect(started.key).toBe(true)
+    }
+    for (const reattached of await packages(live)) {
+      expect(reattached.script).not.toContain(handed)
+      expect(reattached.key).toBe(false)
+    }
   })
 
   it('a remote launch says whether its claude skips permission checks, from the launch’s own permission or else Settings, so a message the owner sends it can claim its real class (ADR-0028)', async () => {

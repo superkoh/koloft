@@ -27,7 +27,11 @@ import { MACHINE_CLAUDE } from '../../src/agents/claude/main/advisorOnFable'
 import { utilTerminalGuard } from '../../src/main/shim'
 import { passOf } from '../../src/main/tabPass'
 import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from '../../src/main/remote/statusRelay'
-import { AGY_KEY_FROM_KOLOFT, agyTab } from '../../src/agents/agy/main/agyTab'
+import {
+  AGY_KEY_FROM_KOLOFT,
+  AGY_SIGN_IN_FROM_KOLOFT,
+  agyTab
+} from '../../src/agents/agy/main/agyTab'
 
 const PLAINEST_SHELL_THE_LINE_MUST_SURVIVE = fs.existsSync('/bin/dash') ? '/bin/dash' : '/bin/sh'
 const PYTHON_WITH_PTY = spawnSync('python3', ['-c', 'import pty, termios']).status === 0
@@ -399,6 +403,33 @@ describe('the Workbench shell of a remote session', () => {
     expect(fs.existsSync(fresh)).toBe(true)
   })
 
+  it('sending a tab removes the account files an older Koloft left on the machine over an hour ago, but not one a tab script of that tab still running there may read, nor one just sent', () => {
+    const r = remote()
+    typeLine(r, shellLine(r))
+    const tabs = path.join(r.machineHome, '.koloft', 'tabs')
+    const left = (name: string, minutesAgo: number): string => {
+      const file = path.join(tabs, name)
+      fs.writeFileSync(file, 'ANTHROPIC_API_KEY=old\n')
+      const then = new Date(Date.now() - minutesAgo * 60_000)
+      fs.utimesSync(file, then, then)
+      return file
+    }
+    const gone = [left('pty-a-1.env', 120), left('pty-a-2.auth.json', 120)]
+    const kept = [left('pty-a-3.env', 120), left('pty-a-4.env', 5)]
+    fs.writeFileSync(path.join(tabs, 'pty-a-3.sh'), 'sleep 30\n')
+    const stillRunning = spawn('/bin/sh', [path.join(tabs, 'pty-a-3.sh')], {
+      detached: true,
+      stdio: 'ignore'
+    })
+    try {
+      typeLine(r, shellLine(r))
+    } finally {
+      process.kill(-stillRunning.pid!)
+    }
+    expect(gone.filter((f) => fs.existsSync(f))).toEqual([])
+    expect(kept.filter((f) => fs.existsSync(f))).toEqual(kept)
+  })
+
   it("hands the machine the session tab's id this Mac gave the shell, so a server started there still counts as the session's after a Koloft restart", () => {
     const r = remote()
     typeLine(r, shellLine(r))
@@ -461,7 +492,7 @@ function box(
   fs.writeFileSync(path.join(m, 'bin', 'claude'), MACHINE_CLAUDE, { mode: 0o755 })
   fs.writeFileSync(
     path.join(m, 'ensure.sh'),
-    `#!/bin/sh\n: > ${JSON.stringify(path.join(logs, 'ensure'))}\n${
+    `#!/bin/sh\n: > ${JSON.stringify(path.join(logs, 'ensure'))}\nenv > ${JSON.stringify(path.join(logs, 'ensure-env'))}\nls -A "$HOME/.koloft/tabs" > ${JSON.stringify(path.join(logs, 'ensure-tab-files'))}\n${
       opts.ensureBringsNode
         ? `mkdir -p "$HOME/.koloft/node/bin" && ln -s ${JSON.stringify(process.execPath)} "$HOME/.koloft/node/bin/node"\n`
         : ''
@@ -480,7 +511,10 @@ for a in "$@"; do [ "$prev" = -f ] && conf="$a"; last="$a"; prev="$a"; done
 case " $* " in *" capture-pane "*) printf 'the last screen\\n\\n\\n'; exit 0;; esac
 case " $* " in *" source-file "*) cat "$last" >> ${JSON.stringify(path.join(logs, 'sourced'))}; exit 0;; esac
 case " $* " in *" show-environment "*) [ -f ${JSON.stringify(path.join(logs, 'keyed'))} ]; exit $?;; esac
+case " $* " in *" has-session "*) [ -f ${JSON.stringify(path.join(logs, 'running'))} ]; exit $?;; esac
+case " $* " in *" attach "*) ls -A "$HOME/.koloft/tabs" > ${JSON.stringify(path.join(logs, 'tab-files-while-attached'))}; exit 0;; esac
 case " $* " in *" new-session "*) ;; *) exit 0;; esac
+[ -f ${JSON.stringify(path.join(logs, 'running'))} ] && { ls -A "$HOME/.koloft/tabs" > ${JSON.stringify(path.join(logs, 'tab-files-while-attached'))}; exit 0; }
 if grep -q 'default-shell /bin/sh' "$conf"; then sh -c "$last"; else "$SHELL" -c "$last"; fi
 exit 0
 `,
@@ -871,19 +905,17 @@ describe('U-TAB-*: the tab script on the machine', () => {
   it("an Antigravity tab puts Koloft's settings, hooks and carried sign-in into its account's folder on the machine, links the machine user's own conversations there, runs agy with Koloft's API key and never the machine's own, with its status frames off since no one on the Mac reads them, and a reconnect attaches by the name agy's title script gave the tmux session", () => {
     const tabFiles = {
       'T.settings.json': '{"koloft":1}',
-      'T.hooks.json': '{"hooks":{}}',
-      'T.auth.json': 'oauth-token'
+      'T.hooks.json': '{"hooks":{}}'
     }
     const s = spec({
       tmuxName: 'm-T-t',
-      env: { [AGY_KEY_FROM_KOLOFT]: 'koloft-key' },
+      env: { [AGY_KEY_FROM_KOLOFT]: 'koloft-key', [AGY_SIGN_IN_FROM_KOLOFT]: "{'oauth-token'}\n" },
       program: agyTab({
         tabId: 'T',
         account: "o'brien",
         args: ['--csrf_token=x', 'say hi'],
         settings: tabFiles['T.settings.json'],
         hooks: tabFiles['T.hooks.json'],
-        token: tabFiles['T.auth.json'],
         koloftSkill: false
       })
     })
@@ -899,14 +931,16 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(b.argv()).toEqual([`--gemini_dir=${account}`, '--csrf_token=x', 'say hi'])
     expect(b.env().GEMINI_API_KEY).toBe('koloft-key')
     expect(b.env()[AGY_KEY_FROM_KOLOFT]).toBeUndefined()
+    expect(b.env()[AGY_SIGN_IN_FROM_KOLOFT]).toBeUndefined()
     expect(b.env().AGY_CLI_OSC7501).toBe('off')
     expect(b.env().KOLOFT_AGY_LOG).toBe(`${b.home}/.koloft/hook-sessions/T.agy.jsonl`)
     const app = path.join(account, 'antigravity-cli')
     expect(fs.readFileSync(path.join(app, 'settings.json'), 'utf8')).toBe('{"koloft":1}')
     expect(fs.readFileSync(path.join(account, 'config', 'hooks.json'), 'utf8')).toBe('{"hooks":{}}')
-    expect(fs.readFileSync(path.join(app, 'antigravity-oauth-token'), 'utf8')).toBe('oauth-token')
-    for (const name of Object.keys(tabFiles))
-      expect(fs.existsSync(path.join(b.tabs, name))).toBe(false)
+    const signIn = path.join(app, 'antigravity-oauth-token')
+    expect(fs.readFileSync(signIn, 'utf8')).toBe("{'oauth-token'}\n")
+    expect(fs.statSync(signIn).mode & 0o777).toBe(0o600)
+    expect(fs.readdirSync(b.tabs).filter((n) => /\.(json|env)$/.test(n))).toEqual([])
     expect(fs.readlinkSync(path.join(app, 'conversations'))).toBe(
       `${b.home}/.gemini/antigravity-cli/conversations`
     )
@@ -1007,10 +1041,42 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(passFilesLeft(b)).toEqual([])
   })
 
-  it('a start that stops before tmux, as when its tool cannot be set up, leaves no pass file on the machine', () => {
-    const b = box(spec(), { ensureExit: 7 })
-    expect(b.run().status).toBe(7)
-    expect(passFilesLeft(b)).toEqual([])
+  const withAccount = (over: Partial<TabSpec> = {}): TabSpec =>
+    spec({ env: accountEnv('oauth', 'bravo', 'sk-ant-oat01-held'), ...over })
+  const accountFileLeft = (b: Box): boolean => fs.existsSync(path.join(b.tabs, 'T.env'))
+
+  it('a start that stops before tmux, as when its tool cannot be set up or its folder is gone, leaves no pass file and no account file on the machine', () => {
+    const noTool = box(withAccount(), { ensureExit: 7 })
+    expect(noTool.run().status).toBe(7)
+    expect(passFilesLeft(noTool)).toEqual([])
+    expect(accountFileLeft(noTool)).toBe(false)
+    const noFolder = box(withAccount({ cwd: path.join(mkroot('gone'), 'gone') }))
+    expect(noFolder.run().status).toBe(3)
+    expect(accountFileLeft(noFolder)).toBe(false)
+  })
+
+  it("a start keeps the account's key out of every file, and out of the environment of the machine's setup it runs before tmux, so a link cut meanwhile leaves it nowhere; the agent inside tmux still gets it, through a stand-in terminal too", () => {
+    for (const args of [[], ['start', '120', '40']]) {
+      const b = box(withAccount())
+      expect(b.run(...args).status).toBe(0)
+      expect(fs.readFileSync(path.join(b.logs, 'ensure-env'), 'utf8')).not.toContain(
+        'sk-ant-oat01-held'
+      )
+      expect(fs.readFileSync(path.join(b.logs, 'ensure-tab-files'), 'utf8')).not.toContain('T.env')
+      expect(b.env().CLAUDE_CODE_OAUTH_TOKEN).toBe('sk-ant-oat01-held')
+      expect(accountFileLeft(b)).toBe(false)
+    }
+  })
+
+  it('a reconnect, and a start that lands on a tmux session already running, leave no account file on the machine while attached, since the agent there already has its key', () => {
+    for (const mode of ['attach', 'start']) {
+      const b = box(withAccount())
+      fs.writeFileSync(path.join(b.logs, 'running'), '')
+      expect(b.run(mode).status).toBe(0)
+      expect(fs.readFileSync(path.join(b.logs, 'tab-files-while-attached'), 'utf8')).not.toContain(
+        'T.env'
+      )
+    }
   })
 
   it("on a machine whose ssh gives the command no terminal, a start and a reconnect each run inside a stand-in terminal of the tab's size, where tmux can open", () => {
@@ -1115,7 +1181,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
   })
 
   // CC§10
-  it("warms claude's server-side settings once, with the account, on a machine that has never run it", () => {
+  it("warms claude's server-side settings once, with the account but with its key in no file meanwhile, on a machine that has never run it", () => {
     const b = box(spec({ env: accountEnv('oauth', 'bravo', 'sk-ant-oat01-warm') }))
     const res = b.run()
 
@@ -1129,7 +1195,8 @@ describe('U-TAB-*: the tab script on the machine', () => {
       b.order().findIndex((l) => l.includes('new-session'))
     )
     expect(b.envAt(1).CLAUDE_CODE_OAUTH_TOKEN).toBe('sk-ant-oat01-warm')
-    expect(b.tabEnvSeenAt(1)).toBe(true)
+    expect(b.tabEnvSeenAt(1)).toBe(false)
+    expect(b.envAt(2).CLAUDE_CODE_OAUTH_TOKEN).toBe('sk-ant-oat01-warm')
     expect(fs.existsSync(path.join(b.tabs, 'T.env'))).toBe(false)
   })
 

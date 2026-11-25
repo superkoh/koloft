@@ -1183,7 +1183,7 @@ exit ${CALLER_GONE_EXIT}`,
           machineName: pkg.name,
           cwd: this.bare(spec.cwd),
           banner: '',
-          env: spec.env,
+          env: attach ? undefined : spec.env,
           portOffset: spec.portOffset,
           loginPath,
           program: attach ? { ...spec.program, files: {} } : spec.program

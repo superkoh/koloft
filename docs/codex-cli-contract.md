@@ -2193,6 +2193,17 @@ A copied `auth.json` (refresh token replaced by a dummy before Codex started) al
 signed the machine in (`authMode:"chatgpt"`) and ran turns; its `last_refresh` and mtime
 did not change. A real refresh token on the machine was not probed.
 
+**An API key handed over with `account/login/start` is written to `auth.json`.** Checked
+2026-11-24 with codex-cli 0.169.0 on this Mac, `codex app-server` on stdio in a throwaway
+`HOME` and `CODEX_HOME`, `initialize` with `experimentalApi: true`, a made-up key:
+`account/login/start {type:"apiKey", apiKey}` answered `{type:"apiKey"}`, then
+`account/login/completed {success:true}` and `account/updated {authMode:"apikey"}`; the
+home then held `auth.json` (mode 600, keys `auth_mode` and `OPENAI_API_KEY`), the only file
+under `HOME` holding the key. So unlike `chatgptAuthTokens`, the key Koloft hands a
+remote app-server for an API-key account stays on the machine, in
+`~/.koloft/codex-home/auth.json`, after the server ends (read from `machineLogin` and
+`REMOTE_CODEX_HOME`, not probed on a machine; issue #2454).
+
 **Turns over ssh.** Same frames as section 12: `thread/started`, `turn/started`,
 `item/started`/`item/completed`, `item/agentMessage/delta`, `turn/diff/updated`,
 `thread/tokenUsage/updated`, `account/rateLimits/updated`, `turn/moderationMetadata`,

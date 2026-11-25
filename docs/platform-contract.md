@@ -4192,3 +4192,29 @@ a `chown`, a `chmod`) write no file, and do not.
 
 Koloft dependents: what `KOLOFT_TAB_PASS` (`src/main/tabPass.ts`) stops and what it does
 not, ADR-0052.
+
+## §75 A remote tab's account file: what each way out of its script leaves
+
+- **dash runs no EXIT trap when SIGHUP kills it.** On Debian 12's `/bin/sh` (dash
+  0.5.12-2), `sh -c 'trap "touch f" EXIT; sleep 5' &` then `kill -HUP` ended with code 129
+  and no `f`. With `trap "exit 129" HUP` added, the same signal left `f`. A cut ssh link,
+  and quitting Koloft, end a tab's script with SIGHUP, so a `trap … EXIT` that deletes a
+  file does nothing in exactly those cases.
+- **The files land readable by the user alone.** Sent with `tar xmf` under `umask 077`
+  (GNU tar 1.34, as the user), `stat` read `~/.koloft/tabs` 700, `<tab>.env` and the other
+  data files 600, `<tab>.sh` 700, all owned by the user; `~/.koloft` was 755.
+- **What each way out left, before the account was held in memory** (main at f41e17f, the
+  e2e fakes and made-up keys, `grep -rl <key> ~/.koloft` on the machine): a start that
+  failed before tmux — Antigravity with no agy and no curl to install it, Claude Code with
+  tmux moved away, both exit 4 — left `<tab>.env` with the key, also after the tab closed;
+  Koloft quit while the start still waited on the installer (a `curl` that never answered)
+  left it too; an Antigravity tab reattached after Koloft reopened left one more per
+  reopen. A Claude Code tab reattached after two reopens left none, since a reattach
+  picks no account. A start that ran left none.
+- Measured 2026-11-24 in the `koloft-e2e-sshd` Docker image (Debian 12, OpenSSH 9.2p1),
+  reached through the lab's jump host by a dev build.
+
+Koloft dependents: `tabScript` (`src/main/remote/launch.ts`) reads `<tab>.env` into a shell
+variable and deletes it as its first step after the stand-in terminal, and writes it back
+only just before a new tmux session, whose script reads and deletes it at once; sending a
+tab deletes such files left over an hour ago whose tab has no script running.
