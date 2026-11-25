@@ -13,7 +13,7 @@ vi.mock('electron', async () => {
 })
 
 import { registeredByTabRoot, setupShim } from '../../src/main/shim'
-import { MIN_CLAUDE_VERSION } from '../../src/main/cliMinimums'
+import { MIN_CLAUDE_VERSION } from '../../src/agents/claude/main/claudeMinimum'
 import { NO_USABLE_ACCOUNT, SHIM_FOUND_NO_ACCOUNT_EXIT } from '../../src/shared/accountUsage'
 
 let shimDir: string

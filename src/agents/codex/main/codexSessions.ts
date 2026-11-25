@@ -45,6 +45,8 @@ import {
   type MachineLogin,
   type MachineUpstreamOptions
 } from './codexMachine'
+import { codexUsageFolders } from './codexMirror'
+import type { MirrorFolder } from '@core/agent/mirrorFolders'
 import { writeTabPassFile } from '../../../main/remote/launch'
 import { problemOf, sshLinkBroke } from '../../../main/remote/ssh'
 import type { Machine } from '../../../main/host/machine'
@@ -100,7 +102,7 @@ import { CODEX_TMP_DIR, removeFoldersLeftByEndedRuns } from '../../../main/lefto
 import { CODEX_TMP_FOLDER, endCodexAppServersLeftByACrash } from './codexLeftovers'
 import { codexSessionKey } from '@agents/kit/main/sessionStore'
 import { resolveCodexRuntime, updateCodex } from './codexRuntime'
-import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from '../../../main/cliMinimums'
+import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './codexMinimum'
 import { startToolShim } from '../../../main/toolShim'
 import { passOf, TAB_PASS_ENV } from '../../../main/tabPass'
 import {
@@ -568,6 +570,12 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   noticeRemoteExits(): void {}
 
   mirrorPulled(): void {}
+
+  foldersToMirrorFrom(host: string, landing: string): MirrorFolder[] {
+    return this.machinesWithTabs().includes(host) || this.hasHistoryOn(host)
+      ? codexUsageFolders(landing)
+      : []
+  }
 
   // ADR-0039 CODEX§16
   tmuxOfTab(): undefined {

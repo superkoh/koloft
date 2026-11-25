@@ -15,7 +15,7 @@ import type { TranscriptPlaces } from '@core/transcriptPlaces'
 import { portOffset } from '@shared/worktreeName'
 import { costUsdOf, resolvePricing } from '@shared/pricing'
 import { resolveCliRuntime, type CliRuntime, type CliSpec } from '../../../main/cliRuntime'
-import { AGY_UPDATE_TIMEOUT_MS, MIN_AGY_VERSION, TESTED_AGY_LINE } from '../../../main/cliMinimums'
+import { AGY_UPDATE_TIMEOUT_MS, MIN_AGY_VERSION, TESTED_AGY_LINE } from './agyMinimum'
 import { startToolShim } from '../../../main/toolShim'
 import { browserControlEnv } from '../../../main/browserControlEnv'
 import { BACKGROUND_LABEL_CHARS, scheduleLabel } from '@core/scheduleLabel'
@@ -89,6 +89,8 @@ import {
   agyTab,
   runMachineScript
 } from './agyTab'
+import { agyFoldersToMirror } from './agyMirror'
+import type { MirrorFolder } from '@core/agent/mirrorFolders'
 import {
   agyConversations,
   agyConversationTitle,
@@ -1492,6 +1494,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       type: 'background-changed',
       items
     })
+  }
+
+  foldersToMirrorFrom(host: string, landing: string): MirrorFolder[] {
+    return this.usesHost(host) ? agyFoldersToMirror(landing) : []
   }
 
   // AGY§29

@@ -27,6 +27,7 @@ import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { TabEnded } from '../moment'
 import type { TranscriptPlaces } from '../transcriptPlaces'
 import { rowsOfEveryAgent, type RowsOfEveryAgent, type SessionRowsSource } from './sessionRows'
+import type { MirrorFolder } from './mirrorFolders'
 
 export type ModeClass = 'bypass' | 'prompting'
 
@@ -94,6 +95,7 @@ export interface SessionBackend extends SessionRowsSource, SessionMessages {
   sessionGone(key: string): boolean
   noticeRemoteExits(host: string, sessionIds: string[]): void
   mirrorPulled(host: string): void
+  foldersToMirrorFrom(host: string, landing: string): MirrorFolder[]
   tmuxOfTab(tabId: string): string | undefined
   showsAPanel(tabId: string, screen?: string[]): Promise<boolean | undefined>
 }
@@ -361,6 +363,14 @@ export class SessionBackends {
 
   mirrorPulled(host: string): void {
     for (const backend of this.builtInListOrder()) backend.mirrorPulled(host)
+  }
+
+  foldersToMirrorFrom(host: string, landing: string): MirrorFolder[] {
+    const folders = this.builtInListOrder().flatMap((b) => b.foldersToMirrorFrom(host, landing))
+    return [
+      ...folders.filter((f) => f.holds === 'records'),
+      ...folders.filter((f) => f.holds === 'usage')
+    ]
   }
 
   tmuxOfTab(tabId: string): string | undefined {

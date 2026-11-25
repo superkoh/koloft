@@ -78,6 +78,7 @@ export function storedBackend<R extends StoredRun, H extends HistoryEntry, P>(
     sessionGone: (key) => sessions.threadGone(key),
     noticeRemoteExits: (host, sessionIds) => sessions.noticeRemoteExits(host, sessionIds),
     mirrorPulled: (host) => sessions.mirrorPulled(host),
+    foldersToMirrorFrom: (host, landing) => sessions.foldersToMirrorFrom(host, landing),
     tmuxOfTab: (tabId) => sessions.tmuxOfTab(tabId),
     ...rowsKeptInMemory(sessions),
     // ADR-0028
