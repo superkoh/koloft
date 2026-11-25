@@ -3,12 +3,8 @@ import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { resolveCliRuntime, type CliSpec } from '../../src/main/cliRuntime'
-import {
-  MIN_AGY_VERSION,
-  MIN_CODEX_VERSION,
-  TESTED_AGY_LINE,
-  TESTED_CODEX_LINE
-} from '../../src/main/cliMinimums'
+import { MIN_AGY_VERSION, TESTED_AGY_LINE } from '../../src/agents/agy/main/agyMinimum'
+import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from '../../src/agents/codex/main/codexMinimum'
 import { isNewer } from '../../src/main/releaseNotes'
 
 let directory: string

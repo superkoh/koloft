@@ -99,7 +99,7 @@ import { CODEX_TMP_DIR, removeFoldersLeftByEndedRuns } from '../../../main/lefto
 import { CODEX_TMP_FOLDER, endCodexAppServersLeftByACrash } from './codexLeftovers'
 import { codexSessionKey } from '@agents/kit/main/sessionStore'
 import { resolveCodexRuntime, updateCodex } from './codexRuntime'
-import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from '../../../main/cliMinimums'
+import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './codexMinimum'
 import { startToolShim } from '../../../main/toolShim'
 import { passOf, TAB_PASS_ENV } from '../../../main/tabPass'
 import {
