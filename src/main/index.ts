@@ -20,8 +20,8 @@ import { anotherLiveInstanceOwns, PtyManager, type PtyHandle } from './ptyManage
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { TerminalOutput } from './flowControl'
-import type { CommandOutput } from '@agents/claude/main/claudeCommandOutput'
-import { codexShowsAPanel } from './inputBox'
+import type { CommandOutput } from '@core/agent/commandOutput'
+import { codexShowsAPanel } from '@agents/codex/shared/inputBox'
 import type { TreeIo } from './sessionWorktrees'
 import { sharedProcessTable, type ProcessTable } from './processTable'
 import {

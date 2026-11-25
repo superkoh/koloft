@@ -1,12 +1,14 @@
 import type { BackendId } from '@shared/types'
 import type { Turn } from '@shared/turns'
 import { waitingForAnswer } from '@shared/slashCommands'
-import type { CommandOutput } from '@agents/claude/main/claudeCommandOutput'
+import type { CommandOutput } from '@core/agent/commandOutput'
 import { sleep } from '@core/sleep'
 import { CLEAR_TO_LINE_START, TO_LINE_END } from '@shared/lineEditKeys'
 import { errorText } from '@core/errorText'
 import { withoutBlankEdges } from './messageText'
-import { agyInputBoxDraft, codexComposerDraft, inputBoxDraft } from '../../../main/inputBox'
+import { inputBoxDraft } from '@agents/claude/shared/inputBox'
+import { codexComposerDraft } from '@agents/codex/shared/inputBox'
+import { agyInputBoxDraft } from '@agents/agy/shared/inputBox'
 
 export const WAITS_FOR_IDLE_MS = 10 * 60_000
 export const NOTHING_CAME_BACK_MS = 8000

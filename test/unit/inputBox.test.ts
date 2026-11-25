@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { codexShowsAPanel } from '../../src/main/inputBox'
+import { codexShowsAPanel } from '../../src/agents/codex/shared/inputBox'
 
 const FOOTER = ['', '  GPT-6.1-Sol default · ~/work', '  ? for shortcuts', '', '']
 const COMPOSER = ['› Ask Codex to do anything', ...FOOTER]
