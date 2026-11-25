@@ -2387,7 +2387,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     })
   }
 
-  test('BB-M19: a remote job set to "Close it" closes for good once its turn ends: tab, row, and its worktree on the machine', async ({
+  test('BB-M19: a remote job set to "Close it" closes for good once its turn ends: tab, row, and its worktree and branch on the machine', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -2409,8 +2409,10 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await clickRunNow(page, 'Remote report')
 
       const call = await waitNewCall(env, 0, 120_000)
-      const tree = path.join(remoteDir(env), '.claude', 'worktrees', worktreeOf(call))
-      await expect.poll(() => fs.existsSync(tree), { timeout: 60_000 }).toBe(true)
+      const wt = worktreeOf(call)
+      expect(wt).not.toBe('')
+      const tree = runTree(remoteDir(env), wt)
+      expect(call.effectiveCwd, 'claude ran inside the run worktree').toBe(tree)
       await expect
         .poll(async () => (await histLines(page))[0]?.state, { timeout: 90_000 })
         .toBe('Done — closed itself')
@@ -2418,8 +2420,10 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       await expect(wsRows(page, REMOTE_WS_NAME)).toHaveCount(0, { timeout: 30_000 })
       await expect.poll(() => fs.existsSync(tree), { timeout: 30_000 }).toBe(false)
       await page.waitForTimeout(ROOM_FOR_A_WRONG_WORKTREE_REMOVAL_MS)
+      expect(branchOf(remoteDir(env), wt)).toBe('')
       expect((await histLines(page))[0]).toMatchObject({
         state: 'Done — closed itself',
+        wt: ` · ${wt}`,
         folder: ''
       })
     } finally {
