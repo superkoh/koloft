@@ -4855,7 +4855,7 @@ const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
 }
 
 // ADR-0007
-function shrinkAdoptedClaudePtysOneRowSoFitRepaints(tabs: TabInventoryReply['tabs']): void {
+function shrinkAdoptedAgentPtysOneRowSoFitRepaints(tabs: TabInventoryReply['tabs']): void {
   for (const t of tabs) {
     if (t.kind === 'shell') continue
     const h = ptyMgr.get(t.id)
@@ -4982,7 +4982,7 @@ function registerIpc(): void {
       tracked
     )
     // ADR-0007
-    shrinkAdoptedClaudePtysOneRowSoFitRepaints(tabs)
+    shrinkAdoptedAgentPtysOneRowSoFitRepaints(tabs)
     const asleep = [...sleepers].map(([id, t]): AdoptableTab => ({ id, ...t, asleep: true }))
     return { tabs: [...tabs, ...asleep], activeTabBeforeReload: active }
   })

@@ -84,12 +84,14 @@ export interface AccountKindFacts {
   signsInThroughABrowser: boolean
   storesAPastedKeyItself: boolean
   takesAnEndpoint: boolean
+  isATokenItsSignInPrints: boolean
 }
 
 export interface AgentManifest {
   id: string
   name: string
   productName: string
+  shortProductName: string
   maker: string
   command: string
   installCommand: string

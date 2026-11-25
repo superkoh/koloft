@@ -899,7 +899,7 @@ export const useStore = create<AppState>((set, get) => ({
     const sessionId = sess?.sessionId || tab.sessionId || lastSessionId.get(tab.id)
     if (restarting.has(tab.id)) return
     const oldId = tab.id
-    const liveClaude = !!sess?.alive && !!sess.sessionId
+    const liveAgent = !!sess?.alive && !!sess.sessionId
     const sayNoConversation = (live: boolean): void => {
       if (!get().tabs.some((x) => x.id === oldId)) return
       get().showToast(live ? NO_CONVERSATION_LIVE_NOTICE : NO_CONVERSATION_DEAD_NOTICE)
@@ -1011,7 +1011,7 @@ export const useStore = create<AppState>((set, get) => ({
         .catch(() => failed('Resume failed'))
         .finally(() => restarting.delete(oldId))
     }
-    if (sessionId) return void begin(sessionId, sess?.treeRoot ?? tab.cwd, liveClaude)
+    if (sessionId) return void begin(sessionId, sess?.treeRoot ?? tab.cwd, liveAgent)
     if (tab.ended && tab.launch) return relaunch(tab.launch)
     restarting.add(oldId)
     void window.api.sessions

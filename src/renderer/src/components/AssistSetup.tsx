@@ -1,5 +1,7 @@
 import { useState, type JSX } from 'react'
-import type { BackendId } from '@shared/types'
+import type { AccountKind, BackendId, SignInBackend } from '@shared/types'
+import { agentManifest } from '@core/agent/registry'
+import { signsInInATab } from '../signInLook'
 import { accountToSignInAgain } from '@shared/accountUsage'
 import { assistRunsOn } from '@shared/assistPicks'
 import { settingsPaneName } from '@shared/settingsPanes'
@@ -17,6 +19,12 @@ import {
   type PaneForm
 } from './settings/AccountsPane'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
+
+const PASTED_TOKEN = SESSION_BACKENDS.flatMap((agent) =>
+  agentManifest(agent)
+    .accountKinds.filter((kind) => kind.isATokenItsSignInPrints)
+    .map((kind) => ({ agent, kind: kind.id as AccountKind }))
+)[0]
 
 // CC§9 CODEX§15
 export const ASSIST_COST_LINE =
@@ -68,9 +76,9 @@ export function AssistSetup({
   const failed = useSignInFailure()
   const update = useSettingsUpdate()
   const [form, setForm] = useState<PaneForm | null>(null)
-  const claudeLoginRunning = !!login && loginRunning(login.progress)
+  const backgroundLoginRunning = !!login && loginRunning(login.progress)
   const closeForms = (): void => {
-    if (login && !claudeLoginRunning) clearLogin()
+    if (login && !backgroundLoginRunning) clearLogin()
     if (failed) window.api.accounts.dismissSignInFailure()
     setForm(null)
   }
@@ -78,9 +86,9 @@ export function AssistSetup({
     closeForms()
     setForm(next)
   }
-  const openClaudeSignIn = (again: string | undefined): void => {
+  const openBackgroundSignIn = (again: string | undefined): void => {
     closeForms()
-    if (!claudeLoginRunning) beginLogin(again)
+    if (!backgroundLoginRunning) beginLogin(again)
   }
   const signIn = form && 'signIn' in form ? form : null
 
@@ -88,8 +96,8 @@ export function AssistSetup({
     if (setup.usable[b]) {
       closeForms()
       update({ assist: { ...assist, backend: b } })
-    } else if (b === 'claude') openClaudeSignIn(again)
-    else openForm({ signIn: b, again })
+    } else if (!signsInInATab(b)) openBackgroundSignIn(again)
+    else openForm({ signIn: b as SignInBackend, again })
   }
 
   if (setup.noTool)
@@ -132,12 +140,16 @@ export function AssistSetup({
         })}
       </div>
       <div className="quiet">
-        {ASSIST_COST_LINE} Choose what each job runs on in {settingsPaneName('assist')}. Have a
-        Claude token?{' '}
-        <button className="ob-link" onClick={() => openForm({ paste: 'oauth' })}>
-          Paste it
-        </button>
-        .
+        {ASSIST_COST_LINE} Choose what each job runs on in {settingsPaneName('assist')}.
+        {PASTED_TOKEN && (
+          <>
+            {` Have a ${BACKEND_LABEL[PASTED_TOKEN.agent]} token? `}
+            <button className="ob-link" onClick={() => openForm({ paste: PASTED_TOKEN.kind })}>
+              Paste it
+            </button>
+            .
+          </>
+        )}
       </div>
       {setup.askBypass && (
         <>

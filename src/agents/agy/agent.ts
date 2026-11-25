@@ -16,6 +16,7 @@ export const agent = {
   id: 'agy',
   name: 'Antigravity',
   productName: 'Antigravity CLI',
+  shortProductName: 'Antigravity',
   maker: 'Google',
   command: 'agy',
   // AGY§3
@@ -133,7 +134,8 @@ export const agent = {
       isASignInFolder: true,
       signsInThroughABrowser: true,
       storesAPastedKeyItself: false,
-      takesAnEndpoint: false
+      takesAnEndpoint: false,
+      isATokenItsSignInPrints: false
     }
   ]
 } as const satisfies AgentManifest

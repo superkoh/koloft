@@ -12,6 +12,7 @@ export const agent = {
   id: 'claude',
   name: 'Claude',
   productName: 'Claude Code',
+  shortProductName: 'Claude Code',
   maker: 'Anthropic',
   command: 'claude',
   // CC§10
@@ -128,7 +129,8 @@ export const agent = {
       isASignInFolder: false,
       signsInThroughABrowser: true,
       storesAPastedKeyItself: false,
-      takesAnEndpoint: false
+      takesAnEndpoint: false,
+      isATokenItsSignInPrints: true
     },
     {
       id: 'apikey',
@@ -136,7 +138,8 @@ export const agent = {
       isASignInFolder: false,
       signsInThroughABrowser: false,
       storesAPastedKeyItself: false,
-      takesAnEndpoint: false
+      takesAnEndpoint: false,
+      isATokenItsSignInPrints: false
     },
     {
       id: 'custom',
@@ -144,7 +147,8 @@ export const agent = {
       isASignInFolder: false,
       signsInThroughABrowser: false,
       storesAPastedKeyItself: false,
-      takesAnEndpoint: true
+      takesAnEndpoint: true,
+      isATokenItsSignInPrints: false
     }
   ]
 } as const satisfies AgentManifest

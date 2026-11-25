@@ -1,3 +1,5 @@
+import { useShallow } from 'zustand/react/shallow'
+import { ofEachAgent } from '@core/agent/registry'
 import { hasUsableAccount } from '@shared/accountUsage'
 import { SESSION_BACKENDS, shownAsInstalled } from '@shared/sessionBackend'
 import type { BackendId } from '@shared/types'
@@ -18,9 +20,9 @@ export function useAssistSetup(): AssistSetupState {
   const skipPermissions = useStore((s) => s.settings.skipPermissions)
   const agreed = useStore((s) => s.settings.skipPermissionsAgreed)
   const accountsLoaded = useStore((s) => s.accounts !== null)
-  const claude = useStore((s) => hasUsableAccount(s.accounts ?? [], 'claude'))
-  const codex = useStore((s) => hasUsableAccount(s.accounts ?? [], 'codex'))
-  const agy = useStore((s) => hasUsableAccount(s.accounts ?? [], 'agy'))
+  const usable = useStore(
+    useShallow((s) => ofEachAgent((b) => hasUsableAccount(s.accounts ?? [], b)))
+  )
   const { installed } = useInstalledBackends()
 
   const tools = SESSION_BACKENDS.filter((b) => shownAsInstalled(installed, b))
@@ -29,7 +31,7 @@ export function useAssistSetup(): AssistSetupState {
     tools,
     toolsKnown: installed !== null,
     noTool: tools.length === 0,
-    usable: { claude, codex, agy },
+    usable,
     askBypass,
     loaded: accountsLoaded
   }

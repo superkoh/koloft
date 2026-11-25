@@ -10,12 +10,12 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import type { BackendId, DiscoveredFolder, SessionRow } from '@shared/types'
-import { SIGN_IN_FOLDER_OF } from '@shared/types'
 import {
   BACKEND_LABEL,
   BACKEND_PRODUCT,
   SESSION_BACKENDS,
-  backendAvailable
+  backendAvailable,
+  shortProductList
 } from '@shared/sessionBackend'
 import { agentManifest } from '@core/agent/registry'
 import type { AgentWelcomeWords } from '@core/agent/agentUi'
@@ -28,6 +28,7 @@ import { plural, relTime } from '../sessionRows'
 import { resumeSession } from '../resumeFlow'
 import { aDialogIsOpen } from '../dialogOpen'
 import { useInstalledBackends } from '../useInstalledBackends'
+import { signInKindIdOf, signsInInATab } from '../signInLook'
 import { fillsOfNotTurnedOff } from '../pluginUi'
 import { OWNER_REACH } from '../slots'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
@@ -54,6 +55,10 @@ interface Folder {
   rows: SessionRow[]
 }
 
+const COUNT_WORDS = ['One', 'Two', 'Three', 'Four']
+
+const HOW_MANY_AGENTS = `${COUNT_WORDS[SESSION_BACKENDS.length - 1] ?? SESSION_BACKENDS.length} ${SESSION_BACKENDS.length === 1 ? 'agent' : 'agents'}.`
+
 const welcomeWordsOf = (b: BackendId): AgentWelcomeWords =>
   AGENT_UIS.find((ui) => ui.id === b)!.welcome
 
@@ -61,6 +66,11 @@ const SIDEBAR_ROWS_PER_FOLDER = 4
 const AUTO_NEXT_MS = 900
 const SIGN_IN_SETTLE_MS = 4000
 const LEAVE_MS = 650
+
+interface SigningIn {
+  agent: BackendId
+  inATab: boolean
+}
 
 const backendOf = (l: Launch): BackendId => (l.kind === 'resume' ? l.row.backendId : l.backend)
 
@@ -179,7 +189,8 @@ export function Welcome({
   const [pinning, setPinning] = useState(false)
   const [agent, setAgent] = useState<BackendId | null>(null)
   const [signError, setSignError] = useState<string | null>(null)
-  const [signingFor, setSigningFor] = useState<BackendId | null>(null)
+  const [signingIn, setSigningIn] = useState<SigningIn | null>(null)
+  const signingFor = signingIn?.agent ?? null
   const [peek, setPeek] = useState(false)
   const [pending, setPending] = useState<Launch | null>(null)
   const [prompt, setPrompt] = useState('')
@@ -219,10 +230,10 @@ export function Welcome({
     Date.now()
   )
   const targetFolder = target ? folders.find((f) => f.rows.includes(target)) : undefined
-  const loginPhase = signingFor === 'claude' ? login?.progress?.phase : undefined
-  const claudeBusy = loginPhase === 'starting' || loginPhase === 'browser'
-  const signTabOpen = !!signingFor && signingFor !== 'claude' && !!signInTabId
-  const waiting = claudeBusy || signTabOpen
+  const loginPhase = signingIn?.inATab === false ? login?.progress?.phase : undefined
+  const backgroundBusy = loginPhase === 'starting' || loginPhase === 'browser'
+  const signTabOpen = signingIn?.inATab === true && !!signInTabId
+  const waiting = backgroundBusy || signTabOpen
   const again = accounts ? accountToSignInAgain(accounts, pick) : undefined
   const accountName = again ?? defaultAccountName(pick, accounts ?? [])
 
@@ -242,7 +253,7 @@ export function Welcome({
 
   useEffect(() => {
     if (!signingFor || waiting || signedIn(signingFor)) return
-    const t = setTimeout(() => setSigningFor(null), SIGN_IN_SETTLE_MS)
+    const t = setTimeout(() => setSigningIn(null), SIGN_IN_SETTLE_MS)
     return () => clearTimeout(t)
   }, [signingFor, waiting, accounts])
 
@@ -301,7 +312,7 @@ export function Welcome({
   useEffect(() => {
     if (!ready || !goal) return
     const t = setTimeout(() => {
-      setSigningFor(null)
+      setSigningIn(null)
       if (pending && backendOf(pending) === goal) runRef.current(pending)
       else setStep(4)
     }, AUTO_NEXT_MS)
@@ -313,25 +324,35 @@ export function Welcome({
     const name = accountName
     const failed =
       'Could not start the sign-in. Try again, or add the account in Settings ▸ Accounts.'
-    if (pick === 'claude') {
+    const agentNow = pick
+    const inTheBackground = (): void => {
       beginLogin(again)
       setLoginProgress({ phase: 'starting', name })
-      setSigningFor('claude')
-      if ((await window.api.accounts.startLogin(name, !!again)) !== 'ok') {
-        clearLogin()
-        setSigningFor(null)
-        setSignError(failed)
-      }
-      return
+      setSigningIn({ agent: agentNow, inATab: false })
     }
-    const r = await window.api.accounts.signIn(SIGN_IN_FOLDER_OF[pick], name, !!again)
+    const guessedTheBackground = !signsInInATab(agentNow)
+    if (guessedTheBackground) inTheBackground()
+    const r = await window.api.accounts.beginSignIn(signInKindIdOf(agentNow), name, !!again)
     if (!r.ok) {
+      if (guessedTheBackground) {
+        clearLogin()
+        setSigningIn(null)
+      }
       setSignError(failed)
       return
     }
-    setSigningFor(pick)
+    const tab = r.progress.phase === 'inATab' ? r.progress.tab : undefined
+    if (!tab) {
+      if (!guessedTheBackground) inTheBackground()
+      return
+    }
+    if (guessedTheBackground) clearLogin()
+    setSigningIn({ agent: agentNow, inATab: true })
     setPeek(false)
-    openSignInTab(r, `${BACKEND_LABEL[pick]} sign in: ${name}`)
+    openSignInTab(
+      { tabId: tab.tabId, cwd: tab.cwd ?? '' },
+      `${BACKEND_LABEL[agentNow]} sign in: ${name}`
+    )
   }
 
   const install = async (b: BackendId): Promise<void> => {
@@ -341,7 +362,7 @@ export function Welcome({
     openSignInTab(r, `Install ${BACKEND_PRODUCT[b]}`)
   }
 
-  const claudeFailed = pick === 'claude' && login?.progress?.phase === 'failed'
+  const backgroundFailed = !signsInInATab(pick) && login?.progress?.phase === 'failed'
 
   const reading = pinning || pinDue || found === null
   const primary = ((): { label: string; go: () => void; busy?: boolean; disabled?: boolean } => {
@@ -359,7 +380,7 @@ export function Welcome({
           go: () => (startable && pending ? run(pending) : setStep(4))
         }
       }
-      if (claudeBusy && pick === 'claude')
+      if (backgroundBusy && pick === signingFor)
         return { label: 'Waiting for your browser…', go: () => undefined, busy: true }
       if (signTabOpen && pick === signingFor)
         return { label: 'Show the sign-in tab', go: () => setPeek(false) }
@@ -440,8 +461,8 @@ export function Welcome({
                 ? 'Looking around your Mac…'
                 : `${readyCount} of ${SESSION_BACKENDS.length} ready on this Mac`}
             </Chip>
-            <Title plain="Three agents." script="One window." />
-            <p className="wl-sub">Koloft runs Claude Code, Codex and Antigravity.</p>
+            <Title plain={HOW_MANY_AGENTS} script="One window." />
+            <p className="wl-sub">{`Koloft runs ${shortProductList(SESSION_BACKENDS, 'and')}.`}</p>
             <div className="wl-agents">
               {SESSION_BACKENDS.map((b, i) => {
                 const t = tally[b]
@@ -559,15 +580,15 @@ export function Welcome({
                 <div className="wl-sign-done">
                   <IconCheck size={18} /> Signed in to {BACKEND_LABEL[pick]}
                 </div>
-              ) : claudeFailed ? (
+              ) : backgroundFailed ? (
                 <div className="wl-sign-text bad">
                   The sign-in did not finish.
                   {login?.progress?.tail && <pre>{login.progress.tail}</pre>}
                 </div>
-              ) : claudeBusy && pick === 'claude' ? (
+              ) : backgroundBusy && pick === signingFor ? (
                 <div className="wl-sign-text">
-                  {loginPhase === 'starting' && !isInstalled('claude')
-                    ? 'Installing Claude Code, then your browser opens…'
+                  {loginPhase === 'starting' && !isInstalled(pick)
+                    ? `Installing ${BACKEND_PRODUCT[pick]}, then your browser opens…`
                     : 'Finish in your browser. Koloft picks it up from there.'}
                   {login?.progress?.url && (
                     <button
