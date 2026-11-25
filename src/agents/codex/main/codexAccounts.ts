@@ -1,13 +1,8 @@
 import fs from 'fs'
 import path from 'path'
 import { AUTO_PROBE_MS, launchLine } from '@shared/accountUsage'
-import type {
-  AccountKind,
-  AccountView,
-  CodexLimits,
-  CodexLimitWindow,
-  CodexResetOutcome
-} from '@shared/types'
+import type { AccountView, CodexLimits, CodexLimitWindow, CodexResetOutcome } from '@shared/types'
+import type { AgentAccounts } from '@core/agent/agentsMain'
 import { HomeAccountPicker } from '../../kit/main/homeAccountPicker'
 import {
   addHomeKey,
@@ -286,10 +281,13 @@ export function codexHomeAccounts(deps: CodexHomeAccountsDeps) {
       return { binary: available ? codexSessions?.cliBinary : undefined, env: { CODEX_HOME: home } }
     },
     probeHomeAccount,
-    pickForThisStart: () => answerOfTerminalPick('codex', () => terminalPickOf(pickCodexHome())),
-    addSecret: (_kind: AccountKind, name: string, secret: string) =>
-      addHomeKey('codex-home', name, secret, { storeHomeKey, probeHomeAccount }, deps),
-    folderSaysItRunsOnAKey: (_kind: AccountKind, name: string) =>
-      codexKeyOnDisk(app.getPath('userData'), name)
+    accounts: {
+      pickForThisStart: () => answerOfTerminalPick('codex', () => terminalPickOf(pickCodexHome())),
+      probeAll: probeCodexAccounts,
+      addSecret: (_kind, name, secret) =>
+        addHomeKey('codex-home', name, secret, { storeHomeKey, probeHomeAccount }, deps),
+      forget: () => {},
+      folderSaysItRunsOnAKey: (_kind, name) => codexKeyOnDisk(app.getPath('userData'), name)
+    } satisfies AgentAccounts
   }
 }

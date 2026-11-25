@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import { execFile } from 'child_process'
 import type { AccountKind, AccountView, QuotaBucket } from '@shared/types'
+import type { AgentAccounts } from '@core/agent/agentsMain'
 import {
   AUTO_PROBE_MS,
   FIVE_HOUR_MINUTES,
@@ -529,14 +530,17 @@ export function agyHomeAccounts(deps: AgyHomeAccountsDeps) {
       return { binary, env: agyAccountEnv(apiKey), args: [`--gemini_dir=${home}`] }
     },
     probeHomeAccount,
-    pickForThisStart: () =>
-      answerOfTerminalPick('agy', () => {
-        const picked = terminalPickOf(pickAgyHome())
-        return picked && (agyApiKeyRoute(picked.home) ? { ...picked, kind: 'apikey' } : picked)
-      }),
-    addSecret: (_kind: AccountKind, name: string, secret: string) =>
-      addHomeKey('agy-home', name, secret, { storeHomeKey, probeHomeAccount }, deps),
-    folderSaysItRunsOnAKey: (_kind: AccountKind, name: string) =>
-      agyKeyOnDisk(app.getPath('userData'), name)
+    accounts: {
+      pickForThisStart: () =>
+        answerOfTerminalPick('agy', () => {
+          const picked = terminalPickOf(pickAgyHome())
+          return picked && (agyApiKeyRoute(picked.home) ? { ...picked, kind: 'apikey' } : picked)
+        }),
+      probeAll: probeAgyAccounts,
+      addSecret: (_kind, name, secret) =>
+        addHomeKey('agy-home', name, secret, { storeHomeKey, probeHomeAccount }, deps),
+      forget: () => {},
+      folderSaysItRunsOnAKey: (_kind, name) => agyKeyOnDisk(app.getPath('userData'), name)
+    } satisfies AgentAccounts
   }
 }

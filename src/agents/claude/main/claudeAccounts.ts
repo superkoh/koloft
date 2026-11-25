@@ -11,6 +11,7 @@ import {
 import { CH, type Channel } from '@shared/ipcChannels'
 import { ACCOUNT_KINDS_OF, noAccountLine } from '@shared/accountUsage'
 import { stripTerminalCodes } from '@core/terminalCodes'
+import type { AgentAccounts, StartAsk } from '@core/agent/agentsMain'
 import {
   findAccount,
   keychainRead,
@@ -20,7 +21,6 @@ import {
   upsertAccountMeta
 } from '../../../main/accounts'
 import { loadSettings } from '../../../main/settings'
-import { writeWholeBeforeVisible } from '../../../main/jsonDrops'
 import {
   MARK_OUTPUT_START,
   afterOutputStart,
@@ -54,7 +54,7 @@ const INSTALL_SILENCE_LONGER_THAN_EITHER_SILENT_DOWNLOAD_AT_2_MBIT_MS = 30 * 60_
 const INSTALL_STALLED = `The Claude Code install did not finish: it printed nothing for ${INSTALL_SILENCE_LONGER_THAN_EITHER_SILENT_DOWNLOAD_AT_2_MBIT_MS / 60_000} minutes`
 const LOGIN_BUF_MAX = 8192
 const LOGIN_PTY_COLS_WIDER_THAN_TOKEN = 800
-export const ACCOUNT_PROBE_TIMEOUT_MS = 10_000
+const ACCOUNT_PROBE_TIMEOUT_MS = 10_000
 // CC§7
 const AUTH_URL_RE = /https?:\/\/[^\s'"`<>\x00-\x1f\x7f]+(?=[\s'"`<>\x00-\x1f\x7f])/
 // CC§7
@@ -188,12 +188,8 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
 
   const shimAccountRefusals = new Map<string, string>()
 
-  async function answerPickRequest(
-    obj: { tabId: string },
-    tab: { resumeSessionId?: string },
-    resPath: string
-  ): Promise<void> {
-    const { res, endpoint } = await pickForLaunch(obj.tabId, tab.resumeSessionId)
+  async function pickForThisStart(obj: StartAsk): Promise<object> {
+    const { res, endpoint } = await pickForLaunch(obj.tabId, obj.resumeSessionId)
     const accountIssue = res.account === null && noAccountLine(listAccounts(), 'claude')
     if (accountIssue) shimAccountRefusals.set(obj.tabId, accountIssue)
     else shimAccountRefusals.delete(obj.tabId)
@@ -205,10 +201,7 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
       payload.model = endpoint.model
       if (claudeCodeGuessesWindowOf(endpoint.model)) payload.disable1mContext = true
     }
-    try {
-      writeWholeBeforeVisible(resPath, JSON.stringify(payload))
-    } catch {}
-    pushAccounts()
+    return payload
   }
 
   async function probeAll(): Promise<void> {
@@ -426,15 +419,20 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
     } catch {}
   }
 
+  const accounts: AgentAccounts = {
+    pickForThisStart,
+    probeAll,
+    addSecret,
+    forget: (kind, name) => picker.forget(kind, name),
+    folderSaysItRunsOnAKey: () => false
+  }
+
   return {
-    foldProbeResult,
     picker,
     pickForLaunch,
     pickedAccountEnv,
     shimAccountRefusals,
-    answerPickRequest,
-    probeAll,
-    addSecret,
+    accounts,
     loginWatchers,
     loginPtys,
     feedLoginWatcher,

@@ -1,4 +1,8 @@
-import { AgentsMain, type AgentCatalog } from '../../../src/core/agent/agentsMain'
+import {
+  AgentsMain,
+  type AgentAccounts,
+  type AgentCatalog
+} from '../../../src/core/agent/agentsMain'
 import type { AgentId } from '../../../src/core/agent/registry'
 import { isGitCheckoutAsync } from '../../../src/main/projectInfo'
 import { claudeCatalog } from '../../../src/agents/claude/main/claudeCatalog'
@@ -10,6 +14,14 @@ export interface OwnersSettings {
   ownersGemini: string
 }
 
+export const accountsThatAreNeverAsked: AgentAccounts = {
+  pickForThisStart: async () => ({}),
+  probeAll: async () => {},
+  addSecret: async () => ({ ok: false, error: 'unknown' }),
+  forget: () => {},
+  folderSaysItRunsOnAKey: () => false
+}
+
 export function agentsWithTheirCatalogs(owners: OwnersSettings): AgentsMain {
   const catalogs: Record<AgentId, AgentCatalog> = {
     claude: claudeCatalog,
@@ -18,6 +30,11 @@ export function agentsWithTheirCatalogs(owners: OwnersSettings): AgentsMain {
   }
   const agents = new AgentsMain()
   for (const [id, catalog] of Object.entries(catalogs) as [AgentId, AgentCatalog][])
-    agents.register({ id, oneShotTarget: async () => null, catalog })
+    agents.register({
+      id,
+      oneShotTarget: async () => null,
+      catalog,
+      accounts: accountsThatAreNeverAsked
+    })
   return agents
 }

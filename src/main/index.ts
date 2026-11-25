@@ -363,10 +363,12 @@ import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
 import { koloftAssist } from './assist'
 import {
   AgentsMain,
+  type AgentAccounts,
   type AgentCatalog,
   type AgentMain,
   type OneShotTarget
 } from '@core/agent/agentsMain'
+import { AGENT_OF_UNNAMED_OLD_DATA } from '@core/agent/registry'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
 import { TreeRemovals } from './treeRemovals'
@@ -1316,9 +1318,7 @@ const {
   pickForLaunch,
   pickedAccountEnv,
   shimAccountRefusals,
-  answerPickRequest,
-  probeAll: probeClaudeAccounts,
-  addSecret: addClaudeSecret,
+  accounts: claudeAccounts,
   loginWatchers,
   loginPtys,
   feedLoginWatcher,
@@ -1556,9 +1556,19 @@ const catalogs: Record<BackendId, AgentCatalog> = {
   codex: codexCatalog(codexSharedConfig),
   agy: agyCatalog(ownersGemini, isGitCheckoutAsync)
 }
+const accountsOf: Record<BackendId, AgentAccounts> = {
+  claude: claudeAccounts,
+  codex: codexAccounts.accounts,
+  agy: agyAccounts.accounts
+}
 const agentsMain = new AgentsMain()
 for (const id of SESSION_BACKENDS)
-  agentsMain.register({ id, oneShotTarget: oneShotTargets[id], catalog: catalogs[id] })
+  agentsMain.register({
+    id,
+    oneShotTarget: oneShotTargets[id],
+    catalog: catalogs[id],
+    accounts: accountsOf[id]
+  })
 const assist = koloftAssist({
   picks: loadSettings,
   enabled: (backend) => !turnedOffNow(backend),
@@ -2105,11 +2115,6 @@ const agentRequests = new AgentRequests({
   alive: pidAlive
 })
 
-const utilTerminalPicks: Record<Exclude<BackendId, 'claude'>, () => Promise<object>> = {
-  codex: codexAccounts.pickForThisStart,
-  agy: agyAccounts.pickForThisStart
-}
-
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
   const obj = raw as { tabId?: string; ts?: number; backend?: string }
   const tab = obj.tabId ? ptyMgr.get(obj.tabId) : undefined
@@ -2124,15 +2129,14 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
     } catch {}
     return
   }
-  if (backend && backend !== 'claude') {
-    const picked = await utilTerminalPicks[backend]()
-    try {
-      writeWholeBeforeVisible(resPath, JSON.stringify(picked))
-    } catch {}
-    pushAccounts()
-    return
-  }
-  await answerPickRequest({ tabId: obj.tabId }, tab, resPath)
+  const picked = await agentsMain.pickForThisStart(backend ?? AGENT_OF_UNNAMED_OLD_DATA, {
+    tabId: obj.tabId,
+    resumeSessionId: tab.resumeSessionId
+  })
+  try {
+    writeWholeBeforeVisible(resPath, JSON.stringify(picked))
+  } catch {}
+  pushAccounts()
 }
 
 let probeAllInFlight: Promise<AccountView[]> | null = null
@@ -2145,7 +2149,7 @@ function probeSignInFolderAccounts(): Promise<void> {
 function probeAllForPanel(): Promise<AccountView[]> {
   if (probeAllInFlight) return probeAllInFlight
   const round = (async (): Promise<AccountView[]> => {
-    await Promise.all([probeSignInFolderAccounts(), probeClaudeAccounts()])
+    await agentsMain.probeAllAccounts()
     pushAccounts()
     return accountViews()
   })()
@@ -2172,16 +2176,7 @@ async function addAccount(
   if (v !== 'ok') return { ok: false, error: v }
   const trimmed = typeof secret === 'string' ? secret.trim() : ''
   if (!trimmed) return { ok: false, error: 'unknown' }
-  if (isSignInFolderKind(kind)) return addHomeSecret[kind](kind, name, trimmed)
-  return addClaudeSecret(kind, name, trimmed, endpoint)
-}
-
-const addHomeSecret: Record<
-  SignInFolderKind,
-  (kind: AccountKind, name: string, secret: string) => Promise<AccountAddResult>
-> = {
-  'codex-home': codexAccounts.addSecret,
-  'agy-home': agyAccounts.addSecret
+  return agentsMain.addSecret(kind, name, trimmed, endpoint)
 }
 
 function foldHomeSignIn(name: string, kind: SignInFolderKind, signedIn: boolean): void {
@@ -2216,7 +2211,7 @@ function forgetAccount(name: string, kind: AccountKind): void {
   removeAccountMeta(name, kind)
   usageViews.delete(viewKey(name, kind))
   savedHomeUsage.delete(viewKey(name, kind))
-  picker.forget(kind, name)
+  agentsMain.forgetAccount(kind, name)
   pushAccounts()
 }
 
@@ -2304,13 +2299,8 @@ function ownersGemini(): string {
 
 function markKeyAccountsSavedOnDisk(): void {
   for (const a of listAccounts())
-    if (isSignInFolderKind(a.kind) && homeKeyOnDisk[a.kind](a.kind, a.name))
+    if (agentsMain.folderSaysItRunsOnAKey(a.kind, a.name))
       usageViews.set(viewKey(a.name, a.kind), { apiKey: true })
-}
-
-const homeKeyOnDisk: Record<SignInFolderKind, (kind: AccountKind, name: string) => boolean> = {
-  'codex-home': codexAccounts.folderSaysItRunsOnAKey,
-  'agy-home': agyAccounts.folderSaysItRunsOnAKey
 }
 
 // AGY§6 AGY§20
