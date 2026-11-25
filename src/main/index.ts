@@ -407,6 +407,7 @@ import { AgentsMain, type AgentMain, type OneShotTarget } from '@core/agent/agen
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
 import { TreeRemovals } from './treeRemovals'
+import { worktreeExitFollow } from './worktreeExitFollow'
 import {
   finishAfterKoloftQuits,
   WorktreeRemovalWatch
@@ -698,35 +699,17 @@ if (process.platform !== 'win32') {
 }
 let quitCommitted = false
 
-interface ClaudeTabExit {
-  watch: WorktreeRemovalWatch
-  leaving?: { sessionId?: string; claudePid?: number; treeRoot?: string }
-}
-const claudeTabExits = new Map<string, ClaudeTabExit>()
+const worktreeExits = worktreeExitFollow({
+  ptyMgr,
+  tracker: { infoOf: (tabId) => tracker.infoOf(tabId) },
+  claudeStore: () => claudeStore,
+  hostOfTab,
+  sendToRenderer,
+  newWatch: () => new WorktreeRemovalWatch(),
+  finishAfterKoloftQuits
+})
 const closedTabs = new Map<string, LeftTab | null>()
 const treeRemovals = new TreeRemovals()
-
-function watchForWorktreeRemoval(tabId: string, data: string): void {
-  let exit = claudeTabExits.get(tabId)
-  if (!exit) {
-    const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
-    if (!backend || capabilitiesFor(backend, hostOfTab(tabId)).worktreeRemovalFollowed !== true)
-      return
-    claudeTabExits.set(tabId, (exit = { watch: new WorktreeRemovalWatch() }))
-  }
-  if (!exit.watch.started(data)) return
-  const session = tracker.infoOf(tabId)
-  const removalOutlivesKoloftsQuit = hostOfTab(tabId) === 'ssh'
-  exit.leaving = {
-    sessionId: session?.sessionId,
-    ...(!removalOutlivesKoloftsQuit && {
-      claudePid: ptyMgr.pidOf(tabId),
-      treeRoot: session?.treeRoot
-    })
-  }
-  if (session?.sessionId) claudeStore?.leavingWorktree(session.sessionId, tabId)
-  sendToRenderer(CH.tab.killedByMain, tabId)
-}
 
 const attentionDeps: PluginStartDeps['sessions']['attention'] = {
   onChange: (pending, event) => {
@@ -3302,7 +3285,7 @@ app.whenReady().then(() => {
     claudeDialogs.data(d.id, d.data)
     if (loginWatchers.size) feedLoginWatcher(d.id, d.data)
     if (signInPtys.size) signInPtys.get(d.id)?.output.feed(d.data)
-    watchForWorktreeRemoval(d.id, d.data)
+    worktreeExits.watchForWorktreeRemoval(d.id, d.data)
     terminalOutput.push(d.id, d.data)
   })
   ptyMgr.on('process-title', (t: { id: string; name: string }) => {
@@ -3372,15 +3355,7 @@ app.whenReady().then(() => {
           ? 'Installing Claude Code failed'
           : 'setup-token exited without printing a token'
       )
-    const claudeExit = claudeTabExits.get(e.id)
-    claudeTabExits.delete(e.id)
-    if (claudeExit?.leaving) {
-      const { sessionId } = claudeExit.leaving
-      const claudeSaid = claudeExit.watch.failure()
-      if (sessionId) claudeStore?.leftWorktree(sessionId, !claudeSaid)
-      if (claudeSaid)
-        sendToRenderer(CH.toast.show, `Claude Code did not remove the worktree: ${claudeSaid}`)
-    }
+    worktreeExits.tabExited(e)
     // PLATFORM§21
     terminalOutput.end(e.id, !sleepers.has(e.id) && !signInNobodyOpened)
     forgetClaudeAsk(e.id)
@@ -4185,11 +4160,7 @@ app.on('before-quit', (e) => {
     e.preventDefault()
     return
   }
-  for (const { leaving } of claudeTabExits.values()) {
-    if (leaving?.claudePid && leaving.treeRoot)
-      finishAfterKoloftQuits(leaving.claudePid, leaving.treeRoot)
-  }
-  claudeTabExits.clear()
+  worktreeExits.koloftQuits()
   endAgyOneShots(path.join(app.getPath('userData'), 'agy-one-shots'))
   stopScheduledTasks()
   discordLink?.stop()
