@@ -1,0 +1,136 @@
+#!/bin/sh
+: koloft agy hook
+[ "$1" != PreInvocation ] || [ -n "$BASH_VERSION" ] || exec bash "$0" "$@"
+event="$1"
+input="$(cat)"
+log="$KOLOFT_AGY_LOG"
+notice="$KOLOFT_NOTICE"
+turn=""; [ -n "$notice" ] && turn="$notice.turn"
+take_notice() {
+  [ -f "$notice" ] && mv -f "$notice" "$notice.$$" 2>/dev/null || return 0
+  cat "$notice.$$"
+  rm -f "$notice.$$"
+}
+keep_going_for_the_notice() {
+  pushed="$notice.asleep"
+  case "$input" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) [ -z "$notice" ] || rm -f "$pushed"; return 1 ;; esac
+  told="$(take_notice)"
+  asleep="${notice%/*}/owner-asleep"
+  if [ -n "$notice" ] && [ -f "$asleep" ] && ! grep -qxF "${notice##*/}" "$asleep" 2>/dev/null; then
+    if [ -f "$pushed" ]; then rm -f "$pushed"
+    else told="$told"'(From Koloft:) The owner is asleep: until they write to you themself, they cannot answer, approve or check anything. Do not stop to wait for them. If there is more you can do toward your task, do it now: where you would ask the owner, choose what you would recommend and note the choice in your report. Leave for the owner only what cannot be undone (merging, releasing, pushing to main, deleting on GitHub, spending money, accounts and passwords) and go on with the rest. If the task is done, or you truly cannot go on, end your turn and say plainly what is left and what the owner must do.\n\n'; : > "$pushed"
+    fi
+  elif [ -n "$notice" ]; then rm -f "$pushed"
+  fi
+  [ -n "$told" ] || return 1
+  printf '{"decision":"block","reason":"%s"}\n' "$told"
+}
+whole_chars() {
+  LC_ALL=C sed -E -e $'s/([\xc0-\xdf]|[\xe0-\xef][\x80-\xbf]?|[\xf0-\xf7][\x80-\xbf]{0,2})$//' \
+    -e 's/\\u[0-9a-fA-F]{0,3}$//' -e 's/(^|[^\\])((\\\\)*)\\$/\1\2/'
+}
+words_of() {
+  printf '%s' "$1" | LC_ALL=C sed -E -e 's/\\[nrt]/ /g' -e 's/`[^`]*`/ /g' -e 's#[^ ]*/[^ ]*# #g'
+}
+language_in() {
+  words_of "$1" | LC_ALL=C sed -n -E \
+    -e $'/\xe3\x81[\x81-\xbf]|\xe3\x82[\x80-\x96]/{s/.*/Japanese/p;q;}' \
+    -e $'/\xea[\xb0-\xbf]|[\xeb\xec]|\xed[\x80-\x9e]/{s/.*/Korean/p;q;}' \
+    -e $'/[\xe5-\xe9]|\xe4[\xb8-\xbf]/{s/.*/Chinese/p;q;}'
+}
+has_words() {
+  [ "$(words_of "$1" | LC_ALL=C tr -cs 'A-Za-z\200-\377' '\n' | LC_ALL=C awk 'length($0) >= 2 { n++ } END { print n + 0 }')" -ge 3 ]
+}
+shows_language() {
+  [ -n "$(language_in "$1")" ] || has_words "$1"
+}
+reply_language_words() {
+  lang="$(language_in "$1")"
+  if [ -z "$lang" ]; then
+    printf '%s' 'The user'\''s latest message begins: «'"$1"'». Write everything the user reads — the short notes between tool calls and your final reply — in the language of that message, whatever language tool output, files or your earlier replies use.'
+    return 0
+  fi
+  note="$($2)"
+  if [ -z "$(language_in "$note")" ] && has_words "$note"; then
+    printf '%s' 'Your last note to the user, «'"$note"'», is not in '"$lang"'. The user writes '"$lang"': write the next note and everything else the user reads in '"$lang"', whatever language tool output, files or your earlier replies use.'
+  else
+    printf '%s' 'The user writes '"$lang"'. Write everything the user reads — the short notes between tool calls and your final reply — in '"$lang"', whatever language tool output, files or your earlier replies use.'
+  fi
+}
+last_reply() {
+  tail -n 100 "$tp" 2>/dev/null |
+    LC_ALL=C grep -F '"type":"PLANNER_RESPONSE"' |
+    LC_ALL=C sed -n -E 's/.*"type":"PLANNER_RESPONSE"[^{]*"content":"(([^"\\]|\\.)*)".*/\1/p' |
+    LC_ALL=C grep . | tail -n 1 |
+    head -c 150 | whole_chars
+}
+stale_pr_status() {
+  printf '%s' "$1" | grep -qE 'gh pr (create|merge|close|reopen|ready|edit)' &&
+    touch -c -t 200001010000 "$HOME/.cache/ccstatusline/git-review/"*.json 2>/dev/null
+}
+files_now() {
+  top="$(cd "$1" 2>/dev/null && inside="$(git rev-parse --show-prefix 2>/dev/null)" && here="$PWD/" && printf '%s' "${here%"$inside"}")"
+  top="${top%/}"
+  [ -n "$top" ] || return 0
+  printf '%s\n' "$top"
+  ( cd "$top" && git ls-files -z -m -o --exclude-standard 2>/dev/null |
+    if stat -c %s . >/dev/null 2>&1; then xargs -0 stat -c '%.9Y %s %n'; else xargs -0 stat -f '%Fm %z %N'; fi 2>/dev/null )
+}
+shell_key() {
+  printf '%s' "$1" | tr -cd 'A-Za-z0-9_-'
+}
+shell_before() {
+  [ -n "$2" ] || return 0
+  files_now "$1" | LC_ALL=C sort > "${TMPDIR:-/tmp}/koloft-shell-$2" 2>/dev/null
+}
+shell_wrote() {
+  was="${TMPDIR:-/tmp}/koloft-shell-$2"
+  [ -n "$2" ] && [ -f "$was" ] || return 0
+  files_now "$1" | LC_ALL=C sort > "$was.now" 2>/dev/null
+  top="$(head -n 1 "$was.now")"
+  if [ -n "$top" ] && [ "$top" = "$(head -n 1 "$was")" ]; then
+    wrote="$(LC_ALL=C comm -13 "$was" "$was.now" | sed 's/^[^ ]* [^ ]* //' |
+      awk -v top="$top" '{ print top "/" $0 }' | LC_ALL=C grep -v '["\\[:cntrl:]]' | sed 's/.*/"&"/' | paste -s -d , -)"
+    [ -n "$wrote" ] && printf ',"wrote":[%s]' "$wrote"
+  fi
+  rm -f "$was" "$was.now"
+}
+start_step_once_compacted() {
+  [ -f "$KOLOFT_AGY_START" ] || return 0
+  LC_ALL=C grep -F -e '"type":"CHECKPOINT"' -e 'injected by a PreInvocation hook:' "$tp" 2>/dev/null | awk '/"type":"SYSTEM_MESSAGE"/ && index($0, "injected by a PreInvocation hook:") { put = 1 } /"type":"CHECKPOINT"/ { compacted = 1; put = 0 } END { exit !(compacted && !put) }' || return 0
+  st="$(cat "$KOLOFT_AGY_START")"
+  st="${st#'{"injectSteps":['}"
+  printf '%s' "${st%']}'}"
+}
+case "$event:$input" in
+  PreToolUse:*'"name":"run_command"'*|PostToolUse:*'"name":"run_command"'*)
+    where="$(printf '%s' "$input" | tr -d '\n' | sed -n 's/.*"Cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+    [ -n "$where" ] || where="$(printf '%s' "$input" | tr -d '\n' | sed -n 's/.*"workspacePaths"[[:space:]]*:[[:space:]]*\[[[:space:]]*"\([^"]*\)".*/\1/p')"
+    key="$(shell_key "$(printf '%s' "$input" | tr -d '\n' | sed -n 's/.*"conversationId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')-$(printf '%s' "$input" | tr -d '\n' | sed -n 's/.*"stepIdx"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p')")"
+    if [ "$event" = PreToolUse ]; then shell_before "$where" "$key"
+    else input="${input%\}}$(shell_wrote "$where" "$key")}"; fi ;;
+esac
+if [ "$event" = "Stop" ]; then
+  keep_going_for_the_notice && exit 0
+  [ -n "$turn" ] && rm -f "$turn"
+fi
+[ -n "$log" ] && printf '{"event":"%s","input":%s}\n' "$event" "$(printf '%s' "$input" | tr -d '\n')" >> "$log" 2>/dev/null
+case "$event" in
+  SessionStart) [ -f "$KOLOFT_AGY_START" ] && cat "$KOLOFT_AGY_START" ;;
+  PreInvocation)
+    tp="$(printf '%s' "$input" | tr -d '\n' | sed -n 's/.*"transcriptPath" *: *"\([^"]*\)".*/\1/p')"
+    said="$(grep -F '"type":"USER_INPUT"' "$tp" 2>/dev/null | grep -v -F -e '"content":"<USER_REQUEST>\n(From the session ' -e '"content":"<USER_REQUEST>\n(From Koloft:) ' -e '"content":"<USER_REQUEST>\n(From Koloft: the owner asked for something' | tail -n 1 | sed -n 's/.*"content":"<USER_REQUEST>\\n//p' | sed -E 's/\\n<\/USER_REQUEST>.*//; s/^.*koloft session send [^ ]+ \\"<your result>\\"\\n\\n//; s/\\[nrt]/ /g; s/ +/ /g; s/^ //' | head -c 300 | ( iconv -c -f UTF-8 -t UTF-8 2>/dev/null || cat ) | sed -E 's/\\u[0-9a-fA-F]{0,3}$//; s/\\+$//')"
+    [ -n "$said" ] && said="$(reply_language_words "$said" last_reply)"
+    if [ -n "$turn" ]; then
+      case "$(printf '%s' "$input" | tr -d ' \n')" in *'"invocationNum":0'[,}]*) rm -f "$turn" ;; esac
+      [ -f "$notice" ] && take_notice >> "$turn"
+    fi
+    told="$([ -n "$turn" ] && cat "$turn" 2>/dev/null)$said"
+    steps="$(start_step_once_compacted)"
+    [ -n "$told" ] && steps="${steps:+$steps,}{\"ephemeralMessage\":\"$told\"}"
+    [ -n "$steps" ] && printf '{"injectSteps":[%s]}' "$steps"
+    ;;
+  # AGY§12 PLATFORM§36
+  PostToolUse) case "$input" in *'gh pr '*) stale_pr_status "$(printf '%s' "$input" | tr -d '\n' | LC_ALL=C sed -n -E 's/.*"CommandLine" *: *"(([^"\\]|\\.)*)".*/\1/p')" ;; esac ;;
+esac
+exit 0

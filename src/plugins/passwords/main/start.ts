@@ -15,11 +15,7 @@ import { registerPageCommand, type PictureFile, type TapPage, type TapRounds } f
 import { SecretAsks, type SecretAsk, type SecretAskDeps } from './secretAsks'
 import { registerSecretCommand } from './secretVerb'
 import { forgetSecretAsksOfEndedTabs } from './sessionHooks'
-import {
-  SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS,
-  SUDO_SHIM_FILES,
-  writeSudoShims
-} from './sudoShim'
+import { SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS, writeSudoShims } from './sudoShim'
 import { gridPictureHtml } from './tapGrid'
 
 type OwnerAsk = SecretAsk & { taps?: TapRounds }
@@ -56,7 +52,6 @@ export const start: PluginStart<
   {
     buildAsks: BuildLater<Pick<SecretAskDeps, 'owner'>, SecretAsks<OwnerAsk>>
     writeSudoShims: typeof writeSudoShims
-    SUDO_SHIM_FILES: typeof SUDO_SHIM_FILES
     SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS: typeof SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS
   }
 > = ({ commands, moments, ipc }, d) => {
@@ -74,7 +69,6 @@ export const start: PluginStart<
   return {
     buildAsks: ({ owner }) => (asks = new SecretAsks<OwnerAsk>({ show: pushAsks(ipc), owner })),
     writeSudoShims,
-    SUDO_SHIM_FILES,
     SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS
   }
 }
