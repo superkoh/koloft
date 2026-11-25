@@ -30,6 +30,7 @@ import {
   agyApiKeyRoute,
   agyHomeOf,
   agySignedIn,
+  endAgyOneShots,
   oneShotAgyHome,
   readAgyModels,
   prepareAgyHome,
@@ -303,6 +304,7 @@ import {
   isHttpUrl,
   keychainNamespace,
   keepsSecretInKeychain,
+  takesAnEndpoint,
   BACKEND_OF_SIGN_IN_FOLDER,
   isSignInFolderKind,
   type SignInFolderKind,
@@ -2636,7 +2638,7 @@ async function addAccount(
   if (isSignInFolderKind(kind)) return addHomeKey(kind, name, trimmed)
   const baseUrl = endpoint?.baseUrl?.trim()
   const model = endpoint?.model?.trim() || undefined
-  if (kind === 'custom' && !isHttpUrl(baseUrl)) return { ok: false, error: 'invalid-endpoint' }
+  if (takesAnEndpoint(kind) && !isHttpUrl(baseUrl)) return { ok: false, error: 'invalid-endpoint' }
   if (!(await keychainWrite(kind, name, trimmed))) return { ok: false, error: 'unknown' }
   const result = await probeAccount(kind, trimmed, {
     timeoutMs: ACCOUNT_PROBE_TIMEOUT_MS,
@@ -2650,7 +2652,7 @@ async function addAccount(
     fable: result.ok && result.fable ? result.fable : 'unknown',
     status: result.ok ? 'ok' : 'unverified',
     addedAt: Date.now(),
-    ...(kind === 'custom' ? { baseUrl, model } : {})
+    ...(takesAnEndpoint(kind) ? { baseUrl, model } : {})
   }
   upsertAccountMeta(meta)
   if (result.ok && result.fable) recordFableCapability(name, kind, result.fable)
@@ -3345,6 +3347,7 @@ app.whenReady().then(() => {
   // PLATFORM§2
   linkOrUnlink(path.join(shimDir, 'git'), gitFirstBin && path.join(gitFirstBin, 'git'))
   removeStaleLoginDirs(app.getPath('userData'))
+  endAgyOneShots(path.join(app.getPath('userData'), 'agy-one-shots'))
   gitAccounts = new GitAccountService({
     userData: app.getPath('userData'),
     requestDir: gitRequestDir,
@@ -3502,12 +3505,13 @@ app.whenReady().then(() => {
       sent.accountIssue = accountIssue
     sendToRenderer(CH.terminal.exit, unexpected ? { ...sent, unexpected } : sent)
   })
-  tracker.on('update', () => {
-    const all = onSessionsChanged()
-    pushToSessions.sessions(all)
-    workspaceMgr?.onTrackerUpdate()
-    syncAnswerable()
+  const sessionsChanged = sessionsChangedIn({
+    noteSessions: onSessionsChanged,
+    sendSessions: (all) => pushToSessions.sessions(all),
+    workspaces: () => workspaceMgr,
+    syncAnswerable
   })
+  tracker.on('update', sessionsChanged)
   tracker.on('relocated', (e: { tabId: string; dir: string }) => {
     pushToSessions.relocated(e)
   })
@@ -3540,15 +3544,6 @@ app.whenReady().then(() => {
   savedOpenTabs = readOpenTabs(openTabsPath)
   openTabsFile = new OpenTabsFile(openTabsPath, savedOpenTabs)
   sessionAccounts = new SessionAccounts(path.join(userData, 'session-accounts.json'))
-  const rowsKeptInMemoryChanged = rereadWhenRowsInMemoryChange({
-    pinned: () => workspaceMgr?.pinnedPathList() ?? [],
-    rows: (wsPath) =>
-      storedSessions().flatMap((stored) =>
-        stored.rows(wsPath).map((r) => ({ ...r, backendId: stored.id }))
-      ),
-    members: () => new Set(storedSessions().flatMap((stored) => [...stored.members()])),
-    reread: () => workspaceMgr?.refresh()
-  })
   const storedDeps = {
     pty: ptyMgr,
     runtime,
@@ -3558,11 +3553,9 @@ app.whenReady().then(() => {
     remoteDirExists: (dir: string) => hosts.machineOf(dir)!.sessionDirThere(dir),
     remoteTreeIo: machineTreeIo,
     realFilesOn,
-    changed: () => {
-      const all = onSessionsChanged()
-      pushToSessions.sessions(all)
-      if (workspaceMgr) rowsKeptInMemoryChanged()
-    },
+    changed: sessionsChanged,
+    pinnedWorkspaces: () => workspaceMgr?.pinnedPathList() ?? [],
+    rereadRows: () => workspaceMgr?.refresh(),
     replaced: (oldKey: string, newKey: string) => workspaceMgr?.moveResident(oldKey, newKey),
     events: (tabId: string, event: SessionEvent) => sessionBackends.observe(tabId, event),
     error: (message: string) => sendToRenderer(CH.toast.show, message),
@@ -4320,6 +4313,7 @@ app.on('before-quit', (e) => {
       finishAfterKoloftQuits(leaving.claudePid, leaving.treeRoot)
   }
   claudeTabExits.clear()
+  endAgyOneShots(path.join(app.getPath('userData'), 'agy-one-shots'))
   stopScheduledTasks()
   discordLink?.stop()
   discordBinding?.flush()
@@ -6406,7 +6400,7 @@ const {
   savedFromTheDialog,
   workspaceBlock,
   scratchRootsAround,
-  rereadWhenRowsInMemoryChange
+  sessionsChangedIn
 } = startedPlugins.sessions
 const { TODO_NEWS } = startedPlugins.todo
 const { koloftInbox, flushInbox } = startedPlugins.inbox

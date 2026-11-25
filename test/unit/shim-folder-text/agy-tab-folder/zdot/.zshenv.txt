@@ -1,0 +1,6 @@
+koloft_found_zdotdir="${ZDOTDIR-}"
+koloft_user_zdotdir='/fixture/users-zdotdir'
+if [ -n "$koloft_user_zdotdir" ]; then ZDOTDIR="$koloft_user_zdotdir"; else unset ZDOTDIR; fi
+[ -f "${ZDOTDIR:-$HOME}/.zshenv" ] && . "${ZDOTDIR:-$HOME}/.zshenv"
+koloft_user_zdotdir="${ZDOTDIR-}"
+export ZDOTDIR="$koloft_found_zdotdir"

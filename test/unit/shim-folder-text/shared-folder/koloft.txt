@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+: koloft agent shim
+jstr() {
+  local s=$1
+  s=${s//\\/'\\'}
+  s=${s//\"/'\"'}
+  s=${s//$'\n'/'\n'}
+  s=${s//$'\r'/'\r'}
+  s=${s//$'\t'/'\t'}
+  printf '%s' "$s" | LC_ALL=C tr -d '\001-\037'
+}
+
+if [ -z "$KOLOFT_AGENT_DIR" ] || [ -z "$KOLOFT_TAB_ID" ] || [ -z "$KOLOFT_PID" ] || ! kill -0 "$KOLOFT_PID" 2>/dev/null; then
+  echo "koloft: this works only in a Koloft session with agent tools turned on (Koloft Settings)." >&2
+  exit 1
+fi
+dir="$KOLOFT_AGENT_DIR"
+tabfield="\"tabId\":\"$(jstr "$KOLOFT_TAB_ID")\",\"pass\":\"$(jstr "$KOLOFT_TAB_PASS")\","
+unwritable="koloft: could not reach Koloft."
+
+newid() {
+  u="$(uuidgen 2>/dev/null | tr 'A-Z' 'a-z')"
+  if [ -z "$u" ] && [ -r /proc/sys/kernel/random/uuid ]; then u="$(cat /proc/sys/kernel/random/uuid)"; fi
+  echo "$u"
+}
+id="$(newid)"
+[ -n "$id" ] || id="$$-$(date +%s)"
+args=""
+for a in "$@"; do args="$args${args:+,}\"$(jstr "$a")\""; done
+part="$dir/req-$id.part"
+req="$dir/req-$id.json"
+res="$dir/res-$id.json"
+trap 'rm -f "$req" "$part" 2>/dev/null' EXIT
+trap 'exit 143' TERM HUP INT
+if ! printf '{%s"argv":[%s],"cwd":"%s","pid":%s}\n' "$tabfield" "$args" "$(jstr "$PWD")" "$$" 2>/dev/null > "$part" || ! mv "$part" "$req" 2>/dev/null; then
+  rm -f "$part" 2>/dev/null
+  echo "$unwritable" >&2
+  exit 1
+fi
+waits=0
+limit=200
+{ [ "$1" = secret ] || { [ "$1" = page ] && [ "$2" = tap ]; } || { [ "$1" = instructions ] && { [ "$2" = add ] || [ "$2" = set ]; }; }; } && limit=12000
+[ "$1" = discord ] && [ "$2" = shot ] && limit=12000
+[ "$1" = session ] && [ "$2" = answer ] && limit=500
+[ "$1" = session ] && [ "$2" = new ] && limit=1800
+while [ ! -f "$res" ] && [ "$waits" -lt "$limit" ]; do sleep 0.05; waits=$((waits+1)); done
+if [ ! -f "$res" ]; then
+  rm -f "$req" 2>/dev/null
+  echo "koloft: Koloft did not answer." >&2
+  exit 1
+fi
+reply="$(cat "$res" 2>/dev/null)"
+rm -f "$res" 2>/dev/null
+code="$(printf '%s' "$reply" | LC_ALL=C sed -n 's/^{"exit":\([0-9]*\),.*/\1/p')"
+code="${code:-1}"
+text="$(printf '%s' "$reply" | LC_ALL=C sed -e 's/^{"exit":[0-9]*,"text":"//' -e 's/"}$//' -e 's/\\"/"/g')"
+if [ -n "$text" ]; then
+  if [ "$code" = 0 ]; then printf '%b\n' "$text"; else printf '%b\n' "$text" >&2; fi
+fi
+exit "$code"

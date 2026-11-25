@@ -1,0 +1,30 @@
+=== Claude Code on this Mac, with the model made-up-model-7b ===
+  skips permissions: yes
+  --model on its line: (none)
+  its account environment:
+    ANTHROPIC_AUTH_TOKEN=made-up-endpoint-token
+    ANTHROPIC_BASE_URL=https://llm-proxy.example.test/v1
+    ANTHROPIC_DEFAULT_FABLE_MODEL=made-up-model-7b
+    ANTHROPIC_DEFAULT_HAIKU_MODEL=made-up-model-7b
+    ANTHROPIC_DEFAULT_OPUS_MODEL=made-up-model-7b
+    ANTHROPIC_DEFAULT_SONNET_MODEL=made-up-model-7b
+    ANTHROPIC_MODEL=made-up-model-7b
+    ANT_ACCOUNT=made-up-proxy
+    CLAUDE_CODE_DISABLE_1M_CONTEXT=1
+    CLAUDE_CODE_SUBAGENT_MODEL=made-up-model-7b
+    CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1
+=== Claude Code over SSH, with the model made-up-model-7b ===
+  skips permissions: yes
+  --model on its line: (none)
+  its account environment:
+    ANTHROPIC_AUTH_TOKEN=made-up-endpoint-token
+    ANTHROPIC_BASE_URL=https://llm-proxy.example.test/v1
+    ANTHROPIC_DEFAULT_FABLE_MODEL=made-up-model-7b
+    ANTHROPIC_DEFAULT_HAIKU_MODEL=made-up-model-7b
+    ANTHROPIC_DEFAULT_OPUS_MODEL=made-up-model-7b
+    ANTHROPIC_DEFAULT_SONNET_MODEL=made-up-model-7b
+    ANTHROPIC_MODEL=made-up-model-7b
+    ANT_ACCOUNT=made-up-proxy
+    CLAUDE_CODE_DISABLE_1M_CONTEXT=1
+    CLAUDE_CODE_SUBAGENT_MODEL=made-up-model-7b
+    CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1

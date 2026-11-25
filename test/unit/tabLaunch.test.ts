@@ -244,6 +244,8 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
       nextPull: async () => {}
     },
     changed: () => {},
+    pinnedWorkspaces: () => [],
+    rereadRows: () => {},
     events: () => {},
     error: () => {},
     noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],
