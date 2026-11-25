@@ -108,6 +108,8 @@ export const agent = {
     runsCommandsInASandboxWhereSudoCannotStart: false,
     // AGY§14
     questionToolTakesNoOptionDescriptions: true,
+    // AGY§35
+    removesItsWorktreeAsItExits: false,
     turnEndCanComeBeforeItsReplyIsWritten: false,
     // AGY§31
     typesASkillOnlyByTheNameInItsFile: true,

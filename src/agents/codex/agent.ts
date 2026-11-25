@@ -107,6 +107,8 @@ export const agent = {
     runsCommandsInASandboxWhereSudoCannotStart: true,
     // CODEX§20
     questionToolTakesNoOptionDescriptions: false,
+    // CODEX§6
+    removesItsWorktreeAsItExits: false,
     turnEndCanComeBeforeItsReplyIsWritten: false,
     typesASkillOnlyByTheNameInItsFile: false,
     refusesATypedSkillMarkedNotUserInvocable: true
