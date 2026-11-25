@@ -1,6 +1,8 @@
 import type { AgentManifest } from '@core/agent/manifest'
 import { CRON_EFFORTS } from '@shared/efforts'
+import { ESC } from '@shared/lineEditKeys'
 import { SLOT_ADDITIONS, SLOT_FILLS } from './prompts/text'
+import { inputBoxDraft } from './shared/inputBox'
 
 // CC§9
 const MODEL_EVERY_ACCOUNT_TAKES = 'haiku'
@@ -72,6 +74,14 @@ export const agent = {
   ownSettings: { fablePriority: { default: true, keptOnReset: true } },
   slotFills: SLOT_FILLS,
   slotAdditions: SLOT_ADDITIONS,
+  // CC§12
+  inputBoxKeys: {
+    clearALeftoverCommand: [],
+    makeEnterRunTheTypedText: [ESC],
+    backToAnEmptyBox: [ESC]
+  },
+  // CC§12
+  commandWithItsChoiceAfterIt: '/model haiku',
   flags: {
     resumeCanWaitOnAQuestionBeforeAnySign: false,
     conversationStartsAtFirstPrompt: false,
@@ -83,9 +93,11 @@ export const agent = {
     // PLATFORM§58
     runsCommandsInASandboxWhereSudoCannotStart: false,
     // CC§14
-    questionToolTakesNoOptionDescriptions: false
+    questionToolTakesNoOptionDescriptions: false,
+    // CC§2
+    turnEndCanComeBeforeItsReplyIsWritten: true
   },
-  pureFunctions: { effortsAModelTakes: () => CRON_EFFORTS },
+  pureFunctions: { effortsAModelTakes: () => CRON_EFFORTS, draftInItsInputBox: inputBoxDraft },
   // CC§7
   accountKinds: [
     {

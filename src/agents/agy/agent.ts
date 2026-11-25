@@ -7,6 +7,8 @@ import {
 } from './shared/agyBrain'
 import { agyEffortsAModelTakes } from './shared/agyEfforts'
 import { AGY_INSTALLER_URL } from './shared/agyInstaller'
+import { agyInputBoxDraft } from './shared/inputBox'
+import { EMPTY_THE_BOX, ESC } from '@shared/lineEditKeys'
 import { SLOT_ADDITIONS, SLOT_FILLS } from './prompts/text'
 
 export const agent = {
@@ -77,6 +79,12 @@ export const agent = {
   ownSettings: {},
   slotFills: SLOT_FILLS,
   slotAdditions: SLOT_ADDITIONS,
+  // AGY§23
+  inputBoxKeys: {
+    clearALeftoverCommand: [],
+    makeEnterRunTheTypedText: [],
+    backToAnEmptyBox: [ESC, EMPTY_THE_BOX]
+  },
   flags: {
     // AGY§5
     resumeCanWaitOnAQuestionBeforeAnySign: false,
@@ -91,9 +99,13 @@ export const agent = {
     // AGY§25
     runsCommandsInASandboxWhereSudoCannotStart: false,
     // AGY§14
-    questionToolTakesNoOptionDescriptions: true
+    questionToolTakesNoOptionDescriptions: true,
+    turnEndCanComeBeforeItsReplyIsWritten: false
   },
-  pureFunctions: { effortsAModelTakes: agyEffortsAModelTakes },
+  pureFunctions: {
+    effortsAModelTakes: agyEffortsAModelTakes,
+    draftInItsInputBox: agyInputBoxDraft
+  },
   // AGY§5 AGY§6
   accountKinds: [
     {

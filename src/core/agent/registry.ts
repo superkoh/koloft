@@ -45,6 +45,10 @@ export function ofEachAgent<T>(value: (id: AgentId) => T): Record<AgentId, T> {
   return Object.fromEntries(AGENT_IDS.map((id) => [id, value(id)])) as Record<AgentId, T>
 }
 
+export const A_COMMAND_WITH_ITS_CHOICE_AFTER_IT: string | undefined = AGENT_MANIFESTS.find(
+  (agent) => agent.commandWithItsChoiceAfterIt
+)?.commandWithItsChoiceAfterIt
+
 export function agentsThatSay(flag: keyof AgentFlags): AgentId[] {
   return AGENT_IDS.filter((id) => agentManifest(id).flags[flag])
 }
