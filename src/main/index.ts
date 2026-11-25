@@ -3735,8 +3735,11 @@ app.whenReady().then(() => {
     rereadGrownRows: () => workspaces.rescanForGrowth(),
     runningBindings,
     remoteRunning,
-    sessionsOnDiskOrRunning: (ids) =>
-      butler?.forgetGone((key) => sessionBackends.sessionStillThere(key, ids)),
+    sessionsOnDiskOrRunning: (ids) => {
+      const stillThere = (key: string): boolean => sessionBackends.sessionStillThere(key, ids)
+      butler?.forgetGone(stillThere)
+      attention.forgetLastRunGone(stillThere)
+    },
     memberDropped: (sessionId, why) => droppedSessionsLog(`${sessionId} ${why}`)
   })
   const bindingNow = buildDiscordBinding({
