@@ -50,6 +50,7 @@ import {
   type Due
 } from './cronScheduler'
 import type { TidyResult } from '@core/worktree'
+import { AGENT_NO_LONGER_SUPPORTED_NOTE } from './cronStore'
 
 const MAX_WORKTREE_NAME = 64
 const STAMP_LEN = 12
@@ -61,8 +62,7 @@ const LAUNCH_PERMISSION: Record<CronPermission, LaunchPermission> = {
   skipAll: 'bypass'
 }
 
-function firstPromptOf(job: CronJob): string {
-  const backend = cronBackend(job)
+function firstPromptOf(job: CronJob, backend: BackendId): string {
   const opensWithACommand = ['/', SKILL_PREFIX[backend]].some((p) => job.task.startsWith(p))
   const last = opensWithACommand ? null : lastRunLine(job.history, backend)
   return last ? `${last}\n\n${job.task}` : job.task
@@ -212,7 +212,7 @@ function scheduleErrors(s: unknown, now: number, saved?: Schedule): string[] {
 interface Clean {
   name: string
   task: string
-  backend: BackendId
+  backend?: BackendId
   model?: string
   effort?: CronEffort
   permission: CronPermission
@@ -229,11 +229,12 @@ function clean(input: CronSaveInput): Clean {
     : NEW_JOB_PERMISSION
   const model = typeof input.model === 'string' ? input.model.trim() : undefined
   const backend = cronBackend({ backend: backendIdOf(input.backend) })
-  const effort = isCronEffort(input.effort) ? takenEffort(backend, model, input.effort) : undefined
+  const effort =
+    backend && isCronEffort(input.effort) ? takenEffort(backend, model, input.effort) : undefined
   return {
     name,
     task,
-    backend,
+    ...(backend ? { backend } : {}),
     permission,
     ...(model ? { model } : {}),
     ...(effort ? { effort } : {}),
@@ -473,6 +474,10 @@ export class CronRunner {
       }
 
       const backend = cronBackend(job)
+      if (!backend) {
+        this.fail(job, dueAt, mark, AGENT_NO_LONGER_SUPPORTED_NOTE)
+        return { ok: false, reason: 'turned-off', why: AGENT_NO_LONGER_SUPPORTED_NOTE }
+      }
       const turnedOff = this.d.turnedOff(backend)
       if (turnedOff) {
         this.fail(job, dueAt, mark, turnedOff)
@@ -507,7 +512,7 @@ export class CronRunner {
         model: job.model,
         effort: takenEffort(backend, job.model, job.effort),
         permission: LAUNCH_PERMISSION[job.permission],
-        firstPrompt: firstPromptOf(job),
+        firstPrompt: firstPromptOf(job, backend),
         name: job.name,
         manual
       })
@@ -593,13 +598,14 @@ export class CronRunner {
     if (!run || run.state !== 'launching') return
     this.killRun(tabId)
     const job = this.byId(run.jobId)
-    if (!job) {
+    const backend = job && cronBackend(job)
+    if (!job || !backend) {
       this.push()
       return
     }
-    const label = BACKEND_LABEL[cronBackend(job)]
+    const label = BACKEND_LABEL[backend]
     // CC§9 CODEX§14
-    whenSettled(this.d.trusted(job.workspacePath, cronBackend(job)), (trusted) => {
+    whenSettled(this.d.trusted(job.workspacePath, backend), (trusted) => {
       const note = trusted
         ? `${label} did not start`
         : `${label} did not start — Koloft cannot see that ${label} trusts this folder; start one session here first`
@@ -903,13 +909,14 @@ export class CronRunner {
     this.dropRun(run)
     this.refreshFolders()
     const job = this.byId(run.jobId)
-    if (!job) {
+    const backend = job && cronBackend(job)
+    if (!job || !backend) {
       this.push()
       return
     }
     const line = lineOf(run)
     if (run.state === 'launching') {
-      const note = `${BACKEND_LABEL[cronBackend(job)]} exited before it started`
+      const note = `${BACKEND_LABEL[backend]} exited before it started`
       this.writeHistory(job, { ...line, state: 'failed', note })
       this.d.toast(`⏰ ${job.name} could not start: ${note}`)
     } else if (exit?.unexpected) {

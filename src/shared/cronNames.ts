@@ -40,6 +40,6 @@ export function isRunFolderOf(slug: string, name: string): boolean {
   return new RegExp(`^${slug}-\\d{6}-\\d{4}(-.+)?$`).test(name)
 }
 
-export function cronBackend(job: { backend?: BackendId }): BackendId {
+export function cronBackend(job: { backend?: BackendId }): BackendId | undefined {
   return job.backend ?? AGENT_OF_UNNAMED_OLD_DATA
 }

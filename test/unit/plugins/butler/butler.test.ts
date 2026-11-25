@@ -23,6 +23,7 @@ import { FROM_KOLOFT } from '../../../../src/plugins/sessions/main/messageOpenin
 const DEADLINE_MS = 1000
 const CLAUDE_KEY = 's1'
 const CODEX_KEY = 'codex:019a-thread'
+const REMOVED_AGENTS_KEY = 'muse:local:00000000-0000-4000-8000-000000000001'
 
 let userData: string
 let name: string
@@ -763,6 +764,17 @@ describe('the butler', () => {
     expect(toasts).toEqual(['Alfred now runs on Codex, so it starts a new conversation.'])
     c.onBound('tab-1', CODEX_KEY)
     expect(session.lastSessionKey).toBe(CODEX_KEY)
+  })
+
+  it('a last conversation of an agent this Koloft no longer has is never resumed as another agent’s: the next open starts a new conversation and says so', async () => {
+    session = { sessionIds: [REMOVED_AGENTS_KEY], lastSessionKey: REMOVED_AGENTS_KEY }
+    transcripts.add(REMOVED_AGENTS_KEY)
+    const c = make()
+    await opened(c)
+    expect(started[0].backend).toBe('claude')
+    expect(resumed).toEqual([])
+    expect(toasts).toEqual(['Alfred now runs on Claude, so it starts a new conversation.'])
+    expect(c.isButlerSession(REMOVED_AGENTS_KEY)).toBe(true)
   })
 
   // AGY§21

@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { formatRemoteKey } from '@shared/remoteKey'
-import { identityOf, sessionKey } from '@shared/sessionBackend'
+import { agentSessionId, identityOf, sessionKey } from '@shared/sessionBackend'
 import { workspaceWorkbenchKey } from '@shared/workbenchState'
 
 const SESSION = '00000000-0000-4000-8000-000000000001'
+const WORKSPACE_PANEL_ON_THIS_MAC = workspaceWorkbenchKey('/Users/me/proj')
 const WORKSPACE_PANEL_ON_A_MACHINE = workspaceWorkbenchKey(
   formatRemoteKey('devbox', '/home/me/proj')
 )
@@ -42,8 +43,7 @@ describe('identityOf (whose session a saved key is)', () => {
     ['an empty key', ''],
     ['a key of two parts', 'codex:local'],
     ['a key of four parts', `codex:local:${SESSION}:more`],
-    ['a key of three parts that names an agent this Koloft no longer has', `muse:local:${SESSION}`],
-    ['a workspace panel’s key on another machine', WORKSPACE_PANEL_ON_A_MACHINE]
+    ['a workspace panel’s key on this Mac, which has two parts', WORKSPACE_PANEL_ON_THIS_MAC]
   ])('%s is read as a Claude Code session on this Mac whose id is the whole key', (_what, key) => {
     expect(identityOf(key)).toEqual({
       backendId: 'claude',
@@ -51,4 +51,16 @@ describe('identityOf (whose session a saved key is)', () => {
       nativeSessionId: key
     })
   })
+
+  it.each([
+    ['names an agent this Koloft no longer has', `muse:local:${SESSION}`],
+    ['is a workspace panel’s key on another machine', WORKSPACE_PANEL_ON_A_MACHINE]
+  ])(
+    'a key of three parts that %s is nobody’s session: it is unavailable, and the text shown for it is the key as it is',
+    (_what, key) => {
+      expect(key.split(':')).toHaveLength(3)
+      expect(identityOf(key)).toBeUndefined()
+      expect(agentSessionId(key)).toBe(key)
+    }
+  )
 })
