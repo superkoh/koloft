@@ -32,7 +32,7 @@ import {
   type PendingLaunch,
   type RescanState,
   type SessionMeta
-} from '../../../main/sessionAggregate'
+} from '@agents/claude/main/sessionAggregate'
 import {
   carrySessionWorkbench,
   decideWorkspaceAdd,

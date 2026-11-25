@@ -6,13 +6,8 @@ import {
   type WorktreeStateMeta
 } from '@shared/types'
 import { encodeCwd } from '@shared/cwdKey'
-import {
-  classifyUserPrompt,
-  compactionSummary,
-  INTERRUPT_TEXTS,
-  whoTyped
-} from '@agents/claude/main/sessionTracker'
-import { parseRecord, type TextBlock, type TranscriptRecord } from './transcriptRecord'
+import { classifyUserPrompt, compactionSummary, INTERRUPT_TEXTS, whoTyped } from './sessionTracker'
+import { parseRecord, type TextBlock, type TranscriptRecord } from '../../../main/transcriptRecord'
 
 export interface Bucket {
   slug: string

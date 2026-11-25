@@ -13,7 +13,7 @@ import {
   type Bucket,
   type SessionMeta,
   type RescanState
-} from '../../src/main/sessionAggregate'
+} from '../../src/agents/claude/main/sessionAggregate'
 import {
   handoverInOwnersLanguage,
   withHandover
