@@ -138,7 +138,6 @@
   "optionalMethods": {
     "src/agents/kit/main/storedSessions.ts": {
       "SessionsWithStore.answerable": "C1",
-      "SessionsWithStore.tabOnMachine": "C9",
       "StoredSessionDeps.leftWorktree": "D1",
       "StoredSessionDeps.projectRules": "D1",
       "StoredSessionDeps.remoteDirExists": "D1",
