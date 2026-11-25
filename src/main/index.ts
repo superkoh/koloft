@@ -553,6 +553,7 @@ const {
   runtime: () => runtime,
   storedOwnerOf,
   sessionAsks: () => sessionAsks,
+  readers: () => ({ claudeDialog, codexDialog, questionsOf, isAskedCall }),
   questionAsked: (asked) => announceNow(QUESTION_ASKED, asked)
 })
 let codexSessions: ReturnType<typeof buildCodexSessions> | null = null
@@ -6338,6 +6339,10 @@ const {
   trustCodexFolder,
   A_HELPER_HAS_IT,
   writeLineInTurn,
+  claudeDialog,
+  codexDialog,
+  isAskedCall,
+  questionsOf,
   everyWorkspaceBlock,
   ownerPartsOf,
   everyWorkspaceSavedByTheOwner,

@@ -364,7 +364,7 @@ const SITUATIONS: Situation[] = [
         reason: 'Write the probe file outside the sandbox'
       }
     },
-    agy: { never: 'Antigravity gives no reason with a command (its 7501 msg table, AGY§8)' },
+    agy: { never: 'Antigravity gives no reason with a command (its 7501 msg table, AGY§10)' },
     replies: ['yes', 'no', 'maybe']
   },
   {
@@ -395,7 +395,7 @@ const SITUATIONS: Situation[] = [
     },
     agy: {
       never:
-        'Antigravity has no request to trail its state: Koloft reads the ask when its 7501 status arrives (AGY§8); its later API read is pinned in the other files'
+        'Antigravity has no request to trail its state: Koloft reads the ask when its 7501 status arrives (AGY§10); its later API read is pinned in the other files'
     },
     replies: ['yes', 'maybe']
   },
@@ -412,7 +412,7 @@ const SITUATIONS: Situation[] = [
     },
     agy: {
       never:
-        'Antigravity has no request to trail its state: Koloft reads the ask when its 7501 status arrives (AGY§8)'
+        'Antigravity has no request to trail its state: Koloft reads the ask when its 7501 status arrives (AGY§10)'
     },
     replies: ['yes']
   },
@@ -514,7 +514,7 @@ const SAMPLES_NOT_MEASURED: Record<string, string> = {
   'use-another-tool-one-sentence/codex':
     'a file change approval whose item Koloft never saw start (`item/fileChange/requestApproval` carrying only `reason`), the one way a Codex approval reaches Koloft with a sentence only; not seen from a real Codex',
   'use-another-tool-one-sentence/agy':
-    'the 7501 msg with `AGY_CLI_OSC7501_MESSAGES=brief`, "Approve RunCommand" (AGY§8), with no tool call before it',
+    'the 7501 msg with `AGY_CLI_OSC7501_MESSAGES=brief`, "Approve RunCommand" (AGY§10), with no tool call before it',
   'use-another-tool-nothing-said/codex':
     '`item/commandExecution/requestApproval` with no params, the sample of codexObservation.test.ts; other `…/requestApproval` kinds are not probed yet (CODEX§3)',
   'use-another-tool-nothing-said/agy':

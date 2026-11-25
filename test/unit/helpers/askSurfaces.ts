@@ -18,6 +18,12 @@ import { PLUGINS } from '../../../src/plugins/list'
 import { SessionRuntime } from '../../../src/core/agent/sessionRuntime'
 import { SessionBackends, type SessionLifecycle } from '../../../src/core/agent/sessionBackends'
 import { SessionAsks } from '../../../src/plugins/sessions/main/sessionAsks'
+import {
+  claudeDialog,
+  codexDialog,
+  isAskedCall,
+  questionsOf
+} from '../../../src/plugins/sessions/main/appHelpers'
 import { followEachState, followEachTurn } from '../../../src/plugins/sessions/main/sessionHooks'
 import { HOOK_SCRIPT, markAnswerable } from '../../../src/plugins/sessions/main/hooks'
 import { DiscordRelay, type Destination } from '../../../src/plugins/discord/main/relay'
@@ -155,6 +161,7 @@ export class AskSurfaces {
       runtime: () => this.runtime,
       storedOwnerOf,
       sessionAsks: () => this.asks,
+      readers: () => ({ claudeDialog, codexDialog, questionsOf, isAskedCall }),
       questionAsked: (asked) => void this.moments.announce(QUESTION_ASKED, asked)
     })
     this.asks = new SessionAsks({
