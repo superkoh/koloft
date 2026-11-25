@@ -1,5 +1,7 @@
 import type { SessionInfo } from '@shared/types'
+import type { SentNote, SessionMessages } from '@core/agent/sessionBackends'
 import { writeToMachineSocket } from '../../../main/remote/ssh'
+import { MESSAGE_SOCKET_SHOWS_WITHIN_MS, crossSessionLine } from './crossSessionMessage'
 
 export interface MessageSocketDeps {
   readonly tracker: { remoteOf(tabId: string): { host: string } | undefined }
@@ -50,6 +52,30 @@ export function messageSocket(
   }
 
   return sendPeerLine
+}
+
+export interface ClaudeMessageDeps extends MessageSocketDeps {
+  noteKoloftSent(tabId: string, note: SentNote): Promise<void>
+}
+
+export function claudeMessages(d: ClaudeMessageDeps): SessionMessages {
+  const sendPeerLine = messageSocket(d)
+  let lined = 0
+  return {
+    send: async (tabId, m) => {
+      const handedOver = 'handedOverAs' in m
+      const id = handedOver ? m.handedOverAs : `koloft-${m.sentBy}-${++lined}`
+      // ADR-0028
+      if (m.koloftWroteTheOpening) await d.noteKoloftSent(tabId, { id })
+      await sendPeerLine(
+        tabId,
+        crossSessionLine(m.senderPermission, m.text, id),
+        handedOver ? MESSAGE_SOCKET_SHOWS_WITHIN_MS : m.until - Date.now()
+      )
+      return 'taken'
+    },
+    mightNotTakeAMessageNow: async () => false
+  }
 }
 
 const NO_MESSAGE_SOCKET = 'Koloft could not find where that session takes messages.'

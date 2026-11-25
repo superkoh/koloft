@@ -34,6 +34,8 @@ export const agent = {
   instructionFileNames: ['CLAUDE.md', 'AGENTS.md'],
   // CC§9
   trustQuestion: 'do you trust this project?',
+  // CC§13
+  textItsMessagesCannotHold: '</cross-session-message>',
   ownLogFolderNames: [],
   // CC§2
   atTopOfSessionFolder: {

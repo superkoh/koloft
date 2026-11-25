@@ -29,9 +29,27 @@ import { rowsOfEveryAgent, type RowsOfEveryAgent, type SessionRowsSource } from 
 
 export type ModeClass = 'bypass' | 'prompting'
 
+export type SentNote = { id: string } | { words: string }
+
+export type MessageToSend = {
+  text: string
+  senderPermission: ModeClass
+  koloftWroteTheOpening: boolean
+} & ({ handedOverAs: string } | { sentBy: string; until: number })
+
+export type SendOutcome = 'taken' | 'only-its-terminal-takes-it'
+
+export interface SessionMessages {
+  send(tabId: string, m: MessageToSend): Promise<SendOutcome>
+  mightNotTakeAMessageNow(
+    tabId: string,
+    turnHasEnded: (tabId: string) => Promise<boolean>
+  ): Promise<boolean>
+}
+
 export type TabExit = Pick<TabEnded, 'tabId' | 'exitCode' | 'signal' | 'crashed'>
 
-export interface SessionBackend extends SessionRowsSource {
+export interface SessionBackend extends SessionRowsSource, SessionMessages {
   id: BackendId
   recoversWorktrees?: true
   availability(): Promise<BackendAvailability>
@@ -245,6 +263,18 @@ export class SessionBackends {
 
   permissionClass(tabId: string): ModeClass {
     return this.ownerOfTab(tabId)?.permissionClass(tabId) ?? 'prompting'
+  }
+
+  send(backend: BackendId, tabId: string, m: MessageToSend): Promise<SendOutcome> {
+    return this.get(backend).send(tabId, m)
+  }
+
+  mightNotTakeAMessageNow(
+    backend: BackendId,
+    tabId: string,
+    turnHasEnded: (tabId: string) => Promise<boolean>
+  ): Promise<boolean> {
+    return this.get(backend).mightNotTakeAMessageNow(tabId, turnHasEnded)
   }
 
   peerNames(): (s: { backendId: BackendId; sessionId: string }) => Promise<string | null> {

@@ -1,10 +1,8 @@
 import { backendIdOf } from '@shared/sessionBackend'
 import type { BackendId } from '@shared/types'
-import type { ModeClass } from '@core/agent/sessionBackends'
+import type { ModeClass, SentNote } from '@core/agent/sessionBackends'
 import type { SshHost } from './host/sshHost'
 import type { PtyManager } from './ptyManager'
-
-type SentNote = Parameters<SshHost['noteSent']>[1]
 
 export interface HandOverTabState {
   backendOf(tabId: string): BackendId | undefined
@@ -56,6 +54,7 @@ export interface SessionVerbsMessaging {
 }
 
 export function sessionMessaging<HandOver>(d: SessionMessagingDeps<HandOver>): {
+  noteKoloftSent(tabId: string, note: SentNote): Promise<void>
   forSessionVerbs: SessionVerbsMessaging
   handOver(tabState: HandOverTabState, asks: { typable(tabId: string): boolean }): HandOver
 } {
@@ -66,7 +65,6 @@ export function sessionMessaging<HandOver>(d: SessionMessagingDeps<HandOver>): {
     await d.codexSessions.queueMessage(tabId, text, clientId)
   }
 
-  // ADR-0028
   async function noteSentByKoloft(
     tabId: string,
     text: string,
@@ -74,6 +72,11 @@ export function sessionMessaging<HandOver>(d: SessionMessagingDeps<HandOver>): {
   ): Promise<void> {
     const note = d.noteOfWhatKoloftSends(backendIdOf(ptyMgr.get(tabId)?.kind), text, id)
     if (!note) return
+    return noteKoloftSent(tabId, note)
+  }
+
+  // ADR-0028
+  async function noteKoloftSent(tabId: string, note: SentNote): Promise<void> {
     const host = machineOfTab(tabId)
     if (host) return d.hosts.machine(host).noteSent(tabId, note)
     if (d.hookRegDir) d.noteSent(d.hookRegDir, tabId, note)
@@ -84,6 +87,7 @@ export function sessionMessaging<HandOver>(d: SessionMessagingDeps<HandOver>): {
   }
 
   return {
+    noteKoloftSent,
     forSessionVerbs: {
       queue: async (tabId, text, clientId) => d.codexSessions?.queueMessage(tabId, text, clientId),
       sendLine: sendPeerLine,
