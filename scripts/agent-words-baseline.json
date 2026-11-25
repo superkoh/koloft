@@ -734,13 +734,6 @@
       "if (login && !claudeLoginRunning) clearLogin()",
       "} else if (b === 'claude') openClaudeSignIn(again)"
     ],
-    "src/renderer/src/components/SessionBackendIcon.tsx": [
-      "agy: AntigravityMark",
-      "claude: BsClaude,",
-      "codex: BsOpenai,",
-      "const AntigravityMark: IconType = GenIcon({",
-      "import { BsClaude, BsOpenai } from 'react-icons/bs'"
-    ],
     "src/renderer/src/components/SessionDefaultsDialog.tsx": [
       "\"Where the project's own AGENTS.md or CLAUDE.md says otherwise, an agent may follow that file instead.\"",
       "(b === 'agy' && m && familyEfforts?.[m]) || effortsFor(b, m)"
@@ -963,17 +956,6 @@
       "const claude = useStore((s) => hasUsableAccount(s.accounts ?? [], 'claude'))",
       "const codex = useStore((s) => hasUsableAccount(s.accounts ?? [], 'codex'))",
       "usable: { claude, codex, agy },"
-    ],
-    "src/renderer/src/welcome.css": [
-      ".wl-agent.agy {",
-      ".wl-agent.claude {",
-      ".wl-agent.codex {",
-      ".wl-blob.agy {",
-      ".wl-blob.agy,",
-      ".wl-blob.claude {",
-      ".wl-blob.claude,",
-      ".wl-blob.codex {",
-      ".wl-blob.codex,"
     ],
     "src/shared/accountUsage.ts": [
       "'Claude did not start: Koloft could not use an account for it. Check Settings ▸ Accounts, then try again.'",
