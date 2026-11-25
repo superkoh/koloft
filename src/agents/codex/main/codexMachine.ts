@@ -11,12 +11,7 @@ import {
   remoteShCommand,
   sourceTabPass
 } from '../../../main/remote/install'
-import {
-  assertSafeNames,
-  skillsFromMachineLine,
-  tabPushed,
-  type MachinePackage
-} from '../../../main/remote/launch'
+import { assertSafeNames, skillsFromMachineLine } from '../../../main/remote/launch'
 import { REMOTE_HOME, REMOTE_HOOK_DIR, remoteMachineDir } from '../../../main/remote/paths'
 import { answerStreamOf, SSH_LINK_BROKE_EXIT } from '../../../main/remote/ssh'
 import {
@@ -173,8 +168,7 @@ exit 0
 export interface CodexLaunchLineSpec {
   host: string
   sshOptions: string[]
-  machine: MachinePackage
-  tabDir: string
+  tabFilesPushed: string
   tabId: string
   tui: string[]
 }
@@ -183,7 +177,7 @@ export interface CodexLaunchLineSpec {
 export function codexLaunchLine(s: CodexLaunchLineSpec): string {
   const start = `ssh -tt ${s.sshOptions.join(' ')} ${shq(s.host)} "sh \\"\\$HOME/.koloft/tabs/${s.tabId}.sh\\" start"`
   return (
-    `${tabPushed(s)}${start}; c=$?; [ "$c" = 0 ] || { echo "[Koloft] Codex did not start on the machine (exit $c) — see above"; exit "$c"; }; ` +
+    `${s.tabFilesPushed}${start}; c=$?; [ "$c" = 0 ] || { echo "[Koloft] Codex did not start on the machine (exit $c) — see above"; exit "$c"; }; ` +
     `clear; exec ${s.tui.map(shq).join(' ')}`
   )
 }

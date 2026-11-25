@@ -102,7 +102,6 @@ import {
   ensureControlDir,
   rsyncPull,
   listenOverSsh,
-  backgroundOptions,
   masterCommandOutlivingKoloft,
   runMasterCommand,
   runSsh,
@@ -3569,22 +3568,10 @@ app.whenReady().then(() => {
       ...storedDeps,
       machine: {
         instance: codexMachineInstance(userData),
-        ready: loginEnvReady,
-        run: (host, cmd) =>
-          loginEnvReady().then(() => runSsh(host, cmd, { controlDir: remoteControlDir })),
-        sshArgs: (machine, background) => {
-          ensureControlDir(remoteControlDir)
-          return background
-            ? backgroundOptions(machine, remoteControlDir)
-            : sshOptions(remoteControlDir, false)
-        },
-        machinePackage,
-        tabDir: (tabId) => tabPackageDir(userData, tabId),
-        fileExists: (file) => hosts.machine(parseRemoteKey(file)!.host).fileExists(file),
+        machine: (host) => hosts.machine(host),
         keyed: pinnedKeyOn,
         mirrorDir: (host) => mirrorHookDir(userData, host),
-        nextPull: (host) => remoteSync?.nextPullDone(host) ?? Promise.resolve(),
-        loginPath: (host) => gitAccounts?.machineLoginPath(host) ?? Promise.resolve('')
+        nextPull: (host) => remoteSync?.nextPullDone(host) ?? Promise.resolve()
       },
       leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),
       trustFolder: trustCodexFolder,
