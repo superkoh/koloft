@@ -37,10 +37,7 @@
         "src/main/remote/launch.ts": "C10",
         "src/main/remote/paths.ts": "C10"
       },
-      "src/agents/agy/main/backend.ts": { "src/main/accounts.ts": "C4" },
       "src/agents/claude/main/backend.ts": {
-        "src/main/accountPicker.ts": "C4",
-        "src/main/accounts.ts": "C4",
         "src/main/remote/launch.ts": "C10",
         "src/main/remote/paths.ts": "C10",
         "src/main/remote/sync.ts": "C10",
@@ -57,11 +54,9 @@
         "src/main/usageCache.ts": "C6"
       },
       "src/agents/claude/main/sessionTracker.ts": {
-        "src/main/accountPicker.ts": "C4",
         "src/main/remote/install.ts": "C10",
         "src/main/remote/paths.ts": "C10"
       },
-      "src/agents/codex/main/backend.ts": { "src/main/accounts.ts": "C4" },
       "src/agents/codex/main/codexLeftovers.ts": { "src/main/leftovers.ts": "C9" },
       "src/agents/codex/main/codexMachine.ts": {
         "src/main/remote/install.ts": "C10",
@@ -81,12 +76,7 @@
         "src/main/toolShim.ts": "C8"
       },
       "src/agents/codex/main/codexTransport.ts": { "src/main/leftovers.ts": "C9" },
-      "src/agents/kit/main/homeAccountPicker.ts": {
-        "src/main/accountPicker.ts": "C4",
-        "src/main/usageProbe.ts": "C6"
-      },
       "src/agents/kit/main/storedSessions.ts": {
-        "src/main/accountPicker.ts": "C4",
         "src/main/cliRuntime.ts": "C8",
         "src/main/loginShell.ts": "C8",
         "src/main/sessionSearch.ts": "C6",
@@ -104,6 +94,9 @@
         "src/agents/agy/main/agyCatalog.ts": "D1",
         "src/agents/agy/main/agyStore.ts": "D1",
         "src/agents/agy/main/agyTab.ts": "D1",
+        "src/agents/claude/main/claudeAccountEnv.ts": "D1",
+        "src/agents/claude/main/claudeAccountProbe.ts": "D1",
+        "src/agents/claude/main/claudeAccounts.ts": "D1",
         "src/agents/claude/main/claudeCatalog.ts": "D1",
         "src/agents/claude/main/claudeDialogWatch.ts": "D1",
         "src/agents/claude/main/claudeSessionRegistry.ts": "D1",
