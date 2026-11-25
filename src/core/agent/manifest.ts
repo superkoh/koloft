@@ -45,6 +45,18 @@ export interface AgentFlags {
   runsCommandsInASandboxWhereSudoCannotStart: boolean
   questionToolTakesNoOptionDescriptions: boolean
   turnEndCanComeBeforeItsReplyIsWritten: boolean
+  typesASkillOnlyByTheNameInItsFile: boolean
+  refusesATypedSkillMarkedNotUserInvocable: boolean
+}
+
+export interface SkillFolderNames {
+  skills: readonly string[]
+  commands: readonly string[]
+}
+
+export interface SkillFolders {
+  inTheWorkspace: SkillFolderNames
+  inTheHome: SkillFolderNames
 }
 
 export interface InputBoxKeys {
@@ -79,6 +91,7 @@ export interface AgentManifest {
   nodePackageFolderNames: readonly string[]
   wordsThatNameMe: AgentWords
   skillPrefix: string
+  skillFolders: SkillFolders
   questionToolName: string
   instructionFileNames: readonly string[]
   trustQuestion: string

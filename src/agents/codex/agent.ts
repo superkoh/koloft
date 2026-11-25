@@ -35,6 +35,11 @@ export const agent = {
   },
   // CODEX§17
   skillPrefix: '$',
+  // CODEX§17
+  skillFolders: {
+    inTheWorkspace: { skills: ['.agents/skills', '.codex/skills'], commands: [] },
+    inTheHome: { skills: ['.agents/skills'], commands: [] }
+  },
   questionToolName: 'request_user_input',
   // CODEX§17
   instructionFileNames: ['AGENTS.md'],
@@ -101,7 +106,9 @@ export const agent = {
     runsCommandsInASandboxWhereSudoCannotStart: true,
     // CODEX§20
     questionToolTakesNoOptionDescriptions: false,
-    turnEndCanComeBeforeItsReplyIsWritten: false
+    turnEndCanComeBeforeItsReplyIsWritten: false,
+    typesASkillOnlyByTheNameInItsFile: false,
+    refusesATypedSkillMarkedNotUserInvocable: true
   },
   pureFunctions: {
     effortsAModelTakes: () => CRON_EFFORTS,
