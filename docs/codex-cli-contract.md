@@ -2628,14 +2628,15 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
   `folder-without-name`, `hidden-skill` and `named-skill`, scope `user`; the same three
   put in `<proj>/.agents/skills/<folder>/` instead were listed the same, scope `repo`.
   Each text was then sent on a new thread by `turn/start`, and as the last argument of a
-  real TUI (`codex --no-daemon -C <proj> "<text>"` in a python pty, the TUI's "Meet
-  GPT-6 Sol" model notice answered with `2` and Enter, without which no request was sent
-  in 45 s):
+  real TUI in a python pty, both `codex --no-daemon -C <proj> "<text>"` and, as Koloft
+  starts one, `codex --remote ws://127.0.0.1:<port> -C <proj> "<text>"` against a
+  `codex app-server --listen` on that port (the TUI's "Meet GPT-6 Sol" model notice
+  answered with `2` and Enter, without which no request was sent in 45 s):
   - `$hidden-skill go`, `$folder-without-name go` and `$named-skill go` each sent that
-    skill's whole body to the model as a `<skill>` user item, both paths, the skills in
-    either folder (the TUI path twice for `$hidden-skill` and `$named-skill` in
-    `$CODEX_HOME`).
-  - `$folder-of-named go` sent the text alone, both paths, as above.
+    skill's whole body to the model as a `<skill>` user item, all three paths, the skills
+    in either folder (the `--no-daemon` TUI twice for `$hidden-skill` and `$named-skill`
+    in `$CODEX_HOME`).
+  - `$folder-of-named go` sent the text alone, all three paths, as above.
   - With every skill in both `<proj>/.agents/skills/` and `$CODEX_HOME/skills/`,
     `skills/list` listed each name twice (scope `repo` and `user`). Then `turn/start`
     sent no body for any `$<name>`, the control included (2 runs), while the TUI sent the
