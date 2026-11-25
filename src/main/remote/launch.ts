@@ -199,11 +199,24 @@ export function writeTabPackage(dir: string, spec: TabSpec): void {
   writeTabPassFile(dir, spec.tabId)
 }
 
-export function removeTabPackagesNoTabNeeds(userData: string): void {
+export function removeTabPackagesNoTabNeeds(
+  userData: string,
+  aTabStillNeeds: (name: string) => boolean
+): void {
+  const base = tabPackagesBase(userData)
+  let names: string[]
   try {
-    fs.rmSync(tabPackagesBase(userData), { recursive: true, force: true })
-  } catch (err) {
-    console.error('[koloft] could not remove the folders of remote tabs that have ended:', err)
+    names = fs.readdirSync(base)
+  } catch {
+    return
+  }
+  for (const tabId of names) {
+    if (aTabStillNeeds(tabId)) continue
+    try {
+      fs.rmSync(path.join(base, tabId), { recursive: true, force: true })
+    } catch (err) {
+      console.error('[koloft] could not remove the files of a remote tab that has ended:', err)
+    }
   }
 }
 
