@@ -60,13 +60,21 @@ export async function quitAndClose(app: ElectronApplication): Promise<void> {
   await app.close().catch(() => {})
 }
 
-export async function launchApp(env: E2EEnv): Promise<ElectronApplication> {
+export async function launchApp(
+  env: E2EEnv,
+  { preloadInMain }: { preloadInMain?: string } = {}
+): Promise<ElectronApplication> {
   if (!fs.existsSync(MAIN_ENTRY)) {
     throw new Error(`${MAIN_ENTRY} not found — run \`npm run build\` before test:e2e`)
   }
   return electron.launch({
     // PLATFORM§4
-    args: [MAIN_ENTRY, `--user-data-dir=${env.userData}`, ...(env.extraArgs ?? [])],
+    args: [
+      ...(preloadInMain ? ['-r', preloadInMain] : []),
+      MAIN_ENTRY,
+      `--user-data-dir=${env.userData}`,
+      ...(env.extraArgs ?? [])
+    ],
     cwd: REPO_ROOT,
     env: env.launchEnv as Record<string, string>
   })

@@ -8,7 +8,7 @@ import path from 'path'
 import type { Duplex } from 'stream'
 import WebSocket, { WebSocketServer } from 'ws'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
-import { CODEX_TMP_DIR, ownedByThisRun } from '../../../main/leftovers'
+import { SHORT_TMP_DIR, ownedByThisRun } from '../../../main/leftovers'
 import { answerStreamOf } from '../../../main/remote/ssh'
 import { sharedProcessTable, type ProcessRow } from '../../../main/processTable'
 import { envMs } from '@core/agent/sessionRuntime'
@@ -405,7 +405,7 @@ export interface CodexTransport {
 export async function createCodexTransport(
   options: CodexTransportOptions
 ): Promise<CodexTransport> {
-  const directory = await fs.mkdtemp(path.join(CODEX_TMP_DIR, `koloft-cx-${ownedByThisRun('')}`))
+  const directory = await fs.mkdtemp(path.join(SHORT_TMP_DIR, `koloft-cx-${ownedByThisRun('')}`))
   await fs.chmod(directory, 0o700)
   const socketPath = path.join(directory, 'rpc.sock')
   const server = http.createServer((_req, res) => {

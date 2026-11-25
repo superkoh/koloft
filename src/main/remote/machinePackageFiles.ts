@@ -17,7 +17,7 @@ import {
   SESSION_BIN_DIR,
   UTIL_BIN_DIR
 } from './launch'
-import { utilTerminalGuard } from '../shim'
+import { utilTerminalGuard } from '../utilTerminalGuard'
 import { machineGhWrapperScript } from '../gitCredentialScripts'
 import { REMOTE_AGENT_SHIM } from '../agentShim'
 import { REMOTE_OPEN_SHIM } from '../openShimScript'
@@ -27,6 +27,9 @@ import { CODEX_REPLY_LANGUAGE_SCRIPT, HOOK_SCRIPT } from '@plugins/sessions/main
 import { passwordsOn } from '@plugins/passwords/api'
 import { SUDO_SHIM_FILES } from '@plugins/passwords/main/sudoShim'
 import { MACHINE_CLAUDE } from '@agents/claude/main/advisorOnFable'
+import { CLAUDE_UTIL_TERMINAL_REFUSAL } from '@agents/claude/main/claudeShim'
+import { CODEX_UTIL_TERMINAL_REFUSAL } from '@agents/codex/main/codexShim'
+import { AGY_UTIL_TERMINAL_REFUSAL } from '@agents/agy/main/agyShim'
 import { ENSURE_CODEX_FILE, replyLanguageFiles } from '@agents/codex/main/codexMachine'
 import { AGY_LIST_JS } from '@agents/agy/main/agyStore'
 import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from '@agents/agy/main/agyHooks'
@@ -47,9 +50,9 @@ export function machinePackageFiles(): Record<string, string | Buffer> {
     'tmux.conf': TMUX_CONF,
     'util.sh': UTIL_SH,
     [UTIL_BASH_LOGIN_FILE]: UTIL_BASH_LOGIN,
-    [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard('claude'),
-    [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex'),
-    [`${UTIL_BIN_DIR}agy`]: utilTerminalGuard('agy'),
+    [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard('claude', CLAUDE_UTIL_TERMINAL_REFUSAL),
+    [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex', CODEX_UTIL_TERMINAL_REFUSAL),
+    [`${UTIL_BIN_DIR}agy`]: utilTerminalGuard('agy', AGY_UTIL_TERMINAL_REFUSAL),
     [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM,
     [`${SESSION_BIN_DIR}open`]: REMOTE_OPEN_SHIM,
     [`${SESSION_BIN_DIR}gh`]: machineGhWrapperScript(),

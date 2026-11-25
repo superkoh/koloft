@@ -1,0 +1,9 @@
+- text: Antigravity
+
+- text: No Antigravity accounts yet — Antigravity sessions start only once there is one. Each account here is its own Google sign-in or Gemini API key. Every Antigravity session picks the least-used sign-in, and a Gemini API key only when every sign-in is at its limit.
+- button "Sign in with Google":
+  - img
+  - text: Sign in with Google
+- button "Paste Gemini API key":
+  - img
+  - text: Paste Gemini API key

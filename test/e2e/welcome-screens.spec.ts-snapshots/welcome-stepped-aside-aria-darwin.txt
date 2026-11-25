@@ -1,0 +1,2 @@
+- text: Finish in the tab below. The welcome comes back when it closes.
+- button "Back to the welcome"

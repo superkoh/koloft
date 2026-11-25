@@ -1,0 +1,7 @@
+- contentinfo:
+  - button "Resume “Tidy the release notes” ↩"
+  - img
+  - textbox "Or tell Koloft what to do…"
+  - button "Claude tab"
+  - text: Claude Code asks only about risky steps (its auto mode). Press Shift+Tab in a session to be asked every step.
+  - button "Don’t ask"

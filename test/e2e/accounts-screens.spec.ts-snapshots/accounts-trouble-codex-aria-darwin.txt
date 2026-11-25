@@ -1,0 +1,24 @@
+- text: Codex
+
+- switch "In the pool" [checked]
+- text: signed-out EXPIRED · out of pool
+- button "Sign in again"
+- button "Delete account":
+  - img
+- text: Not signed in — use Sign in again
+- switch "In the pool" [checked]
+- text: capped
+- button "Delete account":
+  - img
+- text: 5h 100% 7d 92% 5h resets 10:10 1 reset saved, expires 3-5 09:30
+- switch "Out of the pool"
+- text: paused
+- button "Delete account":
+  - img
+- text: Not probed yet
+- button "Sign in to Codex":
+  - img
+  - text: Sign in to Codex
+- button "Paste API key":
+  - img
+  - text: Paste API key

@@ -17,6 +17,7 @@ import { costUsdOf, resolvePricing } from '@shared/pricing'
 import { resolveCliRuntime, type CliRuntime, type CliSpec } from '../../../main/cliRuntime'
 import { AGY_UPDATE_TIMEOUT_MS, MIN_AGY_VERSION, TESTED_AGY_LINE } from './agyMinimum'
 import { startToolShim } from '../../../main/toolShim'
+import { COULD_NOT_REACH_KOLOFT } from '@core/command'
 import { browserControlEnv } from '../../../main/browserControlEnv'
 import { BACKGROUND_LABEL_CHARS, scheduleLabel } from '@core/scheduleLabel'
 import {
@@ -899,6 +900,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
       {
         backend: 'agy',
+        cannotWriteTheRequest: COULD_NOT_REACH_KOLOFT,
         open: (target) => this.deps.events(tabId, { type: 'open', target }),
         agent: agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw)),
         rules
