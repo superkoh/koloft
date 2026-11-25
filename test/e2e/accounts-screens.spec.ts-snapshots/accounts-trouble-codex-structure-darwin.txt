@@ -1,0 +1,115 @@
+div.set-grp
+  {display: block; color: rgb(144, 139, 132); font-size: 11px; font-weight: 650; letter-spacing: 0.88px; text-transform: uppercase; margin: 18px 0px -2px 0px}
+  "Codex"
+
+div.acct-section
+  {display: flex; flex-direction: column; margin: 14px 0px 0px 0px; gap: 10px}
+  div.acct-list
+    {display: block; overflow-x: hidden; overflow-y: hidden; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.1); border-radius: 7px}
+    div.acct-row
+      {display: flex; background-color: rgb(28, 28, 31); flex-direction: column; border-width: - - 1px -; border-style: none none solid none; border-color: - - rgba(255, 255, 255, 0.1) -; padding: 9px 12px 9px 12px; gap: 5px}
+      div.acct-main
+        {display: flex; align-items: center; gap: 9px}
+        input.switch.sm [role="switch" aria-checked="true" title="In the pool" type="checkbox" .value="on" .checked=true]
+          {display: block; position: relative; color: rgb(0, 0, 0); background-color: rgb(236, 150, 112); width: 30px; height: 18px; flex-shrink: 0; font-family: Arial; font-size: 13.3333px; border-radius: 999px}
+          ::after {display: block; position: absolute; background-color: rgb(243, 241, 238); box-shadow: rgba(0, 0, 0, 0.45) 0px 1px 2px 0px; min-width: 0px; min-height: 0px; content: ""; border-radius: 50%}
+        span.acct-name
+          {display: block; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 13.5px; font-weight: 700}
+          "signed-out"
+        span.acct-status.expired
+          {display: flex; color: rgb(217, 119, 106); background-color: rgba(217, 119, 106, 0.1); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10px; font-weight: 700; white-space: nowrap; border-width: 1px; border-style: solid; border-color: rgba(217, 119, 106, 0.45); border-radius: 5px; padding: 1px 7px 1px 7px}
+          "EXPIRED · out of pool"
+        button.acct-relogin [title="Run the browser sign-in again"]
+          {display: block; color: rgb(236, 150, 112); background-color: rgba(236, 150, 112, 0.18); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; font-weight: 700; text-align: center; white-space: nowrap; border-width: 1px; border-style: solid; border-color: rgba(236, 150, 112, 0.45); border-radius: 5px; padding: 1px 8px 1px 8px}
+          "Sign in again"
+        button.acct-x [title="Delete account"]
+          {display: flex; opacity: 0.5; color: rgb(144, 139, 132); align-items: center; font-family: Arial; font-size: 13px; text-align: center; margin: 0px 0px 0px auto}
+          svg
+            {display: block; width: 12px; height: 12px; overflow-x: hidden; overflow-y: hidden}
+            shape 09cdc4c9
+      div.acct-meters
+        {display: flex; flex-wrap: wrap; align-items: center; padding: 0px 0px 0px 39px; gap: 14px}
+        span.acct-note
+          {display: block; color: rgb(144, 139, 132); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px}
+          "Not signed in — use Sign in again"
+    div.acct-row
+      {display: flex; background-color: rgb(28, 28, 31); flex-direction: column; border-width: - - 1px -; border-style: none none solid none; border-color: - - rgba(255, 255, 255, 0.1) -; padding: 9px 12px 9px 12px; gap: 5px}
+      div.acct-main
+        {display: flex; align-items: center; gap: 9px}
+        input.switch.sm [role="switch" aria-checked="true" title="In the pool" type="checkbox" .value="on" .checked=true]
+          {display: block; position: relative; color: rgb(0, 0, 0); background-color: rgb(236, 150, 112); width: 30px; height: 18px; flex-shrink: 0; font-family: Arial; font-size: 13.3333px; border-radius: 999px}
+          ::after {display: block; position: absolute; background-color: rgb(243, 241, 238); box-shadow: rgba(0, 0, 0, 0.45) 0px 1px 2px 0px; min-width: 0px; min-height: 0px; content: ""; border-radius: 50%}
+        span.acct-name
+          {display: block; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 13.5px; font-weight: 700}
+          "capped"
+        button.acct-x [title="Delete account"]
+          {display: flex; opacity: 0.5; color: rgb(144, 139, 132); align-items: center; font-family: Arial; font-size: 13px; text-align: center; margin: 0px 0px 0px auto}
+          svg
+            {display: block; width: 12px; height: 12px; overflow-x: hidden; overflow-y: hidden}
+            shape 09cdc4c9
+      div.acct-meters
+        {display: flex; flex-wrap: wrap; align-items: center; padding: 0px 0px 0px 39px; gap: 14px}
+        span.acct-meter.bad [data-win="5h"]
+          {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+          span.m-label
+            {display: block; min-width: 22px; text-align: right}
+            "5h"
+          span.m-track
+            {display: block; background-color: rgb(52, 52, 58); width: 54px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+            span.m-fill [style="width: 100%;"]
+              {display: block; background-color: rgb(217, 119, 106); width: 100%; height: 100%; border-radius: 3px}
+          span.m-pct
+            {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+            "100%"
+        span.acct-meter.bad [data-win="7d"]
+          {display: flex; color: rgb(144, 139, 132); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px; gap: 6px}
+          span.m-label
+            {display: block; min-width: 22px; text-align: right}
+            "7d"
+          span.m-track
+            {display: block; background-color: rgb(52, 52, 58); width: 54px; height: 5px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden; border-radius: 3px}
+            span.m-fill [style="width: 92%;"]
+              {display: block; background-color: rgb(217, 119, 106); width: 92%; height: 100%; border-radius: 3px}
+          span.m-pct
+            {display: block; color: rgb(189, 185, 178); min-width: 25.2px}
+            "92%"
+        span.acct-note
+          {display: block; color: rgb(144, 139, 132); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px}
+          "5h resets 10:10"
+        span.acct-note
+          {display: block; color: rgb(144, 139, 132); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px}
+          "1 reset saved, expires 3-5 09:30"
+    div.acct-row.off
+      {display: flex; opacity: 0.45; background-color: rgb(28, 28, 31); flex-direction: column; padding: 9px 12px 9px 12px; gap: 5px}
+      div.acct-main
+        {display: flex; align-items: center; gap: 9px}
+        input.switch.sm [role="switch" aria-checked="false" title="Out of the pool" type="checkbox" .value="on" .checked=false]
+          {display: block; position: relative; color: rgb(0, 0, 0); background-color: rgb(52, 52, 58); box-shadow: rgba(255, 255, 255, 0.07) 0px 0px 0px 1px inset; width: 30px; height: 18px; flex-shrink: 0; font-family: Arial; font-size: 13.3333px; border-radius: 999px}
+          ::after {display: block; position: absolute; background-color: rgb(243, 241, 238); box-shadow: rgba(0, 0, 0, 0.45) 0px 1px 2px 0px; min-width: 0px; min-height: 0px; content: ""; border-radius: 50%}
+        span.acct-name
+          {display: block; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 13.5px; font-weight: 700}
+          "paused"
+        button.acct-x [title="Delete account"]
+          {display: flex; opacity: 0.5; color: rgb(144, 139, 132); align-items: center; font-family: Arial; font-size: 13px; text-align: center; margin: 0px 0px 0px auto}
+          svg
+            {display: block; width: 12px; height: 12px; overflow-x: hidden; overflow-y: hidden}
+            shape 09cdc4c9
+      div.acct-meters
+        {display: flex; flex-wrap: wrap; align-items: center; padding: 0px 0px 0px 39px; gap: 14px}
+        span.acct-note
+          {display: block; color: rgb(144, 139, 132); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 10.5px}
+          "Not probed yet"
+  div.acct-foot
+    {display: flex; flex-wrap: wrap; align-items: center; gap: 8px}
+    button.mini [title="Runs codex login in a terminal tab for a new Codex account"]
+      {display: flex; background-color: rgb(52, 52, 58); align-items: center; font-size: 13px; font-weight: 600; line-height: 1; text-align: center; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.17); border-radius: 7px; padding: 7px 14px 7px 14px; gap: 5px}
+      "Sign in to Codex"
+      svg
+        {display: block; width: 14px; height: 14px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden}
+        shape 64ad2b8d
+    button.mini
+      {display: flex; background-color: rgb(52, 52, 58); align-items: center; font-size: 13px; font-weight: 600; line-height: 1; text-align: center; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.17); border-radius: 7px; padding: 7px 14px 7px 14px; gap: 5px}
+      "Paste API key"
+      svg
+        {display: block; width: 14px; height: 14px; flex-shrink: 0; overflow-x: hidden; overflow-y: hidden}
+        shape 5f439a6b

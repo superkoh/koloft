@@ -311,12 +311,16 @@ export function seedClaudeTrust(env: E2EEnv, dirs: string[]): void {
   fs.writeFileSync(path.join(env.home, '.claude.json'), JSON.stringify({ projects }))
 }
 
-export function installCodex(env: E2EEnv, authJson = '{}'): void {
+export function installCodexWithNoAccount(env: E2EEnv): void {
   const binary = path.join(env.fakeBin, 'codex')
   fs.symlinkSync(path.join(__dirname, '..', 'fixtures', 'fake-codex.js'), binary)
   env.launchEnv.KOLOFT_CODEX_CMD = binary
   env.launchEnv.CODEX_HOME = path.join(env.home, '.codex')
   fs.writeFileSync(path.join(env.home, '.zprofile'), `export PATH="${env.fakeBin}:$PATH"\n`)
+}
+
+export function installCodex(env: E2EEnv, authJson = '{}'): void {
+  installCodexWithNoAccount(env)
   addCodexAccount(env, authJson)
 }
 

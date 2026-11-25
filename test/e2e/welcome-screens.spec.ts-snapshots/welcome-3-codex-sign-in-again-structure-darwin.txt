@@ -1,0 +1,95 @@
+div.wl [data-step="3" role="dialog" aria-label="Welcome to Koloft"]
+  {display: flex; position: fixed; color: rgb(246, 243, 238); background-color: rgb(11, 11, 13); flex-direction: column; overflow-x: hidden; overflow-y: hidden; font-family: Geist, -apple-system, "system-ui", "Helvetica Neue", Arial, sans-serif; z-index: 95; inset: 0px}
+  div.wl-glow [aria-hidden="true"]
+    {display: block; position: absolute; inset: 0px}
+    i.wl-blob.claude.on
+      {display: block; position: absolute; opacity: 0.2; background-image: radial-gradient(closest-side, rgb(255, 122, 61), rgba(0, 0, 0, 0)); width: 892.8px; height: 892.8px; font-style: italic; border-radius: 50%; inset: 86.4px auto auto -259.2px}
+    i.wl-blob.codex.on
+      {display: block; position: absolute; opacity: 0.2; background-image: radial-gradient(closest-side, rgb(47, 196, 178), rgba(0, 0, 0, 0)); width: 892.8px; height: 892.8px; font-style: italic; border-radius: 50%; inset: auto auto -489.6px 144px}
+    i.wl-blob.agy
+      {display: block; position: absolute; opacity: 0.06; background-image: radial-gradient(closest-side, rgb(240, 96, 158), rgba(0, 0, 0, 0)); width: 892.8px; height: 892.8px; font-style: italic; border-radius: 50%; inset: auto -316.8px -288px auto}
+  header.wl-top
+    {display: flex; position: relative; flex-shrink: 0; flex-basis: 46px; align-items: center; justify-content: center; padding: 0px 18px 0px 18px}
+    div.wl-prog
+      {display: flex; gap: 6px}
+      i.past
+        {display: block; background-color: rgba(236, 150, 112, 0.5); width: 30px; height: 3px; font-style: italic; border-radius: 2px}
+      i.past
+        {display: block; background-color: rgba(236, 150, 112, 0.5); width: 30px; height: 3px; font-style: italic; border-radius: 2px}
+      i.on
+        {display: block; background-color: rgb(236, 150, 112); width: 44px; height: 3px; font-style: italic; border-radius: 2px}
+      i
+        {display: block; background-color: rgba(255, 255, 255, 0.12); width: 30px; height: 3px; font-style: italic; border-radius: 2px}
+    button.wl-skip
+      {display: flex; position: absolute; color: rgb(167, 162, 155); align-items: center; font-size: 13px; text-align: center; padding: 1px 6px 1px 6px; inset: auto 18px auto auto; gap: 8px}
+      "Skip setup"
+      kbd
+        {display: block; background-color: rgba(255, 255, 255, 0.05); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 11px; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.18); border-radius: 5px; padding: 1px 6px 1px 6px}
+        "esc"
+  main.wl-stage
+    {display: flex; position: relative; min-height: 0px; flex-direction: column; flex-grow: 1; flex-basis: 0%; align-items: center; justify-content: center; padding: 0px 24px 0px 24px; gap: 14px}
+    div.wl-chip
+      {display: flex; color: rgb(167, 162, 155); background-color: rgba(255, 255, 255, 0.03); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 12.5px; transform: translate(0px, 0px); filter: blur(0px); border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.12); border-radius: 999px; padding: 5px 13px 5px 13px; gap: 9px}
+      "One step needs you"
+      span.wl-dot
+        {display: block; background-color: rgb(143, 198, 154); box-shadow: rgb(143, 198, 154) 0px 0px 10px 0px; width: 7px; height: 7px; border-radius: 50%}
+    h1.wl-title
+      {display: block; font-size: 64px; font-weight: 700; line-height: 1.04; letter-spacing: -2.24px; text-align: center; transform: translate(0px, 0px); filter: blur(0px); margin: 4px 0px 0px 0px}
+      "One sign-in."
+      span.wl-script
+        {display: inline; color: rgba(0, 0, 0, 0); background-image: linear-gradient(95deg, rgb(184, 162, 255) 0%, rgb(143, 208, 238) 38%, rgb(242, 185, 152) 70%, rgb(255, 156, 118) 100%); font-family: "Instrument Serif", Georgia, serif; font-weight: 400; font-style: italic; letter-spacing: -0.64px; padding: 0px 5.12px 0px 0px}
+        "Koloft does the rest."
+    p.wl-sub
+      {display: block; color: rgb(167, 162, 155); max-width: 640px; font-size: 17px; line-height: 1.5; text-align: center; transform: translate(0px, 0px); filter: blur(0px)}
+      "Koloft adds its own account and names it. Your Mac’s logins stay untouched."
+    div.wl-seg [role="tablist"]
+      {display: flex; background-color: rgba(255, 255, 255, 0.03); transform: translate(0px, 0px); filter: blur(0px); border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 4px; margin: 16px 0px 0px 0px; gap: 4px}
+      button [role="tab" aria-selected="false"]
+        {display: flex; color: rgb(167, 162, 155); align-items: center; font-size: 13.5px; text-align: center; border-radius: 9px; padding: 7px 13px 7px 13px; gap: 7px}
+        "Claude Code"
+        svg [aria-hidden="true"]
+          {display: block; width: 13px; height: 13px; overflow-x: hidden; overflow-y: hidden}
+          shape 811179dd
+      button.on [role="tab" aria-selected="true"]
+        {display: flex; background-color: rgba(255, 255, 255, 0.09); align-items: center; font-size: 13.5px; text-align: center; border-radius: 9px; padding: 7px 13px 7px 13px; gap: 7px}
+        "Codex"
+        svg [aria-hidden="true"]
+          {display: block; width: 13px; height: 13px; overflow-x: hidden; overflow-y: hidden}
+          shape 47ace0c3
+        em
+          {display: block; color: rgb(236, 150, 112); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 9.5px; font-weight: 600; letter-spacing: 0.475px; text-transform: uppercase}
+          "last used"
+      button [role="tab" aria-selected="false"]
+        {display: flex; color: rgb(167, 162, 155); align-items: center; font-size: 13.5px; text-align: center; border-radius: 9px; padding: 7px 13px 7px 13px; gap: 7px}
+        "Antigravity CLI"
+        svg [aria-hidden="true"]
+          {display: block; width: 13px; height: 13px; overflow-x: hidden; overflow-y: hidden}
+          shape 91c7dcf9
+    div.wl-sign
+      {display: flex; background-color: rgba(22, 22, 25, 0.78); width: 560px; flex-direction: column; align-items: center; text-align: center; transform: translate(0px, 0px); filter: blur(0px); border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.1); border-radius: 16px; padding: 26px 28px 26px 28px; gap: 12px}
+      div.wl-sign-mark
+        {display: grid; background-image: linear-gradient(rgb(42, 42, 48), rgb(21, 21, 24)); width: 58px; height: 58px; align-items: center; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.1); border-radius: 16px}
+        svg [aria-hidden="true"]
+          {display: block; width: 30px; height: 30px; overflow-x: hidden; overflow-y: hidden}
+          shape 47ace0c3
+      div.wl-sign-text
+        {display: flex; color: rgb(189, 185, 178); flex-direction: column; align-items: center; font-size: 14.5px; line-height: 1.5; gap: 8px}
+        "A terminal tab opens and Codex sends you to your browser. It closes by itself once you are in."
+      div.wl-sign-note
+        {display: block; color: rgb(167, 162, 155); font-size: 12px; line-height: 1.5}
+        "This signs “work” in again. Add more in Settings ▸ Accounts: each new session then takes the one with the most left."
+  footer.wl-foot
+    {display: flex; position: relative; flex-shrink: 0; justify-content: center; padding: 18px 24px 38px 24px}
+    div.wl-go
+      {display: flex; flex-direction: column; align-items: center; gap: 14px}
+      button.wl-cta [data-welcome-go="true" .focused]
+        {display: flex; color: rgb(36, 19, 10); background-image: linear-gradient(rgb(248, 188, 155), rgb(233, 140, 102)); box-shadow: rgba(236, 150, 112, 0.75) 0px 18px 44px -14px, rgba(255, 255, 255, 0.4) 0px 1px 0px 0px inset; min-height: 50px; align-items: center; font-size: 16.5px; font-weight: 600; text-align: center; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.3); border-radius: 13px; padding: 0px 24px 0px 24px; gap: 12px}
+        span
+          {display: block}
+          "Sign in to Codex"
+        kbd
+          {display: block; background-color: rgba(36, 19, 10, 0.12); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 11px; font-weight: 400; border-width: 1px; border-style: solid; border-color: rgba(36, 19, 10, 0.25); border-radius: 5px; padding: 1px 6px 1px 6px}
+          "↩"
+      button.ob-link.wl-alt
+        {display: block; color: rgb(167, 162, 155); font-size: 13.5px; text-align: center}
+        "I’ll sign in later"

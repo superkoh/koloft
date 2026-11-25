@@ -1,0 +1,42 @@
+button.tbu [aria-label="3 accounts, pool 65%, highest 100%, 2 usable, 1 walled; 3 Codex accounts, 1 walled; 1 Antigravity account" aria-expanded="false"]
+  {display: flex; color: rgb(0, 0, 0); align-items: flex-end; font-family: Arial; font-size: 13.3333px; text-align: center; padding: 4px 3px 4px 3px; gap: 5px}
+  span.tbu-bar.total
+    {display: block; position: relative; background-color: rgb(52, 52, 58); width: 8px; height: 16px; overflow-x: hidden; overflow-y: hidden; border-radius: 3px; margin: 0px 4px 0px 0px}
+    i.tbu-fill [style="height: 65%;"]
+      {display: block; position: absolute; background-color: rgb(143, 198, 154); height: 65%; min-height: 4px; font-style: italic; border-radius: 3px; inset: auto 0px 0px 0px}
+  span.tbu-bar
+    {display: block; position: relative; background-color: rgb(52, 52, 58); width: 4px; height: 16px; overflow-x: hidden; overflow-y: hidden; border-radius: 2px}
+    i.tbu-fill [style="height: 63%;"]
+      {display: block; position: absolute; background-color: rgb(143, 198, 154); height: 63%; min-height: 4px; font-style: italic; border-radius: 2px; inset: auto 0px 0px 0px}
+  span.tbu-bar
+    {display: block; position: relative; background-color: rgb(52, 52, 58); width: 4px; height: 16px; overflow-x: hidden; overflow-y: hidden; border-radius: 2px}
+    i.tbu-fill [style="height: 31%;"]
+      {display: block; position: absolute; background-color: rgb(143, 198, 154); height: 31%; min-height: 4px; font-style: italic; border-radius: 2px; inset: auto 0px 0px 0px}
+  span.tbu-bar
+    {display: block; position: relative; background-color: rgb(52, 52, 58); width: 4px; height: 16px; overflow-x: hidden; overflow-y: hidden; border-radius: 2px}
+    i.tbu-fill.bad [style="height: 100%;"]
+      {display: block; position: absolute; background-color: rgb(217, 119, 106); height: 100%; min-height: 4px; font-style: italic; border-radius: 2px; inset: auto 0px 0px 0px}
+  span.tbu-group
+    {display: flex; align-items: flex-end; margin: 0px 0px 0px 4px; gap: 5px}
+    span.tbu-bar.total
+      {display: block; position: relative; background-color: rgb(52, 52, 58); width: 8px; height: 16px; overflow-x: hidden; overflow-y: hidden; border-radius: 3px; margin: 0px 4px 0px 0px}
+      i.tbu-fill.warn [style="height: 81%;"]
+        {display: block; position: absolute; background-color: rgb(240, 168, 48); height: 81%; min-height: 4px; font-style: italic; border-radius: 3px; inset: auto 0px 0px 0px}
+    span.tbu-bar
+      {display: block; position: relative; background-color: rgb(52, 52, 58); width: 4px; height: 16px; overflow-x: hidden; overflow-y: hidden; border-radius: 2px}
+      i.tbu-fill [style="height: 61%;"]
+        {display: block; position: absolute; background-color: rgb(143, 198, 154); height: 61%; min-height: 4px; font-style: italic; border-radius: 2px; inset: auto 0px 0px 0px}
+    span.tbu-bar
+      {display: block; position: relative; background-color: rgb(52, 52, 58); width: 4px; height: 16px; overflow-x: hidden; overflow-y: hidden; border-radius: 2px}
+      i.tbu-fill.bad [style="height: 100%;"]
+        {display: block; position: absolute; background-color: rgb(217, 119, 106); height: 100%; min-height: 4px; font-style: italic; border-radius: 2px; inset: auto 0px 0px 0px}
+    span.tbu-bar
+      {display: block; position: relative; background-color: rgb(52, 52, 58); width: 4px; height: 16px; overflow-x: hidden; overflow-y: hidden; border-radius: 2px}
+      i.tbu-fill.cold [style="height: 100%;"]
+        {display: block; position: absolute; background-color: rgb(154, 149, 141); height: 100%; min-height: 4px; font-style: italic; border-radius: 2px; inset: auto 0px 0px 0px}
+  span.tbu-group
+    {display: flex; align-items: flex-end; margin: 0px 0px 0px 4px; gap: 5px}
+    span.tbu-bar
+      {display: block; position: relative; background-color: rgb(52, 52, 58); width: 4px; height: 16px; overflow-x: hidden; overflow-y: hidden; border-radius: 2px}
+      i.tbu-fill [style="height: 42%;"]
+        {display: block; position: absolute; background-color: rgb(143, 198, 154); height: 42%; min-height: 4px; font-style: italic; border-radius: 2px; inset: auto 0px 0px 0px}

@@ -1,0 +1,70 @@
+div.wl [data-step="2" role="dialog" aria-label="Welcome to Koloft"]
+  {display: flex; position: fixed; color: rgb(246, 243, 238); background-color: rgb(11, 11, 13); flex-direction: column; overflow-x: hidden; overflow-y: hidden; font-family: Geist, -apple-system, "system-ui", "Helvetica Neue", Arial, sans-serif; z-index: 95; inset: 0px}
+  div.wl-glow [aria-hidden="true"]
+    {display: block; position: absolute; inset: 0px}
+    i.wl-blob.claude
+      {display: block; position: absolute; opacity: 0.06; background-image: radial-gradient(closest-side, rgb(255, 122, 61), rgba(0, 0, 0, 0)); width: 892.8px; height: 892.8px; font-style: italic; border-radius: 50%; inset: 86.4px auto auto -259.2px}
+    i.wl-blob.codex
+      {display: block; position: absolute; opacity: 0.06; background-image: radial-gradient(closest-side, rgb(47, 196, 178), rgba(0, 0, 0, 0)); width: 892.8px; height: 892.8px; font-style: italic; border-radius: 50%; inset: auto auto -489.6px 144px}
+    i.wl-blob.agy
+      {display: block; position: absolute; opacity: 0.06; background-image: radial-gradient(closest-side, rgb(240, 96, 158), rgba(0, 0, 0, 0)); width: 892.8px; height: 892.8px; font-style: italic; border-radius: 50%; inset: auto -316.8px -288px auto}
+  header.wl-top
+    {display: flex; position: relative; flex-shrink: 0; flex-basis: 46px; align-items: center; justify-content: center; padding: 0px 18px 0px 18px}
+    div.wl-prog
+      {display: flex; gap: 6px}
+      i.past
+        {display: block; background-color: rgba(236, 150, 112, 0.5); width: 30px; height: 3px; font-style: italic; border-radius: 2px}
+      i.on
+        {display: block; background-color: rgb(236, 150, 112); width: 44px; height: 3px; font-style: italic; border-radius: 2px}
+      i
+        {display: block; background-color: rgba(255, 255, 255, 0.12); width: 30px; height: 3px; font-style: italic; border-radius: 2px}
+      i
+        {display: block; background-color: rgba(255, 255, 255, 0.12); width: 30px; height: 3px; font-style: italic; border-radius: 2px}
+    button.wl-skip
+      {display: flex; position: absolute; color: rgb(167, 162, 155); align-items: center; font-size: 13px; text-align: center; padding: 1px 6px 1px 6px; inset: auto 18px auto auto; gap: 8px}
+      "Skip setup"
+      kbd
+        {display: block; background-color: rgba(255, 255, 255, 0.05); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 11px; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.18); border-radius: 5px; padding: 1px 6px 1px 6px}
+        "esc"
+  main.wl-stage
+    {display: flex; position: relative; min-height: 0px; flex-direction: column; flex-grow: 1; flex-basis: 0%; align-items: center; justify-content: center; padding: 0px 24px 0px 24px; gap: 14px}
+    div.wl-chip
+      {display: flex; color: rgb(167, 162, 155); background-color: rgba(255, 255, 255, 0.03); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 12.5px; transform: translate(0px, 0px); filter: blur(0px); border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.12); border-radius: 999px; padding: 5px 13px 5px 13px; gap: 9px}
+      "ws-a is pinned"
+      span.wl-dot
+        {display: block; background-color: rgb(143, 198, 154); box-shadow: rgb(143, 198, 154) 0px 0px 10px 0px; width: 7px; height: 7px; border-radius: 50%}
+    h1.wl-title
+      {display: block; font-size: 64px; font-weight: 700; line-height: 1.04; letter-spacing: -2.24px; text-align: center; transform: translate(0px, 0px); filter: blur(0px); margin: 4px 0px 0px 0px}
+      "Pick a folder"
+      span.wl-script
+        {display: inline; color: rgba(0, 0, 0, 0); background-image: linear-gradient(95deg, rgb(184, 162, 255) 0%, rgb(143, 208, 238) 38%, rgb(242, 185, 152) 70%, rgb(255, 156, 118) 100%); font-family: "Instrument Serif", Georgia, serif; font-weight: 400; font-style: italic; letter-spacing: -0.64px; padding: 0px 5.12px 0px 0px}
+        "to work in."
+    p.wl-sub
+      {display: block; color: rgb(167, 162, 155); max-width: 640px; font-size: 17px; line-height: 1.5; text-align: center; transform: translate(0px, 0px); filter: blur(0px)}
+      "Any folder works; a git checkout gets extra help."
+    div.wl-win
+      {display: block; background-color: rgb(15, 15, 17); box-shadow: rgba(0, 0, 0, 0.9) 0px 40px 90px -30px; width: 340px; min-height: 300px; max-height: 423.2px; overflow-x: hidden; overflow-y: hidden; font-family: -apple-system, "system-ui", "Helvetica Neue", Arial, sans-serif; transform: translate(0px, 0px); filter: blur(0px); border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.12); border-radius: 13px}
+      div.wl-side
+        {display: flex; flex-direction: column; overflow-x: hidden; overflow-y: hidden; padding: 14px 10px 14px 10px; gap: 12px}
+        div.wl-ws [style="animation-delay: 0ms;"]
+          {display: flex; flex-direction: column; transform: translate(0px, 0px); filter: blur(0px); gap: 4px}
+          div.wl-ws-head
+            {display: flex; color: rgb(243, 241, 238); align-items: center; font-size: 13px; font-weight: 600; padding: 2px 6px 2px 6px; gap: 7px}
+            svg
+              {display: block; color: rgb(201, 160, 106); width: 14px; height: 14px; overflow-x: hidden; overflow-y: hidden}
+              shape 41bddbd8
+            span
+              {display: block}
+              "ws-a"
+  footer.wl-foot
+    {display: flex; position: relative; flex-shrink: 0; justify-content: center; padding: 18px 24px 38px 24px}
+    div.wl-go
+      {display: flex; flex-direction: column; align-items: center; gap: 14px}
+      button.wl-cta [data-welcome-go="true" .focused]
+        {display: flex; color: rgb(36, 19, 10); background-image: linear-gradient(rgb(248, 188, 155), rgb(233, 140, 102)); box-shadow: rgba(236, 150, 112, 0.75) 0px 18px 44px -14px, rgba(255, 255, 255, 0.4) 0px 1px 0px 0px inset; min-height: 50px; align-items: center; font-size: 16.5px; font-weight: 600; text-align: center; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.3); border-radius: 13px; padding: 0px 24px 0px 24px; gap: 12px}
+        span
+          {display: block}
+          "Continue"
+        kbd
+          {display: block; background-color: rgba(36, 19, 10, 0.12); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 11px; font-weight: 400; border-width: 1px; border-style: solid; border-color: rgba(36, 19, 10, 0.25); border-radius: 5px; padding: 1px 6px 1px 6px}
+          "↩"
