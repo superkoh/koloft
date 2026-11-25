@@ -13,6 +13,8 @@ export const agent = {
   name: 'Antigravity',
   productName: 'Antigravity CLI',
   maker: 'Google',
+  command: 'agy',
+  nodePackageFolderNames: [],
   wordsThatNameMe: {
     anyCase: ['agy', 'antigravity', 'google', 'gemini'],
     wholeWord: [

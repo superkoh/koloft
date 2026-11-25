@@ -39,6 +39,7 @@ import {
 import type { RemoteGitInfo } from '../../../main/remote/install'
 import { isUnderAnyRoot } from '@core/isUnderAnyRoot'
 import { mergeUse } from '@shared/firstRun'
+import { SESSION_WORKTREES_FOLDER } from '@shared/worktreeName'
 import type { KeptInLayout, RowsNow, RowsOfEveryAgent } from '@core/agent/sessionRows'
 
 const RESCAN_DEBOUNCE_MS = 250
@@ -249,7 +250,7 @@ export class WorkspaceManager {
 
   async discover(): Promise<DiscoveredFolder[]> {
     const pinned = new Set(this.layout.workspaces.map((w) => w.path))
-    const wtMark = `${path.sep}.claude${path.sep}worktrees${path.sep}`
+    const wtMark = path.join(path.sep, SESSION_WORKTREES_FOLDER, path.sep)
     const used = await this.deps.agents.usedFolders()
     const byCwd = new Map<string, DiscoveredFolder>()
     for (const use of used) {
