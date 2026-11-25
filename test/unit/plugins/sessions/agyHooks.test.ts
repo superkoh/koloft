@@ -44,14 +44,20 @@ afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
+const CHILD_TIMEOUT_MS = 20_000
 const BASE_ENV = { PATH: '/usr/bin:/bin', KOLOFT_AGY_LOG: '' }
 
 function run(command: string, input: string, env: Record<string, string> = {}): string {
   const res = spawnSync('/bin/sh', ['-c', command], {
     input,
     encoding: 'utf8',
-    env: { ...BASE_ENV, ...env }
+    env: { ...BASE_ENV, ...env },
+    timeout: CHILD_TIMEOUT_MS
   })
+  if (res.error)
+    throw new Error(
+      `command did not finish (${res.error.message}, limit ${CHILD_TIMEOUT_MS} ms): ${command}\n${res.stderr}`
+    )
   if (res.status !== 0) throw new Error(`exited ${res.status}: ${res.stderr}`)
   return res.stdout
 }
@@ -367,7 +373,9 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
   it("a run_command's PostToolUse line carries the files the command changed in its Cwd's repository since its PreToolUse, and the agy log reads them, under dash as on a Linux machine", () => {
     const repo = path.join(dir, 'repo')
     fs.mkdirSync(repo)
-    spawnSync('git', ['init', '-q'], { cwd: repo })
+    const init = spawnSync('git', ['init', '-q'], { cwd: repo, timeout: CHILD_TIMEOUT_MS })
+    if (init.error || init.status !== 0)
+      throw new Error(`git init failed (${init.error?.message ?? init.status}): ${init.stderr}`)
     const call = {
       conversationId: C1,
       workspacePaths: [repo],
