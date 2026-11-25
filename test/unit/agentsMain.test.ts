@@ -29,7 +29,10 @@ const accountsThatSayWhoTheyAre = (id: AgentId, asked: string[]): AgentAccounts 
   forget: (kind, name) => {
     asked.push(`${id} forgets ${kind} ${name}`)
   },
-  folderSaysItRunsOnAKey: () => true
+  folderSaysItRunsOnAKey: (kind, name) => {
+    asked.push(`${id} reads ${kind} ${name}`)
+    return true
+  }
 })
 
 const agentsWithAccounts = (ids: readonly AgentId[], asked: string[] = []): AgentsMain => {
@@ -118,8 +121,12 @@ describe('the agents registered with their main-process side', () => {
         asked.length = 0
         await agents.addSecret(kind, 'work', 'secret')
         agents.forgetAccount(kind, 'work')
-        expect(asked).toEqual([`${id} adds ${kind} work`, `${id} forgets ${kind} work`])
         expect(agents.folderSaysItRunsOnAKey(kind, 'work')).toBe(true)
+        expect(asked).toEqual([
+          `${id} adds ${kind} work`,
+          `${id} forgets ${kind} work`,
+          `${id} reads ${kind} work`
+        ])
       }
   })
 
