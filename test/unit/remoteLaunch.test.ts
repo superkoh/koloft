@@ -856,7 +856,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
     const [util, fresh, oldUtil, old, real] = [
       dir('util', guard),
       dir('new', MACHINE_CLAUDE),
-      dir('old-util', guard),
+      dir('old-util', guard.replace(': koloft util guard\n', '')),
       dir('old', MACHINE_CLAUDE),
       dir('real', '#!/bin/sh\necho "real $*"\n')
     ]
