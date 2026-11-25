@@ -106,8 +106,8 @@ const withoutThisMachinesPaths = (text: string): string =>
 const part = (title: string, text: string | undefined): string =>
   `=== ${title} ===\n${text ?? '(nothing)'}`
 
-const pinScript = (text: string, name: string): Promise<void> =>
-  expect(withoutThisMachinesPaths(text)).toMatchFileSnapshot(
+const pinScript = (file: string, name = path.basename(file)): Promise<void> =>
+  expect(withoutThisMachinesPaths(fs.readFileSync(file, 'utf8'))).toMatchFileSnapshot(
     `${PINNED}/scripts-on-this-mac/${name}.txt`
   )
 
@@ -122,30 +122,24 @@ const readOrNothing = (file: string): string | undefined =>
 describe('the full text of every hook script and status line script Koloft writes on this Mac, read back from disk, pinned so that moving the code that builds them changes no character', () => {
   it("Claude Code's hook script and Codex's reply-language script", async () => {
     const { hookScript, codexReplyLanguage } = setupHooks(noPeerInstance)
-    await pinScript(fs.readFileSync(hookScript, 'utf8'), path.basename(hookScript))
-    await pinScript(fs.readFileSync(codexReplyLanguage, 'utf8'), path.basename(codexReplyLanguage))
+    await pinScript(hookScript)
+    await pinScript(codexReplyLanguage)
   })
 
   it("Antigravity's hook script and title script", async () => {
     const { hook, title } = writeAgyScripts(path.join(world.home, 'scripts'))
-    await pinScript(fs.readFileSync(hook, 'utf8'), path.basename(hook))
-    await pinScript(fs.readFileSync(title, 'utf8'), path.basename(title))
+    await pinScript(hook)
+    await pinScript(title)
   })
 
   it("the status line: Claude Code's wrapper and the theme it reads, and Antigravity's wrapper and the script that adapts its input", async () => {
     const paths = setupStatusline()
     setupAgyStatusline(paths)
     const dir = path.dirname(paths.wrapper)
-    await pinScript(fs.readFileSync(paths.wrapper, 'utf8'), 'run-hash.sh')
-    await pinScript(fs.readFileSync(paths.config, 'utf8'), path.basename(paths.config))
-    await pinScript(
-      fs.readFileSync(path.join(dir, 'agy-statusline.js'), 'utf8'),
-      'agy-statusline.js'
-    )
-    await pinScript(
-      fs.readFileSync(path.join(dir, `agy-${path.basename(paths.wrapper)}`), 'utf8'),
-      'agy-run-hash.sh'
-    )
+    await pinScript(paths.wrapper, 'run-hash.sh')
+    await pinScript(paths.config)
+    await pinScript(path.join(dir, 'agy-statusline.js'))
+    await pinScript(path.join(dir, `agy-${path.basename(paths.wrapper)}`), 'agy-run-hash.sh')
   })
 })
 
@@ -203,7 +197,7 @@ async function claudeOverSsh(s: Switches): Promise<string> {
   )
 }
 
-async function codexTab(cwd: string, s: Switches): Promise<CodexLaunch> {
+async function codexServerConfig(cwd: string, s: Switches): Promise<string[]> {
   const { pty } = recordingPty(TAB)
   const sessions = codexSessionsIn(world, pty, {
     ranOnTheMachine: [],
@@ -213,19 +207,16 @@ async function codexTab(cwd: string, s: Switches): Promise<CodexLaunch> {
   })
   stops.push(() => sessions.stopAll())
   await sessions.launch({ kind: 'codex', cwd, tabId: TAB })
-  return { server: codexServer.started.at(-1)?.configOverrides ?? [] }
-}
-interface CodexLaunch {
-  server: string[]
+  return codexServer.started.at(-1)?.configOverrides ?? []
 }
 
 async function codexOnThisMac(s: Switches): Promise<string> {
-  const { server } = await codexTab(world.repo, s)
+  const server = await codexServerConfig(world.repo, s)
   return part('the config overrides its server is started with, one per line', server.join('\n'))
 }
 
 async function codexOverSsh(s: Switches): Promise<string> {
-  await codexTab(ON_THE_MACHINE, s)
+  await codexServerConfig(ON_THE_MACHINE, s)
   const script = readOrNothing(path.join(tabPackageDir(world.userData, TAB), `${TAB}.sh`)) ?? ''
   return part(
     `the lines of file ${TAB}.sh that start its server on the machine`,
@@ -259,25 +250,22 @@ async function agyOnThisMac(s: Switches): Promise<string> {
     ),
     part(
       "the status line in the account's settings file (antigravity-cli/settings.json)",
-      JSON.stringify(
-        JSON.parse(readOrNothing(path.join(home, 'antigravity-cli', 'settings.json')) ?? '{}')
-          .statusLine ?? null,
-        null,
-        2
-      )
+      statusLineIn(path.join(home, 'antigravity-cli', 'settings.json'))
     )
   ].join('\n')
 }
 
 async function agyOverSsh(s: Switches): Promise<string> {
   await agyTab(ON_THE_MACHINE, s)
-  const settings = readOrNothing(
-    path.join(tabPackageDir(world.userData, TAB), `${TAB}.settings.json`)
-  )
   return part(
     `the status line in file ${TAB}.settings.json (its hooks file is pinned in remote-launch-text)`,
-    JSON.stringify(JSON.parse(settings ?? '{}').statusLine ?? null, null, 2)
+    statusLineIn(path.join(tabPackageDir(world.userData, TAB), `${TAB}.settings.json`))
   )
+}
+
+function statusLineIn(settingsFile: string): string {
+  const settings = JSON.parse(readOrNothing(settingsFile) ?? '{}')
+  return JSON.stringify(settings.statusLine ?? null, null, 2)
 }
 
 describe("the hook settings and the status line each kind of tab is started with, written by each agent's real launch with the settings writers wired in as the entry file wires them, pinned so that moving the code that builds them changes no character", () => {

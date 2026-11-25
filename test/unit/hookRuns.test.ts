@@ -465,7 +465,7 @@ describe("Antigravity's hook script on this Mac, run as agy runs each hook", () 
 })
 
 describe('a message the butler passes on, which Koloft proves it sent, and the file of the owner’s last words', () => {
-  const said = (file: string): string | undefined =>
+  const readOrNothing = (file: string): string | undefined =>
     fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined
 
   it("in a Claude Code tab it does not replace the owner's last words: they stay what the owner last typed; the owner's next typed prompt does replace them", () => {
@@ -481,17 +481,17 @@ describe('a message the butler passes on, which Koloft proves it sent, and the f
       )
     }
     prompt(OWNER_TYPED)
-    const typed = said(saidFile)
+    const typed = readOrNothing(saidFile)
     expect(typed).toBe(`${OWNER_TYPED}\n`)
     noteSent(reg, TAB, { id: 'koloft-butler-1' })
-    const linesBefore = said(statusLog)!.split('\n').length
+    const linesBefore = readOrNothing(statusLog)!.split('\n').length
     prompt(
       JSON.parse(crossSessionLine('bypass', BUTLER_PASSES_ON, 'koloft-butler-1')).message.content
     )
-    expect(said(statusLog)!.split('\n').length).toBe(linesBefore + 1)
-    expect(said(saidFile)).toBe(typed)
+    expect(readOrNothing(statusLog)!.split('\n').length).toBe(linesBefore + 1)
+    expect(readOrNothing(saidFile)).toBe(typed)
     prompt('先看看侧栏')
-    expect(said(saidFile)).toBe('先看看侧栏\n')
+    expect(readOrNothing(saidFile)).toBe('先看看侧栏\n')
   })
 
   it("in a Codex tab it replaces the owner's last words with the butler's whole message; one Koloft did not send leaves them alone", () => {
@@ -510,12 +510,12 @@ describe('a message the butler passes on, which Koloft proves it sent, and the f
         })
       ).printed
     prompt(OWNER_TYPED)
-    expect(said(saidFile)).toBe(`${OWNER_TYPED}\n`)
+    expect(readOrNothing(saidFile)).toBe(`${OWNER_TYPED}\n`)
     expect(prompt(BUTLER_PASSES_ON)).toContain('Koloft did not send it')
-    expect(said(saidFile)).toBe(`${OWNER_TYPED}\n`)
+    expect(readOrNothing(saidFile)).toBe(`${OWNER_TYPED}\n`)
     noteSent(reg, TAB, { words: BUTLER_PASSES_ON })
     expect(prompt(BUTLER_PASSES_ON)).toContain('The user writes Chinese')
-    expect(said(saidFile)).toBe(`${JSON.stringify(BUTLER_PASSES_ON).slice(1, -1)}\n`)
+    expect(readOrNothing(saidFile)).toBe(`${JSON.stringify(BUTLER_PASSES_ON).slice(1, -1)}\n`)
   })
 
   it("in an Antigravity tab there is no such file: before each model call its hook quotes the newest message in the transcript, and takes the butler's message as the owner's words whether Koloft sent it or not", () => {
