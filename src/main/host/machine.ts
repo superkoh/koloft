@@ -7,7 +7,6 @@ export interface RunOnMachineOptions {
 
 export interface TabProgram {
   run: string
-  beforeEnsure: string
   ensureTool?: string
   beforeTmux: string
   files: Record<string, string>

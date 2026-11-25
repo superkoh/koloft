@@ -3453,9 +3453,24 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     const hooks = JSON.parse(spec.program.files['pty-1.hooks.json'])
     expect(Object.keys(hooks).sort()).toEqual(['koloft', 'mine'])
     expect(JSON.stringify(hooks.koloft)).toContain('$HOME/.koloft/m-test/agy-hook.sh')
-    expect(spec.program.files['pty-1.auth.json']).toBeUndefined()
     expect(spec.program.run).toContain(`--gemini_dir="$HOME/.koloft/agy"/'work'`)
     expect(spec.program.run).toMatch(/set -- agy .*'-i' 'hi'\n/)
+  })
+
+  it("an account signed in with Google hands its sign-in to a tab on that machine in the tab's env, with the account's key, never as a file of its own", async () => {
+    const signIn = path.join(
+      home,
+      'agy-homes',
+      'work',
+      'antigravity-cli',
+      'antigravity-oauth-token'
+    )
+    fs.mkdirSync(path.dirname(signIn), { recursive: true })
+    fs.writeFileSync(signIn, '{"refresh":"r"}')
+    await sessions.launch({ kind: 'agy', cwd: REMOTE_WS })
+    const [spec] = machine.launches
+    expect(spec.env).toEqual({ ANT_ACCOUNT: 'work', KOLOFT_AGY_SIGN_IN: '{"refresh":"r"}' })
+    expect(Object.keys(spec.program.files).filter((n) => n.includes('auth'))).toEqual([])
   })
 
   it('a first prompt that starts with / is typed into the tab once the mirrored title says agy is idle, not given with -i', async () => {
