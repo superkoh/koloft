@@ -44,6 +44,7 @@ export interface AgentFlags {
   commandsItRunsCanHaveATerminalOfTheirOwn: boolean
   runsCommandsInASandboxWhereSudoCannotStart: boolean
   questionToolTakesNoOptionDescriptions: boolean
+  turnEndCanComeBeforeItsReplyIsWritten: boolean
   typesASkillOnlyByTheNameInItsFile: boolean
   refusesATypedSkillMarkedNotUserInvocable: boolean
 }
@@ -58,10 +59,17 @@ export interface SkillFolders {
   inTheHome: SkillFolderNames
 }
 
+export interface InputBoxKeys {
+  clearALeftoverCommand: readonly string[]
+  makeEnterRunTheTypedText: readonly string[]
+  backToAnEmptyBox: readonly string[]
+}
+
 export type SmallJobKind = 'smallAndQuick' | 'judgesAReply' | 'picksFromAList'
 
 export interface AgentPureFunctions {
   effortsAModelTakes(model: string | undefined): readonly CronEffort[]
+  draftInItsInputBox(screen: string[]): string | undefined
 }
 
 export interface AccountKindFacts {
@@ -98,6 +106,8 @@ export interface AgentManifest {
   ownSettings: Readonly<Record<string, OwnSetting>>
   slotFills: Readonly<Record<string, string>>
   slotAdditions: Readonly<Record<string, string>>
+  inputBoxKeys: InputBoxKeys
+  commandWithItsChoiceAfterIt?: string
   flags: AgentFlags
   pureFunctions: AgentPureFunctions
   accountKinds: readonly AccountKindFacts[]

@@ -18,6 +18,7 @@ export function storedBackend<R extends StoredRun, H extends HistoryEntry, P>(
     | 'runningElsewhere'
     | 'send'
     | 'mightNotTakeAMessageNow'
+    | 'showsAPanel'
   >,
   machineProbes?: (cwd: string) => ResumeProbes
 ): SessionBackend {

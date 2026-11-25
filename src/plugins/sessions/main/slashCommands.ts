@@ -1,51 +1,25 @@
 import type { BackendId } from '@shared/types'
 import type { Turn } from '@shared/turns'
 import { waitingForAnswer } from '@shared/slashCommands'
-import type { CommandOutput } from '@agents/claude/main/claudeCommandOutput'
+import type { CommandOutput } from '@core/agent/commandOutput'
 import { sleep } from '@core/sleep'
-import { CLEAR_TO_LINE_START, TO_LINE_END } from '@shared/lineEditKeys'
+import { A_COMMAND_WITH_ITS_CHOICE_AFTER_IT, agentManifest } from '@core/agent/registry'
+import { ESC } from '@shared/lineEditKeys'
 import { errorText } from '@core/errorText'
 import { withoutBlankEdges } from './messageText'
-import { agyInputBoxDraft, codexComposerDraft, inputBoxDraft } from '../../../main/inputBox'
 
 export const WAITS_FOR_IDLE_MS = 10 * 60_000
 export const NOTHING_CAME_BACK_MS = 8000
 export const MORE_OUTPUT_SETTLES_MS = 1500
 // CC§2
-export const A_CLAUDE_TURN_ENDS_AFTER_ITS_STOP_WITHIN_MS = 10_000
+export const A_REPLY_WRITTEN_AFTER_ITS_TURN_ENDED_LANDS_WITHIN_MS = 10_000
 export const RESULT_WITHIN_MS = 10 * 60_000
-const ESC = '\x1b'
 const CLOSE_THE_COMMAND_MENU = ESC
-const CLOSE_PAGER = 'q'
-const EMPTY_THE_BOX = TO_LINE_END + CLEAR_TO_LINE_START
-// CODEX§21 AGY§23
-const BACK_TO_AN_EMPTY_BOX: Record<BackendId, string[]> = {
-  claude: [ESC],
-  codex: [ESC, CLOSE_PAGER, EMPTY_THE_BOX],
-  agy: [ESC, EMPTY_THE_BOX]
-}
-const BEFORE_A_COMMAND: Record<BackendId, string[]> = {
-  claude: [],
-  codex: [EMPTY_THE_BOX],
-  agy: []
-}
-// CC§12 AGY§23
-const MENU_CLOSER: Record<BackendId, string[]> = {
-  claude: [CLOSE_THE_COMMAND_MENU],
-  codex: [CLOSE_THE_COMMAND_MENU],
-  agy: []
-}
 // CC§11 CC§12
 const PANEL_CLOSES_WITHIN_MS = 500
 const ESC_PRESSES_AT_MOST = 3
 // AGY§23
 export const SCREEN_SHOWS_THE_OUTPUT_MS = 1500
-// CC§12 CODEX§21 AGY§23
-const DRAFT_ON_SCREEN: Record<BackendId, (lines: string[]) => string | undefined> = {
-  claude: inputBoxDraft,
-  codex: codexComposerDraft,
-  agy: agyInputBoxDraft
-}
 export const AN_ENTER_LANDS_WITHIN_MS = 2000
 
 export interface SlashTarget {
@@ -107,10 +81,11 @@ interface Pending {
 
 // CC§12 CODEX§21 AGY§23
 export function commandKeys(text: string, backend: BackendId | undefined): string[] {
+  const keys = backend && agentManifest(backend).inputBoxKeys
   return [
-    ...(backend ? BEFORE_A_COMMAND[backend] : []),
+    ...(keys ? keys.clearALeftoverCommand : []),
     text,
-    ...(backend ? MENU_CLOSER[backend] : [CLOSE_THE_COMMAND_MENU]),
+    ...(keys ? keys.makeEnterRunTheTypedText : [CLOSE_THE_COMMAND_MENU]),
     '\r'
   ]
 }
@@ -141,7 +116,7 @@ function resultOf(p: Pending, screen: string[] | undefined): SlashResult | undef
     )
   if (p.pressedEsc)
     body.push(
-      `Nothing came back within ${NOTHING_CAME_BACK_MS / 1000} seconds, so Koloft pressed Esc to close any menu it had opened. A command that asks you to pick something needs its choice written after it, like /model haiku.`
+      `Nothing came back within ${NOTHING_CAME_BACK_MS / 1000} seconds, so Koloft pressed Esc to close any menu it had opened. A command that asks you to pick something needs its choice written after it${A_COMMAND_WITH_ITS_CHOICE_AFTER_IT ? `, like ${A_COMMAND_WITH_ITS_CHOICE_AFTER_IT}` : ''}.`
     )
   return {
     target: p.target,
@@ -226,7 +201,9 @@ export class SlashCommands {
 
   private stillInTheBox(tab: string, text: string, lines: string[]): boolean {
     const backend = this.d.backendOf(tab)
-    return !!backend && DRAFT_ON_SCREEN[backend](lines) === text.trim()
+    return (
+      !!backend && agentManifest(backend).pureFunctions.draftInItsInputBox(lines) === text.trim()
+    )
   }
 
   // CC§12 CODEX§21 AGY§23
@@ -266,7 +243,10 @@ export class SlashCommands {
     if (panel !== false) {
       p.pressedEsc = true
       const backend = this.d.backendOf(tab)
-      await this.press(tab, backend ? BACK_TO_AN_EMPTY_BOX[backend] : [ESC])
+      await this.press(
+        tab,
+        backend ? [...agentManifest(backend).inputBoxKeys.backToAnEmptyBox] : [ESC]
+      )
     }
     for (let more = 1; panel && more < ESC_PRESSES_AT_MOST; more++) {
       await sleep(PANEL_CLOSES_WITHIN_MS)
@@ -291,8 +271,10 @@ export class SlashCommands {
   }
 
   private settleOnceItsTurnEnds(tab: string, p: Pending): void {
+    const backend = this.d.backendOf(tab)
     const waitsForTheTurnEnd =
-      this.d.backendOf(tab) === 'claude' &&
+      !!backend &&
+      agentManifest(backend).flags.turnEndCanComeBeforeItsReplyIsWritten &&
       !p.turnEnded &&
       p.reply === undefined &&
       !p.outputs.length &&
@@ -300,7 +282,9 @@ export class SlashCommands {
     this.settleSoon(
       tab,
       p,
-      waitsForTheTurnEnd ? A_CLAUDE_TURN_ENDS_AFTER_ITS_STOP_WITHIN_MS : MORE_OUTPUT_SETTLES_MS
+      waitsForTheTurnEnd
+        ? A_REPLY_WRITTEN_AFTER_ITS_TURN_ENDED_LANDS_WITHIN_MS
+        : MORE_OUTPUT_SETTLES_MS
     )
   }
 
