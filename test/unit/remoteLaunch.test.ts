@@ -845,30 +845,41 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(nested(['--model', 'opus'], '--model fable')).toEqual(['1', '1'])
   })
 
-  it("the machine's claude wrapper hands over to the real claude past any Koloft wrapper on PATH — an older package's, its own spelled with //, or the Workbench shell's guard in front of it", () => {
+  it("the machine's claude wrapper hands over to the real claude past any Koloft wrapper on PATH — an older package's, its own spelled with //, or the Workbench shell's guard in front of it or after it, however many times the package's folders repeat — and says not found when there is none", () => {
     const root = mkroot('wrappers')
     const dir = (n: string, text: string): string => {
       fs.mkdirSync(path.join(root, n), { recursive: true })
       fs.writeFileSync(path.join(root, n, 'claude'), text, { mode: 0o755 })
       return path.join(root, n)
     }
-    const [util, fresh, old, real] = [
-      dir('util', utilTerminalGuard('claude', CLAUDE_UTIL_TERMINAL_REFUSAL)),
+    const guard = utilTerminalGuard('claude', CLAUDE_UTIL_TERMINAL_REFUSAL)
+    const [util, fresh, oldUtil, old, real] = [
+      dir('util', guard),
       dir('new', MACHINE_CLAUDE),
+      dir('old-util', guard),
       dir('old', MACHINE_CLAUDE),
       dir('real', '#!/bin/sh\necho "real $*"\n')
     ]
     fs.mkdirSync(path.join(real, 'claude-dir', 'claude'), { recursive: true })
-    const run = (first: string, PATH: string[]): string =>
-      spawnSync(path.join(first, 'claude'), ['-p', '--model', 'opus'], {
+    const run = (first: string, PATH: string[]): { status: number | null; out: string } => {
+      const r = spawnSync(path.join(first, 'claude'), ['-p', '--model', 'opus'], {
         encoding: 'utf8',
         env: { PATH: [...PATH, '/usr/bin:/bin'].join(':'), KOLOFT_UTIL: '1' },
-        timeout: 10_000
-      }).stdout
-    expect(run(fresh, [`${root}//new/`, old, fresh, path.join(real, 'claude-dir'), real])).toBe(
-      'real -p --model opus\n'
+        timeout: 5_000
+      })
+      return { status: r.status, out: r.stdout + r.stderr }
+    }
+    const ranTheReal = { status: 0, out: 'real -p --model opus\n' }
+    expect(run(fresh, [`${root}//new/`, old, fresh, path.join(real, 'claude-dir'), real])).toEqual(
+      ranTheReal
     )
-    expect(run(util, [util, fresh, real])).toBe('real -p --model opus\n')
+    expect(run(util, [util, fresh, real])).toEqual(ranTheReal)
+    expect(run(util, [util, fresh, util, fresh, real])).toEqual(ranTheReal)
+    expect(run(util, [util, fresh, oldUtil, old, real])).toEqual(ranTheReal)
+    expect(run(util, [util, fresh, util, fresh])).toEqual({
+      status: 127,
+      out: 'claude: not found\n'
+    })
   })
 
   it("with agent tools on, claude gets Koloft's skill and Koloft's prompt from the machine package next to the koloft-docs skill it always gets, and finds the machine's playwright-cli, then its koloft, first on its PATH, told which tab it runs in", () => {
