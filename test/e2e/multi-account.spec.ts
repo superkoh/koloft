@@ -1111,7 +1111,9 @@ test('E10: guided login captures the printed token (even wrapped at 80 columns) 
         win.webContents.send = (channel: string, ...args: unknown[]) => {
           if (channel === 'terminal:data' || channel === 'terminal:exit')
             sent.push(JSON.stringify([channel, ...args]))
-          if (channel === 'accounts:login-progress') progress.push(args[0])
+          const news = args[0] as { progress: unknown } | undefined
+          if (channel === 'accounts:sign-in-progress' && news?.progress)
+            progress.push(news.progress)
           return send(channel, ...args)
         }
       }
