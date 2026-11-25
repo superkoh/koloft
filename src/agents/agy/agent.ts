@@ -88,5 +88,16 @@ export const agent = {
     // AGY§14
     questionToolTakesNoOptionDescriptions: true
   },
-  pureFunctions: { effortsAModelTakes: agyEffortsAModelTakes }
+  pureFunctions: { effortsAModelTakes: agyEffortsAModelTakes },
+  // AGY§5 AGY§6
+  accountKinds: [
+    {
+      id: 'agy-home',
+      keychainServiceSuffix: '-agy-home',
+      isASignInFolder: true,
+      signsInThroughABrowser: true,
+      storesAPastedKeyItself: false,
+      takesAnEndpoint: false
+    }
+  ]
 } as const satisfies AgentManifest

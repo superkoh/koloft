@@ -4,11 +4,16 @@ import type { PluginSettingValues } from '@plugins/settings'
 import type { InstructionsVersion } from '@core/ownerInstructions'
 import type { CronEffort } from './efforts'
 import {
+  ACCOUNT_KIND_IDS,
+  AGENT_IDS,
   AGENT_PICKED_ON_FIRST_OPEN,
+  accountKindFacts,
   agentManifest,
   ofEachAgent,
+  type AccountKindId,
   type AgentId,
-  type AgentSettingValues
+  type AgentSettingValues,
+  type SignInFolderOf
 } from '@core/agent/registry'
 
 export interface ProjectInfo {
@@ -17,33 +22,29 @@ export interface ProjectInfo {
   worktreeName?: string
 }
 
-// CC§7 CODEX§15
-export type AccountKind = 'oauth' | 'apikey' | 'custom' | 'codex-home' | 'agy-home'
+export type AccountKind = AccountKindId
 
-export const ACCOUNT_KINDS: readonly AccountKind[] = [
-  'oauth',
-  'apikey',
-  'custom',
-  'codex-home',
-  'agy-home'
-]
+export const ACCOUNT_KINDS: readonly AccountKind[] = ACCOUNT_KIND_IDS
 
-// CODEX§15 AGY§5
-export const SIGN_IN_FOLDER_OF = {
-  codex: 'codex-home',
-  agy: 'agy-home'
-} as const satisfies Partial<Record<BackendId, AccountKind>>
+export const SIGN_IN_FOLDER_OF = Object.fromEntries(
+  AGENT_IDS.flatMap((id) =>
+    agentManifest(id)
+      .accountKinds.filter((kind) => kind.isASignInFolder)
+      .map((kind) => [id, kind.id])
+  )
+) as SignInFolderOf
 
 export type SignInBackend = keyof typeof SIGN_IN_FOLDER_OF
 export type SignInFolderKind = (typeof SIGN_IN_FOLDER_OF)[SignInBackend]
 
 export const SIGN_IN_FOLDER_KINDS: readonly AccountKind[] = Object.values(SIGN_IN_FOLDER_OF)
 
-// CODEX§15 ADR-0001
-const KINDS_WITH_NO_KEYCHAIN_SECRET: readonly AccountKind[] = [SIGN_IN_FOLDER_OF.codex]
-
+// ADR-0001
 export const keepsSecretInKeychain = (kind: AccountKind): boolean =>
-  !KINDS_WITH_NO_KEYCHAIN_SECRET.includes(kind)
+  !accountKindFacts(kind).storesAPastedKeyItself
+
+export const takesAnEndpoint = (kind: AccountKind): boolean =>
+  accountKindFacts(kind).takesAnEndpoint
 
 export const BACKEND_OF_SIGN_IN_FOLDER = Object.fromEntries(
   Object.entries(SIGN_IN_FOLDER_OF).map(([backend, kind]) => [kind, backend])
@@ -184,9 +185,7 @@ export interface WorkspaceGitAccount {
 }
 
 export function keychainServiceSuffix(kind: AccountKind): string {
-  if (kind === 'oauth') return '-claude-oauth'
-  if (isSignInFolderKind(kind)) return `-${kind}`
-  return kind === 'apikey' ? '-anthropic-api' : '-custom-endpoint'
+  return accountKindFacts(kind).keychainServiceSuffix
 }
 
 export interface AccountMeta {
@@ -221,7 +220,7 @@ export function sanitizeAccountList(raw: unknown): AccountMeta[] {
   for (const a of raw as Partial<AccountMeta>[]) {
     if (!a || typeof a.name !== 'string' || !ACCOUNT_NAME_RE.test(a.name)) continue
     if (!a.kind || !ACCOUNT_KINDS.includes(a.kind)) continue
-    if (a.kind === 'custom' && !isHttpUrl(a.baseUrl)) continue
+    if (takesAnEndpoint(a.kind) && !isHttpUrl(a.baseUrl)) continue
     const key = `${a.kind}:${a.name.toLowerCase()}`
     if (seen.has(key)) continue
     seen.add(key)
@@ -235,7 +234,7 @@ export function sanitizeAccountList(raw: unknown): AccountMeta[] {
       ...(typeof a.fableCheckedAt === 'number' && Number.isFinite(a.fableCheckedAt)
         ? { fableCheckedAt: a.fableCheckedAt }
         : {}),
-      ...(a.kind === 'custom'
+      ...(takesAnEndpoint(a.kind)
         ? {
             baseUrl: a.baseUrl,
             model:
