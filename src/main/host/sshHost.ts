@@ -494,11 +494,19 @@ const appendToTheFileOfEveryTab = (fileOf: (tabId: string) => string): string =>
   `for t in "$@"; do set -- "$@" "${fileOf('$t')}"; shift; done; mkdir -p "${REMOTE_HOOK_DIR}" && tee -a "$@" >/dev/null`
 const NOTE_SENT_ID = appendToTheFileOfEveryTab(remoteSentIdsFile)
 const NOTE_SENT_WORDS = appendToTheFileOfEveryTab(remoteSentWordsFile)
-const leaveNoticeOnMachine = (file: string): string => `mkdir -p "${REMOTE_HOOK_DIR}" || exit 1
+const LEAVE_NOTICE_UNDER_EVERY_TAB_ID = `mkdir -p "${REMOTE_HOOK_DIR}" || exit 1
 IFS= read -r fresh; IFS= read -r merged
 t="$fresh"; k=fresh
-[ -n "$merged" ] && [ -f "${file}" ] && { t="$merged"; k=merged; }
-printf '%s' "$t" > "${file}.part" && mv -f "${file}.part" "${file}" && printf '%s' "$k"`
+if [ -n "$merged" ]; then
+  t="$merged"; k=merged
+  for id in "$@"; do [ -f "${remoteNoticeFile('$id')}" ] || { t="$fresh"; k=fresh; }; done
+fi
+for id in "$@"; do
+  f="${remoteNoticeFile('$id')}"
+  printf '%s' "$t" > "$f.part" && mv -f "$f.part" "$f" || exit 1
+done
+printf '%s' "$k"`
+const DROP_NOTICE_UNDER_EVERY_TAB_ID = `for id in "$@"; do f="${remoteNoticeFile('$id')}"; rm -f "$f" "$f${NOTICE_THIS_TURN}"; done`
 
 const MARK_OWNER_ASLEEP = `mkdir -p "${REMOTE_HOOK_DIR}" || exit 1
 f="${REMOTE_HOOK_DIR}/${OWNER_ASLEEP_FILE}"
@@ -970,17 +978,18 @@ exit ${CALLER_GONE_EXIT}`,
     return r.code === 0
   }
 
-  notice(tabId: string): NoticeFile {
-    const file = remoteNoticeFile(tabId)
+  notice(tabIds: string[]): NoticeFile {
     return {
       leave: async (fresh, merged) => {
         const both = `${noticeLine(fresh)}\n${merged === undefined ? '' : noticeLine(merged)}\n`
-        const r = await this.sh(leaveNoticeOnMachine(file), [], { input: Buffer.from(both) })
+        const r = await this.sh(LEAVE_NOTICE_UNDER_EVERY_TAB_ID, tabIds, {
+          input: Buffer.from(both)
+        })
         if (r.code !== 0) throw new Error(problemOf(r))
         return r.stdout.toString('utf8') === 'merged' ? 'merged' : 'fresh'
       },
       drop: async () => {
-        await this.sh(`rm -f "${file}" "${file}${NOTICE_THIS_TURN}"`, [])
+        await this.sh(DROP_NOTICE_UNDER_EVERY_TAB_ID, tabIds)
       }
     }
   }
