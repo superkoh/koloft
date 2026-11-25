@@ -9,6 +9,7 @@ import type { ScreenSize, TabKind } from '@shared/types'
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { shq } from '@shared/shellQuote'
 import { formatRemoteKey } from '@shared/remoteKey'
+import { misleadsWhatStartsInsideAnAgentsSession } from '@core/agent/registry'
 import { aboveItsTools } from './agentLift'
 import { OWNING_TAB_ENV } from './owningTabEnv'
 import { OscCwdParser } from './oscCwd'
@@ -70,8 +71,6 @@ interface CreateArgs {
     KOLOFT_OWNER_TEXT?: string
     KOLOFT_DOCS_PLUGIN?: string
     KOLOFT_PORT_OFFSET?: string
-    CLAUDE_CODE_FORCE_SYNC_OUTPUT?: string
-    CLAUDE_CODE_DECSTBM?: string
   }
 }
 
@@ -235,18 +234,11 @@ export class PtyManager extends EventEmitter {
     ) {
       env.LANG = 'en_US.UTF-8'
     }
-    // CC§9 AGY§9 AGY§25 PLATFORM§2
+    // PLATFORM§2
     for (const key of Object.keys(env)) {
       if (
-        key.startsWith('CLAUDE_CODE_') ||
-        key.startsWith('ANTIGRAVITY_') ||
-        ((args.kind !== 'agy' || !args.processEnv) &&
-          (key.startsWith('KOLOFT_AGY_') || key === 'KOLOFT_NOTICE')) ||
-        key === 'CLAUDECODE' ||
-        key === 'CLAUDE_EFFORT' ||
-        key === 'CLAUDE_JOB_DIR' ||
-        key === 'CLAUDE_PID' ||
-        key === 'AI_AGENT' ||
+        misleadsWhatStartsInsideAnAgentsSession(key) ||
+        key === 'KOLOFT_NOTICE' ||
         key === 'TERM_SESSION_ID' ||
         key === 'KOLOFT_UTIL' ||
         key === 'KOLOFT_AUX' ||
@@ -265,9 +257,6 @@ export class PtyManager extends EventEmitter {
         key === 'KOLOFT_OWNER_TEXT' ||
         key === 'KOLOFT_DOCS_PLUGIN' ||
         key === 'KOLOFT_PORT_OFFSET' ||
-        key === 'KOLOFT_CODEX_SAID' ||
-        key === 'KOLOFT_CODEX_DISCORD_SAID' ||
-        key === 'KOLOFT_CODEX_REPLY_LANGUAGE' ||
         key === 'KOLOFT_SHELL_WROTE' ||
         key === OWNING_TAB_ENV ||
         key === 'ANT_ACCOUNT' ||
@@ -301,9 +290,7 @@ export class PtyManager extends EventEmitter {
         'KOLOFT_AGENT_PROMPT',
         'KOLOFT_OWNER_TEXT',
         'KOLOFT_DOCS_PLUGIN',
-        'KOLOFT_PORT_OFFSET',
-        'CLAUDE_CODE_FORCE_SYNC_OUTPUT',
-        'CLAUDE_CODE_DECSTBM'
+        'KOLOFT_PORT_OFFSET'
       ] as const) {
         const v = args.extraEnv[k]
         if (v !== undefined) env[k] = v

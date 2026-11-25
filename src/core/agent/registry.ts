@@ -20,6 +20,17 @@ export function agentsThatSay(flag: keyof AgentFlags): AgentId[] {
   return AGENT_IDS.filter((id) => agentManifest(id).flags[flag])
 }
 
+const ENV_THAT_MISLEADS_WHAT_STARTS_INSIDE = AGENT_MANIFESTS.map(
+  (agent) => agent.envOfItsSessionThatMisleadsWhatStartsInside
+)
+
+export function misleadsWhatStartsInsideAnAgentsSession(name: string): boolean {
+  return ENV_THAT_MISLEADS_WHAT_STARTS_INSIDE.some(
+    ({ named, startingWith }) =>
+      named.includes(name) || startingWith.some((start) => name.startsWith(start))
+  )
+}
+
 type OwnSettingNamesOf<Agent> = Agent extends { ownSettings: infer Own } ? keyof Own : never
 
 export type AgentSettingValues = Record<OwnSettingNamesOf<(typeof AGENTS)[number]>, boolean>

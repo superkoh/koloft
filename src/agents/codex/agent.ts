@@ -33,6 +33,11 @@ export const agent = {
   trustQuestion: 'do you trust the contents of this directory?',
   ownLogFolderNames: [],
   atTopOfSessionFolder: { internalNames: [], internalNameEndings: [], foldersMadeEmptyAhead: [] },
+  // CODEX§10 CODEX§38
+  envOfItsSessionThatMisleadsWhatStartsInside: {
+    named: ['KOLOFT_CODEX_SAID', 'KOLOFT_CODEX_DISCORD_SAID', 'KOLOFT_CODEX_REPLY_LANGUAGE'],
+    startingWith: []
+  },
   modelEveryAccountTakes: MODEL_EVERY_ACCOUNT_TAKES,
   // CODEX§14
   namedModels: [
