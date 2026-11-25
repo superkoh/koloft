@@ -16,9 +16,9 @@ import {
 } from '../../src/main/remote/install'
 import { answerOf } from '../../src/main/remote/ssh'
 import { REMOTE_CLAUDE_PROJECTS } from '../../src/agents/claude/main/claudeMirror'
+import { MIN_AGY_VERSION, MIN_CLAUDE_VERSION } from '../../src/main/cliMinimums'
 
 const CLAUDE_PROJECTS_OF_API = [{ folder: REMOTE_CLAUDE_PROJECTS, subfolders: ['-home-koh-api'] }]
-import { MIN_AGY_VERSION, MIN_CLAUDE_VERSION } from '../../src/main/cliMinimums'
 
 const REAL_TOOLS = [
   'sh',
