@@ -66,9 +66,9 @@ import {
   remoteSentIdsFile,
   remoteSentWordsFile,
   sentWordsLine,
-  type NoticeFile,
-  type SentNote
+  type NoticeFile
 } from '@plugins/sessions/main/hooks'
+import type { SentNote } from '@core/agent/sessionBackends'
 import { listSkills, skillFolders, type SkillFs, type SkillPlaces } from '../skillList'
 import type { GitOut } from '@core/worktree'
 import type { Host, ShellLaunch } from './host'
