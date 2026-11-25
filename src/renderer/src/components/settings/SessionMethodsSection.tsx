@@ -7,16 +7,14 @@ import {
   normalizeSessionMethods
 } from '@shared/sessionBackend'
 import type { BackendId } from '@shared/types'
+import { AGENT_UIS } from '@agents/uis'
 import { useStore } from '../../store'
 import { AgentSelect } from '../SessionLaunchButtons'
 import { Switch } from './Switch'
 import { useSettingsUpdate } from './useSettingsUpdate'
 
-const METHOD_NOTE: Record<BackendId, string> = {
-  claude: 'Runs on a Claude account from Settings ▸ Accounts',
-  codex: 'Runs on a Codex account from Settings ▸ Accounts',
-  agy: 'Runs on a Google sign-in or a Gemini API key from Settings ▸ Accounts'
-}
+const methodNote = (backend: BackendId): string =>
+  `Runs on ${AGENT_UIS.find((ui) => ui.id === backend)!.settings.whatItRunsOn} from Settings ▸ Accounts`
 
 type Detected = Awaited<ReturnType<typeof window.api.sessions.backends>>
 
@@ -89,7 +87,7 @@ export function SessionMethodsSection() {
           <div className="set-row" key={backend}>
             <div className="set-lab">
               <b>{BACKEND_LABEL[backend]}</b>
-              <small>{METHOD_NOTE[backend]}</small>
+              <small>{methodNote(backend)}</small>
               <small>{status(backend)}</small>
             </div>
             <Switch

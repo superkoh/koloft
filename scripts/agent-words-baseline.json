@@ -694,19 +694,10 @@
       "{fable && <i className=\"tbu-gap\" style={{ bottom: `${fillPct}%` }} />}"
     ],
     "src/renderer/src/components/Welcome.tsx": [
-      "'A terminal tab opens and Codex sends you to your browser. It closes by itself once you are in.',",
       ") : claudeBusy && pick === 'claude' ? (",
       ") : claudeFailed ? (",
       "<p className=\"wl-sub\">Koloft runs Claude Code, Codex and Antigravity.</p>",
       "? 'Installing Claude Code, then your browser opens…'",
-      "agy: 'A terminal tab opens: sign in with Google, pick colours and accept Google’s terms, then type /exit.'",
-      "agy: {",
-      "asks: 'Claude Code asks only about risky steps (its auto mode). Press Shift+Tab in a session to be asked every step.',",
-      "asks: 'Codex asks only about some steps, like one that leaves its sandbox.',",
-      "claude: 'Your browser opens once. Koloft keeps the account: no terminal, nothing to paste.',",
-      "claude: {",
-      "codex:",
-      "codex: {",
       "const claudeBusy = loginPhase === 'starting' || loginPhase === 'browser'",
       "const claudeFailed = pick === 'claude' && login?.progress?.phase === 'failed'",
       "const loginPhase = signingFor === 'claude' ? login?.progress?.phase : undefined",
@@ -811,11 +802,6 @@
     ],
     "src/renderer/src/components/settings/AssistSection.tsx": [
       "'A small job waits 15 seconds for its answer, 30 on Codex. A bigger model or more thinking is slower; when no answer comes, Koloft does the job without AI.'"
-    ],
-    "src/renderer/src/components/settings/SessionMethodsSection.tsx": [
-      "agy: 'Runs on a Google sign-in or a Gemini API key from Settings ▸ Accounts'",
-      "claude: 'Runs on a Claude account from Settings ▸ Accounts',",
-      "codex: 'Runs on a Codex account from Settings ▸ Accounts',"
     ],
     "src/renderer/src/components/settings/UsagePane.tsx": [
       "Claude Code, Codex and Antigravity sessions are read from the files each tool keeps, on",

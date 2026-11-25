@@ -18,6 +18,8 @@ import {
   backendAvailable
 } from '@shared/sessionBackend'
 import { agentManifest } from '@core/agent/registry'
+import type { AgentWelcomeWords } from '@core/agent/agentUi'
+import { AGENT_UIS } from '@agents/uis'
 import { accountToSignInAgain, hasUsableAccount } from '@shared/accountUsage'
 import { basename } from '@shared/preview'
 import { foldersToPin } from '@shared/firstRun'
@@ -52,28 +54,8 @@ interface Folder {
   rows: SessionRow[]
 }
 
-const SIGN_IN_HOW: Record<BackendId, string> = {
-  claude: 'Your browser opens once. Koloft keeps the account: no terminal, nothing to paste.',
-  codex:
-    'A terminal tab opens and Codex sends you to your browser. It closes by itself once you are in.',
-  agy: 'A terminal tab opens: sign in with Google, pick colours and accept Google’s terms, then type /exit.'
-}
-
-// CC§9 CC§14 CODEX§11 AGY§26
-const WHAT_SESSIONS_ASK: Record<BackendId, { asks: string; instead: string }> = {
-  claude: {
-    asks: 'Claude Code asks only about risky steps (its auto mode). Press Shift+Tab in a session to be asked every step.',
-    instead: 'Ask about risky steps instead'
-  },
-  codex: {
-    asks: 'Codex asks only about some steps, like one that leaves its sandbox.',
-    instead: 'Ask about some steps instead'
-  },
-  agy: {
-    asks: 'Sessions ask you before each step.',
-    instead: 'Ask me first instead'
-  }
-}
+const welcomeWordsOf = (b: BackendId): AgentWelcomeWords =>
+  AGENT_UIS.find((ui) => ui.id === b)!.welcome
 
 const SIDEBAR_ROWS_PER_FOLDER = 4
 const AUTO_NEXT_MS = 900
@@ -599,7 +581,7 @@ export function Welcome({
               ) : (
                 <div className="wl-sign-text">
                   {!isInstalled(pick) && `Koloft installs ${BACKEND_PRODUCT[pick]} first. `}
-                  {SIGN_IN_HOW[pick]}
+                  {welcomeWordsOf(pick).howItSignsIn}
                 </div>
               )}
               {signError && <div className="wl-sign-text bad">{signError}</div>}
@@ -728,12 +710,12 @@ export function Welcome({
                 <>
                   Sessions run each step without stopping to ask.{' '}
                   <button className="ob-link" onClick={() => update({ skipPermissions: false })}>
-                    {WHAT_SESSIONS_ASK[pick].instead}
+                    {welcomeWordsOf(pick).whatItsSessionsAsk.askInstead}
                   </button>
                 </>
               ) : (
                 <>
-                  {WHAT_SESSIONS_ASK[pick].asks}{' '}
+                  {welcomeWordsOf(pick).whatItsSessionsAsk.asks}{' '}
                   <button className="ob-link" onClick={() => update({ skipPermissions: true })}>
                     Don’t ask
                   </button>
