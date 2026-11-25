@@ -1,4 +1,5 @@
 #!/bin/sh
+: koloft util guard
 if [ "$KOLOFT_UTIL" = "1" ]; then
   utilok=0
   valflag=0
@@ -83,7 +84,7 @@ set -f
 for d in $PATH; do
   [ "$d" = "$self" ] && continue
   [ -x "$d/codex" ] || continue
-  if head -n 2 "$d/codex" 2>/dev/null | grep -q 'KOLOFT_UTIL'; then continue; fi
+  if head -n 2 "$d/codex" 2>/dev/null | grep -q -F -x -e ': koloft util guard' -e 'if [ "$KOLOFT_UTIL" = "1" ]; then'; then continue; fi
   exec "$d/codex" "$@"
 done
 echo "codex: not found" >&2

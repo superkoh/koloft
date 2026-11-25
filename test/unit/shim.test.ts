@@ -1226,8 +1226,10 @@ describe('claude shim (nested Koloft instances)', () => {
       fs.rmSync(peerShimDir, { recursive: true, force: true })
     }
   }, 30_000)
+})
 
-  const GUARD_OF_A_KOLOFT_FROM_BEFORE_THIS_FIX = (bin: string): string => `#!/bin/sh
+describe('codex and agy guards (nested Koloft instances)', () => {
+  const GUARD_THAT_SKIPS_ONLY_ITS_OWN_FOLDER = (bin: string): string => `#!/bin/sh
 if [ "$KOLOFT_UTIL" = "1" ]; then
   :
 fi
@@ -1267,11 +1269,11 @@ exit 127
   }
 
   it.each(['codex', 'agy'] as const)(
-    "%s skips another Koloft's guard on PATH, of this version or an older one, whichever comes first, and runs the real program instead of the two guards exec'ing each other forever",
+    "%s skips another Koloft's guard on PATH, one like it or one that skips only its own folder, whichever comes first, and runs the real program instead of the two guards exec'ing each other forever",
     (bin) => {
       for (const peerText of [
         fs.readFileSync(path.join(shimDir, bin), 'utf8'),
-        GUARD_OF_A_KOLOFT_FROM_BEFORE_THIS_FIX(bin)
+        GUARD_THAT_SKIPS_ONLY_ITS_OWN_FOLDER(bin)
       ]) {
         withPeerFolder(bin, peerText, (peer) => {
           for (const [first, second] of [
