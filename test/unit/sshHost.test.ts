@@ -766,6 +766,18 @@ describe('the utility terminal on the machine', () => {
     expect(printed.status).toBe(0)
     expect(fs.readFileSync(realLog, 'utf8')).toBe('-p hi there\n')
   })
+
+  it('passes by a folder named claude ahead of the real claude on PATH and runs the real one', () => {
+    const { bin, realLog } = guardOnPath()
+    const decoys = path.join(home, 'decoy-folders')
+    fs.mkdirSync(path.join(decoys, 'claude'), { recursive: true })
+    const [guard, ...rest] = bin.split(':')
+    const env = { HOME: home, PATH: [guard, decoys, ...rest].join(':'), KOLOFT_UTIL: '1' }
+    const printed = spawnSync('claude', ['-p', 'hi there'], { env, encoding: 'utf8' })
+    expect(printed.stderr).toBe('')
+    expect(printed.status).toBe(0)
+    expect(fs.readFileSync(realLog, 'utf8')).toBe('-p hi there\n')
+  })
 })
 
 it('a worktree git cannot delete on the machine is reported in git’s words, with the commands to run on that machine', async () => {
