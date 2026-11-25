@@ -916,12 +916,20 @@ test('E9c: a session resumed the moment it has bound — by Restart Session, or 
   test.setTimeout(180_000)
   env.launchEnv.KOLOFT_PROBE_BASE_URL = 'http://127.0.0.1:1'
   seedKeychain(env)
-  seedSettings(env, { accounts: [acct('alpha'), acct('bravo')] })
+  seedSettings(env, { accounts: [acct('alpha'), acct('bravo')], hintsOff: true })
   const tokenOf = (c: CallRecord): string | null => c.oauthToken
+  const activeTab = (page: Page): Promise<string | null> =>
+    page
+      .locator('.ws .ws-tab.active')
+      .first()
+      .getAttribute('data-tab-id', { timeout: 1_000 })
+      .catch(() => null)
   const startOne = async (page: Page): Promise<{ sessionId: string; token: string | null }> => {
     const before = readCalls(env).length
+    const wasActive = await activeTab(page)
     await openMenu(page, page.locator('.ws-head', { hasText: 'ws-a' }))
     await page.locator('.menu .mi', { hasText: 'New session' }).click()
+    await expect.poll(() => activeTab(page)).not.toBe(wasActive)
     const sessionId = await untilTheActiveTabsTranscriptIsWritten(page)
     const fresh = readCalls(env)
       .slice(before)
@@ -936,8 +944,9 @@ test('E9c: a session resumed the moment it has bound — by Restart Session, or 
   let { app, page } = await launchConfigured(env)
   try {
     await waitBooted(page)
-    let onTheSecond = await startOne(page)
-    while (onTheSecond.token !== TOKENS.bravo) onTheSecond = await startOne(page)
+    const first = await startOne(page)
+    const onTheSecond = first.token === TOKENS.bravo ? first : await startOne(page)
+    expect(onTheSecond.token, 'a fresh pick takes the other account').toBe(TOKENS.bravo)
     await quitAndClose(app)
     let before = readCalls(env).length
     ;({ app, page } = await launchConfigured(env))

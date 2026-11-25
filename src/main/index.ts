@@ -573,7 +573,8 @@ const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
   },
   bound: (tabId, key, idleCompaction) => {
     claudeAsks.delete(tabId)
-    sessionAccounts?.note(allSessions().filter((s) => s.tabId === tabId))
+    const session = sessionOfTab(tabId)
+    if (session) sessionAccounts?.note([session])
     if (!idleCompaction) attention.bound(tabId, key)
     announceNow(SESSION_BOUND, { tabId, key, idleCompaction })
     startedSessions.bound(tabId, key)
