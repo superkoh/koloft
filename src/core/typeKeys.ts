@@ -40,9 +40,9 @@ export function pasteFor(text: string, kind: TabKind | undefined): string {
 }
 
 // CC§18
-const CHARS_PER_WRITE_CLAUDE_STILL_TAKES_AS_TYPING = 128
+const CHARS_PER_WRITE_STILL_TAKEN_AS_TYPING = 128
 
-const TYPED_PIECE = new RegExp(`[\\s\\S]{1,${CHARS_PER_WRITE_CLAUDE_STILL_TAKES_AS_TYPING}}`, 'gu')
+const TYPED_PIECE = new RegExp(`[\\s\\S]{1,${CHARS_PER_WRITE_STILL_TAKEN_AS_TYPING}}`, 'gu')
 
 export function typedPieces(text: string): string[] {
   return text.match(TYPED_PIECE) ?? []

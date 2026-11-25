@@ -207,7 +207,8 @@ async function aTabOfEveryAgent() {
     codex,
     NO_RESUME_IS_PLANNED_HERE,
     () => NO_RESUME_IS_PLANNED_HERE,
-    async () => {}
+    async () => {},
+    async () => undefined
   )
   for (const backend of [claude, agyAsABackend, codexAsABackend]) backends.register(backend)
   subscribeTabSubsystems(lifecycle, {

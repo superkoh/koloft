@@ -1,5 +1,6 @@
 import { didNotRun, slashCommandProblem } from '@shared/slashCommands'
 import { errorText } from '@core/errorText'
+import { A_COMMAND_WITH_ITS_CHOICE_AFTER_IT } from '@core/agent/registry'
 import {
   COMMAND_INTERACTION,
   COMPONENT_INTERACTION,
@@ -22,7 +23,7 @@ export const SLASH_COMMANDS: SlashCommandSpec[] = [
       {
         type: STRING_OPTION,
         name: 'command',
-        description: 'The command, like /context or /model haiku',
+        description: `The command, like /context${A_COMMAND_WITH_ITS_CHOICE_AFTER_IT ? ` or ${A_COMMAND_WITH_ITS_CHOICE_AFTER_IT}` : ''}`,
         required: true
       }
     ]
