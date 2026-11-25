@@ -240,7 +240,8 @@ async function bench(scene: Scene): Promise<Bench> {
       codex,
       NO_RESUME_IS_PLANNED_HERE,
       () => NO_RESUME_IS_PLANNED_HERE,
-      async () => {}
+      async () => {},
+      async () => undefined
     ),
     agy: agyBackend(agy, NO_RESUME_IS_PLANNED_HERE, () => NO_RESUME_IS_PLANNED_HERE)
   }

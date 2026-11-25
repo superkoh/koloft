@@ -52,10 +52,6 @@
       "openApproval(tabId: string): CodexApproval | undefined",
       "openQuestion(tabId: string): CodexQuestion | undefined"
     ],
-    "src/core/typeKeys.ts": [
-      "const CHARS_PER_WRITE_CLAUDE_STILL_TAKES_AS_TYPING = 128",
-      "const TYPED_PIECE = new RegExp(`[\\\\s\\\\S]{1,${CHARS_PER_WRITE_CLAUDE_STILL_TAKES_AS_TYPING}}`, 'gu')"
-    ],
     "src/main/accountPicker.ts": [
       "'koloft: this account has no fable allowance left -- running fable now will be billed to usage credits'",
       "...(!snap || fableFree(snap, nowSec) ? {} : { warning: FABLE_EXHAUSTED_LINE })",
@@ -216,7 +212,6 @@
       "agy: !!agySessions?.usesHost(t.host)",
       "agy: () => agyOneShotTarget()",
       "agy: () => {",
-      "agy: async () => undefined",
       "agyAccountEnv,",
       "agyApiKeyRoute,",
       "agyBackend,",
@@ -237,7 +232,6 @@
       "buildCodexSessions,",
       "builtInStatusLine: () => (loadSettings().statuslineBuiltin ? agyStatusline : undefined),",
       "claude: async () => {",
-      "claude: async (tabId, sessionId) => {",
       "claude: claudeBackendDeps,",
       "claudeAgentPlugin = writeAgentPlugin(app.getPath('userData'))",
       "claudeAskEnded(tabId)",
@@ -258,8 +252,6 @@
       "claudeDocsPlugin = writeDocsPlugin(app.getPath('userData'))",
       "claudePid: ptyMgr.pidOf(tabId),",
       "claudeServers,",
-      "claudeShowsAPanel,",
-      "claudeShowsAPanelOnMachine,",
       "claudeStore = buildClaudeStore({",
       "claudeStore.start()",
       "claudeStore?.dispose()",
@@ -269,8 +261,7 @@
       "codex: () => terminalPickOf(pickCodexHome()),",
       "codex: async () => {",
       "codex: codexMachines.has(t.host) || !!codexSessions?.hasHistoryOn(t.host),",
-      "codex: panelOnScreen(codexShowsAPanel),",
-      "codexBackend(codexSessions, resumeProbes, machineProbes, messaging.noteKoloftSent)",
+      "codexBackend(",
       "codexBackend,",
       "codexDialog,",
       "codexHome: path.dirname(codexSharedConfig())",
@@ -280,6 +271,7 @@
       "codexHomes,",
       "codexServers,",
       "codexSessions = buildCodexSessions({",
+      "codexSessions,",
       "codexSessions: () => codexSessions",
       "codexSharedConfig,",
       "codexWorkspaces: (cwds) => codexSessions?.workspacesFor(cwds) ?? cwds,",
@@ -317,7 +309,6 @@
       "const picked = pickCodexHome()",
       "const picked = terminalPickOf(pickAgyHome())",
       "const prev = findAccount(name, 'oauth')",
-      "const registry = await liveClaudeRegistryOn(host).catch(() => undefined)",
       "const result = await probeAccount('oauth', token, { timeoutMs: ACCOUNT_PROBE_TIMEOUT_MS })",
       "const shot = oneShotAgyHome(",
       "const stored = await keychainWrite('oauth', name, token)",
@@ -355,7 +346,6 @@
       "geminiDir: ownersGemini()",
       "if (!codex.available) return",
       "if (!exited?.alive) claudeDialogs.forget(e.id)",
-      "if (!host) return claudeShowsAPanel(sessionId)",
       "if (!picked || !codexSessions || !(await codexSessions.availability()).available) return null",
       "if (!res.account || res.kind !== 'custom') return { res }",
       "if (agySessions) {",
@@ -375,14 +365,12 @@
       "if (session?.sessionId) claudeStore?.leavingWorktree(session.sessionId, tabId)",
       "if (sessionId) claudeStore?.leftWorktree(sessionId, !claudeSaid)",
       "if (t.prev === 'approval') claudeAskEnded(t.tabId)",
-      "import type { CommandOutput } from '@agents/claude/main/claudeCommandOutput'",
       "import { AGY_APP_DIR, ownersGeminiDir } from '@agents/agy/main/agyStore'",
       "import { AGY_BRAIN_FLAGS, AGY_REMOTE_BRAIN } from '@agents/agy/main/agyTab'",
       "import { ClaudeDialogWatch } from '@agents/claude/main/claudeDialogWatch'",
       "import { claudeJsonPath, claudeProjectKey } from '@agents/claude/main/claudeTrust'",
       "import { codexConfigFile } from '@agents/codex/main/codexTrust'",
       "import { codexMachineInstance } from '@agents/codex/main/codexMachine'",
-      "import { codexShowsAPanel } from './inputBox'",
       "import { probeAccount, shouldSkipFable } from './usageProbe'",
       "import { setupStatusline, setupAgyStatusline, statusLineSetting } from './statusline'",
       "inFolders(AGY_PROJECT_MCP_FILE, 'toRepoTop'),",
@@ -400,6 +388,7 @@
       "let codexSessions: ReturnType<typeof buildCodexSessions> | null = null",
       "let exit = claudeTabExits.get(tabId)",
       "liveClaudeRegistryOn,",
+      "liveRegistryOn: liveClaudeRegistryOn,",
       "loadSettings().browserControl ? ownersClaudePlaywrightMcp(cwd) : [],",
       "loadSettings().sessionMethods.enabled.agy",
       "mirrorAgyGemini,",
@@ -438,7 +427,6 @@
       "return ownersGeminiDir(agySessions?.defaultEnv ?? process.env)",
       "return picked && (agyApiKeyRoute(picked.home) ? { ...picked, kind: 'apikey' } : picked)",
       "return readAgyModels(target.binary, target.env, target.args ?? []).finally(() => target.done())",
-      "return registry === undefined ? undefined : claudeShowsAPanelOnMachine(registry, sessionId)",
       "return remoteHostOfTab(tabId) ?? codexSessions?.machineOfTab(tabId)",
       "return { defaults, familyEfforts: familyEfforts('agy', listed) }",
       "scriptsDir: path.join(userData, 'agy-scripts'),",
@@ -465,19 +453,6 @@
       "} from '@agents/claude/main/claudeSessionRegistry'",
       "} from '@agents/claude/main/claudeWorktreeExit'",
       "} from '@agents/codex/main/codexAccounts'"
-    ],
-    "src/main/inputBox.ts": [
-      ".findLast((line) => line.startsWith(CODEX_COMPOSER_MARK))",
-      "?.slice(CODEX_COMPOSER_MARK.length)",
-      "const AGY_INPUT_ROW_MARK = '>'",
-      "const CODEX_COMPOSER_MARK = '›'",
-      "const CODEX_PANEL_KEY_HINT = /\\b(esc (back|close|exit)|q close)\\b/",
-      "const lastMarkedRow = lines.findLastIndex((line) => line.startsWith(CODEX_COMPOSER_MARK))",
-      "export function agyInputBoxDraft(lines: string[]): string | undefined {",
-      "export function codexComposerDraft(lines: string[]): string | undefined {",
-      "export function codexShowsAPanel(lines: string[]): true | undefined {",
-      "return draftBetweenTheLastTwoRules(lines, AGY_INPUT_ROW_MARK)",
-      "return lines.slice(lastMarkedRow + 1).some((line) => CODEX_PANEL_KEY_HINT.test(line)) || undefined"
     ],
     "src/main/layoutMigrate.ts": [
       "function claudeKeysBecomeMembers(v4: LayoutV4): LayoutV5 {",
@@ -904,9 +879,6 @@
     "src/plugins/browser-control/renderer/BrowserControlSettings.tsx": [
       "you can see, signed in as you. Claude Code sessions on another machine (over SSH) can"
     ],
-    "src/plugins/discord/main/interactions.ts": [
-      "description: 'The command, like /context or /model haiku',"
-    ],
     "src/plugins/discord/main/relay.ts": [
       "CODEX_NEEDS_YES_OR_NO,",
       "answerGoingIn: (tab) => void this.codexAsks.delete(tab)",
@@ -1064,26 +1036,6 @@
       "? `Started session \"${name}\" in a new tab. Talk to it with SendMessage to \"${name}\".`",
       "? fail(CLAUDE_USES_SEND_MESSAGE)",
       "const CLAUDE_USES_SEND_MESSAGE ="
-    ],
-    "src/plugins/sessions/main/slashCommands.ts": [
-      "`Nothing came back within ${NOTHING_CAME_BACK_MS / 1000} seconds, so Koloft pressed Esc to close any menu it had opened. A command that asks you to pick something needs its choice written after it, like /model haiku.`",
-      "agy: [ESC, EMPTY_THE_BOX]",
-      "agy: []",
-      "agy: []",
-      "agy: agyInputBoxDraft",
-      "claude: [CLOSE_THE_COMMAND_MENU],",
-      "claude: [ESC],",
-      "claude: [],",
-      "claude: inputBoxDraft,",
-      "codex: [CLOSE_THE_COMMAND_MENU],",
-      "codex: [EMPTY_THE_BOX],",
-      "codex: [ESC, CLOSE_PAGER, EMPTY_THE_BOX],",
-      "codex: codexComposerDraft,",
-      "export const A_CLAUDE_TURN_ENDS_AFTER_ITS_STOP_WITHIN_MS = 10_000",
-      "import type { CommandOutput } from '@agents/claude/main/claudeCommandOutput'",
-      "import { agyInputBoxDraft, codexComposerDraft, inputBoxDraft } from '../../../main/inputBox'",
-      "this.d.backendOf(tab) === 'claude' &&",
-      "waitsForTheTurnEnd ? A_CLAUDE_TURN_ENDS_AFTER_ITS_STOP_WITHIN_MS : MORE_OUTPUT_SETTLES_MS"
     ],
     "src/plugins/sessions/main/start.ts": [
       "(claudeStore = new ClaudeSessionStore({",
@@ -1510,7 +1462,7 @@
       "codex: { local: 'queue', ssh: 'queue' },",
       "const OUTSIDE_LOCAL_CLAUDE: Capabilities = {",
       "local: OUTSIDE_LOCAL_CLAUDE,",
-      "local: { ...OUTSIDE_LOCAL_CLAUDE, panelSeen: PENDING },",
+      "local: OUTSIDE_LOCAL_CLAUDE,",
       "return !(backend === 'agy' && remote)",
       "return host === 'local' || backend !== 'claude'",
       "return session?.details?.codex?.observation === 'degraded'"

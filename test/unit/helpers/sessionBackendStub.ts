@@ -46,6 +46,7 @@ export function stubBackend(
     noticeRemoteExits: () => {},
     mirrorPulled: () => {},
     tmuxOfTab: () => undefined,
+    showsAPanel: async () => undefined,
     send: async () => 'taken' as const,
     mightNotTakeAMessageNow: async () => false,
     handOverLaunch: (_handOver: string, task: string) => ({ firstPrompt: task }),

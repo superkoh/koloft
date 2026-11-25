@@ -22,6 +22,7 @@ export function agyBackend(
       peerNames: () => async () => null,
       runningElsewhere: () => false,
       handOverLaunch: (handOver, task) => ({ firstPrompt: withHandover(handOver, task) }),
+      showsAPanel: async () => undefined,
       ...agyMessages((tabId, text) => sessions.deliver(tabId, text))
     },
     machineProbes

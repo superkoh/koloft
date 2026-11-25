@@ -5,6 +5,7 @@ import type { CodexSessions } from './codexSessions'
 import { acceptCodexTrust, codexConfigFile } from './codexTrust'
 import type { ResumeProbes } from '../../../main/resumePlan'
 import { storedBackend } from '@agents/kit/main/stored'
+import { codexShowsAPanelOnItsScreen } from '../shared/inputBox'
 import { codexMessages, type CodexMessageDeps } from './codexMessages'
 
 export function trustCodexFolder(root: string, env: NodeJS.ProcessEnv | undefined): void {
@@ -19,7 +20,8 @@ export function codexBackend(
   sessions: CodexSessions,
   resumeProbes: ResumeProbes,
   machineProbes: (cwd: string) => ResumeProbes,
-  noteKoloftSent: CodexMessageDeps['noteKoloftSent']
+  noteKoloftSent: CodexMessageDeps['noteKoloftSent'],
+  screenLines: (tabId: string) => Promise<string[] | undefined>
 ): SessionBackend {
   return storedBackend(
     sessions,
@@ -32,6 +34,7 @@ export function codexBackend(
       runningElsewhere: () => false,
       // CODEX§17
       handOverLaunch: (handOver, task) => ({ role: handOver, firstPrompt: task }),
+      showsAPanel: codexShowsAPanelOnItsScreen(screenLines),
       ...codexMessages({
         queue: (tabId, text, clientId) => sessions.queueMessage(tabId, text, clientId),
         noteKoloftSent

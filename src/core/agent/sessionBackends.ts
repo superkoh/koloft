@@ -90,6 +90,7 @@ export interface SessionBackend extends SessionRowsSource, SessionMessages {
   noticeRemoteExits(host: string, sessionIds: string[]): void
   mirrorPulled(host: string): void
   tmuxOfTab(tabId: string): string | undefined
+  showsAPanel(tabId: string, screen?: string[]): Promise<boolean | undefined>
 }
 
 export interface SessionLifecycle {
@@ -224,6 +225,13 @@ export class SessionBackends {
 
   workspaceOfTab(tabId: string): string | undefined {
     return this.ownerOfTab(tabId)?.workspaceOfTab(tabId)
+  }
+
+  showsAPanel(tabId: string, screen?: string[]): Promise<boolean | undefined> {
+    const session = this.list().find((s) => s.tabId === tabId)
+    return session
+      ? this.get(session.backendId).showsAPanel(tabId, screen)
+      : Promise.resolve(undefined)
   }
 
   availability(
