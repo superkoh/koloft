@@ -4,6 +4,7 @@ import path from 'path'
 import type { AgentManifest } from '@core/agent/manifest'
 import type { AgentId } from '@core/agent/registry'
 import { AGENTS } from '@agents/list'
+import { AGENT_UIS } from '@agents/uis'
 
 const AGENT_FOLDERS = path.join(__dirname, '..', '..', 'src', 'agents')
 const PARTS_SEVERAL_AGENTS_SHARE = 'kit'
@@ -22,6 +23,10 @@ describe('the list of agents', () => {
       expect(agent.id).toBe(folder)
       expect(AGENTS).toContain(agent)
     }
+  })
+
+  it('the list of UI parts holds one entry for every agent on the list, in the same order', () => {
+    expect(AGENT_UIS.map((ui) => ui.id)).toEqual(AGENTS.map((agent) => agent.id))
   })
 
   it('the typecheck of the tests fails once the agent id type takes any string, not only the ids on the list', () => {
