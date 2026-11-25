@@ -115,12 +115,15 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   one-hour cache can compact while idle (inferred from those strings, not watched in a
   session on 2.1.314). On 2.1.332, darwin-arm64 and linux-arm64 (`strings` beside
   2.1.331, 2026-11-25, not run), the floor, the `1h` TTL, the 0.9 fraction, the 60 s
-  skips, `"idleCompaction": false` and `CLAUDE_CODE_SLEEP_COMPACT` read the same; only
-  the near-limit skip changed: 2.1.331 skipped whenever the rate-limit status was not
-  `allowed`, 2.1.332 no longer skips for `allowed_warning` when no threshold was passed
-  and utilization is under 0.7 (its changelog: "Fixed idle compaction being skipped for
-  subscribers still well under their weekly limit"). Koloft does not depend on when it
-  fires.
+  skips, `"idleCompaction": false` and `CLAUDE_CODE_SLEEP_COMPACT` read the same. Both
+  builds also skip it near the rate limit (when that skip first came is not read); only
+  that skip changed: 2.1.331 skipped whenever the rate-limit status was not `allowed`,
+  2.1.332 no longer skips for `allowed_warning` when no threshold was passed and
+  utilization is under 0.7 (its changelog: "Fixed idle compaction being skipped for
+  subscribers still well under their weekly limit"). So more subscribers' idle tabs
+  compact. Koloft takes any `auto` compaction after a finished turn as an idle one
+  (`sessionTracker.ts`: no attention change, no Discord notice), whatever made it fire,
+  so more of them change nothing it shows.
 - **Every compaction ends by writing a summary record**, at about the moment SessionStart
   `compact` fires (2026-10-09, CC 2.1.295, manual and automatic): `type: "user"`, string
   content "This session is being continued from a previous conversation that ran out of
@@ -265,12 +268,15 @@ version Koloft supports (`MIN_CLAUDE_VERSION`) before it is called the new relea
   are not counted; Koloft's hooks all come from `--settings` and its `SKILL.md` declares
   none.
 - **2.1.332 adds a 34th hook event, `PreSkillShellCommand`**, last in the list after the
-  same 33 in the same order; its changelog says a settings file naming it opens a dialog
-  at start on 2.1.331 and older. No Koloft settings file names it. The same build,
-  darwin-arm64 and linux-arm64 (`strings` beside 2.1.331, 2026-11-25), has the same
-  SessionEnd reasons and SessionStart sources, no `ANTHROPIC_*` name new or gone, six
-  `CLAUDE_CODE_*` names new and `CLAUDE_CODE_MCP_SERVE_MEMORY_WALKS_DEADLINE_MS` gone,
-  none of which `src/` spells, and the same slash command names; `--help` and every
+  same 33 names, in the same order, that the hook-list bullet above counts. Its
+  changelog says a settings file naming it opens a dialog at start on 2.1.331 and older
+  (not probed). No Koloft settings file names it. The same build, darwin-arm64 and
+  linux-arm64 (`strings` beside 2.1.331, 2026-11-25), has the same SessionEnd reasons
+  and SessionStart sources, no `ANTHROPIC_*` name new or gone, and the same slash
+  command names. `CLAUDE_CODE_` names new: `DISABLE_POWERSHELL_LIBRARY_LOAD_GUARD`,
+  `HOST_SHORT_SCRATCHPAD`, `INDEXED_SALAMANDER`, `RELAUNCH_SEAT_LAUNCH`, `SPEND_PROJECT`
+  and `USER_DELEGATED_SESSION_ROUTINE_SERVER_CHECK_PROVIDERS`; gone:
+  `MCP_SERVE_MEMORY_WALKS_DEADLINE_MS`; `src/` spells none of them. `--help` and every
   subcommand's `--help` (darwin-arm64 only) are byte-identical to 2.1.331's.
 - **A session's SessionStart hook has exited before its first UserPromptSubmit hook
   starts, even when the prompt was given or typed earlier.** So a hook that appends both
@@ -2514,6 +2520,12 @@ other bullets of §9 were not re-measured on this build.
 - That CC on Linux reads `projects[<real path>].hasTrustDialogAccepted` and treats
   `--name` / the text after `--` exactly as measured above on macOS is **inferred, not
   checked** on a real machine (2026-09-24).
+- **A folder entry written by `TRUST_CWD_JS`, the script a remote tab runs, still skips
+  the trust question on 2.1.331 and 2.1.332** (2026-11-25, darwin-arm64 only, a python
+  pty with `pyte`, a scratch `HOME`, a stand-in Messages API, 1 run per build): with only
+  `hasCompletedOnboarding` the launch drew "Quick safety check"; after the script wrote
+  the folder's entry it opened on the main screen, also for a `git init` folder on
+  2.1.332. The local tab's writer (`acceptClaudeTrust`) and linux-arm64 were not rerun.
 - **A child claude inherits the parent's session markers and stops writing its
   transcript.** With `CLAUDE_CODE_CHILD_SESSION=1` in the environment the launched
   session prints `⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION
@@ -2550,12 +2562,6 @@ other bullets of §9 were not re-measured on this build.
   (`CLAUDE_CODE_DISABLE_DANGEROUS_RM_TIMEOUT` still turns it off). Koloft runs the TUI
   in a pty and sets no `CLAUDE_CODE_ENTRYPOINT`, so its tabs are never taken for the
   Desktop app or VS Code.
-- **A folder entry written by Koloft's own `TRUST_CWD_JS` still skips the trust question
-  on 2.1.331 and 2.1.332** (2026-11-25, darwin-arm64, a python pty with `pyte`, a
-  scratch `HOME`, a stand-in Messages API, 1 run per build): with only
-  `hasCompletedOnboarding` the launch drew "Quick safety check"; after the script wrote
-  the folder's entry it opened on the main screen, also for a `git init` folder on
-  2.1.332.
 
 Koloft dependents: the scheduled-jobs runner's launch line and the shim's new-session
 branch (`src/main/shim.ts`), `src/agents/claude/main/claudeArgs.ts`, `src/main/skillList.ts`,
@@ -2685,14 +2691,19 @@ rechecks against real installs of 2.1.322 on macOS (darwin-arm64) and Linux
   backups are still `<name>.backup.<ms>` in the backups folder, at most 5 and at most one
   a minute; the copy that makes one now deletes its half-written file when the copy
   fails (the changelog's "incomplete backups … when the disk was full"). No new lock or
-  temporary file name for `.claude.json` or `settings.json` appears. Still so on 2.1.331
-  and 2.1.332 (2026-11-25, `claude -p ok --max-turns 1` against a stand-in Messages API,
-  a scratch `HOME`, 1 run each): `{broken` exits 1 with the file left as it was and a
-  copy left as `backups/.claude.json.corrupted.<ms>`; an empty file exits 0 with the
-  same "…was empty and no backup holds anything" line, gets a full file without
-  `hasCompletedOnboarding`, and leaves a `.claude.json.backup.<ms>`. 2.1.332's fix for a
-  file "reported as corrupted when another session was in the middle of saving it" was
-  not reproduced; Koloft's local writers save through a temporary file and a rename.
+  temporary file name for `.claude.json` or `settings.json` appears. On 2.1.331 and
+  2.1.332 (2026-11-25, `claude -p ok --max-turns 1` against a stand-in Messages API, a
+  scratch `HOME`, 1 run each), the same on both: `{broken` exits 1 with the file left as
+  it was; an empty file exits 0 with the same "…was empty and no backup holds anything"
+  line and gets a full file without `hasCompletedOnboarding`. Newly seen (not looked for
+  on older builds): `{broken` also leaves a copy as `backups/.claude.json.corrupted.<ms>`,
+  and the empty-file run leaves a `.claude.json.backup.<ms>` (its folder not noted).
+  2.1.332's fix for a file "reported as corrupted when another session was in the
+  middle of saving it" was not reproduced. Koloft's local writers save through a
+  temporary file and a rename, so claude never reads a half-written file from them; the
+  remote launch line writes with `printf >` when the file is missing and `sed -i`
+  otherwise. A rename does not stop a lost update: a claude save that lands between a
+  writer's read and its rename is dropped (inferred, not checked).
 - **A home can hold two config files, and the legacy one wins; since 2.1.319 claude says
   so on stderr.** The legacy file is `.config.json` in the config folder
   (`$CLAUDE_CONFIG_DIR`, else `~/.claude/`); the current one is `.claude.json` in
@@ -2878,11 +2889,13 @@ Unless a bullet names a version or a measurement, it is inferred, not checked.
   scroll region is used — the 2.1.319 `xterm.js` condition did not hold here, on either
   build.
 - **Fullscreen scrolling still does not tear on 2.1.332.** 2026-11-25, the same
-  hidden-window measurement as the tear bullet above (a resumed 600-turn fullscreen
-  session at 72×49, wheel and trackpad-speed reports, one tab and one of 14 flooding
-  tabs): `CLAUDE_CODE_FORCE_SYNC_OUTPUT` is still in its `strings`; with Koloft's launch
-  as it ships 0 paints tore and claude opened a median 38 synchronized frames per
-  one-tab wheel run; with the switch taken out 27 tore and none came synchronized.
+  hidden-window measurement as the synchronized-output bullet's 2.1.330 run (a resumed
+  600-turn fullscreen session at 72×49, 3 runs per case of wheel reports in one tab,
+  trackpad-speed reports in one tab, and wheel reports in one of 14 flooding tabs):
+  `CLAUDE_CODE_FORCE_SYNC_OUTPUT` is still in its `strings`; with Koloft's launch as it
+  ships 0 of 228 paints tore and claude opened a median 38 synchronized frames per
+  one-tab wheel run; with the switch taken out 27 of 285 tore (wheel 3 of 106, trackpad
+  18 of 73, 14 tabs 6 of 106) and none came synchronized.
 - **The `tui` setting still takes only `default` and `fullscreen` on 2.1.327**, though
   that release names the non-fullscreen renderer `/tui classic`: `"tui": "classic"` in
   `settings.json` opens a blocking "Settings Error … tui: Invalid value. Expected one of:
@@ -3403,11 +3416,12 @@ sessions.
     messages?" with `No, go back` (selected), `Yes, in this session, from any sender` and
     `Yes, in every session on this computer, from any sender`; the middle choice released
     the held line and let the next mismatched line from that sender through with no
-    dialog, and wrote nothing to the scratch `HOME`'s json files. The screens were the
-    same on both builds, so the 2.1.332 changelog's "Added "Always deliver" to the prompt
-    for held messages" was not seen as a change here. The code lists the always rows
-    among the choices, in place of the `ctrl+x a` line, when a check this setup answered
-    no is true; what that check is (a logged-in session, a server flag) is not probed yet.
+    dialog (one sender tried), and wrote nothing to the scratch `HOME`'s json files. The
+    screens were the same on both builds, so the 2.1.332 changelog's "Added "Always
+    deliver" to the prompt for held messages" was not seen as a change here. When some
+    check is on (one this setup did not pass), the code shows the two "always" rows as
+    choices instead of the `ctrl+x a` line; what that check is (a logged-in session, a
+    server flag) is not probed yet.
   - The two classes are `bypass` and `prompting`. The 2.1.288 binary counts a session as
     `bypass` when its mode is `bypassPermissions`, or when a second check passes that
     takes the mode and whether bypass mode is available
@@ -3918,12 +3932,12 @@ below was one run.
   - Down stops at `Chat about this`, the bottom row; Up from option 1 goes to `Type
     something` (not to the bottom row); Up from `Chat about this` goes to the row above
     it, from the field (even holding text) to option N. On 2.1.318 Home (`ESC[H`,
-    `ESC[1~`) and PageUp (`ESC[5~`) did nothing. On 2.1.331 and 2.1.332 (2026-11-25, a
-    python pty with `pyte`, a stand-in API, a three-option question, the pick read off
-    the next request, 1 run each) `ESC[H` moves the highlight to option 1 (Down Down Home
-    Enter sent option 1; Down Down Home Down Enter sent option 2 on 2.1.332), while
-    `ESC[5~` still does nothing; `ESC[1~` alone was not run. Koloft sends neither key.
-    Four Ups in one write moved the highlight one row.
+    `ESC[1~`) and PageUp (`ESC[5~`) did nothing, and four Ups in one write moved the
+    highlight one row. On 2.1.331 and 2.1.332 (2026-11-25, a python pty with `pyte`, a
+    stand-in API, a three-option question, the pick read off the next request, 1 run
+    each) `ESC[H` moves the highlight to option 1 (Down Down Home Enter sent option 1;
+    Down Down Home Down Enter sent option 2 on 2.1.332), while `ESC[5~` still does
+    nothing; `ESC[1~` alone and the four Ups were not run. Koloft sends neither key.
   - So Down N+2 times, then Up N+1 times (N+3 and N+2 for a many-pick question), each
     its own write, leaves the highlight on option 1 from any start: from the start, after
     two or three Downs, after a paste, after a fullscreen click on the field, and on a
