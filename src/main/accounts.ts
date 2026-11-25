@@ -232,15 +232,3 @@ export function recordProbeOutcome(
 export function resetProbeOutcomeState(): void {
   consecutive401.clear()
 }
-
-export function recordFableCapability(
-  name: string,
-  kind: AccountKind,
-  fable: 'yes' | 'no',
-  checkedAt: number = Date.now()
-): void {
-  const acct = findAccount(name, kind)
-  if (!acct) return
-  if (fable === 'no') upsertAccountMeta({ ...acct, fable, fableCheckedAt: checkedAt })
-  else if (acct.fable !== 'yes') upsertAccountMeta({ ...acct, fable })
-}
