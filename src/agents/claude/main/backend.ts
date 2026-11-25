@@ -1237,7 +1237,8 @@ export class ClaudeBackend implements SessionBackend {
       resized: plan.resized,
       remoteHost: machine?.tracking.host,
       shell: plan.shell,
-      extraEnv: plan.extraEnv
+      extraEnv: plan.extraEnv,
+      envSetForThisTab: plan.envSetForThisTab
     })
     // ADR-0028
     if (spec.permission === 'bypass' || machine?.skipsPermissionChecks)

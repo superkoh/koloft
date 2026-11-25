@@ -117,7 +117,11 @@ async function claudeTab(
         const command =
           typeof args.launchCommand === 'function' ? args.launchCommand(TAB) : args.launchCommand
         if (args.koloftShim) args.koloftShim.hookSettings(TAB)
-        handed = `${command}\n${JSON.stringify({ conductor, allowKoloft, env: args.extraEnv })}`
+        handed = `${command}\n${JSON.stringify({
+          conductor,
+          allowKoloft,
+          env: { ...args.extraEnv, ...args.envSetForThisTab }
+        })}`
         return { id: TAB }
       }
     },

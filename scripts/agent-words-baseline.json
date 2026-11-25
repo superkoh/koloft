@@ -175,8 +175,6 @@
       "readJson(path.join(codexHomeOf(userData, name), 'auth.json')).auth_mode === 'apikey',"
     ],
     "src/main/host/host.ts": [
-      "CLAUDE_CODE_DECSTBM?: string",
-      "CLAUDE_CODE_FORCE_SYNC_OUTPUT?: string",
       "export interface ClaudeLaunch {",
       "export type ClaudeLaunchPlan =",
       "launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan>"
@@ -187,7 +185,7 @@
       "}: ClaudeSessionInfo): BackendSessionInfo {"
     ],
     "src/main/host/localHost.ts": [
-      "CLAUDE_CODE_DECSTBM: '1',",
+      "CLAUDE_CODE_DECSTBM: '1'",
       "CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1',",
       "acceptClaudeTrust(claudeJsonPath(), dir)",
       "acceptClaudeTrust,",
@@ -746,23 +744,6 @@
       "if write_drop ${dir} \"\"; then echo ${CODEX_OPEN_SENT}; else echo koloft-open:blocked; fi",
       "import { CODEX_TMP_DIR, OPEN_SHIM_FOLDER } from './leftovers'",
       "requestDir: path.join(CODEX_TMP_DIR, `koloft-cx-open-${token}`)"
-    ],
-    "src/main/ptyManager.ts": [
-      "'CLAUDE_CODE_DECSTBM'",
-      "'CLAUDE_CODE_FORCE_SYNC_OUTPUT',",
-      "((args.kind !== 'agy' || !args.processEnv) &&",
-      "(key.startsWith('KOLOFT_AGY_') || key === 'KOLOFT_NOTICE')) ||",
-      "CLAUDE_CODE_DECSTBM?: string",
-      "CLAUDE_CODE_FORCE_SYNC_OUTPUT?: string",
-      "key === 'CLAUDECODE' ||",
-      "key === 'CLAUDE_EFFORT' ||",
-      "key === 'CLAUDE_JOB_DIR' ||",
-      "key === 'CLAUDE_PID' ||",
-      "key === 'KOLOFT_CODEX_DISCORD_SAID' ||",
-      "key === 'KOLOFT_CODEX_REPLY_LANGUAGE' ||",
-      "key === 'KOLOFT_CODEX_SAID' ||",
-      "key.startsWith('ANTIGRAVITY_') ||",
-      "key.startsWith('CLAUDE_CODE_') ||"
     ],
     "src/main/remote/install.ts": [
       "# AGY§3",
