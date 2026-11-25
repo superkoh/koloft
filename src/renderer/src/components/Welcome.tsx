@@ -9,15 +9,17 @@ import {
   type ReactNode
 } from 'react'
 import { createPortal } from 'react-dom'
-import type { AccountKind, BackendId, DiscoveredFolder, SessionRow } from '@shared/types'
-import { SIGN_IN_FOLDER_OF } from '@shared/types'
+import type { BackendId, DiscoveredFolder, SessionRow } from '@shared/types'
 import {
   BACKEND_LABEL,
   BACKEND_PRODUCT,
   SESSION_BACKENDS,
-  backendAvailable
+  backendAvailable,
+  shortProductList
 } from '@shared/sessionBackend'
-import { agentManifest, signInKindOf } from '@core/agent/registry'
+import { agentManifest } from '@core/agent/registry'
+import type { AgentWelcomeWords } from '@core/agent/agentUi'
+import { agentUi } from '@agents/uis'
 import { accountToSignInAgain, hasUsableAccount } from '@shared/accountUsage'
 import { basename } from '@shared/preview'
 import { foldersToPin } from '@shared/firstRun'
@@ -26,6 +28,7 @@ import { plural, relTime } from '../sessionRows'
 import { resumeSession } from '../resumeFlow'
 import { aDialogIsOpen } from '../dialogOpen'
 import { useInstalledBackends } from '../useInstalledBackends'
+import { signInKindIdOf, signsInInATab } from '../signInLook'
 import { fillsOfNotTurnedOff } from '../pluginUi'
 import { OWNER_REACH } from '../slots'
 import { useSettingsUpdate } from './settings/useSettingsUpdate'
@@ -52,33 +55,21 @@ interface Folder {
   rows: SessionRow[]
 }
 
-const SIGN_IN_HOW: Record<BackendId, string> = {
-  claude: 'Your browser opens once. Koloft keeps the account: no terminal, nothing to paste.',
-  codex:
-    'A terminal tab opens and Codex sends you to your browser. It closes by itself once you are in.',
-  agy: 'A terminal tab opens: sign in with Google, pick colours and accept Google’s terms, then type /exit.'
-}
+const COUNT_WORDS: Record<number, string> = { 2: 'Two', 3: 'Three' }
 
-// CC§9 CC§14 CODEX§11 AGY§26
-const WHAT_SESSIONS_ASK: Record<BackendId, { asks: string; instead: string }> = {
-  claude: {
-    asks: 'Claude Code asks only about risky steps (its auto mode). Press Shift+Tab in a session to be asked every step.',
-    instead: 'Ask about risky steps instead'
-  },
-  codex: {
-    asks: 'Codex asks only about some steps, like one that leaves its sandbox.',
-    instead: 'Ask about some steps instead'
-  },
-  agy: {
-    asks: 'Sessions ask you before each step.',
-    instead: 'Ask me first instead'
-  }
-}
+const HOW_MANY_AGENTS = `${COUNT_WORDS[SESSION_BACKENDS.length] ?? SESSION_BACKENDS.length} agents.`
+
+const welcomeWordsOf = (b: BackendId): AgentWelcomeWords => agentUi(b).welcome
 
 const SIDEBAR_ROWS_PER_FOLDER = 4
 const AUTO_NEXT_MS = 900
 const SIGN_IN_SETTLE_MS = 4000
 const LEAVE_MS = 650
+
+interface SigningIn {
+  agent: BackendId
+  inATab: boolean
+}
 
 const backendOf = (l: Launch): BackendId => (l.kind === 'resume' ? l.row.backendId : l.backend)
 
@@ -197,7 +188,8 @@ export function Welcome({
   const [pinning, setPinning] = useState(false)
   const [agent, setAgent] = useState<BackendId | null>(null)
   const [signError, setSignError] = useState<string | null>(null)
-  const [signingFor, setSigningFor] = useState<BackendId | null>(null)
+  const [signingIn, setSigningIn] = useState<SigningIn | null>(null)
+  const signingFor = signingIn?.agent ?? null
   const [peek, setPeek] = useState(false)
   const [pending, setPending] = useState<Launch | null>(null)
   const [prompt, setPrompt] = useState('')
@@ -237,10 +229,10 @@ export function Welcome({
     Date.now()
   )
   const targetFolder = target ? folders.find((f) => f.rows.includes(target)) : undefined
-  const loginPhase = signingFor === 'claude' ? login?.progress?.phase : undefined
-  const claudeBusy = loginPhase === 'starting' || loginPhase === 'browser'
-  const signTabOpen = !!signingFor && signingFor !== 'claude' && !!signInTabId
-  const waiting = claudeBusy || signTabOpen
+  const loginPhase = signingIn?.inATab === false ? login?.progress?.phase : undefined
+  const backgroundBusy = loginPhase === 'starting' || loginPhase === 'browser'
+  const signTabOpen = signingIn?.inATab === true && !!signInTabId
+  const waiting = backgroundBusy || signTabOpen
   const again = accounts ? accountToSignInAgain(accounts, pick) : undefined
   const accountName = again ?? defaultAccountName(pick, accounts ?? [])
 
@@ -260,7 +252,7 @@ export function Welcome({
 
   useEffect(() => {
     if (!signingFor || waiting || signedIn(signingFor)) return
-    const t = setTimeout(() => setSigningFor(null), SIGN_IN_SETTLE_MS)
+    const t = setTimeout(() => setSigningIn(null), SIGN_IN_SETTLE_MS)
     return () => clearTimeout(t)
   }, [signingFor, waiting, accounts])
 
@@ -319,7 +311,7 @@ export function Welcome({
   useEffect(() => {
     if (!ready || !goal) return
     const t = setTimeout(() => {
-      setSigningFor(null)
+      setSigningIn(null)
       if (pending && backendOf(pending) === goal) runRef.current(pending)
       else setStep(4)
     }, AUTO_NEXT_MS)
@@ -331,25 +323,30 @@ export function Welcome({
     const name = accountName
     const failed =
       'Could not start the sign-in. Try again, or add the account in Settings ▸ Accounts.'
-    if (pick === 'claude') {
-      beginLogin(signInKindOf(pick).id as AccountKind, again)
+    const agentNow = pick
+    const inATab = signsInInATab(agentNow)
+    if (!inATab) {
+      beginLogin(signInKindIdOf(agentNow), again)
       setLoginProgress({ phase: 'starting', name })
-      setSigningFor('claude')
-      if ((await window.api.accounts.startLogin(name, !!again)) !== 'ok') {
-        clearLogin()
-        setSigningFor(null)
-        setSignError(failed)
-      }
-      return
+      setSigningIn({ agent: agentNow, inATab })
     }
-    const r = await window.api.accounts.signIn(SIGN_IN_FOLDER_OF[pick], name, !!again)
+    const r = await window.api.accounts.beginSignIn(signInKindIdOf(agentNow), name, !!again)
     if (!r.ok) {
+      if (!inATab) {
+        clearLogin()
+        setSigningIn(null)
+      }
       setSignError(failed)
       return
     }
-    setSigningFor(pick)
+    const tab = r.progress.tab
+    if (!inATab || !tab) return
+    setSigningIn({ agent: agentNow, inATab })
     setPeek(false)
-    openSignInTab(r, `${BACKEND_LABEL[pick]} sign in: ${name}`)
+    openSignInTab(
+      { tabId: tab.tabId, cwd: tab.cwd ?? '' },
+      `${BACKEND_LABEL[agentNow]} sign in: ${name}`
+    )
   }
 
   const install = async (b: BackendId): Promise<void> => {
@@ -359,7 +356,7 @@ export function Welcome({
     openSignInTab(r, `Install ${BACKEND_PRODUCT[b]}`)
   }
 
-  const claudeFailed = pick === 'claude' && login?.progress?.phase === 'failed'
+  const backgroundFailed = !signsInInATab(pick) && login?.progress?.phase === 'failed'
 
   const reading = pinning || pinDue || found === null
   const primary = ((): { label: string; go: () => void; busy?: boolean; disabled?: boolean } => {
@@ -377,7 +374,7 @@ export function Welcome({
           go: () => (startable && pending ? run(pending) : setStep(4))
         }
       }
-      if (claudeBusy && pick === 'claude')
+      if (backgroundBusy && pick === signingFor)
         return { label: 'Waiting for your browser…', go: () => undefined, busy: true }
       if (signTabOpen && pick === signingFor)
         return { label: 'Show the sign-in tab', go: () => setPeek(false) }
@@ -458,8 +455,8 @@ export function Welcome({
                 ? 'Looking around your Mac…'
                 : `${readyCount} of ${SESSION_BACKENDS.length} ready on this Mac`}
             </Chip>
-            <Title plain="Three agents." script="One window." />
-            <p className="wl-sub">Koloft runs Claude Code, Codex and Antigravity.</p>
+            <Title plain={HOW_MANY_AGENTS} script="One window." />
+            <p className="wl-sub">{`Koloft runs ${shortProductList(SESSION_BACKENDS, 'and')}.`}</p>
             <div className="wl-agents">
               {SESSION_BACKENDS.map((b, i) => {
                 const t = tally[b]
@@ -577,15 +574,15 @@ export function Welcome({
                 <div className="wl-sign-done">
                   <IconCheck size={18} /> Signed in to {BACKEND_LABEL[pick]}
                 </div>
-              ) : claudeFailed ? (
+              ) : backgroundFailed ? (
                 <div className="wl-sign-text bad">
                   The sign-in did not finish.
                   {login?.progress?.tail && <pre>{login.progress.tail}</pre>}
                 </div>
-              ) : claudeBusy && pick === 'claude' ? (
+              ) : backgroundBusy && pick === signingFor ? (
                 <div className="wl-sign-text">
-                  {loginPhase === 'starting' && !isInstalled('claude')
-                    ? 'Installing Claude Code, then your browser opens…'
+                  {loginPhase === 'starting' && !isInstalled(pick)
+                    ? `Installing ${BACKEND_PRODUCT[pick]}, then your browser opens…`
                     : 'Finish in your browser. Koloft picks it up from there.'}
                   {login?.progress?.url && (
                     <button
@@ -599,7 +596,7 @@ export function Welcome({
               ) : (
                 <div className="wl-sign-text">
                   {!isInstalled(pick) && `Koloft installs ${BACKEND_PRODUCT[pick]} first. `}
-                  {SIGN_IN_HOW[pick]}
+                  {welcomeWordsOf(pick).howItSignsIn}
                 </div>
               )}
               {signError && <div className="wl-sign-text bad">{signError}</div>}
@@ -728,12 +725,12 @@ export function Welcome({
                 <>
                   Sessions run each step without stopping to ask.{' '}
                   <button className="ob-link" onClick={() => update({ skipPermissions: false })}>
-                    {WHAT_SESSIONS_ASK[pick].instead}
+                    {welcomeWordsOf(pick).whatItsSessionsAsk.askInstead}
                   </button>
                 </>
               ) : (
                 <>
-                  {WHAT_SESSIONS_ASK[pick].asks}{' '}
+                  {welcomeWordsOf(pick).whatItsSessionsAsk.asks}{' '}
                   <button className="ob-link" onClick={() => update({ skipPermissions: true })}>
                     Don’t ask
                   </button>
