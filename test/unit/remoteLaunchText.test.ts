@@ -511,15 +511,16 @@ describe('the order a launch on another machine keeps', () => {
     expect(agy.started[0].typedLine).toContain('a=attach')
   })
 
-  it('attaching to a session still running there, Claude Code sends its settings file again and Antigravity sends none of its own files, only the script and the pass', async () => {
+  it('attaching to a session still running there, Claude Code sends its settings file again and Antigravity sends none of its own files, only the script and the pass, and neither sends the account', async () => {
     const stillRunning = { alive: () => new Set([RUNNING_THERE]) }
     await claudeTabOn(claudeWith(stillRunning), { resumeSessionId: RUNNING_THERE })
     expect(filesOfTheTab()).toContain(`${TAB}.json`)
+    expect(filesOfTheTab()).not.toContain(`${TAB}.env`)
     fs.rmSync(tabPackageDir(world.userData, TAB), { recursive: true })
     await agyTabOn(agyWith(stillRunning), {
       resumeSessionId: agySessionKey(RUNNING_THERE, MACHINE)
     })
-    expect(filesOfTheTab()).toEqual([`${TAB}.env`, `${TAB}.pass`, `${TAB}.sh`])
+    expect(filesOfTheTab()).toEqual([`${TAB}.pass`, `${TAB}.sh`])
   })
 
   it("one Claude Code launch names one machine package everywhere — its script, its hook settings and the line that pushes it — though Koloft's package is rebuilt under a new name while it launches", async () => {
