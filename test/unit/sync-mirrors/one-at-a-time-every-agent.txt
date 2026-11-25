@@ -1,0 +1,6 @@
+.claude/projects
+.koloft/hook-sessions
+.gemini/antigravity-cli/brain
+.koloft/codex-home/sessions
+.koloft/codex-home/archived_sessions
+.gemini/antigravity-cli/conversations

@@ -89,6 +89,8 @@ import {
   agyTab,
   runMachineScript
 } from './agyTab'
+import { agyFoldersToMirror } from './agyMirror'
+import type { MirrorFolder } from '@core/agent/mirrorFolders'
 import {
   agyConversations,
   agyConversationTitle,
@@ -1492,6 +1494,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       type: 'background-changed',
       items
     })
+  }
+
+  foldersToMirrorFrom(host: string, landing: string): MirrorFolder[] {
+    return this.usesHost(host) ? agyFoldersToMirror(landing) : []
   }
 
   // AGY§29

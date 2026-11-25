@@ -45,6 +45,8 @@ import {
   type MachineLogin,
   type MachineUpstreamOptions
 } from './codexMachine'
+import { codexUsageFolders } from './codexMirror'
+import type { MirrorFolder } from '@core/agent/mirrorFolders'
 import { writeTabPassFile } from '../../../main/remote/launch'
 import { problemOf, sshLinkBroke } from '../../../main/remote/ssh'
 import type { Machine } from '../../../main/host/machine'
@@ -568,6 +570,12 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   noticeRemoteExits(): void {}
 
   mirrorPulled(): void {}
+
+  foldersToMirrorFrom(host: string, landing: string): MirrorFolder[] {
+    return this.machinesWithTabs().includes(host) || this.hasHistoryOn(host)
+      ? codexUsageFolders(landing)
+      : []
+  }
 
   // ADR-0039 CODEX§16
   tmuxOfTab(): undefined {
