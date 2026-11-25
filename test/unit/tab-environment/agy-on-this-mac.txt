@@ -1,0 +1,66 @@
+=== everything the process gets ===
+ANTHROPIC_API_KEY=the-users-own-anthropic-key
+ANTHROPIC_AUTH_TOKEN=the-users-own-anthropic-token
+ANT_ACCOUNT=work
+CODEX_API_KEY=the-users-own-codex-key
+CODEX_CI=1
+CODEX_SESSION_ID=parent-codex-session
+CODEX_SHELL=1
+CODEX_THREAD_ID=parent-thread
+COLORTERM=truecolor
+GEMINI_API_KEY=api-key-of-the-koloft-account
+HOME=<home>
+KOLOFT_AGY_COST=<home>/agy-open/<tool folder of this tab>/agy-cost
+KOLOFT_AGY_LOG=<home>/agy-open/<tool folder of this tab>/agy.jsonl
+KOLOFT_CDP_DIR=/koloft/cdp
+KOLOFT_NOTICE=<home>/hook-sessions/pty-t1.notice
+KOLOFT_OPEN_DIR=/koloft/opens
+KOLOFT_PICK_DIR=/koloft/picks
+KOLOFT_PID=<pid of this Koloft>
+KOLOFT_SESSION_DIR=<home>/hook-sessions
+KOLOFT_TAB_ID=pty-t1
+KOLOFT_TAB_PASS=<pass>
+LANG=en_US.UTF-8
+OPENAI_API_KEY=the-users-own-openai-key
+PATH=<home>/agy-open/<tool folder of this tab>:/usr/bin:/bin
+PLAYWRIGHT_CLI_SESSION=koloft-pty-t1
+PLAYWRIGHT_MCP_OUTPUT_DIR=<home>/tmp/koloft-playwright/pty-t1
+PWD=<home>/repo
+SHELL=/bin/zsh
+TERM=xterm-256color
+TMPDIR=<home>/tmp
+WSL_INTEROP=koloft
+=== cleared: inherited, and not handed on ===
+AI_AGENT
+ANTIGRAVITY_AGENT
+ANTIGRAVITY_CONVERSATION_ID
+CLAUDECODE
+CLAUDE_CODE_ENTRYPOINT
+CLAUDE_CODE_OAUTH_TOKEN
+CLAUDE_CODE_SESSION_ID
+CLAUDE_EFFORT
+CLAUDE_JOB_DIR
+CLAUDE_PID
+KOLOFT_AGENT_DIR
+KOLOFT_AGENT_PLUGIN
+KOLOFT_AGENT_PROMPT
+KOLOFT_AGY_OWNER_TITLE
+KOLOFT_AGY_START
+KOLOFT_BROWSER_CDP
+KOLOFT_CODEX_DISCORD_SAID
+KOLOFT_CODEX_REPLY_LANGUAGE
+KOLOFT_CODEX_SAID
+KOLOFT_DOCS_PLUGIN
+KOLOFT_FIRST_PROMPT
+KOLOFT_HOOK_SETTINGS
+KOLOFT_KEYCHAIN_FILE
+KOLOFT_OWNER_TEXT
+KOLOFT_PICTURE_FOLDER
+KOLOFT_PORT_OFFSET
+KOLOFT_SESSION_NAME
+KOLOFT_SHELL_WROTE
+KOLOFT_UTIL
+PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS
+PLAYWRIGHT_MCP_CDP_ENDPOINT
+TERM_PROGRAM
+TERM_SESSION_ID
