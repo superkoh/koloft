@@ -310,12 +310,11 @@ function comparePixels(name: string, shot: Buffer): string | null {
     const thisSystemHasBaselines =
       fs.existsSync(folder) &&
       fs.readdirSync(folder).some((f) => f.endsWith(`.${PIXEL_BASELINE_OS}.png`))
-    if (thisSystemHasBaselines && update === 'missing') {
-      fs.writeFileSync(baseline, shot)
-      return `no pixel baseline ${path.basename(baseline)} yet: written now, run again`
+    if (thisSystemHasBaselines) {
+      const proposed = info.outputPath(`${name}-proposed.png`)
+      fs.writeFileSync(proposed, shot)
+      return `no pixel baseline ${path.basename(baseline)}; this shot is at ${proposed}, and --update-snapshots makes it the baseline`
     }
-    if (thisSystemHasBaselines)
-      return `no pixel baseline ${path.basename(baseline)}, though this system (${PIXEL_BASELINE_OS}) has others`
     const line = `${name}: this machine's system (${PIXEL_BASELINE_OS}) has no pixel baseline, so the pixel part was not compared`
     info.annotations.push({ type: PIXEL_PART_SKIPPED, description: line })
     console.warn(line)
@@ -341,6 +340,7 @@ export async function expectScreen(page: Page, screen: ScreenParts): Promise<voi
   for (const part of parts) await expect(part).toBeVisible()
   if (!screen.mouseStays) await page.mouse.move(0, 0)
   const settledShot = async (): Promise<Buffer> => {
+    await page.evaluate(() => document.fonts.ready)
     await page.evaluate(() => {
       for (const a of document.getAnimations()) {
         if (Number.isFinite(a.effect?.getComputedTiming().endTime ?? Infinity)) a.finish()

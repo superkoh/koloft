@@ -226,7 +226,12 @@ test.describe('welcome: every step, for each agent installed or not and signed i
       await welcome(page).locator('.wl-perm button').click()
       await expect(welcome(page).locator('.wl-perm')).toContainText('Claude Code asks only')
       const ask = welcome(page).locator('.wl-ask input')
-      for (const id of ['claude', 'codex', 'agy']) {
+      for (const [id, label] of [
+        ['claude', 'Claude'],
+        ['codex', 'Codex'],
+        ['agy', 'Antigravity']
+      ] as const) {
+        await expect(welcome(page).locator('.wl-agtag')).toHaveText(new RegExp(`^${label}tab$`))
         await expectScreen(page, {
           name: `welcome-4-asking-${id}`,
           parts: [welcome(page).locator('.wl-foot')],

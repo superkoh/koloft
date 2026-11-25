@@ -220,12 +220,17 @@ test.describe('accounts page: one set of screenshots, structure and screen-reade
       await expect(page.locator('.acct-note', { hasText: /^5h resets / })).toHaveCount(2, {
         timeout: 20_000
       })
-      await expectAgentSections(page, 'accounts-trouble')
-
       const row = (name: string): Locator =>
         page.locator('.acct-row', {
           has: page.locator('.acct-name', { hasText: new RegExp(`^${name}$`) })
         })
+      await expect(row('lapsed')).toContainText('Probe failed: credential rejected', {
+        timeout: 20_000
+      })
+      for (const signedOut of ['signed-out', 'logged-off'])
+        await expect(row(signedOut)).toContainText('Not signed in', { timeout: 20_000 })
+      await expectAgentSections(page, 'accounts-trouble')
+
       await row('walled').getByRole('button', { name: 'Delete account' }).click()
       await expect(row('walled').locator('.acct-confirm')).toBeVisible()
       await expectScreen(page, { name: 'accounts-delete-asked-claude', parts: [row('walled')] })

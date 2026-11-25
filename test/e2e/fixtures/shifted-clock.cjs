@@ -4,7 +4,7 @@ if (Number.isFinite(shiftMs) && shiftMs !== 0) {
   const shiftedNow = () => RealDate.now() + shiftMs
   function ShiftedDate(...args) {
     if (!new.target) return new RealDate(shiftedNow()).toString()
-    return args.length === 0 ? new RealDate(shiftedNow()) : new RealDate(...args)
+    return Reflect.construct(RealDate, args.length === 0 ? [shiftedNow()] : args, new.target)
   }
   ShiftedDate.prototype = RealDate.prototype
   ShiftedDate.now = shiftedNow
