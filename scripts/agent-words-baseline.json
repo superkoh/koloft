@@ -637,6 +637,7 @@
       "import type { AccountView, CodexLimitWindow, CodexResetOutcome } from '@shared/types'",
       "label=\"fable\"",
       "nothingToReset: 'Codex says there is nothing to reset right now.',",
+      "onAct={(a) => window.api.accounts.codexUseReset(a.name)}",
       "p={claudePool}",
       "style={{ height: fable.spent ? '100%' : `${Math.round(fable.frac * 100)}%` }}",
       "title=\"Claude\"",
@@ -666,6 +667,7 @@
       "return v >= FABLE_STOP ? 'bad' : v >= FABLE_WARN_AT ? 'warn' : ''"
     ],
     "src/renderer/src/components/settings/AccountsPane.tsx": [
+      ") : a.kind === 'agy-home' && a.status === 'ok' && a.quota && a.quota.length > 0 ? (",
       ") : a.kind === 'custom' ? (",
       "<span className=\"acct-badge nofable\">FABLE</span>",
       "Adds <code>--dangerously-skip-permissions</code> to Claude and Antigravity when Koloft",
@@ -674,7 +676,6 @@
       "const codexBalance = a.status === 'ok' && a.limits ? codexBalanceLabel(a.limits, now) : ''",
       "injects an account, and starts new Codex sessions with{' '}",
       "title=\"Plan includes a fable allowance — fable launches are routed here first\"",
-      "{a.kind === 'agy-home' && a.status === 'ok' && a.quota && a.quota.length > 0 ? (",
       "{a.kind === 'custom' && <span className=\"acct-badge custom\">ENDPOINT</span>}",
       "{a.kind === 'oauth' && a.fable === 'no' && (",
       "{a.kind === 'oauth' && a.fable === 'yes' && (",
@@ -689,6 +690,11 @@
       "b !== 'claude' && (",
       "codex: 'CODEX',",
       "const BADGE: Record<Exclude<BackendId, 'claude'>, string> = {"
+    ],
+    "src/renderer/src/components/usageFromShape.tsx": [
+      "className=\"tbu-fable\"",
+      "endpoint: 'custom',",
+      "planLacks: 'nofable'"
     ],
     "src/renderer/src/costs.css": [".acct-badge.agy {", ".acct-badge.codex {"],
     "src/renderer/src/topbarUsage.css": [

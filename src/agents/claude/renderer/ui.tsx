@@ -1,6 +1,7 @@
 import { BsClaude } from 'react-icons/bs'
 import type { AgentAccountsUiOf, AgentUi } from '@core/agent/agentUi'
 import { agent } from '../agent'
+import { usage } from './usage'
 import './ui.css'
 
 const VERIFIED_IN_THE_KEYCHAIN =
@@ -52,5 +53,6 @@ export const ui: AgentUi = {
   },
   settings: {
     whatItRunsOn: 'a Claude account'
-  }
+  },
+  usage
 }
