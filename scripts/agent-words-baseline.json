@@ -132,7 +132,7 @@
       "openApproval(tabId: string): CodexApproval | undefined",
       "openQuestion(tabId: string): CodexQuestion | undefined",
       "return ask && claudeAskLine(ask)",
-      "return ask ? codexDialog(ask) : sessionAsks?.dialog(tabId)",
+      "return ask ? codexDialog(ask) : d.sessionAsks()?.dialog(tabId)",
       "return { question: questions > 0, questions, text: claudeDialog(claude).text }",
       "return { question: questions > 0, questions, text: codexDialog(stored).text }",
       "type CodexApproval,",
@@ -1085,7 +1085,6 @@
       "CODEX_REPLY_LANGUAGE_SCRIPT,",
       "export { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from '@agents/agy/main/agyHooks'",
       "export { agyBackend } from '@agents/agy/main/backend'",
-      "export { claudeDialog, codexDialog, isAskedCall, questionsOf } from './dialog'",
       "export { codexBackend, trustCodexFolder } from '@agents/codex/main/backend'",
       "export { machineHookSettings, pickMachineAccount } from '@agents/claude/main/backend'",
       "export { writeLineInTurn } from '@agents/claude/main/crossSessionMessage'"

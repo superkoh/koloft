@@ -4,7 +4,7 @@ export { machineHookSettings, pickMachineAccount } from '@agents/claude/main/bac
 export { codexBackend, trustCodexFolder } from '@agents/codex/main/backend'
 export { A_HELPER_HAS_IT } from './messageOpenings'
 export { writeLineInTurn } from '@agents/claude/main/crossSessionMessage'
-export { claudeDialog, codexDialog, isAskedCall, questionsOf } from './dialog'
+export { isAskedCall } from './dialog'
 export {
   everyWorkspaceBlock,
   ownerPartsOf,

@@ -57,8 +57,7 @@ export function askWiring(d: AskWiringDeps) {
     claudeAskOf: (tabId: string): AskPayload | undefined => claudeAsks.get(tabId),
     endsTheAsk: (tabId: string, call: ToolCall): boolean => {
       const ask = claudeAsks.get(tabId)
-      const endsTheAsk = !!ask && isAskedCall(ask, call)
-      return endsTheAsk
+      return !!ask && isAskedCall(ask, call)
     },
     askingOf: (tabId: string): string | undefined => {
       const runtime = d.runtime()
@@ -72,9 +71,9 @@ export function askWiring(d: AskWiringDeps) {
     },
     pendingAskOf,
     ownerAsleepAsked: async (tabId: string) => {
+      const stored = await pendingAskOf(tabId)
       const runtime = d.runtime()
       const sessionAsks = d.sessionAsks()
-      const stored = await pendingAskOf(tabId)
       if (stored) {
         const questions = 'questions' in stored ? stored.questions.length : 0
         return { question: questions > 0, questions, text: codexDialog(stored).text }
@@ -87,9 +86,8 @@ export function askWiring(d: AskWiringDeps) {
       return { question: questions > 0, questions, text: claudeDialog(claude).text }
     },
     dialogOf: async (tabId: string): Promise<DialogView | undefined> => {
-      const sessionAsks = d.sessionAsks()
       const ask = await pendingAskOf(tabId)
-      return ask ? codexDialog(ask) : sessionAsks?.dialog(tabId)
+      return ask ? codexDialog(ask) : d.sessionAsks()?.dialog(tabId)
     }
   }
 }
