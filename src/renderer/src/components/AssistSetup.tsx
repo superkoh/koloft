@@ -140,10 +140,11 @@ export function AssistSetup({
         })}
       </div>
       <div className="quiet">
-        {ASSIST_COST_LINE} Choose what each job runs on in {settingsPaneName('assist')}.
+        {ASSIST_COST_LINE} Choose what each job runs on in {settingsPaneName('assist')}
+        {PASTED_TOKEN ? `. Have a ${BACKEND_LABEL[PASTED_TOKEN.agent]} token?` : '.'}
         {PASTED_TOKEN && (
           <>
-            {` Have a ${BACKEND_LABEL[PASTED_TOKEN.agent]} token? `}
+            {' '}
             <button className="ob-link" onClick={() => openForm({ paste: PASTED_TOKEN.kind })}>
               Paste it
             </button>
