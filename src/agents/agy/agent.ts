@@ -58,6 +58,12 @@ export const agent = {
     normal: { model: 'neon', effort: 'medium' },
     'very hard': { model: 'carbon', effort: 'high' }
   },
+  // AGY§21
+  smallJobModels: {
+    smallAndQuick: { model: 'gemini-3.8-flash', effort: 'low' },
+    judgesAReply: { model: 'gemini-4-argon', effort: 'medium' },
+    picksFromAList: { model: 'gemini-3.8-flash', effort: 'low' }
+  },
   ownSettings: {},
   slotFills: SLOT_FILLS,
   slotAdditions: SLOT_ADDITIONS,

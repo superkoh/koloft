@@ -1,5 +1,6 @@
 // ADR-0054
 import type { CronEffort } from '@shared/efforts'
+import type { ModelAndEffort } from '../assistModels'
 import type { SettingKey } from '../settings'
 
 export interface AgentWords {
@@ -40,6 +41,8 @@ export interface AgentFlags {
   questionToolTakesNoOptionDescriptions: boolean
 }
 
+export type SmallJobKind = 'smallAndQuick' | 'judgesAReply' | 'picksFromAList'
+
 export interface AgentPureFunctions {
   effortsAModelTakes(model: string | undefined): readonly CronEffort[]
 }
@@ -60,6 +63,7 @@ export interface AgentManifest {
   normalTaskFamilyEveryAccountHas?: string
   namedModels: readonly NamedModel[]
   picksByTaskTier: Readonly<Record<TaskTier, ModelPick>>
+  smallJobModels: Readonly<Record<SmallJobKind, ModelAndEffort>>
   ownSettings: Readonly<Record<string, OwnSetting>>
   slotFills: Readonly<Record<string, string>>
   slotAdditions: Readonly<Record<string, string>>

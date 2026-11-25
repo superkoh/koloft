@@ -32,11 +32,11 @@ const SLOTS_PLUGINS_FILL_IN_THE_BUTLERS_ROLE = [
   .map(([, name]) => name)
   .filter((name) => name !== BUTLER_NAME)
 
-export const butlerLinesGained = (was: PromptState, now: PromptState): string[] =>
-  fillsGained(SLOTS_PLUGINS_FILL_IN_THE_BUTLERS_ROLE, was, now)
+export const butlerLinesGained = (name: string, was: PromptState, now: PromptState): string[] =>
+  fillsGained(SLOTS_PLUGINS_FILL_IN_THE_BUTLERS_ROLE, was, now, { [BUTLER_NAME]: name })
 
-export const factGivesLinesWhile = (fact: string, on: PromptState['on']): boolean =>
-  butlerLinesGained({ on, facts: [] }, { on, facts: [fact] }).length > 0
+export const factGivesLinesWhile = (name: string, fact: string, on: PromptState['on']): boolean =>
+  butlerLinesGained(name, { on, facts: [] }, { on, facts: [fact] }).length > 0
 
 export const pluginsChangedNews = (
   now: readonly { name: string; on: boolean }[],

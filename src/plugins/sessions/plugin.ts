@@ -44,6 +44,7 @@ export const plugin: PluginManifest = {
     'koloft-help-command-arguments-example',
     'koloft-help-git-at-the-main-checkout-refused-by'
   ],
+  skills: [{ name: 'koloft', group: 'koloft' }],
   assistJobs: ASSIST_JOBS,
   channels: Object.values(CHANNELS),
   moments: {

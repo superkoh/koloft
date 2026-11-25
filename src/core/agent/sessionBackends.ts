@@ -58,7 +58,7 @@ export interface SessionLifecycle {
   clearAttention(tabId: string): void
   open(tabId: string, target: string): void
   turnEnded(tabId: string, turn: Turn): void
-  asked(tabId: string, ask: AskPayload): void
+  asked(tabId: string, ask: AskPayload, id: string): void
 }
 
 const CLEAN_EXIT_HIDES_A_LATER_EXIT_MS = 30_000
@@ -66,6 +66,7 @@ const CLEAN_EXIT_HIDES_A_LATER_EXIT_MS = 30_000
 export class SessionBackends {
   private adapters = new Map<BackendId, SessionBackend>()
   private cleanExitAt = new Map<string, number>()
+  private questionsAsked = 0
   isOverseerSession: (tabOrSessionId: string) => boolean = () => false
   turnOver: (tabId: string) => boolean = () => false
   askingOf: (tabId: string) => string | undefined = () => undefined
@@ -88,7 +89,7 @@ export class SessionBackends {
       case 'turn-ended':
         return this.lifecycle.turnEnded(tabId, event.turn)
       case 'asked':
-        return this.lifecycle.asked(tabId, event.ask)
+        return this.lifecycle.asked(tabId, event.ask, String(++this.questionsAsked))
       case 'prompt':
         this.lifecycle.prompted(tabId)
     }

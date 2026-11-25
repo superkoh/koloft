@@ -6,5 +6,6 @@ export const plugin: PluginManifest = {
   name: 'Docs writing',
   does: 'The koloft-docs skill: how agents write documents for you to read.',
   mandatory: false,
-  needs: []
+  needs: [],
+  skills: [{ name: 'koloft-docs', group: 'koloft-docs' }]
 }
