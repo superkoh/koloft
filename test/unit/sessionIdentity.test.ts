@@ -54,10 +54,7 @@ describe('identityOf (whose session a saved key is)', () => {
 
   it.each([
     ['a key of two parts', 'codex:local'],
-    [
-      'a key of two parts with an id in its second part, a form no Koloft ever saved',
-      'codex:019a-thread'
-    ],
+    ['a key of two parts with an id in its second part', 'codex:019a-thread'],
     ['a key of four parts', `codex:local:${SESSION}:more`]
   ])(
     '%s, whose first part is an agent on the list, is nobody’s session: it is unavailable, and the text shown for it is the key as it is',
