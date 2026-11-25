@@ -231,7 +231,8 @@ async function targetOf(c: Case): Promise<RemoteTarget> {
           codex,
           probes,
           () => probes,
-          async () => {}
+          async () => {},
+          async () => undefined
         )
       )
       backends.register(agyBackend(agy, probes, () => probes))

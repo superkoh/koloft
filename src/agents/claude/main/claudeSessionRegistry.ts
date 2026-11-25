@@ -148,6 +148,23 @@ export async function claudeShowsAPanel(
   return panelFromStatus((await liveEntryOf(sessionId, dir, startOf))?.status)
 }
 
+export interface ClaudePanelPlaces {
+  remoteHostOf(tabId: string): string | undefined
+  liveRegistryOn(host: string): Promise<string>
+}
+
+export async function claudeShowsAPanelInTab(
+  tabId: string,
+  sessionId: string,
+  d: ClaudePanelPlaces
+): Promise<boolean | undefined> {
+  if (!sessionId) return undefined
+  const host = d.remoteHostOf(tabId)
+  if (!host) return claudeShowsAPanel(sessionId)
+  const registry = await d.liveRegistryOn(host).catch(() => undefined)
+  return registry === undefined ? undefined : claudeShowsAPanelOnMachine(registry, sessionId)
+}
+
 async function socketWithin(
   ms: number,
   everyMs: number,

@@ -166,6 +166,27 @@ describe('session backend boundary', () => {
       registry.create({ kind: 'codex', cwd: '/repo', resumeSessionId: 'thread' })
     ).resolves.toMatchObject({ ok: true })
   })
+
+  it('asks whether a panel is open only of the agent that lists a session in that tab, with the screen it was handed, and cannot say for a tab whose session is not listed yet', async () => {
+    const registry = new SessionBackends(lifecycle())
+    const asked: string[] = []
+    const listing = (id: BackendId, tabId: string, alsoHolds?: string): SessionBackend => ({
+      ...stubBackend(id, undefined, [
+        { tabId, sessionId: `${id}-session`, cwd: '/repo' } as BackendSessionInfo
+      ]),
+      hasTab: (tab) => tab === tabId || tab === alsoHolds,
+      showsAPanel: async (tab, screen) => {
+        asked.push(`${id} ${tab} ${screen?.join('|') ?? 'no screen'}`)
+        return true
+      }
+    })
+    registry.register(listing('claude', 'tab-c'))
+    registry.register(listing('codex', 'tab-x', 'tab-starting'))
+    expect(await registry.showsAPanel('tab-x', ['a screen'])).toBe(true)
+    expect(await registry.showsAPanel('tab-c')).toBe(true)
+    expect(await registry.showsAPanel('tab-starting')).toBeUndefined()
+    expect(asked).toEqual(['codex tab-x a screen', 'claude tab-c no screen'])
+  })
 })
 
 describe('session lifecycle tap (one place turns a bind or an exit into attention)', () => {
@@ -233,11 +254,6 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
       "Koloft's ask hook holds a question until Discord answers it only in a Claude Code tab on this Mac; on a machine the hook only records it and a Discord button presses the key, and other agents have no such hook",
       'askHookWaitsForDiscord',
       ['claude/local']
-    ],
-    [
-      'Koloft sees whether a menu or panel is open in Claude Code (its session registry, read over ssh on a machine) and in Codex (its screen), on this Mac and on a machine; in an Antigravity tab a slash command from Discord presses Esc to be safe',
-      'panelSeen',
-      ['claude/local', 'claude/ssh', 'codex/local', 'codex/ssh']
     ],
     [
       'Koloft follows Claude Code removing its worktree at /exit, and says so when it fails, on this Mac and on a machine, where its tmux passes the title code on; other agents remove no worktree at exit',

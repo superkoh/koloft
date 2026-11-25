@@ -92,6 +92,7 @@ import {
   OLD_CLAUDE_GOES_WITHIN_MS,
   claudePeerNames,
   claudePidsHolding,
+  claudeShowsAPanelInTab,
   runningClaudePidBesides
 } from './claudeSessionRegistry'
 import { rootsWithClaude } from './claudeLiveness'
@@ -152,6 +153,7 @@ export interface ClaudeBackendDeps {
   messaged(tabId: string, fromSessionId: string): void
   error(message: string): void
   machineOfTab(tabId: string): string | undefined
+  liveRegistryOn(host: string): Promise<string>
   messages: Omit<MessageSocketDeps, 'tracker'> & Pick<ClaudeMessageDeps, 'noteKoloftSent'>
   otherTabOnMachine?(machine: string, tmuxName: string, launchTab: string): string | undefined
   projectRules?(workspace: string): Promise<string | undefined>
@@ -430,6 +432,13 @@ export class ClaudeBackend implements SessionBackend {
 
   workStillRunning(tabId: string): Promise<boolean> {
     return this.d.tracker.workStillRunning(tabId)
+  }
+
+  showsAPanel(tabId: string): Promise<boolean | undefined> {
+    return claudeShowsAPanelInTab(tabId, this.d.tracker.infoOf(tabId)?.sessionId ?? '', {
+      remoteHostOf: (tab) => this.d.tracker.remoteOf(tab)?.host,
+      liveRegistryOn: (host) => this.d.liveRegistryOn(host)
+    })
   }
 
   async trustsFolder(dir: string): Promise<boolean> {
