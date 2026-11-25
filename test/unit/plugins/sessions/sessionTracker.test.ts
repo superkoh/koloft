@@ -1081,8 +1081,10 @@ describe('SessionTracker — a session that moved: EnterWorktree / ExitWorktree 
   it('follows it back out, where no line ever carries a directory again, with no notice: leaving the worktree is how a session closes it (R4)', async () => {
     const { repo, wt } = repoWithWorktree('back')
     const tracker = newTracker()
-    const events: { tabId: string; dir: string }[] = []
-    tracker.on('relocated', (e: { tabId: string; dir: string }) => events.push(e))
+    const events: { tabId: string; dir: string; backendId: string }[] = []
+    tracker.on('relocated', (e: { tabId: string; dir: string; backendId: string }) =>
+      events.push(e)
+    )
     tracker.track('tabM2', wt)
     const file = writeJsonl(wt, SID, [{ type: 'user', message: { content: 'hi' }, cwd: wt }])
     tracker.bindSession('tabM2', file, SID, wt)
@@ -1117,8 +1119,10 @@ describe('SessionTracker — a session that moved: EnterWorktree / ExitWorktree 
     const { repo, wt } = repoWithWorktree('burst')
     const other = repoWithWorktree('burst2')
     const tracker = newTracker()
-    const events: { tabId: string; dir: string }[] = []
-    tracker.on('relocated', (e: { tabId: string; dir: string }) => events.push(e))
+    const events: { tabId: string; dir: string; backendId: string }[] = []
+    tracker.on('relocated', (e: { tabId: string; dir: string; backendId: string }) =>
+      events.push(e)
+    )
     tracker.track('tabM3', repo)
     const file = writeJsonl(repo, SID, [{ type: 'user', message: { content: 'hi' }, cwd: repo }])
     tracker.bindSession('tabM3', file, SID, repo)
@@ -1136,7 +1140,7 @@ describe('SessionTracker — a session that moved: EnterWorktree / ExitWorktree 
 
     const after = await waitFor(tracker, (x) => x.tabId === 'tabM3' && x.treeRoot === other.wt)
     expect(after.jsonlPath).toBe(second)
-    expect(events).toEqual([{ tabId: 'tabM3', dir: other.wt }])
+    expect(events).toEqual([{ tabId: 'tabM3', dir: other.wt, backendId: 'claude' }])
   })
 
   it('a deleted transcript is not answered with a same-id copy in another bucket (R2)', async () => {

@@ -44,6 +44,7 @@ export interface AgentFlags {
   commandsItRunsCanHaveATerminalOfTheirOwn: boolean
   runsCommandsInASandboxWhereSudoCannotStart: boolean
   questionToolTakesNoOptionDescriptions: boolean
+  removesItsWorktreeAsItExits: boolean
   turnEndCanComeBeforeItsReplyIsWritten: boolean
   typesASkillOnlyByTheNameInItsFile: boolean
   refusesATypedSkillMarkedNotUserInvocable: boolean
