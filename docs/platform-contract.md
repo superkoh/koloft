@@ -4234,6 +4234,13 @@ not, ADR-0052.
   left it too; an Antigravity tab reattached after Koloft reopened left one more per
   reopen. A Claude Code tab reattached after two reopens left none, since a reattach
   picks no account. A start that ran left none.
+- **An Antigravity account signed in on the web, whose sign-in went as its own
+  `<tab>.auth.json` deleted by `trap … EXIT`:** a start that failed before tmux (no agy,
+  nothing to install it with, exit 4) left nothing, as the trap ran on that exit; Koloft
+  quit while the start still waited on the installer left `<tab>.auth.json` holding the
+  sign-in, as the SIGHUP skipped the trap (first bullet). Reattaching after a dropped link
+  and after a reopen left nothing, and no process environment on the machine held the
+  sign-in.
 - Measured 2026-11-24 in the `koloft-e2e-sshd` Docker image (Debian 12, OpenSSH 9.2p1),
   reached through the lab's jump host by a dev build.
 

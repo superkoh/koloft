@@ -1,3 +1,4 @@
+import fs from 'fs'
 import path from 'path'
 import type { ElectronApplication, Locator, Page } from '@playwright/test'
 import { test, expect, launchApp, quitAndClose } from './helpers/app'
@@ -6,6 +7,8 @@ import {
   E2E_AGY_ACCOUNT_KEY,
   installAgy,
   seedSettings,
+  seededAccount,
+  signInAgyWithGoogle,
   type AgyCall,
   type E2EEnv
 } from './helpers/env'
@@ -157,6 +160,37 @@ const tabFilesOn = (lab: SshLab, user: string): string[] =>
 
 const filesHoldingTheKeyOn = (lab: SshLab, user: string): string[] =>
   lines(runOnTarget(lab, user, KEY_HOLDERS(E2E_AGY_ACCOUNT_KEY)))
+
+const WEB_ACCOUNT = 'e2e-agy-web'
+const WEB_SIGN_IN_PART = 'made-up-web-sign-in-2446'
+const WEB_SIGN_IN = `{"access_token":"${WEB_SIGN_IN_PART}","refresh_token":"made-up-refresh"}\n`
+const SIGN_IN_ON_THE_MACHINE = `.koloft/agy/${WEB_ACCOUNT}/antigravity-cli/antigravity-oauth-token`
+
+function onlyAWebSignedInAccount(env: E2EEnv): void {
+  signInAgyWithGoogle(env, WEB_ACCOUNT)
+  fs.writeFileSync(
+    path.join(env.userData, 'agy-homes', WEB_ACCOUNT, 'antigravity-cli', 'antigravity-oauth-token'),
+    WEB_SIGN_IN
+  )
+  const settings = JSON.parse(fs.readFileSync(path.join(env.userData, 'settings.json'), 'utf8'))
+  const others = (settings.accounts as { name: string }[]).filter((a) => a.name !== E2E_AGY_ACCOUNT)
+  seedSettings(env, { accounts: [...others, seededAccount(WEB_ACCOUNT, 'agy-home')] })
+}
+
+const filesHoldingTheWebSignInOn = (lab: SshLab, user: string): string[] =>
+  lines(runOnTarget(lab, user, KEY_HOLDERS(WEB_SIGN_IN_PART)))
+
+const filesHoldingTheWebSignInBesidesAgysOwnOn = (lab: SshLab, user: string): string[] =>
+  filesHoldingTheWebSignInOn(lab, user).filter((f) => f !== SIGN_IN_ON_THE_MACHINE)
+
+const processesWhoseEnvironmentHoldsTheWebSignInOn = (lab: SshLab, user: string): string[] =>
+  lines(
+    runOnTarget(
+      lab,
+      user,
+      `grep -l -a -e '${WEB_SIGN_IN_PART}' /proc/[0-9]*/environ 2>/dev/null || true`
+    )
+  )
 
 const tabScriptsRunningOn = (lab: SshLab, user: string): string[] =>
   lines(runOnTarget(lab, user, "ps -eo args= | grep -e '[.]koloft/tabs/' || true"))
@@ -434,6 +468,110 @@ test.describe('Antigravity sessions on real sshd machines behind a company jump 
         expect(filesHoldingTheKeyOn(lab, 'kuser')).toEqual([])
       },
       (lab) => installCurlThatNeverAnswersOnTarget(lab)
+    )
+  })
+
+  // AGY§4 PLATFORM§75
+  test('E-SSH-A8: an Antigravity account signed in on the web starts a session on the machine whose agy finds that sign-in, byte for byte and readable by the user alone, answers a turn, and no other file under ~/.koloft and no process environment there holds it; after the ssh link drops and after Koloft reopens, each attaching again, still none does', async ({
+    env
+  }) => {
+    onlyAWebSignedInAccount(env)
+    await withLab(
+      env,
+      async ({ page: firstWindow, lab, quitKoloft, openKoloftAgain }) => {
+        await addMachine(firstWindow, 'kt-key', 'kuser')
+        const tabId = await agyTabAtItsPromptOn(firstWindow, 'kt-key')
+        expect(await terminalText(firstWindow, tabId)).toContain(`koloft: → ${WEB_ACCOUNT}`)
+        await promptShowsWorkingThenDone(firstWindow, rowOfTab(firstWindow, tabId), 'web words')
+        expect(runOnTarget(lab, 'kuser', `cat ${SIGN_IN_ON_THE_MACHINE}`)).toBe(WEB_SIGN_IN)
+        expect(runOnTarget(lab, 'kuser', `stat -c %a ${SIGN_IN_ON_THE_MACHINE}`).trim()).toBe('600')
+        expect(filesHoldingTheWebSignInBesidesAgysOwnOn(lab, 'kuser')).toEqual([])
+        expect(processesWhoseEnvironmentHoldsTheWebSignInOn(lab, 'kuser')).toEqual([])
+        const agy = agyPidOn(lab, 'kuser')
+
+        runOnTarget(lab, 'kuser', "pkill -u kuser -f '^sshd(-session)?: kuser' || true")
+        await expect
+          .poll(
+            () => runOnTarget(lab, 'kuser', `ps -eo args= | grep -c '[.]sh attach' || true`).trim(),
+            { timeout: BACKGROUND_CONNECT_MS }
+          )
+          .toBe('1')
+        expect(agyPidOn(lab, 'kuser')).toBe(agy)
+        expect(filesHoldingTheWebSignInBesidesAgysOwnOn(lab, 'kuser')).toEqual([])
+
+        await quitKoloft()
+        const page = await openKoloftAgain()
+        const row = wsRows(page, 'kt-key')
+        await expect(row).not.toHaveClass(/\bcold\b/, { timeout: AGY_DRAWS_ITS_PROMPT_MS })
+        await expect
+          .poll(
+            () => runOnTarget(lab, 'kuser', `ps -eo args= | grep -c '[.]sh attach' || true`).trim(),
+            { timeout: BACKGROUND_CONNECT_MS }
+          )
+          .toBe('1')
+        expect(agyPidOn(lab, 'kuser')).toBe(agy)
+        expect(filesHoldingTheWebSignInBesidesAgysOwnOn(lab, 'kuser')).toEqual([])
+        expect(processesWhoseEnvironmentHoldsTheWebSignInOn(lab, 'kuser')).toEqual([])
+        expect(agyLaunchesOn(lab, 'kuser')).toHaveLength(1)
+      },
+      (lab) => {
+        fakeAgyOnTheMachine(lab, ['kuser'])
+        turnsTakeLongerThanAMirrorPull(lab, 'kuser')
+      }
+    )
+  })
+
+  // PLATFORM§75
+  test('E-SSH-A9: an Antigravity start of an account signed in on the web that fails before tmux, on a machine with no agy and nothing to install it with, and one Koloft is closed during while it still installs agy, leave that sign-in in no file there', async ({
+    env
+  }) => {
+    onlyAWebSignedInAccount(env)
+    await withLab(env, async ({ app, page, lab, quitKoloft }) => {
+      await addMachine(page, 'kt-key', 'kuser')
+      const notInstalled = await newAgyTabOn(page, 'kt-key')
+      await screenOf(page, notInstalled, AGY_DRAWS_ITS_PROMPT_MS).toContain(
+        '[Koloft] need curl or wget to install agy'
+      )
+      await expect.poll(() => tabScriptsRunningOn(lab, 'kuser'), { timeout: 30_000 }).toEqual([])
+      expect(filesHoldingTheWebSignInOn(lab, 'kuser')).toEqual([])
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(wsRows(page, 'kt-key')).toHaveCount(0)
+
+      installCurlThatNeverAnswersOnTarget(lab)
+      const installing = await newAgyTabOn(page, 'kt-key')
+      await screenOf(page, installing, AGY_DRAWS_ITS_PROMPT_MS).toContain(
+        '[Koloft] installing agy (official installer)'
+      )
+      await quitKoloft()
+      await expect.poll(() => tabScriptsRunningOn(lab, 'kuser'), { timeout: 30_000 }).toEqual([])
+      expect(filesHoldingTheWebSignInOn(lab, 'kuser')).toEqual([])
+    })
+  })
+
+  // AGY§4
+  test('E-SSH-A10: an Antigravity session of an account signed in on the web leaves a sign-in agy already keeps for that account on the machine as it is, and puts the Mac’s copy nowhere there', async ({
+    env
+  }) => {
+    onlyAWebSignedInAccount(env)
+    const keptByAgy = '{"access_token":"agy-refreshed-this-one"}'
+    await withLab(
+      env,
+      async ({ page, lab }) => {
+        await addMachine(page, 'kt-key', 'kuser')
+        const tabId = await agyTabAtItsPromptOn(page, 'kt-key')
+        await promptShowsWorkingThenDone(page, rowOfTab(page, tabId), 'kept words')
+        expect(runOnTarget(lab, 'kuser', `cat ${SIGN_IN_ON_THE_MACHINE}`)).toBe(keptByAgy)
+        expect(filesHoldingTheWebSignInOn(lab, 'kuser')).toEqual([])
+      },
+      (lab) => {
+        fakeAgyOnTheMachine(lab, ['kuser'])
+        turnsTakeLongerThanAMirrorPull(lab, 'kuser')
+        runOnTarget(
+          lab,
+          'kuser',
+          `umask 077 && mkdir -p "$(dirname ${SIGN_IN_ON_THE_MACHINE})" && printf '%s' '${keptByAgy}' > ${SIGN_IN_ON_THE_MACHINE}`
+        )
+      }
     )
   })
 
