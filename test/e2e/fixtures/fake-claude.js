@@ -30,12 +30,31 @@ if (argv[0] === '--version') {
   process.exit(0)
 }
 
+// CC§7
+function accountEnv() {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([k]) =>
+        k === 'ANT_ACCOUNT' ||
+        k === 'KOLOFT_ACCOUNT_PICKED' ||
+        k === 'CLAUDE_CODE_OAUTH_TOKEN' ||
+        k === 'CLAUDE_CODE_DISABLE_1M_CONTEXT' ||
+        k.startsWith('ANTHROPIC_') ||
+        k.startsWith('CLAUDE_CODE_SUBAGENT_MODEL')
+    )
+  )
+}
+
 // CC§9
 const typedInATerminal = require('tty').isatty(0) && require('tty').isatty(1)
 if (argv[0] === '-p' && !typedInATerminal) {
   const promptArg = argv[1] && !argv[1].startsWith('-') ? argv[1] : ''
   const input = require('tty').isatty(0) ? promptArg : fs.readFileSync(0, 'utf8')
   const sentinelHome = process.env.HOME || require('os').homedir()
+  fs.appendFileSync(
+    path.join(sentinelHome, 'fake-claude-print-calls.jsonl'),
+    JSON.stringify({ argv, account: accountEnv() }) + '\n'
+  )
   const assistReply = path.join(sentinelHome, 'fake-claude-assist-reply')
   if (fs.existsSync(assistReply)) {
     fs.appendFileSync(path.join(sentinelHome, 'fake-claude-assist-asked.txt'), input + '\n')
@@ -118,6 +137,7 @@ function writeCallLog(effCwd) {
         oauthToken: process.env.CLAUDE_CODE_OAUTH_TOKEN || null,
         apiKey: process.env.ANTHROPIC_API_KEY || null,
         disable1mContext: process.env.CLAUDE_CODE_DISABLE_1M_CONTEXT || null,
+        account: accountEnv(),
         cdpEndpoint: process.env.KOLOFT_BROWSER_CDP || null,
         playwrightMcpEndpoint: process.env.PLAYWRIGHT_MCP_CDP_ENDPOINT || null,
         playwrightCliSession: process.env.PLAYWRIGHT_CLI_SESSION || null,
