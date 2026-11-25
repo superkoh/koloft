@@ -1,4 +1,5 @@
 import { AgentsMain, type AgentCatalog } from '../../../src/core/agent/agentsMain'
+import { accountsThatAreNeverAsked } from './agentAccounts'
 import type { AgentId } from '../../../src/core/agent/registry'
 import { isGitCheckoutAsync } from '../../../src/main/projectInfo'
 import { claudeCatalog } from '../../../src/agents/claude/main/claudeCatalog'
@@ -19,6 +20,12 @@ export function agentsWithTheirCatalogs(owners: OwnersSettings): AgentsMain {
   }
   const agents = new AgentsMain()
   for (const [id, catalog] of Object.entries(catalogs) as [AgentId, AgentCatalog][])
-    agents.register({ id, oneShotTarget: async () => null, catalog, tools: EVERY_AGENTS_TOOLS[id] })
+    agents.register({
+      id,
+      oneShotTarget: async () => null,
+      catalog,
+      tools: EVERY_AGENTS_TOOLS[id],
+      accounts: accountsThatAreNeverAsked
+    })
   return agents
 }

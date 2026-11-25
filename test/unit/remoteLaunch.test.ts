@@ -976,6 +976,41 @@ describe('U-TAB-*: the tab script on the machine', () => {
     expect(b.env().GEMINI_API_KEY).toBeUndefined()
   })
 
+  // AGY§12 AGY§17
+  it.each([
+    { how: 'exits on its own', hangsUp: false },
+    { how: 'is hung up on, as when Koloft ends its tmux session', hangsUp: true }
+  ])(
+    "an Antigravity tab's start instructions stay readable on the machine for as long as agy runs, and are gone once it $how, with no exit code written for it",
+    ({ hangsUp }) => {
+      const b = box(
+        spec({
+          program: agyTab({
+            tabId: 'T',
+            account: 'a',
+            args: [],
+            settings: '{}',
+            hooks: '{}',
+            start: 'START TEXT',
+            koloftSkill: false
+          })
+        })
+      )
+      fs.writeFileSync(path.join(b.home, '.local', 'bin', 'python3'), '#!/bin/sh\nexit 1\n', {
+        mode: 0o755
+      })
+      fs.writeFileSync(
+        path.join(b.home, '.local', 'bin', 'agy'),
+        `#!/bin/sh\ncat "$KOLOFT_AGY_START" > ${JSON.stringify(path.join(b.logs, 'start'))}\n${hangsUp ? 'kill -HUP $PPID\nsleep 1\n' : ''}cat "$KOLOFT_AGY_START" >> ${JSON.stringify(path.join(b.logs, 'start'))}\n`,
+        { mode: 0o755 }
+      )
+      b.run()
+      expect(fs.readFileSync(path.join(b.logs, 'start'), 'utf8')).toBe('START TEXTSTART TEXT')
+      expect(fs.readdirSync(b.tabs).filter((n) => n.includes('start'))).toEqual([])
+      expect(fs.existsSync(path.join(b.tabs, 'T.exit'))).toBe(!hangsUp)
+    }
+  )
+
   it('the tab ends with the code the agent exited with inside tmux, though tmux itself always exits 0, and shows the screen the agent left when that code is not 0', () => {
     const failed = box(spec(), { claudeExit: 3 }).run()
     expect(failed.status).toBe(3)

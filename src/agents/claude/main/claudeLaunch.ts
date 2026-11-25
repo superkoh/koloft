@@ -288,6 +288,7 @@ const OWNER_TEXT_SUFFIX = '.owner.md'
 export const claudeTabProgram = (tab: ClaudeTabPlace, c: ClaudeTab): TabProgram => ({
   run: claudeRun(tab.tabId, c),
   beforeTmux: `${c.trustFolder ? trustOnTheMachine(tab.cwd) : ''}${c.pictureFolder ? trustOnTheMachine(c.pictureFolder) : ''}${claudeFirstRun(tab)}`,
+  whenItEnds: '',
   files: {
     [`${tab.tabId}.json`]: JSON.stringify(c.settings),
     [`${tab.tabId}.tmux`]: tab.tmuxName,

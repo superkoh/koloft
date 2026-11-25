@@ -8,7 +8,7 @@ passthrough() {
   set -f
   for d in $PATH; do
     [ "$d" = "$self_dir" ] && continue
-    [ -x "$d/open" ] || continue
+    [ -f "$d/open" ] && [ -x "$d/open" ] || continue
     if head -n 2 "$d/open" 2>/dev/null | grep -q "koloft open shim"; then continue; fi
     real="$d/open"; break
   done

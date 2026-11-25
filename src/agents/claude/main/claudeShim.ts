@@ -71,7 +71,7 @@ old_ifs="$IFS"; IFS=":"
 set -f
 for d in $PATH; do
   [ "$d" = "$self_dir" ] && continue
-  [ -x "$d/claude" ] || continue
+  [ -f "$d/claude" ] && [ -x "$d/claude" ] || continue
   if head -n 2 "$d/claude" 2>/dev/null | grep -q "koloft claude shim"; then continue; fi
   real="$d/claude"; break
 done

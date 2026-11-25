@@ -14,7 +14,7 @@ import {
   TAB_PASS_FILE_SUFFIX,
   tmuxHoldsATabPass
 } from './install'
-import { remotePtsFile, remoteTabPath, REMOTE_TABS_DIR } from './paths'
+import { remotePtsFile, remoteTabPath, REMOTE_TABS_DIR, tabPackagesBase } from './paths'
 import { passOf, TAB_PASS_ENV } from '../tabPass'
 import { OWNING_TAB_ENV } from '../owningTabEnv'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
@@ -132,6 +132,7 @@ export const EXEC_ARGS_THROUGH_THE_STATUS_RELAY = [
 ]
 
 const AGENT_EXIT_255_PASSED_AS = SSH_LINK_BROKE_EXIT - 1
+const EXIT_OF_A_SHELL_HUNG_UP_ON = 129
 
 export function tabScript(spec: TabSpec): string {
   const program = spec.program
@@ -156,10 +157,10 @@ ${loginPathToo}  KOLOFT_TAB_ID=${spec.tabId}; PATH="$M/${SESSION_BIN_DIR}:$PATH"
   ${sourceTabPass(spec.tabId)}
   ${tabPassIntoTmux(T, spec.tmuxName, spec.tabId)}
 ${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}  trap : INT QUIT
-  (
+${program.whenItEnds ? `  trap ${shq(`${program.whenItEnds}; exit ${EXIT_OF_A_SHELL_HUNG_UP_ON}`)} HUP\n` : ''}  (
 ${program.run}  )
   c=$?
-  [ $c = 0 ] || tmux -L koloft capture-pane -p -t "$TMUX_PANE" > "${T}.screen" 2>/dev/null
+${program.whenItEnds ? `  ${program.whenItEnds}\n` : ''}  [ $c = 0 ] || tmux -L koloft capture-pane -p -t "$TMUX_PANE" > "${T}.screen" 2>/dev/null
   echo $c > "${T}.exit"
   exit
 fi
@@ -197,6 +198,27 @@ export function writeTabPackage(dir: string, spec: TabSpec): void {
     fs.writeFileSync(path.join(dir, `${spec.tabId}.env`), lines.join('\n') + '\n', { mode: 0o600 })
   }
   writeTabPassFile(dir, spec.tabId)
+}
+
+export function removeTabPackagesNoTabNeeds(
+  userData: string,
+  aTabStillNeeds: (name: string) => boolean
+): void {
+  const base = tabPackagesBase(userData)
+  let names: string[]
+  try {
+    names = fs.readdirSync(base)
+  } catch {
+    return
+  }
+  for (const tabId of names) {
+    if (aTabStillNeeds(tabId)) continue
+    try {
+      fs.rmSync(path.join(base, tabId), { recursive: true, force: true })
+    } catch (err) {
+      console.error('[koloft] could not remove the files of a remote tab that has ended:', err)
+    }
+  }
 }
 
 export function writeTabPassFile(dir: string, tabId: string): void {

@@ -16,7 +16,7 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 import { pathToFileURL } from 'url'
-import { anotherLiveInstanceOwns, PtyManager, type PtyHandle } from './ptyManager'
+import { anotherLiveInstanceOwns, PtyManager, tabInstancePid, type PtyHandle } from './ptyManager'
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { TerminalOutput } from './flowControl'
@@ -25,14 +25,12 @@ import type { TreeIo } from './sessionWorktrees'
 import { sharedProcessTable, type ProcessTable } from './processTable'
 import {
   agyAccountEnv,
-  agyApiKeyRoute,
   agyHomeAccounts,
   endAgyOneShots,
   oneShotAgyHome,
   readAgyModels
 } from '@agents/agy/main/agyAccounts'
 import { ownersGeminiDir } from '@agents/agy/main/agyStore'
-import { homeKeyOnDisk } from './homeKeyOnDisk'
 import { watchHistoryOf } from './historyWatch'
 import { MARK_OUTPUT_START, SignInOutput } from './signInOutput'
 import type { SessionEvent } from '@shared/sessionEvent'
@@ -97,6 +95,7 @@ import {
   buildMachinePackage,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
   tmuxSessionName,
+  removeTabPackagesNoTabNeeds,
   utilShellLine,
   writeTabPassFile,
   CLAUDE_AUTH_ENV_VARS,
@@ -363,12 +362,7 @@ import {
 import type { MainIpc } from '@core/ipc'
 import type { WorktreeResource } from '@core/agent/worktreeRecords'
 import { ClaudeDialogWatch } from '@agents/claude/main/claudeDialogWatch'
-import {
-  ACCOUNT_PROBE_TIMEOUT_MS,
-  claudeAccountsOf,
-  recordFableCapability
-} from '@agents/claude/main/claudeAccounts'
-import { probeAccount, shouldSkipFable } from '@agents/claude/main/claudeAccountProbe'
+import { claudeAccountsOf } from '@agents/claude/main/claudeAccounts'
 import { pickMachineAccount } from '@agents/claude/main/claudeAccountEnv'
 import { docsWritingOn } from '@plugins/docs-writing/api'
 import { koloftPrompt, type SessionsWithStore } from '@plugins/sessions/api'
@@ -377,11 +371,13 @@ import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
 import { koloftAssist } from './assist'
 import {
   AgentsMain,
+  type AgentAccounts,
   type AgentCatalog,
   type AgentMain,
   type AgentTools,
   type OneShotTarget
 } from '@core/agent/agentsMain'
+import { AGENT_OF_UNNAMED_OLD_DATA } from '@core/agent/registry'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
 import { TreeRemovals } from './treeRemovals'
@@ -1306,12 +1302,11 @@ function notifyExpired(name: string, label = 'Claude'): void {
 
 const savedUsage = new SavedUsage(path.join(app.getPath('userData'), 'usage-snapshots.json'))
 const {
-  foldProbeResult,
   picker,
   pickForLaunch,
   pickedAccountEnv,
   shimAccountRefusals,
-  answerPickRequest,
+  accounts: claudeAccounts,
   loginWatchers,
   loginPtys,
   feedLoginWatcher,
@@ -1322,6 +1317,7 @@ const {
   ptyMgr,
   usageViews,
   viewKey,
+  accountViews,
   pushAccounts,
   notifyExpired,
   sendToRenderer,
@@ -1355,6 +1351,35 @@ function pushHomeAccount(name: string, kind: SignInFolderKind): void {
     saveHomeUsage(savedHomeUsage, key, usageViews.get(key))
   pushAccounts()
 }
+
+const homeAccountsDeps = {
+  app,
+  accountViews,
+  allLimitedNotice,
+  findAccount,
+  foldHomeSignIn,
+  listAccounts,
+  noteHomeAccount,
+  pushHomeAccount,
+  savedHomeUsageOf,
+  usageViews,
+  viewKey,
+  sessionAccounts: () => sessionAccounts
+}
+const codexAccounts = codexHomeAccounts({
+  ...homeAccountsDeps,
+  codexSharedConfig,
+  codexSessions: () => codexSessions
+})
+const { codexPicker, pickCodexHome, codexUseReset, probeCodexAccounts } = codexAccounts
+const agyAccounts = agyHomeAccounts({
+  ...homeAccountsDeps,
+  keychainRead,
+  keychainWrite,
+  ownersGemini,
+  agySessions: () => agySessions
+})
+const { agyPicker, agyHomeFor, agyApiKeyOf, pickAgyHome, agyBinary, probeAgyAccounts } = agyAccounts
 
 function watchPickRequests(pickDir: string): fs.FSWatcher | null {
   return watchAndSweepJsonDrops(
@@ -1524,13 +1549,19 @@ const tools: Record<BackendId, AgentTools> = {
   codex: codexTools,
   agy: agyTools
 }
+const accountsOf: Record<BackendId, AgentAccounts> = {
+  claude: claudeAccounts,
+  codex: codexAccounts.accounts,
+  agy: agyAccounts.accounts
+}
 const agentsMain = new AgentsMain()
 for (const id of SESSION_BACKENDS)
   agentsMain.register({
     id,
     oneShotTarget: oneShotTargets[id],
     catalog: catalogs[id],
-    tools: tools[id]
+    tools: tools[id],
+    accounts: accountsOf[id]
   })
 const assist = koloftAssist({
   picks: loadSettings,
@@ -2080,38 +2111,6 @@ const agentRequests = new AgentRequests({
   alive: pidAlive
 })
 
-interface UtilTerminalPick {
-  account: string
-  home: string
-  banner?: string
-  warning?: string
-  kind?: 'apikey'
-}
-
-const utilTerminalPicks: Record<
-  Exclude<BackendId, 'claude'>,
-  () => UtilTerminalPick | undefined
-> = {
-  codex: () => terminalPickOf(pickCodexHome()),
-  agy: () => {
-    const picked = terminalPickOf(pickAgyHome())
-    return picked && (agyApiKeyRoute(picked.home) ? { ...picked, kind: 'apikey' } : picked)
-  }
-}
-
-function terminalPickOf(
-  picked: { account: string; home: string; banner?: string; notice?: string } | undefined
-): UtilTerminalPick | undefined {
-  return (
-    picked && {
-      account: picked.account,
-      home: picked.home,
-      banner: picked.banner,
-      warning: picked.notice
-    }
-  )
-}
-
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
   const obj = raw as { tabId?: string; ts?: number; backend?: string }
   const tab = obj.tabId ? ptyMgr.get(obj.tabId) : undefined
@@ -2126,20 +2125,14 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
     } catch {}
     return
   }
-  if (backend && backend !== 'claude') {
-    let picked: UtilTerminalPick | undefined
-    try {
-      picked = utilTerminalPicks[backend]()
-    } catch (err) {
-      console.error(`[koloft] picking a ${backend} account for a terminal failed:`, err)
-    }
-    try {
-      writeWholeBeforeVisible(resPath, JSON.stringify(picked ?? {}))
-    } catch {}
-    pushAccounts()
-    return
-  }
-  await answerPickRequest({ tabId: obj.tabId }, tab, resPath)
+  const picked = await agentsMain.pickForThisStart(backend ?? AGENT_OF_UNNAMED_OLD_DATA, {
+    tabId: obj.tabId,
+    resumeSessionId: tab.resumeSessionId
+  })
+  try {
+    writeWholeBeforeVisible(resPath, JSON.stringify(picked))
+  } catch {}
+  pushAccounts()
 }
 
 let probeAllInFlight: Promise<AccountView[]> | null = null
@@ -2152,24 +2145,7 @@ function probeSignInFolderAccounts(): Promise<void> {
 function probeAllForPanel(): Promise<AccountView[]> {
   if (probeAllInFlight) return probeAllInFlight
   const round = (async (): Promise<AccountView[]> => {
-    const claude = listAccounts().filter(
-      (a) => a.enabled && ACCOUNT_KINDS_OF.claude.includes(a.kind)
-    )
-    await Promise.all([
-      probeSignInFolderAccounts(),
-      ...claude.map(async (a) => {
-        const secret = await keychainRead(a.kind, a.name)
-        if (!secret) return
-        const result = await probeAccount(a.kind, secret, {
-          timeoutMs: ACCOUNT_PROBE_TIMEOUT_MS,
-          skipFable: shouldSkipFable(a, Date.now()),
-          baseUrl: a.baseUrl,
-          model: a.model
-        })
-        foldProbeResult(a.name, a.kind, result)
-        picker.probed(a.kind, a.name, result)
-      })
-    ])
+    await agentsMain.probeAllAccounts()
     pushAccounts()
     return accountViews()
   })()
@@ -2196,33 +2172,10 @@ async function addAccount(
   if (v !== 'ok') return { ok: false, error: v }
   const trimmed = typeof secret === 'string' ? secret.trim() : ''
   if (!trimmed) return { ok: false, error: 'unknown' }
-  if (isSignInFolderKind(kind)) return addHomeKey(kind, name, trimmed)
   const baseUrl = endpoint?.baseUrl?.trim()
   const model = endpoint?.model?.trim() || undefined
   if (takesAnEndpoint(kind) && !isHttpUrl(baseUrl)) return { ok: false, error: 'invalid-endpoint' }
-  if (!(await keychainWrite(kind, name, trimmed))) return { ok: false, error: 'unknown' }
-  const result = await probeAccount(kind, trimmed, {
-    timeoutMs: ACCOUNT_PROBE_TIMEOUT_MS,
-    baseUrl,
-    model
-  })
-  const meta: AccountMeta = {
-    name,
-    kind,
-    enabled: true,
-    fable: result.ok && result.fable ? result.fable : 'unknown',
-    status: result.ok ? 'ok' : 'unverified',
-    addedAt: Date.now(),
-    ...(takesAnEndpoint(kind) ? { baseUrl, model } : {})
-  }
-  upsertAccountMeta(meta)
-  if (result.ok && result.fable) recordFableCapability(name, kind, result.fable)
-  const key = viewKey(name, kind)
-  if (result.ok) usageViews.set(key, { usage: result.usage })
-  else usageViews.set(key, { probeError: result.error })
-  pushAccounts()
-  const account = accountViews().find((a) => a.kind === kind && a.name === name)
-  return result.ok ? { ok: true, account } : { ok: false, error: result.error, account }
+  return agentsMain.addSecret(kind, name, trimmed, { baseUrl, model })
 }
 
 function foldHomeSignIn(name: string, kind: SignInFolderKind, signedIn: boolean): void {
@@ -2234,34 +2187,6 @@ function foldHomeSignIn(name: string, kind: SignInFolderKind, signedIn: boolean)
   upsertAccountMeta({ ...acct, status })
   if (status === 'expired') notifyExpired(name, BACKEND_LABEL[BACKEND_OF_SIGN_IN_FOLDER[kind]])
 }
-
-const homeAccountsDeps = {
-  app,
-  accountViews,
-  allLimitedNotice,
-  findAccount,
-  foldHomeSignIn,
-  listAccounts,
-  pushHomeAccount,
-  savedHomeUsageOf,
-  usageViews,
-  viewKey,
-  sessionAccounts: () => sessionAccounts
-}
-const codexAccounts = codexHomeAccounts({
-  ...homeAccountsDeps,
-  codexSharedConfig,
-  codexSessions: () => codexSessions
-})
-const { codexPicker, pickCodexHome, codexUseReset, probeCodexAccounts } = codexAccounts
-const agyAccounts = agyHomeAccounts({
-  ...homeAccountsDeps,
-  keychainRead,
-  keychainWrite,
-  ownersGemini,
-  agySessions: () => agySessions
-})
-const { agyPicker, agyHomeFor, agyApiKeyOf, pickAgyHome, agyBinary, probeAgyAccounts } = agyAccounts
 
 function codexSharedConfig(): string {
   return codexConfigFile(codexSessions?.defaultEnv)
@@ -2285,7 +2210,7 @@ function forgetAccount(name: string, kind: AccountKind): void {
   removeAccountMeta(name, kind)
   usageViews.delete(viewKey(name, kind))
   savedHomeUsage.delete(viewKey(name, kind))
-  picker.forget(kind, name)
+  agentsMain.forgetAccount(kind, name)
   pushAccounts()
 }
 
@@ -2373,29 +2298,8 @@ function ownersGemini(): string {
 
 function markKeyAccountsSavedOnDisk(): void {
   for (const a of listAccounts())
-    if (isSignInFolderKind(a.kind) && homeKeyOnDisk[a.kind](app.getPath('userData'), a.name))
+    if (agentsMain.folderSaysItRunsOnAKey(a.kind, a.name))
       usageViews.set(viewKey(a.name, a.kind), { apiKey: true })
-}
-
-const storeHomeKey: Record<SignInFolderKind, (name: string, key: string) => Promise<void>> = {
-  'codex-home': codexAccounts.storeHomeKey,
-  'agy-home': agyAccounts.storeHomeKey
-}
-
-async function addHomeKey(
-  kind: SignInFolderKind,
-  name: string,
-  key: string
-): Promise<AccountAddResult> {
-  try {
-    await storeHomeKey[kind](name, key)
-  } catch {
-    return { ok: false, error: 'unknown' }
-  }
-  noteHomeAccount(name, kind)
-  await probeHomeAccount[kind](name)
-  const account = accountViews().find((a) => a.kind === kind && a.name === name)
-  return { ok: account?.status === 'ok', account }
 }
 
 // AGY§6 AGY§20
@@ -2765,6 +2669,7 @@ app.whenReady().then(() => {
   linkOrUnlink(path.join(shimDir, 'git'), gitFirstBin && path.join(gitFirstBin, 'git'))
   removeStaleLoginDirs(app.getPath('userData'))
   endAgyOneShots(path.join(app.getPath('userData'), 'agy-one-shots'))
+  removeRemoteTabFilesNoLiveTabNeeds()
   gitAccounts = new GitAccountService({
     userData: app.getPath('userData'),
     requestDir: gitRequestDir,
@@ -3705,6 +3610,7 @@ app.on('before-quit', (e) => {
   }
   worktreeExits.koloftQuits()
   endAgyOneShots(path.join(app.getPath('userData'), 'agy-one-shots'))
+  removeRemoteTabFilesNoLiveTabNeeds()
   stopScheduledTasks()
   discordLink?.stop()
   discordBinding?.flush()
@@ -4075,6 +3981,14 @@ async function openOnMachine(
 async function isRegularFile(file: string): Promise<boolean> {
   const stat = await fs.promises.stat(file).catch(() => null)
   return !!stat?.isFile()
+}
+
+// ADR-0004
+function removeRemoteTabFilesNoLiveTabNeeds(): void {
+  removeTabPackagesNoTabNeeds(
+    app.getPath('userData'),
+    (name) => tabInstancePid(name) === null || anotherLiveInstanceOwns(name, pidAlive)
+  )
 }
 
 function killTabFromMain(tabId: string): void {

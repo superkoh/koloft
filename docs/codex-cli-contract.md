@@ -2615,7 +2615,32 @@ TUI connected with `--remote` for the lines that name it. Each run used its own
     same for a repo skill. Both paths.
   - `/<name>`, `use the <name> skill …`, and `$<folder>` sent the text alone.
   - `/prompts:<n>` with `$CODEX_HOME/prompts/<n>.md` sent the text alone, both paths.
-  - What a `SKILL.md` without a `name` line is called is inferred, not checked.
+- **A skill whose file has no `name` goes by its folder's name, and one marked
+  `user-invocable: false` is listed and runs like any other.** 2026-11-25, Codex CLI
+  0.169.0 (Homebrew, macOS), the same set-up as the bullet above: a throwaway `HOME` and
+  `CODEX_HOME` with `cli_auth_credentials_store = "file"`, a made-up API key and a
+  `model_providers` entry pointing at a local stand-in Responses server that saved each
+  request body. Three skills in `$CODEX_HOME/skills/<folder>/SKILL.md`, each body holding
+  its own codeword: `folder-without-name` (a `description`, no `name`),
+  `folder-of-hidden` (`name: hidden-skill`, `user-invocable: false`) and
+  `folder-of-named` (`name: named-skill`, the control). `skills/list {cwds:[<proj>]}`
+  on `codex app-server --stdio` listed all three, `enabled: true`, as
+  `folder-without-name`, `hidden-skill` and `named-skill`, scope `user`; the same three
+  put in `<proj>/.agents/skills/<folder>/` instead were listed the same, scope `repo`.
+  Each text was then sent on a new thread by `turn/start`, and as the last argument of a
+  real TUI in a python pty, both `codex --no-daemon -C <proj> "<text>"` and, as Koloft
+  starts one, `codex --remote ws://127.0.0.1:<port> -C <proj> "<text>"` against a
+  `codex app-server --listen` on that port (the TUI's "Meet GPT-6 Sol" model notice
+  answered with `2` and Enter, without which no request was sent in 45 s):
+  - `$hidden-skill go`, `$folder-without-name go` and `$named-skill go` each sent that
+    skill's whole body to the model as a `<skill>` user item, all three paths, the skills
+    in either folder (the `--no-daemon` TUI twice for `$hidden-skill` and `$named-skill`
+    in `$CODEX_HOME`).
+  - `$folder-of-named go` sent the text alone, all three paths, as above.
+  - With every skill in both `<proj>/.agents/skills/` and `$CODEX_HOME/skills/`,
+    `skills/list` listed each name twice (scope `repo` and `user`). Then `turn/start`
+    sent no body for any `$<name>`, the control included (2 runs), while the TUI sent the
+    `$CODEX_HOME` copy's body for each (2 runs).
 - **`skills/extraRoots/set {extraRoots: [<folder>]}` adds a skills folder for that one
   app-server, and the model gets it.** 2026-10-27, Codex CLI 0.162.0 (model turns, a
   throwaway `CODEX_HOME` holding a copy of this Mac's login, deleted afterwards) and
