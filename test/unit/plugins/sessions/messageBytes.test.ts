@@ -99,7 +99,6 @@ vi.mock('../../../../src/agents/codex/main/codexTransport', async (importOrigina
 import { Commands } from '../../../../src/core/commands'
 import { PLUGINS } from '../../../../src/plugins/list'
 import { PtyManager } from '../../../../src/main/ptyManager'
-import { BackgroundFile } from '../../../../src/main/backgroundFile'
 import { sessionMessaging } from '../../../../src/main/sessionMessaging'
 import { sessionVerb, type Target } from '../../../../src/plugins/sessions/main/sessionVerbs'
 import { HandOver, type Recipient } from '../../../../src/plugins/sessions/main/handOver'
@@ -268,8 +267,7 @@ afterEach(async () => {
   for (const stop of stops) await stop()
   for (const server of listening) server.close()
   process.env.PATH = REAL_PATH
-  await BackgroundFile.whenAllWritten()
-  world.gone()
+  await world.gone()
 })
 
 function shown(text: string): string {
