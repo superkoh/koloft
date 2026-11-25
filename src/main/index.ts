@@ -263,7 +263,7 @@ import { closeAllFileWatchers, closeAllDirWatchers } from './fileWatch'
 import { sanitizeBase } from './gitStatus'
 import { Hosts } from './host/hosts'
 import { localGitOut, localHost } from './host/localHost'
-import { SshHost } from './host/sshHost'
+import { SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST, SshHost } from './host/sshHost'
 import { isGitCheckoutAsync, projectInfoFor, realpathSafe } from './projectInfo'
 import { checkForUpdates, downloadAndInstall, releasePageUrl, restartApp } from './updater'
 import { currentOffer, startUpdateNotifier } from './updateNotifier'
@@ -469,8 +469,6 @@ type Recipient = Parameters<ReturnType<SessionsStarted['buildHandOver']>['tell']
 type MergedHeads = NonNullable<Parameters<SessionsStarted['whatIsLeft']>[2]>
 type WorktreeResource = Parameters<SessionsWithStore['worktrees']['untouched']>[0]
 type NoticeFile = ReturnType<SessionsStarted['localNotice']>
-type WorkspaceDeps = Parameters<SessionsStarted['buildWorkspaces']>[0]
-type LiveSession = Parameters<ReturnType<NonNullable<WorkspaceDeps['liveSessions']>>['set']>[1]
 type SyncSession = Parameters<SessionsStarted['sessionSync']['observe']>[0][number]
 type CodexAsk = Parameters<SessionsStarted['codexDialog']>[0]
 type DialogView = ReturnType<SessionsStarted['claudeDialog']>
@@ -764,7 +762,7 @@ function watchForWorktreeRemoval(tabId: string, data: string): void {
       treeRoot: session?.treeRoot
     })
   }
-  if (session?.sessionId) workspaceMgr?.leavingWorktree(session.sessionId, tabId)
+  if (session?.sessionId) claudeStore?.leavingWorktree(session.sessionId, tabId)
   sendToRenderer(CH.tab.killedByMain, tabId)
 }
 
@@ -1230,6 +1228,7 @@ function requestWebglRepair(): void {
 }
 
 let workspaceMgr: ReturnType<typeof buildWorkspaces> | null = null
+let claudeStore: ReturnType<typeof buildClaudeStore> | null = null
 
 let freshness: GitFreshnessEngine | null = null
 let gitAccounts: GitAccountService | null = null
@@ -3481,7 +3480,7 @@ app.whenReady().then(() => {
     if (claudeExit?.leaving) {
       const { sessionId } = claudeExit.leaving
       const claudeSaid = claudeExit.watch.failure()
-      if (sessionId) workspaceMgr?.leftWorktree(sessionId, !claudeSaid)
+      if (sessionId) claudeStore?.leftWorktree(sessionId, !claudeSaid)
       if (claudeSaid)
         sendToRenderer(CH.toast.show, `Claude Code did not remove the worktree: ${claudeSaid}`)
     }
@@ -3535,6 +3534,15 @@ app.whenReady().then(() => {
   savedOpenTabs = readOpenTabs(openTabsPath)
   openTabsFile = new OpenTabsFile(openTabsPath, savedOpenTabs)
   sessionAccounts = new SessionAccounts(path.join(userData, 'session-accounts.json'))
+  const rowsKeptInMemoryChanged = rereadWhenRowsInMemoryChange({
+    pinned: () => workspaceMgr?.pinnedPathList() ?? [],
+    rows: (wsPath) =>
+      storedSessions().flatMap((stored) =>
+        stored.rows(wsPath).map((r) => ({ ...r, backendId: stored.id }))
+      ),
+    members: () => new Set(storedSessions().flatMap((stored) => [...stored.members()])),
+    reread: () => workspaceMgr?.refresh()
+  })
   const storedDeps = {
     pty: ptyMgr,
     runtime,
@@ -3547,7 +3555,7 @@ app.whenReady().then(() => {
     changed: () => {
       const all = onSessionsChanged()
       pushToSessions.sessions(all)
-      workspaceMgr?.onAdditionalSessionsChanged()
+      if (workspaceMgr) rowsKeptInMemoryChanged()
     },
     replaced: (oldKey: string, newKey: string) => workspaceMgr?.moveResident(oldKey, newKey),
     events: (tabId: string, event: SessionEvent) => sessionBackends.observe(tabId, event),
@@ -3621,14 +3629,14 @@ app.whenReady().then(() => {
       remote: {
         ...machineRemoteDeps,
         machine: (host) => hosts.machine(host),
+        saidWhenTheMachineWantsAPasswordFirst: SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST,
         mirrorGemini: (host) => mirrorAgyGemini(userData, host),
         nextPull: (host) => {
           if (!remoteSync) return Promise.resolve()
           const pulled = remoteSync.nextPullDone(host)
           remoteSync.pokeNow(host)
           return pulled
-        },
-        machineName: () => machinePackage().name
+        }
       },
       leftWorktree: (resource) => removeUntouchedWorktree(agySessions, resource),
       openShimRoot: path.join(userData, 'agy-open'),
@@ -3676,45 +3684,22 @@ app.whenReady().then(() => {
   }
   for (const stored of [codexSessions, agySessions])
     if (stored) void watchHistoryOf(stored).catch(() => undefined)
-  workspaceMgr = buildWorkspaces({
-    additionalRows: (wsPath) =>
-      storedSessions().flatMap((stored) =>
-        stored.rows(wsPath).map((r) => ({ ...r, backendId: stored.id }))
-      ),
-    additionalMembers: () => new Set(storedSessions().flatMap((stored) => [...stored.members()])),
-    additionalFolders: async () =>
-      (
-        await Promise.all(
-          storedSessions().map((stored) => stored.localHistoryFolders().catch(() => []))
-        )
-      ).flat(),
-    projectsRoot: path.join(os.homedir(), '.claude', 'projects'),
-    headCache: { file: path.join(userData, 'transcript-heads.json'), version: app.getVersion() },
+  const runningBindings = (): Map<string, string> => {
+    const m = new Map<string, string>()
+    for (const s of allSessions()) if (s.alive && s.sessionId) m.set(s.sessionId, s.tabId)
+    for (const stored of storedSessions())
+      for (const [key, tabId] of stored.runningBindings()) m.set(key, tabId)
+    for (const [tabId, t] of sleepers) if (!m.has(t.sessionId)) m.set(t.sessionId, tabId)
+    return m
+  }
+  const remoteRunning = (host: string): Set<string> => remoteSync?.alive(host) ?? new Set()
+  const workspaces = buildWorkspaces({
+    agents: sessionBackends.rows,
     loadLayout,
     saveLayout,
     projectInfo: projectInfoFor,
-    runningBindings: () => {
-      const m = new Map<string, string>()
-      for (const s of allSessions()) if (s.alive && s.sessionId) m.set(s.sessionId, s.tabId)
-      for (const stored of storedSessions())
-        for (const [key, tabId] of stored.runningBindings()) m.set(key, tabId)
-      for (const [tabId, t] of sleepers) if (!m.has(t.sessionId)) m.set(t.sessionId, tabId)
-      return m
-    },
+    runningBindings,
     killTab: (tabId) => void killTabPty(tabId),
-    liveSessions: () => {
-      const m = new Map<string, LiveSession>()
-      for (const s of tracker.list()) {
-        if (!s.alive || !s.sessionId) continue
-        m.set(s.sessionId, {
-          treeRoot: s.treeRoot,
-          worktree: s.worktree,
-          remote: !!s.remote,
-          relocated: s.relocated
-        })
-      }
-      return m
-    },
     pushRows: (payload) => {
       sendToRenderer(CH.workspace.rows, payload)
       syncAnswerable()
@@ -3730,18 +3715,31 @@ app.whenReady().then(() => {
       claudeBackend.watchRemoteHookMirrors()
     },
     jobCountFor: (wsPath) => cronRunner?.jobCountFor(wsPath) ?? 0,
-    remoteProjectsRoot: (host) => mirrorProjectsRoot(userData, host),
-    remoteRunning: (host) => remoteSync?.alive(host) ?? new Set(),
+    remoteRunning,
     remoteConnected: (host) => remoteSync?.connected(host) ?? false,
     remoteProblem: (host) => remoteSync?.problem(host),
     remoteGit: (host, p) => remoteSync?.gitInfo(host, p),
+    remoteOrphansOf: (wsPath) => claudeStore?.remoteOrphansOf(wsPath) ?? [],
     killRemoteSession: (host, sessionId) =>
       claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
     hiddenRow: (id) => sessionBackends.isOverseerSession(id),
     parentOf: (rowId) => startedSessions.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
     scratchRoots: scratchRootsAround(os.homedir(), os.tmpdir()),
-    claimedFolder: butlersFolderClaim(userData),
+    claimedFolder: butlersFolderClaim(userData)
+  })
+  workspaceMgr = workspaces
+  claudeStore = buildClaudeStore({
+    projectsRoot: path.join(os.homedir(), '.claude', 'projects'),
+    headCache: { file: path.join(userData, 'transcript-heads.json'), version: app.getVersion() },
+    remoteProjectsRoot: (host) => mirrorProjectsRoot(userData, host),
+    pinnedPaths: () => workspaces.pinnedPathList(),
+    remoteTargets: () => workspaces.remoteTargets(),
+    kept: workspaces.keptInLayout,
+    rereadRows: () => workspaces.refresh(),
+    rereadGrownRows: () => workspaces.rescanForGrowth(),
+    runningBindings,
+    remoteRunning,
     sessionsOnDiskOrRunning: (ids) =>
       butler?.forgetGone(
         (key) =>
@@ -4160,6 +4158,7 @@ app.whenReady().then(() => {
     },
     fetchFailed: (wsPath, stderr) => gitAccounts?.fetchFailed(wsPath, stderr)
   })
+  claudeStore.start()
   workspaceMgr.start()
   freshness.start()
   startedPlugins.github.followSwitch()
@@ -4355,6 +4354,7 @@ app.on('before-quit', (e) => {
   discordLink?.stop()
   discordBinding?.flush()
   workspaceMgr?.dispose()
+  claudeStore?.dispose()
   flushLayout()
   flushSettings()
   openTabsFile?.flushSync()
@@ -5557,7 +5557,8 @@ const hosts = new Hosts(
 const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
   pty: ptyMgr,
   hosts,
-  workspaces: () => workspaceMgr,
+  remoteTargets: () => workspaceMgr?.remoteTargets() ?? [],
+  sessionRebound: (prevId, nextId, source) => workspaceMgr?.onSessionRebind(prevId, nextId, source),
   remoteSync: () => remoteSync,
   projectRules: rulesOf,
   workspaceInstructions: instructionsOf,
@@ -5946,7 +5947,7 @@ function registerIpc(): void {
     listFiles: async () => {
       await workspaceMgr?.firstScan
       const userData = app.getPath('userData')
-      return listUsageFiles(workspaceMgr?.transcriptFiles() ?? [], [
+      return listUsageFiles(claudeStore?.transcriptFiles() ?? [], [
         {
           codexHome: path.dirname(codexSharedConfig()),
           geminiDir: ownersGemini()
@@ -5964,7 +5965,7 @@ function registerIpc(): void {
     },
     codexWorkspaces: (cwds) => codexSessions?.workspacesFor(cwds) ?? cwds,
     sessionPlaces: () => {
-      const claude = workspaceMgr?.sessionPlaces()
+      const claude = claudeStore?.sessionPlaces()
       const stored = new Map(storedSessions().map((s) => [s.id, s.sessionPlaces()]))
       return (backend, id, host) =>
         backend === 'claude' ? claude?.get(id) : stored.get(backend)?.(id, host)
@@ -6055,7 +6056,7 @@ const sessionSearch = new SessionSearch({
   candidates: () => {
     const pins = workspaceMgr?.pinnedPathList() ?? []
     return [
-      ...(workspaceMgr?.searchableRows() ?? []),
+      ...(claudeStore?.searchableRows() ?? []),
       ...storedSessions().flatMap((s) => s.searchable(pins))
     ]
   },
@@ -6390,6 +6391,7 @@ const {
   buildInstructionAsks,
   buildHandOver,
   buildWorkspaces,
+  buildClaudeStore,
   buildCodexSessions,
   buildAgySessions,
   sessionCommand,
@@ -6439,7 +6441,8 @@ const {
   waitsOnOtherWork,
   savedFromTheDialog,
   workspaceBlock,
-  scratchRootsAround
+  scratchRootsAround,
+  rereadWhenRowsInMemoryChange
 } = startedPlugins.sessions
 const { TODO_NEWS } = startedPlugins.todo
 const { koloftInbox, flushInbox } = startedPlugins.inbox

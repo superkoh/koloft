@@ -46,6 +46,7 @@ import {
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
   sessionIdOfTmux,
   holdsATabPassCmd,
+  tabPushed,
   tmuxSessionName,
   writeTabPackage,
   type MachinePackage
@@ -62,9 +63,9 @@ import {
 } from '../remote/paths'
 import { launchMode } from '../remote/sync'
 import {
+  backgroundOptions,
   ensureControlDir,
   machineOutOfReach,
-  needsSignIn,
   problemOf,
   sshLinkBroke,
   sshOptions,
@@ -83,24 +84,17 @@ import {
   type SentNote
 } from '@plugins/sessions/main/hooks'
 import { claudeArgv } from '@agents/claude/main/claudeArgs'
-import { parseAnnotationTitle, type SummaryRow } from '@agents/agy/main/agyStore'
-import {
-  AGY_HELD_ELSEWHERE_EXIT,
-  AGY_SEND_SSH_OUTLASTS_THE_SCRIPT_MS,
-  agyHeldCmd,
-  agySendCmd,
-  agyTitleCmd,
-  listAgyCmd,
-  parseAgyConfig,
-  readAgyConfigCmd,
-  type AgyMachineLaunch,
-  type AgyMachinePlan,
-  type RemoteAgyConfig
-} from '@agents/agy/main/agyTab'
 import { listSkills, skillFolders, type SkillFs, type SkillPlaces } from '../skillList'
 import { worktreeNameAround } from '../resumePlan'
 import type { GitOut } from '@core/worktree'
 import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
+import type {
+  Machine,
+  OpenedTmux,
+  RequestCallerState,
+  RunOnMachineOptions,
+  TmuxSessionNamedFor
+} from './machine'
 import { docsWritingOn } from '@plugins/docs-writing/api'
 
 export interface MachineAccount {
@@ -188,7 +182,7 @@ node -e "$2" "$HOME/.claude.json" "$(pwd -P)"`
 
 const NETWORK_GIT_TIMEOUT_MS = 20_000
 
-const AGY_WAITS_FOR_ANOTHER_TAB_TO_SIGN_IN =
+export const SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST =
   'This machine wants a password or a new host key first, and an Antigravity tab cannot ask for it yet: sign in through a Claude Code or Codex session there first'
 const WHOLE_FILE_MAX_BYTES = 32 * 1024 * 1024
 const WHOLE_FILE_READ_MS = 120_000
@@ -593,7 +587,6 @@ const RESIZE_SETTLE_MS = 200
 
 const REMOTE_FILE_LIST_FRESH_MS = 30_000
 
-export type AgentCallerState = 'runs' | 'gone' | 'request-gone'
 const REQUEST_TAKEN_BACK_EXIT = 3
 const CALLER_GONE_EXIT = 4
 const A_CALLER_CHECK_ANSWERS_WITHIN_MS = 10_000
@@ -601,8 +594,14 @@ const A_CALLER_CHECK_ANSWERS_WITHIN_MS = 10_000
 // PLATFORM§35
 const NO_TAB_NAME_IS_ANOTHERS_PREFIX = '-t'
 
-export class SshHost implements Host {
+export class SshHost implements Host, Machine {
   readonly github: GithubRepos
+  readonly tmux: Machine['tmux'] = {
+    open: (named) => this.openTmux(named),
+    end: (tmuxName, tabId) => this.endTmux(tmuxName, tabId),
+    endedByKoloft: (sessionId) => this.tmuxEndedByKoloft(sessionId),
+    rename: (tabId, from, to) => this.renameTmux(tabId, from, to)
+  }
   private git: GitOps
   private killedSessions = new Set<string>()
   private kills = new Map<string, Promise<unknown>>()
@@ -703,7 +702,15 @@ export class SshHost implements Host {
     return { code: r.code, stdout: r.stdout.toString('utf8'), stderr: r.stderr }
   }
 
-  private bare(p: string): string {
+  get name(): string {
+    return this.machine
+  }
+
+  private get own() {
+    return this.deps.claude
+  }
+
+  bare(p: string): string {
     const key = parseRemoteKey(p)
     if (!key || key.host !== this.machine) throw new Error('KOLOFT_READ_FAILED')
     return key.path
@@ -719,7 +726,11 @@ export class SshHost implements Host {
     return out
   }
 
-  private sh(script: string, args: string[], opts?: { timeoutMs?: number; input?: Buffer }) {
+  run(cmd: string, opts?: RunOnMachineOptions): Promise<BytesResult> {
+    return this.deps.run(cmd, opts)
+  }
+
+  sh(script: string, args: string[], opts?: RunOnMachineOptions): Promise<BytesResult> {
     return this.deps.run(remoteAnswerCommand(script, args), opts)
   }
 
@@ -962,7 +973,7 @@ export class SshHost implements Host {
   osOpen(): void {}
 
   // ADR-0044
-  endTmuxSession(tmuxName: string, tabId?: string): Promise<string | undefined> {
+  private endTmux(tmuxName: string, tabId?: string): Promise<string | undefined> {
     const renamingTo = this.renamesOnTheWire.get(tmuxName)
     const namesItMayHave = renamingTo ? [tmuxName, renamingTo] : [tmuxName]
     const killedIds = namesItMayHave.flatMap((name) => sessionIdOfTmux(name) ?? [])
@@ -981,12 +992,12 @@ export class SshHost implements Host {
     return kill
   }
 
-  async endedByKoloft(sessionId: string): Promise<boolean> {
+  private async tmuxEndedByKoloft(sessionId: string): Promise<boolean> {
     await this.kills.get(tmuxSessionName(sessionId))
     return this.killedSessions.has(sessionId)
   }
 
-  async renameTmuxSession(tabId: string, from: string, to: string): Promise<boolean> {
+  private async renameTmux(tabId: string, from: string, to: string): Promise<boolean> {
     this.renamesOnTheWire.set(from, to)
     try {
       return (await this.deps.run(renameSessionCmd(tabId, from, to))).code === 0
@@ -995,12 +1006,15 @@ export class SshHost implements Host {
     }
   }
 
-  async answerAgent(requestId: string, reply: string | null): Promise<void> {
+  async answerRequest(requestId: string, reply: string | null): Promise<void> {
     if (reply === null) await this.sh(TAKE_AWAY_AGENT_REQUEST, [requestId])
     else await this.sh(ANSWER_AGENT_REQUEST, [requestId], { input: Buffer.from(reply) })
   }
 
-  async agentCallerWaits(requestId: string, pid: number): Promise<AgentCallerState | undefined> {
+  async requestCallerWaits(
+    requestId: string,
+    pid: number
+  ): Promise<RequestCallerState | undefined> {
     const r = await this.sh(
       `[ -f "${REMOTE_HOOK_DIR}/req-$1.json" ] || exit ${REQUEST_TAKEN_BACK_EXIT}
 case "$(ps -o args= -p "$2" 2>/dev/null)" in */koloft[[:space:]]*) exit 0 ;; esac
@@ -1055,13 +1069,39 @@ exit ${CALLER_GONE_EXIT}`,
     return (await this.sh(WITH_NODE_IN_REAL_DIR, [this.bare(dir), TRUSTED_JS])).code !== NOT_TRUSTED
   }
 
-  private async sshReady(): Promise<void> {
+  async ready(): Promise<void> {
     await this.deps.sshEnvReady?.()
     ensureControlDir(this.deps.claude.controlDir)
   }
 
-  private loginPath(): Promise<string> {
+  loginPath(): Promise<string> {
     return this.deps.claude.loginPath().catch(() => '')
+  }
+
+  sshArgs(background: boolean): string[] {
+    const { controlDir } = this.own
+    ensureControlDir(controlDir)
+    return background ? backgroundOptions(this.machine, controlDir) : sshOptions(controlDir, false)
+  }
+
+  packageName(): string {
+    return this.own.machinePackage().name
+  }
+
+  tabFiles(tabId: string): { dir: string; pushedLine(): string } {
+    const own = this.own
+    const dir = tabPackageDir(own.userData, tabId)
+    return {
+      dir,
+      pushedLine: () =>
+        tabPushed({
+          host: this.machine,
+          sshOptions: sshOptions(own.controlDir, false),
+          machine: own.machinePackage(),
+          tabId,
+          tabDir: dir
+        })
+    }
   }
 
   // ADR-0052
@@ -1117,85 +1157,37 @@ exit ${CALLER_GONE_EXIT}`,
     return listSkills(skillFsOf(files), backend, { workspace, home })
   }
 
-  async readAgyConfig(account: string): Promise<RemoteAgyConfig> {
-    await this.deps.sshEnvReady?.()
-    const r = await this.deps.run(readAgyConfigCmd(account))
-    if (needsSignIn(r)) throw new Error(AGY_WAITS_FOR_ANOTHER_TAB_TO_SIGN_IN)
-    if (sshLinkBroke(r)) throw new Error(problemOf(r))
-    return parseAgyConfig(r.stdout.toString('utf8'))
-  }
-
-  async agyHeldElsewhere(conversationId: string): Promise<boolean> {
-    return (await this.deps.run(agyHeldCmd(conversationId))).code === AGY_HELD_ELSEWHERE_EXIT
-  }
-
-  async agySend(tmuxName: string, conversationId: string, text: string): Promise<boolean> {
-    const r = await this.deps.run(agySendCmd(tmuxName, conversationId), {
-      input: Buffer.from(text),
-      timeoutMs: AGY_SEND_SSH_OUTLASTS_THE_SCRIPT_MS
-    })
-    return r.code === 0
-  }
-
-  async agyConversationTitle(conversationId: string): Promise<string | undefined> {
-    const r = await this.deps.run(agyTitleCmd(conversationId))
-    if (r.code !== 0) return undefined
-    const text = r.stdout.toString('utf8').trim()
-    if (!text) return undefined
-    try {
-      const parsed = JSON.parse(text) as { title?: unknown; pbtxt?: unknown }
-      if (typeof parsed.title === 'string' && parsed.title) return parsed.title
-      if (typeof parsed.pbtxt === 'string' && parsed.pbtxt)
-        return parseAnnotationTitle(parsed.pbtxt)
-    } catch {}
-    return undefined
-  }
-
-  async agyConversations(): Promise<SummaryRow[]> {
-    const r = await this.deps.run(listAgyCmd(this.deps.claude.machinePackage().name))
-    if (r.code !== 0) throw new Error(problemOf(r))
-    const rows: unknown = JSON.parse(r.stdout.toString('utf8') || '[]')
-    return Array.isArray(rows) ? (rows as SummaryRow[]) : []
-  }
-
-  async launchAgy(spec: AgyMachineLaunch): Promise<AgyMachinePlan> {
-    const d = this.deps.claude
-    await this.sshReady()
+  // PLATFORM§35 ADR-0044 ADR-0052
+  private async openTmux(named: TmuxSessionNamedFor): Promise<OpenedTmux> {
     const asked = this.loginPath()
-    const sid = spec.resumeId
-    const attach = !!sid && (await this.attachOrStart(sid)) === 'attach'
-    const loginPath = attach ? '' : await asked
-    const tmuxName = sid ? tmuxSessionName(sid) : `m-${spec.tabId}${NO_TAB_NAME_IS_ANOTHERS_PREFIX}`
-    const keyless = attach && (await this.startedBeforeTabPasses(tmuxName))
-    markStartedBeforeTabPasses(spec.tabId, keyless)
-    const pkg = d.machinePackage()
-    const tabDir = tabPackageDir(d.userData, spec.tabId)
+    const sessionKnownBeforeItStarts = 'session' in named
+    const tmuxName = sessionKnownBeforeItStarts
+      ? tmuxSessionName(named.session)
+      : `m-${named.tab}${NO_TAB_NAME_IS_ANOTHERS_PREFIX}`
+    const mode = sessionKnownBeforeItStarts ? await this.attachOrStart(named.session) : 'start'
+    const keyless = mode === 'attach' && (await this.startedBeforeTabPasses(tmuxName))
+    const own = this.own
+    const pkg = own.machinePackage()
     return {
-      attach,
+      mode,
       tmuxName,
+      packageName: pkg.name,
+      loginPath: asked,
       spawnCwd: os.homedir(),
       shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
       resized: this.resized,
-      launchCommand: () => {
-        writeTabPackage(tabDir, {
-          tabId: spec.tabId,
-          tmuxName,
-          machineName: pkg.name,
-          cwd: this.bare(spec.cwd),
-          banner: '',
-          env: attach ? undefined : spec.env,
-          portOffset: spec.portOffset,
-          loginPath,
-          program: attach ? { ...spec.program, files: {} } : spec.program
-        })
-        return this.tabLaunchLine(pkg, tabDir, spec.tabId, attach ? 'attach' : 'start')
+      launchCommand: (tabId, content) => {
+        const dir = tabPackageDir(own.userData, tabId)
+        markStartedBeforeTabPasses(tabId, keyless)
+        writeTabPackage(dir, { ...content, tabId, tmuxName, machineName: pkg.name })
+        return this.tabLaunchLine(pkg, dir, tabId, mode)
       }
     }
   }
 
   async launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
     const d = this.deps.claude
-    await this.sshReady()
+    await this.ready()
     await this.reachOrThrow()
     const settings = d.settings()
     const agentTools = d.agentTools()

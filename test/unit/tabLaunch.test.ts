@@ -158,7 +158,7 @@ async function claudeTab(
           }
         })
     ),
-    workspaces: () => null,
+    store: () => null,
     remoteSync: () => null,
     userData: () => userData,
     setupLine: () => undefined,

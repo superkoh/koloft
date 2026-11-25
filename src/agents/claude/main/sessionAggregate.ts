@@ -6,13 +6,8 @@ import {
   type WorktreeStateMeta
 } from '@shared/types'
 import { encodeCwd } from '@shared/cwdKey'
-import {
-  classifyUserPrompt,
-  compactionSummary,
-  INTERRUPT_TEXTS,
-  whoTyped
-} from '@agents/claude/main/sessionTracker'
-import { parseRecord, type TextBlock, type TranscriptRecord } from './transcriptRecord'
+import { classifyUserPrompt, compactionSummary, INTERRUPT_TEXTS, whoTyped } from './sessionTracker'
+import { parseRecord, type TextBlock, type TranscriptRecord } from '../../../main/transcriptRecord'
 
 export interface Bucket {
   slug: string
@@ -258,22 +253,6 @@ export function aggregateSessions(buckets: Bucket[], deps: AggregateDeps): Backe
     }
   })
   return [...rows.values()].sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0))
-}
-
-export function filterOwned<R extends BackendSessionRow>(
-  rows: R[],
-  owned: ReadonlySet<string>,
-  running: ReadonlySet<string>
-): R[] {
-  return rows.filter((r) => owned.has(r.id) || running.has(r.id))
-}
-
-export function hasHistory(
-  rows: BackendSessionRow[],
-  owned: ReadonlySet<string>,
-  running: ReadonlySet<string>
-): boolean {
-  return rows.some((r) => !owned.has(r.id) && !running.has(r.id))
 }
 
 export interface PendingLaunch {

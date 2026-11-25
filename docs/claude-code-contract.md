@@ -323,7 +323,7 @@ mimics this section (SessionEnd `other` on SIGTERM too, like the real one).
   inside the first turn (before and after the API call) and not at all in the second.
   Since 2.1.300 a tool result is on disk twice (the `api-request` records, below), so a
   few turns after a move can push the last pair past any fixed window; Koloft's rescan
-  in `workspaces.ts` reads the tail in doubling chunks until one holds a
+  in `claudeSessionStore.ts` reads the tail in doubling chunks until one holds a
   `worktree-state` or `relocated` line.
 - **Auto-memory lives beside the transcripts, in `~/.claude/projects/<slug>/memory/`**
   (`MEMORY.md` plus one `.md` per memory), and CC writes it with the ordinary

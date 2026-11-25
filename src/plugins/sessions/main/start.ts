@@ -4,6 +4,11 @@ import { AgySessions, type AgySessionDeps } from '@agents/agy/main/agySessions'
 import * as appHelpers from './appHelpers'
 import { AttentionTracker, type SavedMark } from './attention'
 import { ClaudeBackend, type ClaudeBackendDeps } from '@agents/claude/main/backend'
+import {
+  ClaudeSessionStore,
+  liveSessionsOf,
+  type ClaudeSessionStoreDeps
+} from '@agents/claude/main/claudeSessionStore'
 import { pushes, registerChannels } from './channels'
 import { CodexSessions, type CodexSessionDeps } from '@agents/codex/main/codexSessions'
 import { HandOver, type HandOverDeps } from './handOver'
@@ -57,7 +62,7 @@ export interface SessionsStartDeps {
   tracker: TrackerDeps
   backendLifecycle: SessionLifecycle
   backendHooks: BackendHooks
-  claude: Omit<ClaudeBackendDeps, 'tracker'>
+  claude: Omit<ClaudeBackendDeps, 'tracker' | 'store'>
   startedSessionsFile: ConstructorParameters<typeof StartedSessions>[0]
   newsJudge: NewsJudgeDeps & { onVerdict: Parameters<NewsJudge['onVerdict']>[0] }
   slash: SlashDeps
@@ -93,6 +98,7 @@ export const start: PluginStart<
       buildInstructionAsks: BuildLater<InstructionAskDeps, InstructionAsks>
       buildHandOver: BuildLater<HandOverDeps, HandOver>
       buildWorkspaces: BuildLater<WorkspaceManagerDeps, WorkspaceManager>
+      buildClaudeStore: BuildLater<Omit<ClaudeSessionStoreDeps, 'liveSessions'>, ClaudeSessionStore>
       buildCodexSessions: BuildLater<CodexSessionDeps & { file: string }, CodexSessions>
       buildAgySessions: BuildLater<AgySessionDeps & { file: string }, AgySessions>
     }
@@ -105,7 +111,8 @@ export const start: PluginStart<
     sessionBackends.observe(tabId, { type: 'turn-ended', turn })
   )
   Object.assign(tracker, d.tracker)
-  const claudeBackend = new ClaudeBackend({ ...d.claude, tracker })
+  let claudeStore: ClaudeSessionStore | null = null
+  const claudeBackend = new ClaudeBackend({ ...d.claude, tracker, store: () => claudeStore })
   sessionBackends.register(claudeBackend)
   const startedSessions = new StartedSessions(d.startedSessionsFile)
   const { onVerdict, ...judgeDeps } = d.newsJudge
@@ -170,6 +177,11 @@ export const start: PluginStart<
     buildInstructionAsks: (deps) => (instructionAsks = new InstructionAsks(deps)),
     buildHandOver: (deps) => new HandOver(deps),
     buildWorkspaces: (deps) => new WorkspaceManager(deps),
+    buildClaudeStore: (deps) =>
+      (claudeStore = new ClaudeSessionStore({
+        ...deps,
+        liveSessions: () => liveSessionsOf(tracker)
+      })),
     buildCodexSessions: ({ file, ...deps }) => new CodexSessions(file, deps),
     buildAgySessions: ({ file, ...deps }) => new AgySessions(file, deps)
   }

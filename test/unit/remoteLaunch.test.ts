@@ -14,7 +14,6 @@ import {
   killSessionCmd,
   launchLine,
   skillsFromMachineLine,
-  machineToolProgram,
   tabScript,
   utilShellLine,
   writeTabPassFile,
@@ -1082,6 +1081,16 @@ describe('U-TAB-*: the tab script on the machine', () => {
       'T.env'
     )
     expect(accountFileLeft(landed)).toBe(false)
+  })
+
+  it('a tab that names a tool for the machine to set up first hands that name to ensure.sh, and refuses a name that would not stay one plain word on that script line', () => {
+    const s = spec()
+    const naming = (ensureTool: string): TabSpec => ({
+      ...s,
+      program: { ...s.program, ensureTool }
+    })
+    expect(tabScript(naming('some-tool'))).toContain('sh "$M/ensure.sh" some-tool || exit $?')
+    expect(() => tabScript(naming('some-tool; rm -rf "$HOME"'))).toThrow('unsafe')
   })
 
   it("on a machine whose ssh gives the command no terminal, a start and a reconnect each run inside a stand-in terminal of the tab's size, where tmux can open", () => {

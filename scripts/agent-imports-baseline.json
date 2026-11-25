@@ -17,10 +17,7 @@
         "src/plugins/sessions/main/hooks.ts": "C9"
       },
       "src/agents/agy/main/agyTab.ts": { "src/plugins/sessions/main/hooks.ts": "C9" },
-      "src/agents/claude/main/backend.ts": {
-        "src/plugins/sessions/main/hooks.ts": "C9",
-        "src/plugins/sessions/main/workspaces.ts": "B2"
-      },
+      "src/agents/claude/main/backend.ts": { "src/plugins/sessions/main/hooks.ts": "C9" },
       "src/agents/claude/main/sessionTracker.ts": {
         "src/plugins/sessions/main/handoverPreamble.ts": "C2",
         "src/plugins/sessions/main/messageText.ts": "C6"
@@ -68,6 +65,10 @@
         "src/main/statusline.ts": "C9"
       },
       "src/agents/claude/main/claudeProbe.ts": { "src/main/loginShell.ts": "C8" },
+      "src/agents/claude/main/claudeSessionStore.ts": {
+        "src/main/sessionSearch.ts": "C6",
+        "src/main/usageCache.ts": "C6"
+      },
       "src/agents/claude/main/claudeWorktreeExit.ts": { "src/main/resumePlan.ts": "C9" },
       "src/agents/claude/main/sessionTracker.ts": {
         "src/main/accountPicker.ts": "C4",
@@ -133,8 +134,6 @@
         "src/agents/claude/main/claudeTrust.ts": "B4"
       },
       "src/main/host/sshHost.ts": {
-        "src/agents/agy/main/agyStore.ts": "C10",
-        "src/agents/agy/main/agyTab.ts": "C10",
         "src/agents/claude/main/claudeArgs.ts": "B4",
         "src/agents/claude/main/claudeTrustJs.ts": "B4"
       },
@@ -159,7 +158,6 @@
         "src/agents/codex/main/codexMachine.ts": "C10"
       },
       "src/main/rowActivity.ts": { "src/agents/claude/main/claudeTouchedFiles.ts": "C3" },
-      "src/main/sessionAggregate.ts": { "src/agents/claude/main/sessionTracker.ts": "B2" },
       "src/main/shim.ts": {
         "src/agents/agy/main/agyAccounts.ts": "C8",
         "src/agents/claude/main/advisorOnFable.ts": "C8"
@@ -199,6 +197,7 @@
         "src/agents/agy/main/agySessions.ts": "D1",
         "src/agents/agy/main/backend.ts": "D1",
         "src/agents/claude/main/backend.ts": "D1",
+        "src/agents/claude/main/claudeSessionStore.ts": "D1",
         "src/agents/claude/main/crossSessionMessage.ts": "C2",
         "src/agents/claude/main/sessionTracker.ts": "D1",
         "src/agents/codex/main/backend.ts": "D1",

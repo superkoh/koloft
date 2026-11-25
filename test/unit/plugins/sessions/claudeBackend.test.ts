@@ -24,7 +24,7 @@ import { answered, refused } from '../../../../src/core/command'
 import { markStartedBeforeTabPasses, passOf } from '../../../../src/main/tabPass'
 import { mirrorHookDir } from '../../../../src/main/remote/paths'
 import { START_IN_STATUS_LOG } from '../../../../src/plugins/sessions/main/hooks'
-import type { AgentCallerState } from '../../../../src/main/host/sshHost'
+import type { RequestCallerState } from '../../../../src/main/host/machine'
 
 function fakeTracker(): ClaudeBackendDeps['tracker'] {
   const tracked = new Map<string, { sessionId: string }>()
@@ -64,7 +64,7 @@ function backendWithDirs(): {
   const backend = new ClaudeBackend({
     pty: { get: () => pty, pidOf: () => 4242, clearResumeIntent: () => {} },
     tracker: fakeTracker(),
-    workspaces: () => null,
+    store: () => null,
     events: (id: string, event: unknown) => events.push([id, event])
   } as unknown as ClaudeBackendDeps)
   const statusLog = path.join(hookRegDir, `${tabId}.status.jsonl`)
@@ -121,7 +121,7 @@ function machineBackend(): {
   binds: [string, string][]
   answeredFor: (string | undefined)[]
   sent: [string, string, string | null][]
-  callerSeen: (AgentCallerState | undefined)[]
+  callerSeen: (RequestCallerState | undefined)[]
   callerChecks: string[]
   waits: (() => boolean)[]
   release(): void
@@ -142,8 +142,9 @@ function machineBackend(): {
     machineOfTab: (id: string) => MACHINE_TABS[id]?.host ?? CODEX_TABS[id],
     hosts: {
       machine: (host: string) => ({
-        answerAgent: async (id: string, reply: string | null) => void sent.push([host, id, reply]),
-        agentCallerWaits: async (id: string) => {
+        answerRequest: async (id: string, reply: string | null) =>
+          void sent.push([host, id, reply]),
+        requestCallerWaits: async (id: string) => {
           callerChecks.push(id)
           return callerSeen.shift()
         }
@@ -159,10 +160,10 @@ function machineBackend(): {
       setRemoteTmuxName: () => {},
       list: () => Object.keys(MACHINE_TABS).map((tabId) => ({ tabId, alive: true }))
     },
-    workspaces: () => ({
-      remoteTargets: () => [{ host: 'devbox', paths: [] }],
+    remoteTargets: () => [{ host: 'devbox', paths: [] }],
+    sessionRebound: () => {},
+    store: () => ({
       onSessionStart: () => {},
-      onSessionRebind: () => {},
       onSessionBound: () => {},
       dropOwnership: () => {}
     }),
@@ -170,7 +171,7 @@ function machineBackend(): {
     events: () => {},
     machineOf: (id: string) => MACHINE_TABS[id]?.host
   } as unknown as ClaudeBackendDeps)
-  const callerSeen: (AgentCallerState | undefined)[] = []
+  const callerSeen: (RequestCallerState | undefined)[] = []
   const callerChecks: string[] = []
   const waits: (() => boolean)[] = []
   let release = (): void => {}
@@ -232,7 +233,7 @@ describe('ClaudeBackend: koloft requests from a session on a remote machine', ()
   })
 
   async function readsWhileTheOwnerIsAsked(
-    seen: (AgentCallerState | undefined)[]
+    seen: (RequestCallerState | undefined)[]
   ): Promise<{ read: boolean[]; sent: [string, string, string | null][] }> {
     const m = machineBackend()
     m.callerSeen.push(...seen)
@@ -491,7 +492,7 @@ describe('ClaudeBackend: the resume check before a restart', () => {
           return true
         }
       },
-      workspaces: () => ({
+      store: () => ({
         transcriptFileOf: (key: string) => (key === sessionId ? listed : undefined)
       })
     } as unknown as ClaudeBackendDeps)
