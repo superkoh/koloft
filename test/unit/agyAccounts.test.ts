@@ -462,8 +462,11 @@ describe('probeAgyAccounts (a probe round of every Antigravity account)', () => 
       ownersGemini: () => owners,
       agySessions: () => null
     })
-    await probeAgyAccounts().catch(() => {})
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await probeAgyAccounts()
     expect(keychainRead).not.toHaveBeenCalled()
+    expect(logged).toHaveBeenCalledOnce()
+    logged.mockRestore()
     fs.rmSync(blocker)
     await probeAgyAccounts()
     expect(keychainRead).toHaveBeenCalledWith('agy-home', 'work')

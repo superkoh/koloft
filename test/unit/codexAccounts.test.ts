@@ -509,7 +509,10 @@ describe('probeCodexAccounts (a probe round of every Codex account)', () => {
       codexSharedConfig: () => '/nowhere/config.toml',
       codexSessions: () => ({ readAccount }) as unknown as CodexSessions
     })
-    await probeCodexAccounts().catch(() => {})
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await probeCodexAccounts()
+    expect(logged).toHaveBeenCalledOnce()
+    logged.mockRestore()
     await probeCodexAccounts()
     expect(readAccount).toHaveBeenCalledTimes(2)
   })
