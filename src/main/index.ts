@@ -3204,6 +3204,10 @@ app.whenReady().then(() => {
     workspaceInstructions: instructionsOf,
     remoteDirExists: (dir: string) => hosts.machineOf(dir)!.sessionDirThere(dir),
     remoteTreeIo: machineTreeIo,
+    worktreesOfEveryAgent: {
+      recorded: (dir: string) => sessionBackends.worktreeRecords.recorded(dir),
+      preparing: new Map<string, Promise<unknown>>()
+    },
     realFilesOn,
     changed: sessionsChanged,
     pinnedWorkspaces: () => workspaceMgr?.pinnedPathList() ?? [],

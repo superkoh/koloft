@@ -26,6 +26,7 @@ import { answerOf, type BytesResult } from '../../../src/main/remote/ssh'
 import { tabPushed } from '../../../src/main/remote/launch'
 import { claudeProjectPrompt, keepSkillsIn, projectPromptFile } from '../../../src/main/agentPlugin'
 import { standInMachine, type MachineSaid } from './standInMachine'
+import { worktreesOfOneAgent } from './worktreesOfOneAgent'
 
 export const MACHINE = 'devbox'
 export const MACHINE_PACKAGE = 'm-0000000000000000'
@@ -368,6 +369,7 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
       treeRoot: p
     }),
     remoteDirExists: async () => true,
+    worktreesOfEveryAgent: worktreesOfOneAgent(() => sessions!.store),
     changed: () => a.changed?.(),
     pinnedWorkspaces: () => a.pinnedWorkspaces?.() ?? [],
     rereadRows: () => a.rereadRows?.(),
@@ -428,7 +430,7 @@ export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): Code
       background ? '-o' : '',
       background ? 'BatchMode=yes' : ''
     ].filter(Boolean)
-  return new CodexSessions(path.join(world.home, 'sessions.json'), {
+  const sessions: CodexSessions = new CodexSessions(path.join(world.home, 'sessions.json'), {
     pty: pty as CodexSessionDeps['pty'],
     runtime: c.runtime ?? new SessionRuntime(),
     projectInfo: (p) => ({
@@ -436,6 +438,7 @@ export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): Code
       treeRoot: p
     }),
     remoteDirExists: async () => true,
+    worktreesOfEveryAgent: worktreesOfOneAgent(() => sessions.store),
     machine: {
       instance: 'table-instance',
       machine: (name) =>
@@ -491,4 +494,5 @@ export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): Code
       ghWrapper: path.join(world.home, 'shim', 'gh')
     }
   })
+  return sessions
 }
