@@ -31,7 +31,6 @@ export interface OpenedTmux {
   tmuxName: string
   packageName: string
   loginPath: Promise<string>
-  startedBeforeTabPasses: boolean
   spawnCwd: string
   shell: string
   resized(tabId: string, cols: number, rows: number): void

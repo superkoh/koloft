@@ -236,10 +236,11 @@ fi
 const AGENT_EXIT_255_PASSED_AS = SSH_LINK_BROKE_EXIT - 1
 
 export function tabScript(spec: TabSpec): string {
-  assertSafeNames(spec.tabId, spec.tmuxName, spec.machineName)
+  const program = spec.program
+  const pastedUnquoted = [spec.tabId, spec.tmuxName, spec.machineName, program.ensureTool]
+  assertSafeNames(...pastedUnquoted.filter((name) => name !== undefined))
   const T = tabPath(spec.tabId)
   const H = `$HOME/.koloft/hook-sessions/${spec.tabId}`
-  const program = spec.program
   // PLATFORM§35
   const attachTo = `"$(cat "${T}.tmux" 2>/dev/null || echo '${spec.tmuxName}')"`
   // PLATFORM§33 CC§3 AGY§25

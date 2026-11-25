@@ -51,8 +51,7 @@ import {
   readAgyConversationTitle,
   readAgyTurns,
   saidInTranscript,
-  TranscriptFollower,
-  type SummaryRow
+  TranscriptFollower
 } from './agyStore'
 import {
   agyAccountEnv,

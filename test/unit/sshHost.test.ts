@@ -932,6 +932,26 @@ it("a launch decided before the machine's first heartbeat this run waits for it,
   expect(plan.machine?.attachTo).toBe(live)
 })
 
+describe('the basic actions an agent builds its own launch from', () => {
+  it("the line that sends a tab's files copies the tab's own folder on this Mac to the machine, names the machine package to push first when it is missing there, and removes the folder on this Mac afterwards", () => {
+    const { dir, pushedLine } = machine().tabFiles('pty-9')
+    expect(dir).toBe(tabPackageDir(home, 'pty-9'))
+    const line = pushedLine()
+    expect(line).toContain(`-C '${dir}' .`)
+    expect(line).toContain('test -d m-0000000000000000 || mv m.tmp.pty-9 m-0000000000000000')
+    expect(line.endsWith(`rm -rf '${dir}'; `)).toBe(true)
+  })
+
+  it('ssh arguments for work in the background never stop to ask for a password, the ones for a tab the owner watches may, and asking for either makes the folder the shared connection lives in', () => {
+    const controlDir = path.join(home, 'control')
+    const host = machine(runOnMachine, { controlDir })
+    expect(host.sshArgs(true)).toContain('BatchMode=yes')
+    expect(fs.statSync(controlDir).isDirectory()).toBe(true)
+    expect(host.sshArgs(false)).not.toContain('BatchMode=yes')
+    expect(host.sshArgs(false)).toContain(`ControlPath=${controlDir}/%C`)
+  })
+})
+
 describe('ending a session that runs on the machine', () => {
   const live = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
   const tmux = `k-${live}`
