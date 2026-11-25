@@ -736,16 +736,17 @@ test.describe('what each kind of account leaves in the Keychain (the test keycha
           window.api.accounts.add('made-up-codex-key', 'codex-home', 'made-up-openai-key')
         ])
       )
-      expect(
-        await page.evaluate(() => window.api.accounts.startLogin('made-up-signed-in-claude'))
-      ).toBe('ok')
+      const claudeSignIn = await page.evaluate(() =>
+        window.api.accounts.beginSignIn('oauth', 'made-up-signed-in-claude')
+      )
+      expect(claudeSignIn.ok).toBe(true)
       await expect
         .poll(() => keychain().some((l) => l.includes('made-up-signed-in-claude')), {
           timeout: 30_000
         })
         .toBe(true)
       const signIn = await page.evaluate(() =>
-        window.api.accounts.signIn('agy-home', 'made-up-signed-in')
+        window.api.accounts.beginSignIn('agy-home', 'made-up-signed-in')
       )
       expect(signIn.ok).toBe(true)
       t.cell(
