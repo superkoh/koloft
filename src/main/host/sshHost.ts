@@ -490,8 +490,10 @@ const ANSWER_AGENT_REQUEST = `d="${REMOTE_HOOK_DIR}"
 [ -f "$d/req-$1.json" ] || exit 0
 cat > "$d/res-$1.json.tmp" && mv -f "$d/res-$1.json.tmp" "$d/res-$1.json" && rm -f "$d/req-$1.json"`
 const TAKE_AWAY_AGENT_REQUEST = `rm -f "${REMOTE_HOOK_DIR}/req-$1.json"`
-const NOTE_SENT_ID = `mkdir -p "${REMOTE_HOOK_DIR}" && printf '%s\\n' "$2" >> "${remoteSentIdsFile('$1')}"`
-const NOTE_SENT_WORDS = `mkdir -p "${REMOTE_HOOK_DIR}" && cat >> "${remoteSentWordsFile('$1')}"`
+const appendToTheFileOfEveryTab = (fileOf: (tabId: string) => string): string =>
+  `for t in "$@"; do set -- "$@" "${fileOf('$t')}"; shift; done; mkdir -p "${REMOTE_HOOK_DIR}" && tee -a "$@" >/dev/null`
+const NOTE_SENT_ID = appendToTheFileOfEveryTab(remoteSentIdsFile)
+const NOTE_SENT_WORDS = appendToTheFileOfEveryTab(remoteSentWordsFile)
 const leaveNoticeOnMachine = (file: string): string => `mkdir -p "${REMOTE_HOOK_DIR}" || exit 1
 IFS= read -r fresh; IFS= read -r merged
 t="$fresh"; k=fresh
@@ -954,11 +956,10 @@ exit ${CALLER_GONE_EXIT}`,
   }
 
   // ADR-0028
-  async noteSent(tabId: string, note: SentNote): Promise<void> {
-    const r =
-      'id' in note
-        ? await this.sh(NOTE_SENT_ID, [tabId, note.id])
-        : await this.sh(NOTE_SENT_WORDS, [tabId], { input: Buffer.from(sentWordsLine(note.words)) })
+  async noteSent(tabIds: string[], note: SentNote): Promise<void> {
+    const [script, line] =
+      'id' in note ? [NOTE_SENT_ID, `${note.id}\n`] : [NOTE_SENT_WORDS, sentWordsLine(note.words)]
+    const r = await this.sh(script, tabIds, { input: Buffer.from(line) })
     if (r.code !== 0) throw new Error(problemOf(r))
   }
 

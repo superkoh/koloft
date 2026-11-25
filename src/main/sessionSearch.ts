@@ -1,26 +1,11 @@
-import type { SearchSnippet, SessionRow, SessionSearchHit, SessionSearchHits } from '@shared/types'
-import { snippetAround, type TranscriptFile } from './transcriptSearch'
-
-export interface SearchCandidate {
-  row: SessionRow
-  workspacePath: string
-  file?: string
-}
-
-export interface TranscriptScan {
-  done: Promise<void>
-  stop(): void
-}
+import type { SearchSnippet, SessionSearchHit, SessionSearchHits } from '@shared/types'
+import { snippetAround } from '@core/snippetAround'
+import type { AgentSearch, SearchCandidate } from '@core/agent/search'
 
 export interface SessionSearchDeps {
-  candidates(): SearchCandidate[]
-  backendSnippets(term: string, signal: AbortSignal): Promise<{ id: string; snippet: string }[]>
+  agents(): readonly { search: AgentSearch }[]
+  workspaces(): string[]
   hidden(id: string): boolean
-  scan(
-    files: TranscriptFile[],
-    term: string,
-    found: (id: string, snippet: SearchSnippet) => void
-  ): TranscriptScan
   send(found: SessionSearchHits): void
 }
 
@@ -53,11 +38,22 @@ export class SessionSearch {
 
     const unread = new Map<string, SearchCandidate>()
     const seen = new Set<string>()
-    for (const { row, workspacePath, file } of this.deps.candidates()) {
-      if (this.deps.hidden(row.id) || seen.has(row.id)) continue
-      seen.add(row.id)
-      if (snippetAround(row.title, wanted)) found({ row, workspacePath })
-      else unread.set(row.id, { row, workspacePath, file })
+    const workspaces = this.deps.workspaces()
+    const agents = this.deps.agents().map(({ search }) => ({
+      search,
+      unread: [] as SearchCandidate[]
+    }))
+    for (const agent of agents) {
+      for (const { row, workspacePath, file } of agent.search.rows(workspaces)) {
+        if (this.deps.hidden(row.id) || seen.has(row.id)) continue
+        seen.add(row.id)
+        if (snippetAround(row.title, wanted)) found({ row, workspacePath })
+        else {
+          const candidate = { row, workspacePath, file }
+          unread.set(row.id, candidate)
+          agent.unread.push(candidate)
+        }
+      }
     }
     const foundIn = (id: string, snippet: SearchSnippet | undefined): void => {
       const c = unread.get(id)
@@ -65,20 +61,18 @@ export class SessionSearch {
       unread.delete(id)
       found({ row: c.row, workspacePath: c.workspacePath, snippet })
     }
-    const files = [...unread.values()]
-      .flatMap(({ row, file }) => (file ? [{ id: row.id, file, mtime: row.mtime }] : []))
-      .sort((a, b) => b.mtime - a.mtime)
-    const scan = this.deps.scan(files, wanted, foundIn)
-    const stopBackends = new AbortController()
-    const backends = this.deps.backendSnippets(wanted, stopBackends.signal).then((said) => {
-      for (const { id, snippet } of said) foundIn(id, snippetAround(snippet, wanted))
+    const stop = new AbortController()
+    const snippets = agents.map((agent) =>
+      agent.search.snippets(agent.unread, wanted, foundIn, stop.signal)
+    )
+    const said = Promise.all(snippets.map((s) => s.said)).then((each) => {
+      for (const { id, snippet } of each.flat()) foundIn(id, snippetAround(snippet, wanted))
     })
     this.stopCurrent = () => {
       live = false
       clearTimeout(timer)
-      scan.stop()
-      stopBackends.abort()
+      stop.abort()
     }
-    void Promise.allSettled([scan.done, backends]).then(() => flush(true))
+    void Promise.allSettled([...snippets.map((s) => s.streamed), said]).then(() => flush(true))
   }
 }

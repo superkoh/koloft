@@ -1,5 +1,6 @@
 import type { BackendId, UsageRow } from '@shared/types'
-import { costUsdOf, resolvePricing } from '@shared/pricing'
+import { costUsdOf } from '@shared/pricing'
+import { resolvePricing } from '@core/agent/prices'
 import { localDayKey } from '@shared/usageFormat'
 
 export type UsageRange = '7d' | '30d' | '90d' | 'all'

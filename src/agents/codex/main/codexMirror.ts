@@ -1,9 +1,9 @@
 import path from 'path'
 import type { MirrorFolder } from '@core/agent/mirrorFolders'
-import { CODEX_ROLLOUT_FOLDERS } from '../../../main/usageCache'
 import { remoteBase } from '../../../main/remote/paths'
 import { REMOTE_CODEX_HOME } from './codexMachine'
 
+export const CODEX_ROLLOUT_FOLDERS = ['sessions', 'archived_sessions']
 const IN_HOME = /^\$HOME\//
 const CODEX_HOME_MIRROR = 'codex-home'
 

@@ -1,18 +1,25 @@
 process.env.TZ = 'America/Los_Angeles'
 
 import { describe, expect, it } from 'vitest'
+import { topLevelTimestampOf } from '../../src/agents/kit/main/usageLines'
 import {
   claudeCallKeys,
-  protobufString,
   recordsOfClaudeCalls,
-  scanAgyLines,
-  scanClaudeCalls,
-  scanCodexLines,
-  topLevelTimestampOf
-} from '../../src/main/usageScan'
-import { costUsdOf, resolvePricing } from '../../src/shared/pricing'
+  scanClaudeCalls
+} from '../../src/agents/claude/main/usageWorkerScan'
+import { scanCodexLines as scanCodexLinesPricedBy } from '../../src/agents/codex/main/usageWorkerScan'
+import {
+  protobufString,
+  scanAgyLines as scanAgyLinesPricedBy
+} from '../../src/agents/agy/main/usageWorkerScan'
+import { costUsdOf } from '../../src/shared/pricing'
+import { resolvePricing } from '../../src/core/agent/prices'
 
-const scanClaudeLines = (text: string) => recordsOfClaudeCalls(scanClaudeCalls(text))
+const scanClaudeLines = (text: string) =>
+  recordsOfClaudeCalls(scanClaudeCalls(text), resolvePricing)
+const scanCodexLines = (text: string) => scanCodexLinesPricedBy(text, resolvePricing)
+const scanAgyLines = (text: string, sessionId: string, calls: string[], configured: string) =>
+  scanAgyLinesPricedBy(text, sessionId, calls, configured, resolvePricing)
 
 const S = 'sess-1'
 const NOON = '2026-10-15T19:00:00.000Z'
