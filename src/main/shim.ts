@@ -10,11 +10,26 @@ import {
   writeSudoShims
 } from '@plugins/passwords/main/sudoShim'
 import { ghWrapperScript, gitCredentialHelperScript } from './gitCredentialScripts'
-import { ENSURE_CLAUDE_MINIMUM_FN } from '@agents/claude/main/claudeMinimum'
-import { ADVISOR_OFF_ON_FABLE_FN } from '@agents/claude/main/advisorOnFable'
-import { CLAUDE_AUTH_ENV_VARS } from './remote/launch'
-import { NO_USABLE_ACCOUNT, SHIM_FOUND_NO_ACCOUNT_EXIT } from '@shared/accountUsage'
-import { PLAYWRIGHT_CLI_SESSION_PREFIX, PLAYWRIGHT_OUTPUT_FOLDER } from '@shared/browserTabEnv'
+import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
+import {
+  SHIM_SCRIPT,
+  UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE
+} from '@agents/claude/main/claudeShim'
+import {
+  CODEX_FLAGS_FOLLOWED_BY_A_VALUE,
+  CODEX_SUBCOMMANDS_WITHOUT_A_TUI
+} from '@agents/codex/main/codexShim'
+import {
+  AGY_FLAGS_FOLLOWED_BY_A_VALUE,
+  AGY_PRINT_OUTSIDE_A_SUBCOMMAND,
+  AGY_SUBCOMMANDS_WITHOUT_A_TUI,
+  exportsOf
+} from '@agents/agy/main/agyShim'
+import {
+  HELP_OR_VERSION,
+  PICK_ACCOUNT_FNS,
+  utilTerminalRefusesInteractive
+} from '@agents/kit/main/toolTerminalShim'
 
 export interface ShimPaths {
   shimDir: string
@@ -25,192 +40,6 @@ export interface ShimPaths {
   gitHelper: string
   ghWrapper: string
 }
-
-// CC§9
-const CLAUDE_FLAGS_FOLLOWED_BY_A_VALUE = [
-  '-w',
-  '--worktree',
-  '-r',
-  '--resume',
-  '--agent',
-  '--agents',
-  '--append-system-prompt',
-  '--append-system-prompt-file',
-  '--autocompact',
-  '--debug-file',
-  '--effort',
-  '--environment',
-  '--fallback-model',
-  '--input-format',
-  '--json-schema',
-  '--max-budget-usd',
-  '--max-turns',
-  '--model',
-  '-n',
-  '--name',
-  '--output-format',
-  '--permission-mode',
-  '--permission-prompts',
-  '--plugin-dir',
-  '--plugin-url',
-  '--remote-control-session-name-prefix',
-  '--session-id',
-  '--setting-sources',
-  '--settings',
-  '--system-prompt',
-  '--system-prompt-file',
-  '--system-prompt-snapshot'
-].join('|')
-
-function utilTerminalRefusal(agent: string, nonInteractiveExamples: string): string {
-  return `    printf '⛔ Koloft — this is a Koloft terminal, not an agent surface.\\n' >&2
-    printf '   %s\\n' "Start interactive ${agent} from the sidebar's ＋ (⌘N)." >&2
-    printf '   %s\\n' 'Non-interactive use is fine: ${nonInteractiveExamples} · …' >&2
-    exit 1`
-}
-
-const UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE = `if [ "$KOLOFT_UTIL" = "1" ]; then
-  utilok=0
-  valflag=0
-  for a in "$@"; do
-    if [ "$valflag" = "1" ]; then
-      valflag=0
-      case "$a" in -*) ;; *) continue ;; esac   # a flag's value, not a keyword (\`-w update\`)
-    fi
-    case "$a" in
-      -p|--print|-h|--help|--help-all|-v|--version|doctor|mcp|config|auth|setup-token|agents|project|update|install|plugin|import) utilok=1 ;;
-    esac
-    case "$a" in
-      ${CLAUDE_FLAGS_FOLLOWED_BY_A_VALUE}) valflag=1 ;;
-    esac
-  done
-  if [ "$utilok" = "0" ]; then
-${utilTerminalRefusal('Claude', 'claude -p · --help · doctor · mcp')}
-  fi
-fi`
-
-// CODEX§18
-const CODEX_FLAGS_FOLLOWED_BY_A_VALUE = [
-  '-c',
-  '--config',
-  '--enable',
-  '--disable',
-  '--remote',
-  '--remote-auth-token-env',
-  '-i',
-  '--image',
-  '-m',
-  '--model',
-  '--local-provider',
-  '-p',
-  '--profile',
-  '-s',
-  '--sandbox',
-  '-C',
-  '--cd',
-  '--add-dir',
-  '-a',
-  '--ask-for-approval'
-].join('|')
-
-// CODEX§18
-const CODEX_SUBCOMMANDS_WITHOUT_A_TUI = [
-  'exec',
-  'e',
-  'review',
-  'login',
-  'logout',
-  'mcp',
-  'plugin',
-  'mcp-server',
-  'app-server',
-  'remote-control',
-  'app',
-  'completion',
-  'update',
-  'doctor',
-  'sandbox',
-  'debug',
-  'apply',
-  'a',
-  'queue',
-  'archive',
-  'delete',
-  'migrate-rollouts',
-  'migrate-nfs-db',
-  'unarchive',
-  'exec-server',
-  'features',
-  'help'
-].join('|')
-
-const HELP_OR_VERSION = '-h|--help|-V|--version'
-
-function utilTerminalRefusesInteractive(
-  label: string,
-  flagsFollowedByAValue: string,
-  subcommandsWithoutATui: string,
-  hint: string,
-  flagsWithoutATui = HELP_OR_VERSION
-): string {
-  return `if [ "$KOLOFT_UTIL" = "1" ]; then
-  utilok=0
-  valflag=0
-  sub=""
-  for a in "$@"; do
-    if [ "$valflag" = "1" ]; then
-      valflag=0
-      continue
-    fi
-    case "$a" in
-      ${flagsWithoutATui}) utilok=1 ;;
-      ${flagsFollowedByAValue}) valflag=1 ;;
-      -*) ;;
-      *) [ -z "$sub" ] && sub="$a" ;;
-    esac
-  done
-  case "$sub" in
-    ${subcommandsWithoutATui}) utilok=1 ;;
-  esac
-  if [ "$utilok" = "0" ]; then
-${utilTerminalRefusal(label, hint)}
-  fi
-fi`
-}
-
-// AGY§1
-const AGY_FLAGS_FOLLOWED_BY_A_VALUE = [
-  '--add-dir',
-  '--agent',
-  '--conversation',
-  '--effort',
-  '-i',
-  '--prompt-interactive',
-  '--input-format',
-  '--json-schema',
-  '--log-file',
-  '--mode',
-  '--model',
-  '--output-format',
-  '--print-timeout',
-  '--project'
-].join('|')
-
-// AGY§1
-const AGY_SUBCOMMANDS_WITHOUT_A_TUI = [
-  'agent',
-  'agents',
-  'changelog',
-  'help',
-  'install',
-  'mcp',
-  'mic-serve',
-  'models',
-  'plugin',
-  'plugins',
-  'remote-control',
-  'update'
-].join('|')
 
 const UTIL_TERMINAL_REFUSAL = {
   claude: UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE,
@@ -259,55 +88,6 @@ exit 127
 `
 }
 
-// ADR-0030
-const PICK_ACCOUNT_FNS = `refuse() { echo "koloft: $1" >&2; exit ${SHIM_FOUND_NO_ACCOUNT_EXIT}; }
-pick_field() { printf '%s\\n' "$pjson" | sed -n 's/.*"'"$1"'":"\\([^"]*\\)".*/\\1/p'; }
-pick_account() {
-  [ -n "$KOLOFT_PICK_DIR" ] && [ -n "$KOLOFT_TAB_ID" ] && [ -n "$KOLOFT_PID" ] && kill -0 "$KOLOFT_PID" 2>/dev/null ||
-    refuse "$1 runs here only inside a Koloft tab, on an account from Settings ▸ Accounts."
-  pickid="$(newid)"
-  [ -n "$pickid" ] || pickid="$$-$(date +%s)"
-  preq="$KOLOFT_PICK_DIR/req-$pickid.json"
-  pres="$KOLOFT_PICK_DIR/res-$pickid.json"
-  printf '{"tabId":"%s","ts":%s,"backend":"%s"}\\n' "$KOLOFT_TAB_ID" "$(date +%s)" "$1" > "$preq" 2>/dev/null
-  pwaits=0
-  while [ ! -f "$pres" ] && [ "$pwaits" -lt 60 ]; do sleep 0.05; pwaits=$((pwaits+1)); done
-  pjson="$(cat "$pres" 2>/dev/null)"
-  rm -f "$preq" "$pres" 2>/dev/null
-  pacct="$(pick_field account)"
-  if [ -z "$pacct" ]; then
-    [ -z "$pjson" ] && refuse "picking an account took too long. Try again."
-    refuse "$2"
-  fi
-}
-# PLATFORM§3 PLATFORM§2 ADR-0001
-read_keychain() {
-  ptokf="$KOLOFT_PICK_DIR/tok-$pickid"
-  ( umask 077; exec security find-generic-password -s "$1" -a "$2" -w > "$ptokf" 2>/dev/null ) &
-  psec=$!
-  pswait=0
-  while kill -0 "$psec" 2>/dev/null && [ "$pswait" -lt 100 ]; do sleep 0.05; pswait=$((pswait+1)); done
-  kill "$psec" 2>/dev/null
-  wait "$psec" 2>/dev/null
-  ptok="$(cat "$ptokf" 2>/dev/null)"
-  rm -f "$ptokf" 2>/dev/null
-}`
-
-const exportsOf = (env: Record<string, string>): string =>
-  `export ${Object.entries(env)
-    .map(([k, v]) => `${k}="${v}"`)
-    .join(' ')}`
-
-const AGY_PRINT_OUTSIDE_A_SUBCOMMAND = `valflag=0
-  for a in "$@"; do
-    if [ "$valflag" = "1" ]; then valflag=0; continue; fi
-    case "$a" in
-      -p|--print|--prompt) pick=1 ;;
-      ${AGY_FLAGS_FOLLOWED_BY_A_VALUE}) valflag=1 ;;
-    esac
-  done
-  case "$sub" in ${AGY_SUBCOMMANDS_WITHOUT_A_TUI}) pick=0 ;; esac`
-
 const UTIL_TERMINAL_ACCOUNT: Record<GuardedTool, { reachesTheModel: string; useIt: string }> = {
   // CODEX§15
   codex: {
@@ -352,202 +132,6 @@ fi
 `
 }
 
-const SHIM_SCRIPT = `#!/usr/bin/env bash
-: koloft claude shim
-self_dir="$(cd "$(dirname "$0")" >/dev/null 2>&1 && pwd)"
-real=""
-old_ifs="$IFS"; IFS=":"
-set -f
-for d in $PATH; do
-  [ "$d" = "$self_dir" ] && continue
-  [ -x "$d/claude" ] || continue
-  if head -n 2 "$d/claude" 2>/dev/null | grep -q "koloft claude shim"; then continue; fi
-  real="$d/claude"; break
-done
-set +f
-IFS="$old_ifs"
-if [ -z "$real" ]; then echo "koloft-shim: real 'claude' not found on PATH" >&2; exit 127; fi
-
-skip=0
-resume=0
-sid=""
-prev=""
-valflag=0
-for a in "$@"; do
-  if [ "$valflag" = "1" ]; then
-    valflag=0
-    case "$a" in
-      -*) ;;                                   # not a value after all (optional-value flags like -w / -r)
-      *) case "$prev" in -r|--resume|--session-id) sid="$a" ;; esac
-         prev="$a"; continue ;;
-    esac
-  fi
-  case "$a" in
-    -p|--print|--version|-v|-h|--help|--help-all|mcp|config|doctor|update|install) skip=1 ;;
-    -r|--resume|-c|--continue) resume=1 ;;
-  esac
-  case "$a" in
-    ${CLAUDE_FLAGS_FOLLOWED_BY_A_VALUE}) valflag=1 ;;
-  esac
-  prev="$a"
-done
-case "$1" in ""|-*) ;; *) skip=1 ;; esac
-# CC§9
-[ -n "$CLAUDECODE" ] && skip=1
-
-${UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE}
-
-# CC§16
-${ENSURE_CLAUDE_MINIMUM_FN}
-if [ "$skip" = "0" ]; then ensure_claude_minimum "$real" || exit 1; fi
-
-# CC§6
-pre=()
-[ -n "$KOLOFT_HOOK_SETTINGS" ] && pre=(--settings "$KOLOFT_HOOK_SETTINGS")
-# CC§13
-[ -n "$KOLOFT_DOCS_PLUGIN" ] && pre+=(--plugin-dir "$KOLOFT_DOCS_PLUGIN")
-[ -n "$KOLOFT_AGENT_PLUGIN" ] && pre+=(--plugin-dir "$KOLOFT_AGENT_PLUGIN")
-[ -n "$KOLOFT_AGENT_PROMPT" ] && pre+=(--append-system-prompt-file "$KOLOFT_AGENT_PROMPT")
-[ -n "$KOLOFT_OWNER_TEXT" ] && pre+=(--append-system-prompt "$KOLOFT_OWNER_TEXT")
-
-${NEWID_FN}
-
-register() {
-  [ "$KOLOFT_UTIL" = "1" ] && return 0
-  reg_dir="$KOLOFT_SESSION_DIR"
-  if [ -z "$reg_dir" ]; then reg_dir="$HOME/.koloft/sessions"; fi
-  mkdir -p "$reg_dir"
-  printf '{"tabId":"%s","regId":"%s","sessionId":"%s","cwd":"%s","ts":%s,"mode":"%s","pid":%s}\\n' \\
-    "$KOLOFT_TAB_ID" "$1" "$2" "$PWD" "$(date +%s)" "$3" "$$" > "$reg_dir/$1.json"
-}
-
-# PLATFORM§17
-if [ -n "$KOLOFT_CDP_DIR" ] && [ -n "$KOLOFT_TAB_ID" ] && [ "$KOLOFT_UTIL" != "1" ]; then
-  export PLAYWRIGHT_CLI_SESSION="${PLAYWRIGHT_CLI_SESSION_PREFIX}$KOLOFT_TAB_ID"
-  ktmp="\${TMPDIR:-/tmp}"
-  export PLAYWRIGHT_MCP_OUTPUT_DIR="\${ktmp%/}/${PLAYWRIGHT_OUTPUT_FOLDER}/$KOLOFT_TAB_ID"
-  kcdp="$(cat "$KOLOFT_CDP_DIR/$KOLOFT_TAB_ID" 2>/dev/null)"
-  if [ -n "$kcdp" ]; then
-    export PLAYWRIGHT_MCP_CDP_ENDPOINT="$kcdp"
-    export PLAYWRIGHT_MCP_ALLOW_UNRESTRICTED_FILE_ACCESS=1
-    export KOLOFT_BROWSER_CDP="$kcdp"
-  fi
-  kcdp=""
-fi
-
-inj=()
-noinj=0
-hasperm=0
-hasp=0
-valflag=0
-for a in "$@"; do
-  if [ "$valflag" = "1" ]; then
-    valflag=0
-    case "$a" in -*) ;; *) continue ;; esac   # a flag's value, not a keyword (\`-w update\`)
-  fi
-  case "$a" in
-    --version|-v|-h|--help|--help-all|mcp|config|doctor|update|install|setup-token) noinj=1 ;;
-    --dangerously-skip-permissions|--permission-mode|--permission-mode=*) hasperm=1 ;;
-    -p|--print) hasp=1 ;;
-  esac
-  case "$a" in
-    ${CLAUDE_FLAGS_FOLLOWED_BY_A_VALUE}) valflag=1 ;;
-  esac
-done
-${PICK_ACCOUNT_FNS}
-if [ "$noinj" = "0" ] && [ "$KOLOFT_ACCOUNT_PICKED" != "1" ]; then
-  unset ${CLAUDE_AUTH_ENV_VARS.join(' ')}
-  pick_account claude "${NO_USABLE_ACCOUNT.claude}"
-  pkind="$(pick_field kind)"
-  pbanner="$(pick_field banner)"
-  pwarn="$(pick_field warning)"
-  pbase="$(pick_field baseUrl)"
-  pmodel="$(pick_field model)"
-  pflag="$(printf '%s\\n' "$pjson" | sed -n 's/.*"skipFlag":true.*/1/p')"
-  psvc="__KOLOFT_KEYCHAIN_NS__-claude-oauth"
-  [ "$pkind" = "apikey" ] && psvc="__KOLOFT_KEYCHAIN_NS__-anthropic-api"
-  [ "$pkind" = "custom" ] && psvc="__KOLOFT_KEYCHAIN_NS__-custom-endpoint"
-  read_keychain "$psvc" "$pacct"
-  [ -n "$ptok" ] ||
-    refuse "could not read the sign-in of $pacct from the Keychain. Try again, or sign it in again in Settings ▸ Accounts."
-  if [ "$pkind" = "apikey" ]; then
-    export ANTHROPIC_API_KEY="$ptok"
-  elif [ "$pkind" = "custom" ]; then
-    # CC§7
-    export ANTHROPIC_AUTH_TOKEN="$ptok"
-    export ANTHROPIC_BASE_URL="$pbase"
-    if [ -n "$pmodel" ]; then
-      export ANTHROPIC_MODEL="$pmodel"
-      export ANTHROPIC_DEFAULT_OPUS_MODEL="$pmodel"
-      export ANTHROPIC_DEFAULT_SONNET_MODEL="$pmodel"
-      export ANTHROPIC_DEFAULT_HAIKU_MODEL="$pmodel"
-      export ANTHROPIC_DEFAULT_FABLE_MODEL="$pmodel"
-      export CLAUDE_CODE_SUBAGENT_MODEL="$pmodel"
-      export CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1
-      case "$pjson" in
-        *'"disable1mContext":true'*) export CLAUDE_CODE_DISABLE_1M_CONTEXT=1 ;;
-      esac
-      # CC§9
-      kargs=()
-      kdrop=0
-      for a in "$@"; do
-        if [ "$kdrop" = "1" ]; then kdrop=0; continue; fi
-        if [ "$a" = "--model" ]; then kdrop=1; continue; fi
-        kargs+=("$a")
-      done
-      set -- "\${kargs[@]}"
-    fi
-  else
-    export CLAUDE_CODE_OAUTH_TOKEN="$ptok"
-  fi
-  ptok=""
-  export ANT_ACCOUNT="$pacct"
-  [ -n "$pbanner" ] && printf '%s\\n' "$pbanner" >&2
-  [ -n "$pwarn" ] && printf '%s\\n' "$pwarn" >&2
-  if [ "$pflag" = "1" ] && [ "$hasperm" = "0" ] && [ "$hasp" = "0" ]; then
-    inj+=(--dangerously-skip-permissions)
-  fi
-fi
-
-${ADVISOR_OFF_ON_FABLE_FN}
-advisor_off_on_fable "$@"
-
-# CC§7 CC§9
-kfp="$KOLOFT_FIRST_PROMPT"
-ksn="$KOLOFT_SESSION_NAME"
-kpf="$KOLOFT_PICTURE_FOLDER"
-unset KOLOFT_FIRST_PROMPT KOLOFT_SESSION_NAME KOLOFT_PICTURE_FOLDER KOLOFT_OWNER_TEXT
-
-if [ "$skip" = "1" ]; then
-  exec "$real" "\${inj[@]}" "$@"
-fi
-
-# CC§12
-[ "$TERM_PROGRAM" = "Apple_Terminal" ] && unset TERM_PROGRAM
-
-if [ -n "$sid" ]; then
-  register "$(newid)" "$sid" "exact"
-  exec "$real" "\${pre[@]}" "\${inj[@]}" "$@"
-fi
-
-if [ "$resume" = "1" ]; then
-  register "$(newid)" "" "resume"
-  exec "$real" "\${pre[@]}" "\${inj[@]}" "$@"
-fi
-
-nid="$(newid)"
-if [ -n "$nid" ]; then
-  register "$nid" "$nid" "new"
-  extra=()
-  [ -n "$ksn" ] && extra+=(--name "$ksn")
-  # CC§18
-  [ -n "$kfp" ] && [ -n "$kpf" ] && extra+=(--add-dir "$kpf")
-  [ -n "$kfp" ] && extra+=(-- "$kfp")
-  exec "$real" "\${pre[@]}" "\${inj[@]}" --session-id "$nid" "$@" "\${extra[@]}"
-fi
-exec "$real" "\${inj[@]}" "$@"
-`
-
 // CC§12
 const OPEN_SHIM_SCRIPT = `${OPEN_SHIM_HEAD}
 [ -n "$KOLOFT_TAB_ID" ] && [ -n "$KOLOFT_OPEN_DIR" ] || passthrough "$@"
@@ -578,10 +162,6 @@ function pruneStale(dir: string, maxAgeMs = STALE_REGISTRATION_AGE_MS): void {
       if (now - fs.statSync(full).mtimeMs > maxAgeMs) fs.rmSync(full, { force: true })
     } catch {}
   }
-}
-
-export function registeredByTabRoot(regPid: unknown, rootPid: number | undefined): boolean {
-  return typeof regPid !== 'number' || rootPid === undefined || regPid === rootPid
 }
 
 export function setupShim(gitAuthDir: string, koloftGhFolder: string): ShimPaths {

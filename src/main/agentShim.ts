@@ -12,6 +12,7 @@ import { TAB_PASS_ENV } from './tabPass'
 import { SECRET_VERB, SUDO_SHIM_FILES, writeSudoShims } from '@plugins/passwords/main/sudoShim'
 import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '@plugins/sessions/main/dialog'
 import { AGENT_SHIM_WAITS_MS } from '@core/command'
+import { CODEX_SANDBOX_IS_READ_ONLY } from '@agents/codex/main/codexShim'
 
 const PASS_FIELD = `\\"pass\\":\\"$(jstr "$${TAB_PASS_ENV}")\\",`
 const SHIM_POLL_MS = 50
@@ -118,8 +119,6 @@ ${body(
   REMOTE_POLL_WELL_UNDER_ONE_MIRROR_PULL_MS,
   `[ -n "$${NO_REPLY_ENV}" ] && { trap - EXIT; exit 0; }\n`
 )}`
-
-const CODEX_SANDBOX_IS_READ_ONLY = 'koloft: this sandbox is read-only, so koloft cannot run here.'
 
 // CODEX§12 CODEX§17 AGY§25
 function folderAgentShim(backend: BackendId, requestDir: string, guide: string): string {

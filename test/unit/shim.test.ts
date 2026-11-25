@@ -12,7 +12,8 @@ vi.mock('electron', async () => {
   return { app: { getPath: () => base, getName: () => 'koloft-dev', isPackaged: false } }
 })
 
-import { registeredByTabRoot, setupShim } from '../../src/main/shim'
+import { setupShim } from '../../src/main/shim'
+import { registeredByTabRoot } from '../../src/agents/claude/main/claudeShim'
 import { MIN_CLAUDE_VERSION } from '../../src/agents/claude/main/claudeMinimum'
 import { NO_USABLE_ACCOUNT, SHIM_FOUND_NO_ACCOUNT_EXIT } from '../../src/shared/accountUsage'
 
