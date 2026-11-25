@@ -13,7 +13,6 @@ import {
 import { AgySessions, type AgySessionDeps } from '../../../src/agents/agy/main/agySessions'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../../src/agents/claude/main/backend'
 import type { MachineAccount } from '../../../src/agents/claude/main/claudeLaunch'
-import { trustCodexFolder } from '../../../src/agents/codex/main/backend'
 import { CodexSessions, type CodexSessionDeps } from '../../../src/agents/codex/main/codexSessions'
 import { SessionRuntime } from '../../../src/core/agent/sessionRuntime'
 import { BackgroundFile } from '../../../src/main/backgroundFile'
@@ -333,6 +332,7 @@ export interface WiredIntoTheApp {
 
 export interface AgySetup extends WiredIntoTheApp {
   machine: MachineSetup
+  pinnedMachines?: () => string[]
   agentTools?: boolean
   apiKey?: string
   signedInOnTheWeb?: boolean
@@ -397,7 +397,7 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
     remote: {
       machine,
       saidWhenTheMachineWantsAPasswordFirst: SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST,
-      hosts: () => [MACHINE],
+      hosts: () => a.pinnedMachines?.() ?? [MACHINE],
       keyed: (host, p) => `ssh://${host}${p}`,
       mirrorDir: () => mirror,
       mirrorGemini: () => path.join(world.home, 'mirror-gemini'),
@@ -478,7 +478,6 @@ export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): Code
     noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],
     koloftPrompt: standInForKoloftsPrompt,
     hookRegDir: world.regDir,
-    trustFolder: trustCodexFolder,
     pickHome: () => ({ account: 'work', home: path.join(world.home, 'codex-home') }),
     homeOf: () => undefined,
     assistOf: () => undefined,

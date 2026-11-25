@@ -7,6 +7,7 @@ import type {
   CreateTabOptions,
   CreateTabResult,
   DiscoveredFolder,
+  HostId,
   ResumePlan,
   SessionResumeRequest,
   SessionResumeResult,
@@ -23,8 +24,10 @@ import type {
   SendOutcome,
   SessionBackend,
   SessionMessages,
-  TabExit
+  TabExit,
+  WorktreeExitWatch
 } from '@core/agent/sessionBackends'
+import { claudeWorktreeExitWatch } from './claudeWorktreeExitWatch'
 import {
   claudeMessages,
   messageSocket,
@@ -57,13 +60,9 @@ import { holdsPass, isStartedBeforeTabPasses } from '../../../main/tabPass'
 import { refused, type AgentReply } from '@core/command'
 import { errorText } from '@core/errorText'
 import { sessionIdOfTmux, tmuxSessionName } from '../../../main/remote/launch'
-import {
-  dq,
-  mirrorHookDir,
-  mirrorProjectsRoot,
-  REMOTE_HOOK_DIR,
-  tabPackageDir
-} from '../../../main/remote/paths'
+import { dq, mirrorHookDir, REMOTE_HOOK_DIR, tabPackageDir } from '../../../main/remote/paths'
+import { claudeRecordsFolder, mirrorProjectsRoot } from './claudeMirror'
+import type { MirrorFolder } from '@core/agent/mirrorFolders'
 import {
   hookSettings,
   FROM_SESSION_FIELD,
@@ -357,6 +356,14 @@ export class ClaudeBackend implements SessionBackend {
     return this.d.store()?.liveKey() ?? ''
   }
 
+  worktreeExitWatch(tabId: string, hostOfTab: () => HostId): WorktreeExitWatch {
+    return claudeWorktreeExitWatch(tabId, hostOfTab, {
+      pidOf: (id) => this.d.pty.pidOf(id),
+      infoOf: (id) => this.d.tracker.infoOf(id),
+      store: () => this.d.store()
+    })
+  }
+
   tabExited({ tabId, crashed }: TabExit): void {
     this.onPtyExit(tabId, crashed)
     this.d.tracker.setAlive(tabId, false)
@@ -382,6 +389,10 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   mirrorPulled(): void {}
+
+  foldersToMirrorFrom(_host: string, landing: string): MirrorFolder[] {
+    return [claudeRecordsFolder(landing)]
+  }
 
   tmuxOfTab(tabId: string): string | undefined {
     return this.d.tracker.remoteOf(tabId)?.tmuxName
@@ -812,7 +823,7 @@ export class ClaudeBackend implements SessionBackend {
   private liveTabOnMachine(machine: string, tabId: string, tmux = ''): string | undefined {
     if (this.d.machineOfTab(tabId) === machine && this.d.pty.get(tabId)) return tabId
     const other = this.d.otherTabOnMachine?.(machine, tmux, tabId)
-    return other && this.d.pty.get(other) ? other : undefined
+    return other && this.d.pty.get(other)?.alive ? other : undefined
   }
 
   private namedOnMachine(
@@ -820,11 +831,12 @@ export class ClaudeBackend implements SessionBackend {
     r: { tabId?: unknown; tmux?: unknown }
   ): string | undefined {
     const tmux = typeof r.tmux === 'string' ? r.tmux : ''
-    const byTmux = tmux && this.tabRunningTmux(tmux, machine)
+    const byTmux =
+      tmux && (this.tabRunningTmux(tmux, machine) || this.liveTabOnMachine(machine, '', tmux))
     if (byTmux) return byTmux
     const asked = typeof r.tabId === 'string' ? r.tabId : ''
     const facts = this.d.pty.get(asked)
-    return this.liveTabOnMachine(machine, facts ? tabSpokenFor(asked, facts) : asked, tmux)
+    return this.liveTabOnMachine(machine, facts ? tabSpokenFor(asked, facts) : asked)
   }
 
   private fromOwnWorkbenchShell(raw: unknown): boolean {

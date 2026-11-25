@@ -1,0 +1,14 @@
+heartbeat arguments: set -- '0' '-home-me-api' '2' '.koloft/codex-home/sessions' '.koloft/codex-home/archived_sessions' '0' '/home/me/api'
+copies, in the order they start:
+1. .claude/projects -> /ud/remote/box/projects
+   flags: --inplace -m --delete --include=/-home-me-api*/ --include=/-home-me-api*/*.jsonl --include=/-home-me-api*/*.title --include=/-home-me-api*/*/ --include=/-home-me-api*/*/** --exclude=*
+   a failed copy shows a sync problem: yes
+2. .koloft/codex-home/sessions -> /ud/remote/box/codex-home/sessions
+   flags: --inplace -m --delete --include=*/ --include=rollout-*.jsonl --exclude=*
+   a failed copy shows a sync problem: no
+3. .koloft/codex-home/archived_sessions -> /ud/remote/box/codex-home/archived_sessions
+   flags: --inplace -m --delete --include=*/ --include=rollout-*.jsonl --exclude=*
+   a failed copy shows a sync problem: no
+4. .koloft/hook-sessions -> /ud/remote/box/hook-sessions
+   flags: -I --inplace --delete
+   a failed copy shows a sync problem: yes

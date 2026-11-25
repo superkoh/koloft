@@ -21,11 +21,11 @@ import {
 } from '../../../main/remote/launch'
 import {
   mirrorHookDir,
-  mirrorProjectsRoot,
   REMOTE_HOOK_DIR,
   remoteMachineDir,
   remoteTabPath
 } from '../../../main/remote/paths'
+import { mirrorProjectsRoot } from './claudeMirror'
 import { worktreeNameAround } from '../../../main/resumePlan'
 import { claudeArgv } from './claudeArgs'
 import {

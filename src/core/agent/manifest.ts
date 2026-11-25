@@ -44,6 +44,7 @@ export interface AgentFlags {
   commandsItRunsCanHaveATerminalOfTheirOwn: boolean
   runsCommandsInASandboxWhereSudoCannotStart: boolean
   questionToolTakesNoOptionDescriptions: boolean
+  removesItsWorktreeAsItExits: boolean
   turnEndCanComeBeforeItsReplyIsWritten: boolean
   typesASkillOnlyByTheNameInItsFile: boolean
   refusesATypedSkillMarkedNotUserInvocable: boolean
@@ -87,6 +88,7 @@ export interface AgentManifest {
   productName: string
   maker: string
   command: string
+  installCommand: string
   nodePackageFolderNames: readonly string[]
   wordsThatNameMe: AgentWords
   skillPrefix: string

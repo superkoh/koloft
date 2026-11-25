@@ -16,6 +16,8 @@ export const agent = {
   productName: 'Codex',
   maker: 'OpenAI',
   command: 'codex',
+  // CODEX§22
+  installCommand: 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh',
   nodePackageFolderNames: ['codex'],
   wordsThatNameMe: {
     anyCase: ['codex', 'openai', 'gpt'],
@@ -104,6 +106,8 @@ export const agent = {
     runsCommandsInASandboxWhereSudoCannotStart: true,
     // CODEX§20
     questionToolTakesNoOptionDescriptions: false,
+    // CODEX§6
+    removesItsWorktreeAsItExits: false,
     turnEndCanComeBeforeItsReplyIsWritten: false,
     typesASkillOnlyByTheNameInItsFile: false,
     refusesATypedSkillMarkedNotUserInvocable: true

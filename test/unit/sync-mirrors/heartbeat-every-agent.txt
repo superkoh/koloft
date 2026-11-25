@@ -1,0 +1,21 @@
+set -- '0' '-home-me-api' '4' '.gemini/antigravity-cli/brain' '.koloft/codex-home/sessions' '.koloft/codex-home/archived_sessions' '.gemini/antigravity-cli/conversations' '0' '/home/me/api'
+export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+if [ -z "$LC_ALL$LC_CTYPE" ]; then
+  case "$(locale charmap 2>/dev/null)" in
+  ANSI_X3.4-1968|US-ASCII)
+    koloft_u=$(locale -a 2>/dev/null | awk '{ l = tolower($0) }
+      l ~ /^c\.utf-?8$/ && c == "" { c = $0 }
+      l ~ /^en_us\.utf-?8$/ && e == "" { e = $0 }
+      l ~ /\.utf-?8$/ && u == "" { u = $0 }
+      END { print (c != "" ? c : (e != "" ? e : u)) }')
+    if [ -n "$koloft_u" ]; then
+      case "${LANG:-C}" in
+      C|POSIX) LC_CTYPE=$koloft_u; export LC_CTYPE ;;
+      *) LANG=$koloft_u; export LANG ;;
+      esac
+    fi
+    unset koloft_u ;;
+  esac
+fi
+koloft_git="'include.path=$HOME/.koloft/git-accounts/config'"; case "$GIT_CONFIG_PARAMETERS" in *"$koloft_git"*) ;; *) GIT_CONFIG_PARAMETERS="${GIT_CONFIG_PARAMETERS:+$GIT_CONFIG_PARAMETERS }$koloft_git"; export GIT_CONFIG_PARAMETERS ;; esac; unset koloft_git
+echo "uid $(id -u)"; if [ "$(uname)" = Darwin ]; then b="${CLAUDE_CODE_TMPDIR:-/tmp}"; else b="${CLAUDE_CODE_TMPDIR:-${TMPDIR:-${TMP:-${TEMP:-/tmp}}}}"; fi; echo "tmp $(cd "$b" && pwd -P)"; fp() { stat -c '%.9Y %s' "$1" 2>/dev/null || stat -f '%Fm %z' "$1"; }; n=$1; shift; while [ "$n" -gt 0 ]; do echo "stamp $(fp "$1" 2>/dev/null)"; shift; n=$((n - 1)); done; if stat -c %s / >/dev/null 2>&1; then st="stat -c %n:%.9Y:%s"; else st="stat -f %N:%Fm:%z"; fi; stamped() { find "$@" -type f -exec $st {} + 2>/dev/null; }; echo "transcripts $([ -d "$HOME/.claude/projects" ] && for s in $1; do for d in "$HOME/.claude/projects/$s"*; do [ -d "$d" ] && stamped "$d"; done; done | cksum)"; shift; mkdir -p "$HOME/.koloft/hook-sessions" 2>/dev/null; echo "hooks $(stamped "$HOME/.koloft/hook-sessions" | cksum)"; m=$1; shift; while [ "$m" -gt 0 ]; do echo "extra $([ -d "$HOME/$1" ] && stamped "$HOME/$1" | cksum)"; shift; m=$((m - 1)); done; k=$1; shift; while [ "$k" -gt 0 ]; do p=; read -r p 2>/dev/null < "$HOME/.koloft/tabs/$1.shell"; [ -n "$p" ] && printf '%s%s\t%s\t%s\n' 'shell ' "$1" "$(ps -o comm= -p $(ps -o tpgid= -p "$p" 2>/dev/null) 2>/dev/null)" "$(if [ -d /proc ]; then readlink "/proc/$p/cwd"; else lsof -a -d cwd -p "$p" -Fn | sed -n 's/^n//p'; fi 2>/dev/null)"; shift; k=$((k - 1)); done; if [ -d /proc ]; then find /proc/[0-9]*/fd/1 -maxdepth 0 -lname '*/tasks/*.output' -printf '%h %l\n' 2>/dev/null | while read -r td tl; do grep -qs shell-snapshots "${td%/fd}/cmdline" && echo "toolshell $tl"; done; else ts="$(ps -axww -o pid= -o command= | awk '/shell-snap[s]hots/ { printf "%s%s", c, $1; c = "," }')"; [ -n "$ts" ] && lsof -n -P -a -p "$ts" -d 1 -Fn 2>/dev/null | sed -n 's|^n\(.*/tasks/.*\.output\)$|toolshell \1|p'; fi; tmux -L koloft ls -F "#S" 2>/dev/null; for p in "$@"; do echo "== $p"; echo "real $(cd "$p" 2>/dev/null && pwd -P)"; [ -e "$p/.git" ] && echo git; git -C "$p" worktree list --porcelain 2>/dev/null; done; exit 0

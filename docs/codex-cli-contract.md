@@ -412,7 +412,9 @@ Koloft's own stop, ownership and retry rules are product rules, covered by
 **Measured without a model call.** In a temporary repository with a committed baseline,
 Git created a linked worktree. The real TUI and app-server ran in that checkout using
 `-C`. The returned thread cwd matched it. After native `/exit`, the checkout directory,
-branch and HEAD were still present and unchanged.
+branch and HEAD were still present and unchanged. Koloft dependents:
+`removesItsWorktreeAsItExits` in `src/agents/codex/agent.ts` and `worktreeExitWatch` in
+`src/agents/codex/main/backend.ts`.
 
 **Codex 0.162.0 makes worktrees of its own ("managed worktrees"), on by default.**
 Read 2026-10-11 from Codex CLI 0.162.1: `codex features list` prints `worktrees stable
@@ -492,7 +494,7 @@ archived afterwards.
 Each dated section names the binary it ran: 0.153.4, 0.159.3, 0.161.0, 0.162.x, 0.163.0,
 0.164.0, 0.165.0, 0.166.0, 0.167.0, 0.167.1, 0.167.2, 0.168.0, 0.169.0, 0.170.0 or 0.171.0. Koloft
 keeps the newest minor line rechecked here (`TESTED_CODEX_LINE` in
-`src/main/cliMinimums.ts`) apart from its minimum (`MIN_CODEX_VERSION`),
+`src/agents/codex/main/codexMinimum.ts`) apart from its minimum (`MIN_CODEX_VERSION`),
 treats every version up to that line as verified (`verified` in
 `src/main/cliRuntime.ts`, pinned by `test/unit/codexRuntime.test.ts`) and warns on
 anything newer. A recheck on a newer Codex moves the tested line, not the minimum,

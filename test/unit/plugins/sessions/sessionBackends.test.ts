@@ -256,11 +256,6 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
       ['claude/local']
     ],
     [
-      'Koloft follows Claude Code removing its worktree at /exit, and says so when it fails, on this Mac and on a machine, where its tmux passes the title code on; other agents remove no worktree at exit',
-      'worktreeRemovalFollowed',
-      ['claude/local', 'claude/ssh']
-    ],
-    [
       'every tab on this Mac drives the Workbench browser, and on a machine only Claude Code does, through a tunnel on its ssh connection and the playwright-cli Koloft installs there; the other agents there are not probed yet',
       'browserControl',
       ['claude/local', 'claude/ssh', 'codex/local', 'agy/local']
@@ -274,7 +269,7 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     )
   })
 
-  // CC§4 CC§11 CC§14
+  // CC§11 CC§14
   it.each(ROWS_ONLY_SOME_TABS_HAVE)('%s', (_rule, row, on) => {
     const tabsWithIt = SESSION_BACKENDS.flatMap((backend) =>
       HOSTS.filter((host) => capabilitiesFor(backend, host)[row] === true).map(
