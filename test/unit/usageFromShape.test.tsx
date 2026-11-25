@@ -30,8 +30,8 @@ const accounts = {
     return () => {}
   },
   probe: () => Promise.resolve(shown),
-  signInFailure: () => Promise.resolve(null),
-  onSignInFailure: () => () => {},
+  heldSignInFailure: () => Promise.resolve(null),
+  onSignInProgress: () => () => {},
   codexUseReset: () => answerReset()
 }
 const rest = anyApi() as Record<string, unknown>
