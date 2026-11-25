@@ -106,7 +106,6 @@ import {
   utilShellLine,
   writeTabPassFile,
   CLAUDE_AUTH_ENV_VARS,
-  claudeCodeGuessesWindowOf,
   type MachinePackage
 } from './remote/launch'
 import {
@@ -158,7 +157,6 @@ import {
   keychainDelete,
   keychainRead,
   keychainWrite,
-  recordFableCapability,
   removeAccountMeta,
   setAccountEnabled,
   listAccounts,
@@ -166,7 +164,6 @@ import {
   upsertAccountMeta,
   validateNewAccount
 } from './accounts'
-import { probeAccount, shouldSkipFable } from './usageProbe'
 import { allLimitedNotice } from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
@@ -1394,7 +1391,11 @@ const {
   feedLoginWatcher,
   failLogin,
   cancelGuidedLogin,
-  startGuidedLogin
+  startGuidedLogin,
+  probeAccount,
+  shouldSkipFable,
+  recordFableCapability,
+  pickMachineAccount
 } = claudeAccountsOf({
   ptyMgr,
   usageViews,
@@ -1411,7 +1412,6 @@ const {
   claudeBackend: { picked: (tabId, skipFlag) => claudeBackend.picked(tabId, skipFlag) },
   loginEnvReady,
   CLAUDE_AUTH_ENV_VARS,
-  claudeCodeGuessesWindowOf,
   cronTestMs,
   setupLine,
   PLAIN_KOLOFT_SHIM,
@@ -6030,7 +6030,6 @@ const {
   pushToSessions,
   agyBackend,
   machineHookSettings,
-  pickMachineAccount,
   codexBackend,
   trustCodexFolder,
   A_HELPER_HAS_IT,

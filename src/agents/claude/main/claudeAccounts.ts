@@ -8,7 +8,6 @@ import {
   keychainRead,
   keychainWrite,
   listAccounts,
-  recordFableCapability,
   recordProbeOutcome,
   upsertAccountMeta
 } from '../../../main/accounts'
@@ -21,15 +20,15 @@ import {
   plainTerminalTail
 } from '../../../main/signInOutput'
 import type { PtyManager } from '../../../main/ptyManager'
-import { probeAccount, shouldSkipFable } from '../../../main/usageProbe'
+import type { LaunchedSession } from '../../../main/accountPicker'
+import { probeAccount, recordFableCapability, shouldSkipFable } from './claudeAccountProbe'
 import {
   AccountPicker,
   PROBE_TIMEOUT_MS,
-  type LaunchedSession,
   type PickResponse,
   type UsageSnapshots
-} from '../../../main/accountPicker'
-import { pickMachineAccount } from './backend'
+} from './claudeAccountPicker'
+import { claudeCodeGuessesWindowOf, pickMachineAccount } from './claudeAccountEnv'
 
 // CC§7
 interface LoginWatch {
@@ -71,7 +70,6 @@ export interface ClaudeAccountDeps {
   claudeBackend: { picked(tabId: string, skipFlag: boolean): void }
   loginEnvReady(): Promise<void>
   CLAUDE_AUTH_ENV_VARS: readonly string[]
-  claudeCodeGuessesWindowOf(model: string): boolean
   cronTestMs(name: string, dflt: number): number
   setupLine(): string | undefined
   PLAIN_KOLOFT_SHIM: Parameters<PtyManager['create']>[0]['koloftShim']
@@ -93,7 +91,6 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
     claudeBackend,
     loginEnvReady,
     CLAUDE_AUTH_ENV_VARS,
-    claudeCodeGuessesWindowOf,
     cronTestMs,
     setupLine,
     PLAIN_KOLOFT_SHIM,
@@ -364,6 +361,10 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
     feedLoginWatcher,
     failLogin,
     cancelGuidedLogin,
-    startGuidedLogin
+    startGuidedLogin,
+    probeAccount,
+    shouldSkipFable,
+    recordFableCapability,
+    pickMachineAccount
   }
 }

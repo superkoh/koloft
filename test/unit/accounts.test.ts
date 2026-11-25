@@ -43,9 +43,9 @@ import {
   setAccountEnabled,
   validateNewAccount,
   recordProbeOutcome,
-  recordFableCapability,
   resetProbeOutcomeState
 } from '../../src/main/accounts'
+import { recordFableCapability } from '../../src/agents/claude/main/claudeAccountProbe'
 import {
   gitKeychainService,
   keychainNamespace,

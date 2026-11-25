@@ -39,13 +39,8 @@
         "src/main/remote/launch.ts": "C10",
         "src/main/remote/paths.ts": "C10"
       },
-      "src/agents/agy/main/backend.ts": {
-        "src/main/accounts.ts": "C4",
-        "src/main/resumePlan.ts": "C9"
-      },
+      "src/agents/agy/main/backend.ts": { "src/main/resumePlan.ts": "C9" },
       "src/agents/claude/main/backend.ts": {
-        "src/main/accountPicker.ts": "C4",
-        "src/main/accounts.ts": "C4",
         "src/main/gitSteps.ts": "C9",
         "src/main/remote/launch.ts": "C10",
         "src/main/remote/paths.ts": "C10",
@@ -67,21 +62,13 @@
       },
       "src/agents/claude/main/claudeWorktreeExit.ts": { "src/main/resumePlan.ts": "C9" },
       "src/agents/claude/main/sessionTracker.ts": {
-        "src/main/accountPicker.ts": "C4",
         "src/main/remote/install.ts": "C10",
         "src/main/remote/paths.ts": "C10",
         "src/main/resumePlan.ts": "C9",
         "src/main/rowActivity.ts": "C3",
         "src/main/taskProcs.ts": "C9"
       },
-      "src/agents/codex/main/backend.ts": {
-        "src/main/accounts.ts": "C4",
-        "src/main/resumePlan.ts": "C9"
-      },
-      "src/agents/codex/main/codexAccounts.ts": {
-        "src/main/accountPicker.ts": "C4",
-        "src/main/usageProbe.ts": "C6"
-      },
+      "src/agents/codex/main/backend.ts": { "src/main/resumePlan.ts": "C9" },
       "src/agents/codex/main/codexMachine.ts": {
         "src/main/remote/install.ts": "C10",
         "src/main/remote/launch.ts": "C10",
@@ -106,7 +93,6 @@
       "src/agents/kit/main/sessionWorktrees.ts": { "src/main/resumePlan.ts": "C9" },
       "src/agents/kit/main/stored.ts": { "src/main/resumePlan.ts": "C9" },
       "src/agents/kit/main/storedSessions.ts": {
-        "src/main/accountPicker.ts": "C4",
         "src/main/cliRuntime.ts": "C8",
         "src/main/loginShell.ts": "C8",
         "src/main/resumePlan.ts": "C9",
@@ -124,6 +110,7 @@
         "src/agents/agy/main/agyAccounts.ts": "D1",
         "src/agents/agy/main/agyStore.ts": "D1",
         "src/agents/agy/main/agyTab.ts": "D1",
+        "src/agents/claude/main/claudeAccounts.ts": "D1",
         "src/agents/claude/main/claudeCommandOutput.ts": "D1",
         "src/agents/claude/main/claudeDialogWatch.ts": "D1",
         "src/agents/claude/main/claudeSessionRegistry.ts": "D1",

@@ -3,18 +3,17 @@ import os from 'os'
 import path from 'path'
 import { describe, it, expect, beforeEach, onTestFinished, vi } from 'vitest'
 import type { AccountMeta, UsageSnapshot } from '../../src/shared/types'
+import { liveSessionsPerAccount, type LaunchedSession } from '../../src/main/accountPicker'
 import {
   AccountPicker,
   FABLE_EXHAUSTED_LINE,
-  liveSessionsPerAccount,
   PICK_BUDGET_MS,
   PROBE_TIMEOUT_MS,
-  type LaunchedSession,
   type PickDeps,
   type UsageSnapshots
-} from '../../src/main/accountPicker'
+} from '../../src/agents/claude/main/claudeAccountPicker'
 import { SavedUsage, SNAPSHOT_OLDER_THAN_THE_5H_WINDOW_MS } from '../../src/main/savedUsage'
-import type { ProbeResult } from '../../src/main/usageProbe'
+import type { ProbeResult } from '../../src/agents/claude/main/claudeAccountProbe'
 import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
 
 const FABLE_GONE = FABLE_EXHAUSTED_LINE
