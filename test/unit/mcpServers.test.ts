@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { foldersUpToRoot, jsonServers, mcpServersIn } from '../../src/main/mcpServers'
+import { foldersUpToRoot, jsonServers } from '../../src/main/mcpServers'
+import { agentsWithTheirCatalogs } from './helpers/agentCatalogs'
 import { claudePlaywrightServers, claudeServers } from '../../src/agents/claude/main/claudeCatalog'
 import { codexServers } from '../../src/agents/codex/main/codexCatalog'
 import { foldersUpToRepoTop } from '../../src/agents/agy/main/agyCatalog'
@@ -44,13 +45,11 @@ describe('the MCP servers koloft todo lists for the workspaces on this Mac', () 
     const homeBefore = process.env.HOME
     process.env.HOME = path.join(top, 'home')
     try {
-      expect(
-        await mcpServersIn(
-          [inRepo, lone],
-          () => path.join(top, 'config.toml'),
-          () => path.join(top, 'gemini')
-        )
-      ).toEqual([
+      const agents = agentsWithTheirCatalogs({
+        codexConfig: path.join(top, 'config.toml'),
+        ownersGemini: path.join(top, 'gemini')
+      })
+      expect(await agents.mcpServersOn([inRepo, lone])).toEqual([
         { name: 'everywhere', backend: 'claude' },
         { name: 'underTheRepoKey', backend: 'claude', onlyIn: inRepo },
         { name: 'underLone', backend: 'claude', onlyIn: lone },

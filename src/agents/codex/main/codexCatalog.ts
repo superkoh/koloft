@@ -1,4 +1,6 @@
 import type { McpServer } from '@shared/types'
+import type { AgentCatalog } from '@core/agent/agentsMain'
+import { textOrNull } from '../../../main/mcpServers'
 
 const CODEX_TABLE = /^[ \t]*\[[ \t]*(?:"[^"\n]*"|[^\]\s"])+[ \t]*\]/gm
 const CODEX_SERVER_TABLE = /^\s*\[\s*mcp_servers\.(?:"([^"]+)"|([A-Za-z0-9_-]+))\s*\]/
@@ -15,3 +17,8 @@ export function codexServers(configToml: string | null): McpServer[] {
   })
   return [...new Set(names)].map((name) => ({ name, backend: 'codex' as const }))
 }
+
+export const codexCatalog = (sharedConfig: () => string): AgentCatalog => ({
+  // CODEX§15
+  mcpServersOn: async () => codexServers(await textOrNull(sharedConfig()))
+})

@@ -1,5 +1,6 @@
 import path from 'path'
 import type { McpServer } from '@shared/types'
+import type { AgentCatalog } from '@core/agent/agentsMain'
 import { runsPlaywrightMcp } from '../../../main/browserControlEnv'
 import {
   asRecord,
@@ -8,6 +9,7 @@ import {
   listed,
   parsed,
   textOrNull,
+  textsIn,
   turnedOn,
   type ConfigText
 } from '../../../main/mcpServers'
@@ -66,4 +68,20 @@ export async function ownersClaudePlaywrightMcp(cwd: string): Promise<string[]> 
       .map((folder) => textOrNull(path.join(folder, PROJECT_MCP_FILE)))
   ])
   return claudePlaywrightServers(claudeJson, projectFiles, claudeProjectKey(cwd))
+}
+
+export const claudeCatalog: AgentCatalog = {
+  // CC§22
+  mcpServersOn: async (folders) => {
+    const walks = folders.map((onlyIn) => ({ onlyIn, folders: foldersUpToRoot(onlyIn) }))
+    const [claudeJson, projectFiles] = await Promise.all([
+      textOrNull(claudeJsonPath()),
+      textsIn(walks, PROJECT_MCP_FILE)
+    ])
+    const claudeFolders = folders.map((folder) => ({
+      folder,
+      projectKey: claudeProjectKey(folder)
+    }))
+    return claudeServers(claudeJson, projectFiles, claudeFolders)
+  }
 }

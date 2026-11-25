@@ -349,8 +349,9 @@ import { within } from '@core/within'
 import { clicksTheMouse, pressesAKey, typeKeys } from '@core/typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import { sleep } from '@core/sleep'
-import { mcpServersIn } from './mcpServers'
-import { ownersClaudePlaywrightMcp } from '@agents/claude/main/claudeCatalog'
+import { claudeCatalog, ownersClaudePlaywrightMcp } from '@agents/claude/main/claudeCatalog'
+import { codexCatalog } from '@agents/codex/main/codexCatalog'
+import { agyCatalog } from '@agents/agy/main/agyCatalog'
 import type { McpServer } from '@shared/types'
 import {
   LIVE_REGISTRY_ON_A_MACHINE_SH,
@@ -392,7 +393,12 @@ import { koloftPrompt, type SessionsWithStore } from '@plugins/sessions/api'
 import { localFile } from './realFiles'
 import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
 import { koloftAssist } from './assist'
-import { AgentsMain, type AgentMain, type OneShotTarget } from '@core/agent/agentsMain'
+import {
+  AgentsMain,
+  type AgentCatalog,
+  type AgentMain,
+  type OneShotTarget
+} from '@core/agent/agentsMain'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
 import { TreeRemovals } from './treeRemovals'
@@ -1528,7 +1534,7 @@ async function mcpServersNow(): Promise<McpServer[]> {
     ...(workspaceMgr?.pinnedPathList() ?? []).filter((p) => !isRemoteKey(p)),
     conductorFolder(app.getPath('userData'))
   ]
-  return mcpServersIn(folders, codexSharedConfig, ownersGemini)
+  return agentsMain.mcpServersOn(folders)
 }
 
 function pinnedWorkspaceOfTab(tabId: string): string | undefined {
@@ -1580,8 +1586,14 @@ const oneShotTargets: Record<BackendId, AgentMain['oneShotTarget']> = {
   },
   agy: () => agyOneShotTarget()
 }
+const catalogs: Record<BackendId, AgentCatalog> = {
+  claude: claudeCatalog,
+  codex: codexCatalog(codexSharedConfig),
+  agy: agyCatalog(ownersGemini, isGitCheckoutAsync)
+}
 const agentsMain = new AgentsMain()
-for (const id of SESSION_BACKENDS) agentsMain.register({ id, oneShotTarget: oneShotTargets[id] })
+for (const id of SESSION_BACKENDS)
+  agentsMain.register({ id, oneShotTarget: oneShotTargets[id], catalog: catalogs[id] })
 const assist = koloftAssist({
   picks: loadSettings,
   enabled: (backend) => !turnedOffNow(backend),
