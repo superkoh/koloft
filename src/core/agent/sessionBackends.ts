@@ -23,10 +23,13 @@ import {
 import { identityOf, sourceOf, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { hostOf } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
+import type { TabEnded } from '../moment'
 import type { TranscriptPlaces } from '../transcriptPlaces'
 import { rowsOfEveryAgent, type RowsOfEveryAgent, type SessionRowsSource } from './sessionRows'
 
 export type ModeClass = 'bypass' | 'prompting'
+
+export type TabExit = Pick<TabEnded, 'tabId' | 'exitCode' | 'signal' | 'crashed'>
 
 export interface SessionBackend extends SessionRowsSource {
   id: BackendId
@@ -56,6 +59,13 @@ export interface SessionBackend extends SessionRowsSource {
   runningElsewhere(key: string): boolean | Promise<boolean>
   workStillRunning(tabId: string): Promise<boolean>
   worktreeRecords: WorktreeRecords
+  tabExited(exit: TabExit): void | Promise<void>
+  quitWaitsForIt(): boolean
+  endBeforeQuit(): Promise<void>
+  flushSync(): void
+  beforeWorkspaceRemoved(workspace: string): Promise<void>
+  showsPromptBeforeBind(tabId: string): boolean
+  sessionGone(key: string): boolean
 }
 
 export interface SessionLifecycle {
@@ -74,23 +84,27 @@ export class SessionBackends {
   private adapters = new Map<BackendId, SessionBackend>()
   private cleanExitAt = new Map<string, number>()
   private questionsAsked = 0
-  isOverseerSession: (tabOrSessionId: string) => boolean = () => false
+  private agentsAtQuit: 'not asked to end' | 'ending' | 'ended' = 'not asked to end'
+  isKoloftsOwnSession: (tabOrSessionId: string) => boolean = () => false
   turnOver: (tabId: string) => boolean = () => false
   askingOf: (tabId: string) => string | undefined = () => undefined
-  docVerdictsOf: (sessionId: string) => Record<string, DocVerdict> | undefined = () => undefined
+  verdictsOnFilesOf: (sessionId: string) => Record<string, DocVerdict> | undefined = () => undefined
   noAccountMessage: (backend: BackendId) => string = (backend) => NO_USABLE_ACCOUNT[backend]
   turnedOff: (backend: BackendId) => string | null = () => null
   readonly rows: RowsOfEveryAgent = rowsOfEveryAgent(() =>
-    this.inListOrder().map((backend) => ({ id: backend.id, rows: backend }))
+    this.builtInListOrder().map((backend) => ({ id: backend.id, rows: backend }))
   )
   readonly worktreeRecords: WorktreeRecordsOfEveryAgent = worktreeRecordsOfEveryAgent(() =>
-    this.inListOrder()
+    this.builtInListOrder()
   )
 
   constructor(private lifecycle: SessionLifecycle) {}
 
-  private inListOrder(): SessionBackend[] {
-    return SESSION_BACKENDS.flatMap((id) => this.adapters.get(id) ?? [])
+  private builtInListOrder(): SessionBackend[] {
+    return SESSION_BACKENDS.flatMap((id) => {
+      const backend = this.adapters.get(id)
+      return backend ? [backend] : []
+    })
   }
 
   observe(tabId: string, event: SessionEvent): void {
@@ -178,10 +192,10 @@ export class SessionBackends {
         backendId: backend.id,
         host: s.remote ? 'ssh' : hostOf(s.cwd),
         nativeSessionId: s.nativeSessionId ?? s.sessionId,
-        overseer: this.isOverseerSession(s.tabId) || this.isOverseerSession(s.sessionId),
+        overseer: this.isKoloftsOwnSession(s.tabId) || this.isKoloftsOwnSession(s.sessionId),
         turnOver: this.turnOver(s.tabId),
         asking: this.askingOf(s.tabId),
-        docVerdicts: s.sessionId ? this.docVerdictsOf(s.sessionId) : undefined
+        docVerdicts: s.sessionId ? this.verdictsOnFilesOf(s.sessionId) : undefined
       }))
     )
   }
@@ -217,6 +231,47 @@ export class SessionBackends {
     return (await this.ownerOfTab(tabId)?.workStillRunning(tabId)) ?? false
   }
 
+  tabExited(exit: TabExit, endFailed: (error: unknown) => void): void {
+    for (const backend of this.builtInListOrder())
+      void Promise.resolve(backend.tabExited(exit)).catch(endFailed)
+  }
+
+  holdsQuitUntilAgentsEnded(
+    quit: () => void,
+    endFailed: (backend: BackendId, error: unknown) => void
+  ): boolean {
+    const backends = this.builtInListOrder()
+    if (this.agentsAtQuit === 'ended' || !backends.some((b) => b.quitWaitsForIt())) return false
+    if (this.agentsAtQuit === 'not asked to end') {
+      this.agentsAtQuit = 'ending'
+      void Promise.all(
+        backends.map((b) => b.endBeforeQuit().catch((error) => endFailed(b.id, error)))
+      ).finally(() => {
+        this.agentsAtQuit = 'ended'
+        quit()
+      })
+    }
+    return true
+  }
+
+  flushSync(): void {
+    for (const backend of this.builtInListOrder()) backend.flushSync()
+  }
+
+  async beforeWorkspaceRemoved(workspace: string): Promise<void> {
+    await Promise.all(this.builtInListOrder().map((b) => b.beforeWorkspaceRemoved(workspace)))
+  }
+
+  showsPromptBeforeBind(tabId: string): boolean {
+    return this.builtInListOrder().some((backend) => backend.showsPromptBeforeBind(tabId))
+  }
+
+  sessionStillThere(key: string, foundOrRunning: ReadonlySet<string>): boolean {
+    if (foundOrRunning.has(key)) return true
+    const backend = this.adapters.get(identityOf(key).backendId)
+    return !backend || !backend.sessionGone(key)
+  }
+
   async historyRows(
     workspacePath: string,
     partlyUnread: (backend: BackendId, error: unknown) => void
@@ -234,7 +289,7 @@ export class SessionBackends {
     })
     if (failures.length && !rows.length) throw failures[0].error
     for (const f of failures) partlyUnread(f.id, f.error)
-    return rows.filter((r) => !this.isOverseerSession(r.id)).sort((a, b) => b.mtime - a.mtime)
+    return rows.filter((r) => !this.isKoloftsOwnSession(r.id)).sort((a, b) => b.mtime - a.mtime)
   }
 
   adopt(rows: readonly Pick<SessionRow, 'id' | 'backendId'>[]): void {

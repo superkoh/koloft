@@ -21,10 +21,9 @@ import type { BackendId, WorktreeInfo } from '@shared/types'
 import type { MainIpc } from '@core/ipc'
 import { BackgroundFile } from '../../../../src/main/backgroundFile'
 import { SessionBackends, type SessionBackend } from '../../../../src/core/agent/sessionBackends'
-import {
-  KEEPS_NO_WORKTREE_RECORDS,
-  type WorktreeRecordsOfEveryAgent,
-  type WorktreeResource
+import type {
+  WorktreeRecordsOfEveryAgent,
+  WorktreeResource
 } from '../../../../src/core/agent/worktreeRecords'
 import { SessionStore, codexSessionKey } from '../../../../src/agents/kit/main/sessionStore'
 import { SessionWorktrees } from '../../../../src/agents/kit/main/sessionWorktrees'
@@ -40,7 +39,7 @@ import {
   recordingSsh,
   type World
 } from '../../helpers/agentTabs'
-import { NOTHING_FOLLOWS_A_SESSION } from '../../helpers/claudeRunState'
+import { lifecycle, stubBackend } from '../../helpers/sessionBackendStub'
 import { registerChannels } from '../../../../src/plugins/sessions/main/channels'
 import { CHANNELS } from '../../../../src/plugins/sessions/shared/ipc'
 
@@ -76,12 +75,11 @@ function everyAgent(built: readonly BackendId[] = SESSION_BACKENDS): EveryAgent 
     const store = new SessionStore(path.join(directory, `${id}-sessions.json`))
     kept.set(id, { store, worktrees: new SessionWorktrees(store) })
   }
-  const registry = new SessionBackends(NOTHING_FOLLOWS_A_SESSION)
-  for (const id of [...built].reverse())
-    registry.register({
-      id,
-      worktreeRecords: kept.get(id)?.worktrees.records ?? KEEPS_NO_WORKTREE_RECORDS
-    } as SessionBackend)
+  const registry = new SessionBackends(lifecycle())
+  for (const id of [...built].reverse()) {
+    const records = kept.get(id)?.worktrees.records
+    registry.register({ ...stubBackend(id), ...(records && { worktreeRecords: records }) })
+  }
   return {
     registry,
     records: registry.worktreeRecords,

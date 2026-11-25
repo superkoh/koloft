@@ -6,7 +6,7 @@ import { wireRunState } from '../../../src/plugins/sessions/main/runState'
 
 const runtimes = new WeakMap<SessionTracker, SessionRuntime>()
 
-export const NOTHING_FOLLOWS_A_SESSION = {
+const NOTHING_FOLLOWS_A_SESSION = {
   prompted: () => {},
   bound: () => {},
   exited: () => {},

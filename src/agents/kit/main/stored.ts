@@ -52,6 +52,22 @@ export function storedBackend<R extends StoredRun, H extends HistoryEntry, P>(
     observe: (tabId, event) => sessions.observe(tabId, event),
     occupantOf: (dir) => sessions.occupantOf(dir),
     workStillRunning: async () => false,
+    tabExited: ({ tabId, exitCode, signal }) => sessions.stop(tabId, signal ? -1 : exitCode),
+    quitWaitsForIt: () => sessions.hasProcesses(),
+    endBeforeQuit: () => sessions.stopAll(),
+    flushSync: () => sessions.store.flushSync(),
+    beforeWorkspaceRemoved: async (workspace) => {
+      const tabs = new Set(
+        sessions
+          .rows(workspace)
+          .filter((r) => r.running || r.pending)
+          .map((r) => (r.pending ? r.id : sessions.aliveTabFor(r.id)))
+          .filter((id): id is string => !!id)
+      )
+      await Promise.all([...tabs].map((id) => sessions.stop(id)))
+    },
+    showsPromptBeforeBind: (tabId) => sessions.showsPromptBeforeBind(tabId),
+    sessionGone: (key) => sessions.threadGone(key),
     ...rowsKeptInMemory(sessions),
     // ADR-0028
     permissionClass: (tabId) => (sessions.launchedBypassingChecks(tabId) ? 'bypass' : 'prompting'),

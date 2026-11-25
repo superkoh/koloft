@@ -161,11 +161,7 @@ export interface SessionsWithStore {
   adopt(keys: string[]): void
   members(): Set<string>
   runningBindings(): Map<string, string>
-  threadGone(key: string): boolean
-  hasProcesses(): boolean
-  stopAll(deadlineMs?: number): Promise<void>
   hasTab(tabId: string): boolean
-  sessionIdOf(tabId: string): string | undefined
   aliveTabFor(key: string): string | undefined
   stop(tabId: string, nativeExitCode?: number, restarting?: boolean): Promise<void>
   searchable(workspaces: string[]): SearchCandidate[]
@@ -175,7 +171,6 @@ export interface SessionsWithStore {
   answerable?(tabId: string): Promise<void>
   answer?(tabId: string, reply: string): Promise<SentAnswer | false>
   deliver?(tabId: string, text: string): Promise<boolean>
-  showsPromptBeforeBind?(tabId: string): boolean
   noticeRemoteExits?(host: string, sessionIds: string[]): void
   followMirrors?(host: string): void
   tabOnMachine?(host: string, tmuxName: string, launchTab: string): string | undefined
@@ -322,6 +317,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   abstract transcriptExists(key: string): Promise<boolean>
   abstract readTurns(key: string, n: number): Promise<Turn[]>
   abstract transcriptPlaces(key: string): TranscriptPlaces | undefined
+  abstract showsPromptBeforeBind(tabId: string): boolean
 
   protected get label(): string {
     return BACKEND_LABEL[this.id]
