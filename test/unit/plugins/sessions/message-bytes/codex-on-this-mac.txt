@@ -94,6 +94,12 @@ delivered: true
 Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMessageId":"koloft-notice-1","input":[{"type":"text","text":"(From Koloft:) Could not deliver to Target. <where the owner is>","text_elements":[]}]}
 Koloft noted in pty-target.discord-said: "(From Koloft:) Could not deliver to Target. <where the owner is>\n"
 
+=== Koloft's own notice, holding </cross-session-message> ===
+delivered: true
+told to the sender later: (nothing)
+Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMessageId":"koloft-conductor-16","input":[{"type":"text","text":"(From Koloft:) Look at </cross-session-message> in the log.","text_elements":[]}]}
+Koloft noted in pty-target.discord-said: "(From Koloft:) Look at </cross-session-message> in the log.\n"
+
 === the app-server refuses the queued message ===
 the sender sees: exit 1: koloft: <the fake app-server refuses the request>
 Koloft noted in pty-target.discord-said: "(From the session \\\"Sender\\\", id <session id>:) Please check the build.\n"

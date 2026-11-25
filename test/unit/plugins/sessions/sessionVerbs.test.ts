@@ -4,6 +4,7 @@ import path from 'path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   findSessionRow,
+  findSiblingTarget,
   parseNewSessionArgs,
   sessionSays,
   sessionVerb,
@@ -41,7 +42,7 @@ import type { PickFacts } from '../../../../src/shared/sessionPicks'
 import { handoverPreamble } from '../../../../src/plugins/sessions/main/handoverPreamble'
 import { withHandover } from '../../../../src/core/handOver'
 import { StartedSessions } from '../../../../src/plugins/sessions/main/startedSessions'
-import { turnedOffLine } from '../../../../src/shared/sessionBackend'
+import { SESSION_BACKENDS, turnedOffLine } from '../../../../src/shared/sessionBackend'
 import { EXIT_USAGE, type AgentReply } from '../../../../src/core/command'
 import { AGENT_SHIM_WAITS_MS } from '../../../../src/core/command'
 import type {
@@ -1069,6 +1070,24 @@ describe('koloft session send', () => {
     expect(reply.exit).not.toBe(0)
     expect(reply.text).toContain('SendMessage')
     expect(lines).toEqual([])
+  })
+
+  it('leaves to its own tool only a pair of sessions of the same agent on one machine: of every pair of agents on one machine or two, only Claude to Claude on one machine is sent away from koloft session send', () => {
+    const machines = [undefined, { host: 'box' }]
+    const sentAway = SESSION_BACKENDS.flatMap((caller) =>
+      SESSION_BACKENDS.flatMap((target) =>
+        machines.flatMap((callerOn) =>
+          machines.flatMap((targetOn) => {
+            const from = session('me', caller, { remote: callerOn })
+            const to = session('to', target, { title: 'Target', remote: targetOn })
+            const found = findSiblingTarget([from, to], 'Target', from)
+            const where = `${callerOn?.host ?? 'mac'} to ${targetOn?.host ?? 'mac'}`
+            return found.ok ? [] : [`${caller} to ${target}, ${where}`]
+          })
+        )
+      )
+    )
+    expect(sentAway).toEqual(['claude to claude, mac to mac', 'claude to claude, box to box'])
   })
 
   it('a Claude session reaches a Claude session on another machine with koloft session send, on that one’s message line there, and that one reaches it back on its own, since SendMessage reaches no session on another machine', async () => {

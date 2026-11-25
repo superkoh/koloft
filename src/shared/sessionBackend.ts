@@ -104,8 +104,8 @@ export function messagingOf(backend: BackendId, remote: boolean): Messaging {
   return MESSAGING[backend][remote ? 'ssh' : 'local']
 }
 
-export function reachedBySendMessage(backend: BackendId): boolean {
-  return MESSAGING[backend].local === 'peerLine'
+export function talksWithItsOwnTool(backend: BackendId): boolean {
+  return agentManifest(backend).flags.sessionsOfItsKindOnOneMachineTalkWithTheirOwnTool
 }
 
 export interface PeerTraits {

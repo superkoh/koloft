@@ -2,8 +2,8 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { homeKeyOnDisk } from '../../src/main/homeKeyOnDisk'
-import { agyHomeOf, setAgyApiKeyRoute } from '../../src/agents/agy/main/agyAccounts'
+import { codexKeyOnDisk } from '../../src/agents/codex/main/codexAccounts'
+import { agyHomeOf, agyKeyOnDisk, setAgyApiKeyRoute } from '../../src/agents/agy/main/agyAccounts'
 
 let userData: string
 
@@ -31,12 +31,12 @@ describe('telling a pasted API-key account from a sign-in by its own folder, bef
       OPENAI_API_KEY: null,
       tokens: { access_token: 'a', account_id: 'b' }
     })
-    expect(homeKeyOnDisk['codex-home'](userData, 'key')).toBe(true)
-    expect(homeKeyOnDisk['codex-home'](userData, 'chatgpt')).toBe(false)
-    expect(homeKeyOnDisk['codex-home'](userData, 'missing')).toBe(false)
+    expect(codexKeyOnDisk(userData, 'key')).toBe(true)
+    expect(codexKeyOnDisk(userData, 'chatgpt')).toBe(false)
+    expect(codexKeyOnDisk(userData, 'missing')).toBe(false)
 
     setAgyApiKeyRoute(agyHomeOf(userData, 'gemini'), true)
-    expect(homeKeyOnDisk['agy-home'](userData, 'gemini')).toBe(true)
-    expect(homeKeyOnDisk['agy-home'](userData, 'google')).toBe(false)
+    expect(agyKeyOnDisk(userData, 'gemini')).toBe(true)
+    expect(agyKeyOnDisk(userData, 'google')).toBe(false)
   })
 })

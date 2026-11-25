@@ -101,6 +101,9 @@ export const agent = {
     pasteKeepsItsLastLineFeeds: true,
     // CODEX§17
     passedOnMessageShowsAsFromAnotherSession: false,
+    sessionsOfItsKindOnOneMachineTalkWithTheirOwnTool: false,
+    // CODEX§17
+    mightNotTakeAMessageWhileItsTurnRuns: false,
     // CODEX§12
     commandsItRunsCanHaveATerminalOfTheirOwn: true,
     // CODEX§12
@@ -110,8 +113,10 @@ export const agent = {
     // CODEX§6
     removesItsWorktreeAsItExits: false,
     turnEndCanComeBeforeItsReplyIsWritten: false,
+    // CODEX§17
     typesASkillOnlyByTheNameInItsFile: false,
-    refusesATypedSkillMarkedNotUserInvocable: true
+    // CODEX§17
+    refusesATypedSkillMarkedNotUserInvocable: false
   },
   pureFunctions: {
     effortsAModelTakes: () => CRON_EFFORTS,

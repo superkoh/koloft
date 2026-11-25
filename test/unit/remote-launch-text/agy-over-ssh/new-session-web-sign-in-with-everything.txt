@@ -106,7 +106,9 @@ if [ "$1" = run ]; then
   [ -f "$HOME/.koloft/tabs/pty-t1.pass" ] && { set -a; . "$HOME/.koloft/tabs/pty-t1.pass"; set +a; rm -f "$HOME/.koloft/tabs/pty-t1.pass"; }
   [ -n "$KOLOFT_TAB_PASS" ] && ( umask 077; printf 'set-environment -t %s KOLOFT_TAB_ID %s\nset-environment -t %s KOLOFT_TAB_PASS %s\n' "m-pty-t1-t" pty-t1 "m-pty-t1-t" "$KOLOFT_TAB_PASS" > "$HOME/.koloft/tabs/pty-t1.keys" ) && tmux -L koloft source-file "$HOME/.koloft/tabs/pty-t1.keys"; rm -f "$HOME/.koloft/tabs/pty-t1.keys"
   trap : INT QUIT
+  trap 'rm -f "$T.start.$$.json"; exit 129' HUP
   (
+  mv -f "$T.start.json" "$T.start.$$.json"
   A="$HOME/.koloft/agy"/'work'; G="$HOME/.gemini"
   mkdir -p "$A/antigravity-cli/cache" "$A/config" "$HOME/.koloft/hook-sessions" && chmod 700 "$HOME/.koloft/agy"
   mkdir -p "$G/antigravity-cli/conversations"; [ "$(readlink "$A/antigravity-cli/conversations")" = "$G/antigravity-cli/conversations" ] || { rm -rf "$A/antigravity-cli/conversations"; ln -s "$G/antigravity-cli/conversations" "$A/antigravity-cli/conversations"; }
@@ -131,7 +133,7 @@ if [ "$1" = run ]; then
   KOLOFT_AGY_LOG="$HOME/.koloft/hook-sessions/pty-t1.agy.jsonl"
   KOLOFT_NOTICE="$HOME/.koloft/hook-sessions/pty-t1.notice"
   AGY_CLI_OSC7501=off
-  KOLOFT_AGY_START="$T.start.json"
+  KOLOFT_AGY_START="$T.start.$$.json"
   export KOLOFT_AGY_LOG KOLOFT_NOTICE AGY_CLI_OSC7501 KOLOFT_AGY_START
   set -- agy --gemini_dir="$HOME/.koloft/agy"/'work' '--csrf_token=<token>' '--model' 'pinned-model' '--effort' 'high' '--mode' 'accept-edits' '-i' 'FIRST PROMPT'
   [ -x /usr/sbin/taskpolicy ] && set -- /usr/sbin/taskpolicy -a "$@"
@@ -139,6 +141,7 @@ if [ "$1" = run ]; then
   exec "$@"
   )
   c=$?
+  rm -f "$T.start.$$.json"
   [ $c = 0 ] || tmux -L koloft capture-pane -p -t "$TMUX_PANE" > "$HOME/.koloft/tabs/pty-t1.screen" 2>/dev/null
   echo $c > "$HOME/.koloft/tabs/pty-t1.exit"
   exit

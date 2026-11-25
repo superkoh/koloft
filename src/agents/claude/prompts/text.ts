@@ -4,7 +4,10 @@ export const SLOT_FILLS = {
 3. Dozens of similar small jobs, like checking 40 files the same way: do not start a workflow yourself. Suggest one to the owner, say about how many agents it would run, and start it only when the owner asks for it.
 4. A side job that finishes on its own and only hands you back an answer, like searching or reading many files: a subagent. Use Explore to search and read, or a fork when it needs what this conversation already knows.
 5. {{helper-rule-anything-else}}`,
-  'session-questions': ''
+  'session-questions': '',
+  // CC§13
+  'session-send-left-to-its-own-tool':
+    'a Claude session talks to another Claude session on the same machine with its SendMessage tool; ListAgents shows their names.'
 }
 
 export const SLOT_ADDITIONS = {
