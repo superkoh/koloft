@@ -226,7 +226,14 @@ async function targetOf(c: Case): Promise<RemoteTarget> {
         () => codex.stopAll(),
         () => agy.stopAll()
       )
-      backends.register(codexBackend(codex, probes, () => probes))
+      backends.register(
+        codexBackend(
+          codex,
+          probes,
+          () => probes,
+          async () => {}
+        )
+      )
       backends.register(agyBackend(agy, probes, () => probes))
       await c.has?.({ codex, agy, codexAnswersOn, agyListsOn })
     }
