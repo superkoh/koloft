@@ -75,12 +75,8 @@ import type { ResumeProbes } from '../../../../src/main/resumePlan'
 import { butlersWords } from '../../../../src/plugins/butler/main/sessionHooks'
 import { withoutTheRelayTag } from '../../../../src/plugins/discord/main/sessionHooks'
 import type { Turn } from '../../../../src/shared/turns'
-import type {
-  BackendId,
-  CreateTabOptions,
-  CreateTabResult,
-  SessionInfo
-} from '../../../../src/shared/types'
+import type { BackendId, SessionInfo } from '../../../../src/shared/types'
+import type { SessionBackend } from '../../../../src/core/agent/sessionBackends'
 import {
   agySessionsIn,
   claudeBackendIn,
@@ -238,7 +234,7 @@ async function bench(scene: Scene): Promise<Bench> {
     apiKey: 'api-key-of-the-koloft-account'
   })
   stops.push(() => agy.stopAll())
-  const agents: Record<BackendId, { create(o: CreateTabOptions): Promise<CreateTabResult> }> = {
+  const agents: Record<BackendId, Pick<SessionBackend, 'create' | 'handOverLaunch'>> = {
     claude,
     codex: codexBackend(
       codex,
@@ -247,7 +243,7 @@ async function bench(scene: Scene): Promise<Bench> {
       async () => {}
     ),
     agy: agyBackend(agy, NO_RESUME_IS_PLANNED_HERE, () => NO_RESUME_IS_PLANNED_HERE)
-  } as never
+  }
 
   const everyone = [...scene.callers, ...(scene.butler ? [scene.butler] : [])]
   for (const c of everyone) keep(c)
@@ -291,6 +287,7 @@ async function bench(scene: Scene): Promise<Bench> {
       const made = await agents[options.kind].create({ ...options, tabId: NEW_TAB })
       return made.ok ? made.id : null
     },
+    handOverLaunch: (backend, handOver, task) => agents[backend].handOverLaunch(handOver, task),
     assist: async () => null,
     startedSessions: started,
     closable: () => [],

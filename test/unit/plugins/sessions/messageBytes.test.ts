@@ -622,6 +622,7 @@ async function stage(kind: Kind): Promise<Stage> {
     projectRules: async () => undefined,
     pickFacts: async () => ({ fableLeft: true }),
     launch: async () => null,
+    handOverLaunch: (_backend, _handOver, task) => ({ firstPrompt: task }),
     assist: async () => null,
     startedSessions: started,
     closable: () => [],

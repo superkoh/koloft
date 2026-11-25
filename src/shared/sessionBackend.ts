@@ -109,23 +109,18 @@ export function reachedBySendMessage(backend: BackendId): boolean {
 }
 
 export interface PeerTraits {
-  handoverAsRole: boolean
   quotesOwnerWordsInHooks: boolean
 }
 
 export const PEER_TRAITS: Record<BackendId, PeerTraits> = {
   // CC§13
   claude: {
-    handoverAsRole: false,
     quotesOwnerWordsInHooks: true
   },
-  // CODEX§17
   codex: {
-    handoverAsRole: true,
     quotesOwnerWordsInHooks: false
   },
   agy: {
-    handoverAsRole: false,
     quotesOwnerWordsInHooks: false
   }
 }

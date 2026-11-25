@@ -70,7 +70,6 @@ import {
   handoverInOwnersLanguage,
   type SessionCaller
 } from './handoverPreamble'
-import { withHandover } from '@core/handOver'
 import { distinctTitle, titleForTask, worktreeNameForTask } from './sessionTitle'
 import type { Assist } from '@core/assistModels'
 import type { SessionsAssistJobId } from '../shared/assistJobs'
@@ -351,7 +350,10 @@ export async function findClosable(
   )
 }
 
-export interface SessionVerbDeps extends Pick<SessionBackends, 'send' | 'mightNotTakeAMessageNow'> {
+export interface SessionVerbDeps extends Pick<
+  SessionBackends,
+  'send' | 'mightNotTakeAMessageNow' | 'handOverLaunch'
+> {
   workspaceOf(tabId: string): string | undefined
   allSessions(): SessionInfo[]
   tabOpen(tabId: string): boolean
@@ -632,7 +634,6 @@ async function launchSibling(
   helper: boolean
 ): Promise<{ tabId: string; name: string | undefined } | null> {
   const backend = args.backend ?? me.backendId
-  const traits = PEER_TRAITS[backend]
   const caller: SessionCaller = {
     name: (await d.peerNames()(me)) ?? (reachedBySendMessage(me.backendId) ? me.title : undefined),
     id: idToReach(me),
@@ -678,10 +679,7 @@ async function launchSibling(
       ownerWords,
       // ADR-0026
       trustFolder: !worktree && (helper || d.pinnedWorkspaces().some((w) => w.path === workspace)),
-      // CODEX§17
-      ...(traits.handoverAsRole
-        ? { role: preamble, firstPrompt: args.prompt }
-        : { firstPrompt: withHandover(preamble, args.prompt) })
+      ...d.handOverLaunch(backend, preamble, args.prompt)
     })
   } finally {
     if (held) names.launched(held, tabId)
