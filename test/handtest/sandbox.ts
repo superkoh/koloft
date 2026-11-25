@@ -35,7 +35,7 @@ import { defaultControlDir } from '../../src/main/remote/ssh'
 import { readLoginShell } from '../../src/main/loginShell'
 import { acceptClaudeTrust } from '../../src/agents/claude/main/claudeTrust'
 import { acceptCodexTrust, codexConfigFile } from '../../src/agents/codex/main/codexTrust'
-import { AGY_INSTALLER_URL } from '../../src/main/toolInstall'
+import { AGY_INSTALLER_URL } from '../../src/agents/agy/shared/agyInstaller'
 import { keychainService } from '../../src/shared/types'
 import { DISCORD_API_URL } from '../../src/plugins/discord/main/link'
 

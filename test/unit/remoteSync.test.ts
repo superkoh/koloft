@@ -6,6 +6,7 @@ import { spawnSync } from 'child_process'
 import { launchMode, RemoteSync, type RemoteTarget } from '../../src/main/remote/sync'
 import { HOOKS_CHANGED } from '../../src/main/remote/install'
 import type { RunResult } from '../../src/main/remote/ssh'
+import { claudeRecordsFolder } from '../../src/agents/claude/main/claudeMirror'
 
 let runs: string[]
 let rsyncs: string[]
@@ -82,7 +83,7 @@ beforeEach(() => {
   bells = []
   target = {
     host: 'devbox',
-    mirrorProjectsRoot: '/ud/remote/devbox/projects',
+    byWorkspace: [claudeRecordsFolder('/ud/remote/devbox')],
     mirrorHookDir: '/ud/remote/devbox/hook-sessions',
     paths: ['/home/koh/api'],
     hasTabs: true,

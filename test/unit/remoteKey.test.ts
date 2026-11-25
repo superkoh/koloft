@@ -9,7 +9,8 @@ import {
   remoteCopyText,
   resolveOnHost
 } from '../../src/shared/remoteKey'
-import { mirrorHookDir, mirrorProjectsRoot } from '../../src/main/remote/paths'
+import { mirrorHookDir } from '../../src/main/remote/paths'
+import { mirrorProjectsRoot } from '../../src/agents/claude/main/claudeMirror'
 import { buildMachinePackage } from '../../src/main/remote/launch'
 
 describe('remote key', () => {
