@@ -530,6 +530,8 @@ const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
   },
   bound: (tabId, key, idleCompaction) => {
     claudeAsks.delete(tabId)
+    const session = sessionOfTab(tabId)
+    if (session) sessionAccounts?.note([session])
     if (!idleCompaction) attention.bound(tabId, key)
     announceNow(SESSION_BOUND, { tabId, key, idleCompaction })
     startedSessions.bound(tabId, key)
@@ -3641,8 +3643,11 @@ app.whenReady().then(() => {
     rereadGrownRows: () => workspaces.rescanForGrowth(),
     runningBindings,
     remoteRunning,
-    sessionsOnDiskOrRunning: (ids) =>
-      butler?.forgetGone((key) => sessionBackends.sessionStillThere(key, ids)),
+    sessionsOnDiskOrRunning: (ids) => {
+      const stillThere = (key: string): boolean => sessionBackends.sessionStillThere(key, ids)
+      butler?.forgetGone(stillThere)
+      attention.forgetLastRunGone(stillThere)
+    },
     memberDropped: (sessionId, why) => droppedSessionsLog(`${sessionId} ${why}`)
   })
   const bindingNow = buildDiscordBinding({
