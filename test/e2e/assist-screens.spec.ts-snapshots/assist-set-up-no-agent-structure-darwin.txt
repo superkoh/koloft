@@ -1,0 +1,43 @@
+div.modal.assist-modal [role="dialog" aria-label="Koloft Assist"]
+  {display: flex; background-color: rgb(28, 28, 31); box-shadow: rgba(0, 0, 0, 0.7) 0px 18px 56px -16px; width: 540px; max-width: 1296px; max-height: 772.8px; flex-direction: column; overflow-x: hidden; overflow-y: hidden; transform: translate(0px, 0px) scale(1, 1); border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.17); border-radius: 12px}
+  div.modal-header
+    {display: flex; color: rgb(189, 185, 178); align-items: center; justify-content: space-between; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 12.5px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; border-width: - - 1px -; border-style: none none solid none; border-color: - - rgba(255, 255, 255, 0.1) -; padding: 16px 20px 16px 20px}
+    "Koloft Assist"
+  div.modal-body
+    {display: flex; min-height: 0px; flex-direction: column; overflow-x: auto; overflow-y: auto; padding: 22px 20px 22px 20px; gap: 22px}
+    div.assist-setup
+      {display: flex; width: 100%; flex-direction: column; align-items: center; gap: 10px}
+      div.quiet
+        {display: block; color: rgb(144, 139, 132); font-size: 12.5px; line-height: 1.6}
+        "Koloft runs Claude Code, Codex or Antigravity CLI, and this Mac has none of them yet. Pick one to install: a terminal opens and runs its official installer. Nothing else to set up first."
+      div.ob-choices
+        {display: flex; width: 100%; gap: 8px}
+        button.choice
+          {display: flex; color: rgb(189, 185, 178); background-color: rgb(22, 22, 24); flex-direction: column; flex-grow: 1; flex-basis: 0%; font-size: 13.3333px; text-align: left; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.1); border-radius: 7px; padding: 10px 12px 10px 12px; gap: 4px}
+          span.choice-t
+            {display: block; color: rgb(243, 241, 238); font-size: 12.5px; font-weight: 650}
+            "Claude"
+          span.choice-d
+            {display: block; color: rgb(144, 139, 132); font-size: 11.5px; line-height: 1.5}
+            "Not on this Mac. Click to install."
+        button.choice
+          {display: flex; color: rgb(189, 185, 178); background-color: rgb(22, 22, 24); flex-direction: column; flex-grow: 1; flex-basis: 0%; font-size: 13.3333px; text-align: left; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.1); border-radius: 7px; padding: 10px 12px 10px 12px; gap: 4px}
+          span.choice-t
+            {display: block; color: rgb(243, 241, 238); font-size: 12.5px; font-weight: 650}
+            "Codex"
+          span.choice-d
+            {display: block; color: rgb(144, 139, 132); font-size: 11.5px; line-height: 1.5}
+            "Not on this Mac. Click to install."
+        button.choice
+          {display: flex; color: rgb(189, 185, 178); background-color: rgb(22, 22, 24); flex-direction: column; flex-grow: 1; flex-basis: 0%; font-size: 13.3333px; text-align: left; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.1); border-radius: 7px; padding: 10px 12px 10px 12px; gap: 4px}
+          span.choice-t
+            {display: block; color: rgb(243, 241, 238); font-size: 12.5px; font-weight: 650}
+            "Antigravity"
+          span.choice-d
+            {display: block; color: rgb(144, 139, 132); font-size: 11.5px; line-height: 1.5}
+            "Not on this Mac. Click to install."
+  div.modal-foot
+    {display: flex; flex-wrap: wrap; justify-content: flex-end; border-width: 1px - - -; border-style: solid none none none; border-color: rgba(255, 255, 255, 0.1) - - -; padding: 14px 20px 14px 20px; gap: 10px}
+    button.mini
+      {display: flex; background-color: rgb(52, 52, 58); align-items: center; font-size: 13px; font-weight: 600; line-height: 1; text-align: center; white-space: nowrap; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.17); border-radius: 7px; padding: 7px 14px 7px 14px; gap: 5px}
+      "Not now"

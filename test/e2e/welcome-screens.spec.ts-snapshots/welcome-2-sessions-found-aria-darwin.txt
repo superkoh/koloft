@@ -1,0 +1,13 @@
+- dialog "Welcome to Koloft":
+  - banner:
+    - button "Skip setup esc"
+  - main:
+    - text: Found 3 sessions in 2 folders
+    - heading "Everything you started, already here." [level=1]
+    - paragraph: Sessions from your terminal show up on their own. Nothing is copied.
+    - img
+    - text: ws-a Tidy the release notes Claude · 2h ago Draft the onboarding copy Claude · 3d ago
+    - img
+    - text: "ws-b Port the parser Codex · 5d ago Grey: started in your terminal Click one to pick it up here. Once one runs here, its light turns: Orange: working Leave it be. Amber: needs your OK Your turn to say yes or no. Green: done this round Come and look."
+  - contentinfo:
+    - button "Continue ↩"

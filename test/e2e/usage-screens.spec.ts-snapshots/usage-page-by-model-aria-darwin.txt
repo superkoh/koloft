@@ -1,0 +1,3 @@
+- text: By model
+
+- text: claude-opus-5-5 2 sessions 1.54M $8.40 gpt-5.5 1 session CODEX 400k $2.00 gemini-3.1-pro 1 session ANTIGRAVITY 500k $1.00

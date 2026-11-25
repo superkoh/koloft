@@ -1,0 +1,31 @@
+- text: Claude
+
+- text: Prefer accounts with fable allowance Off, accounts are picked by weekly use alone, skipping any near its 5-hour limit — use that when fable is nearly spent and one account is taking every session.
+- switch [checked]
+
+- switch "In the pool" [checked]
+- text: studio FABLE
+- button "Delete account":
+  - img
+- text: 5h 42% 7d 63% fable 18% 5h resets 11:30
+- switch "In the pool" [checked]
+- text: garden FABLE
+- button "Delete account":
+  - img
+- text: 5h 7% 7d 31% 5h resets 11:30
+- switch "In the pool" [checked]
+- text: metered API KEY
+- button "Delete account":
+  - img
+- text: Metered — used only when every subscription is rate-limited
+- switch "In the pool" [checked]
+- text: gateway ENDPOINT
+- button "Delete account":
+  - img
+- text: https://llm.example.invalid/anthropic · house-model · used only when every subscription is rate-limited (switches model)
+- button "Sign in":
+  - img
+  - text: Sign in
+- button "Paste token":
+  - img
+  - text: Paste token

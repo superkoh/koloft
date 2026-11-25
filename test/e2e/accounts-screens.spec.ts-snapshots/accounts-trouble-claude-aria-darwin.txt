@@ -1,0 +1,37 @@
+- text: Claude
+
+- text: Prefer accounts with fable allowance Off, accounts are picked by weekly use alone, skipping any near its 5-hour limit — use that when fable is nearly spent and one account is taking every session.
+- switch [checked]
+
+- switch "In the pool" [checked]
+- text: lapsed FABLE EXPIRED · out of pool
+- button "Sign in again"
+- button "Delete account":
+  - img
+- text: "Probe failed: credential rejected"
+- switch "In the pool" [checked]
+- text: walled FABLE
+- button "Delete account":
+  - img
+- text: 5h 100% 7d 70% fable 97% 5h resets 10:10
+- switch "In the pool" [checked]
+- text: offline FABLE
+- button "Delete account":
+  - img
+- text: "Probe failed: network"
+- switch "Out of the pool"
+- text: resting
+- button "Delete account":
+  - img
+- text: Not probed yet
+- switch "In the pool" [checked]
+- text: unchecked API KEY UNVERIFIED
+- button "Delete account":
+  - img
+- text: Metered — used only when every subscription is rate-limited
+- button "Sign in":
+  - img
+  - text: Sign in
+- button "Paste token":
+  - img
+  - text: Paste token

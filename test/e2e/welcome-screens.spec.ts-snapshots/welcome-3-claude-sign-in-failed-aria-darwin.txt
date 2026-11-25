@@ -1,0 +1,17 @@
+- dialog "Welcome to Koloft":
+  - banner:
+    - button "Skip setup esc"
+  - main:
+    - text: One step needs you
+    - heading "One sign-in. Koloft does the rest." [level=1]
+    - paragraph: Koloft adds its own account and names it. Your Mac’s logins stay untouched.
+    - tablist:
+      - tab "Claude Code last used" [selected]:
+        - text: Claude Code
+        - emphasis: last used
+      - tab "Codex"
+      - tab "Antigravity CLI"
+    - text: "The sign-in did not finish. Sign-in timed out (stand-in: the hidden terminal’s own lines name this machine’s user and a throwaway folder) The account is named “Claude”. Add more in Settings ▸ Accounts: each new session then takes the one with the most left."
+  - contentinfo:
+    - button "Sign in to Claude ↩"
+    - button "I’ll sign in later"

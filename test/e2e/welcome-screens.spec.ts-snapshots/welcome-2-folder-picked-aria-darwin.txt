@@ -1,0 +1,11 @@
+- dialog "Welcome to Koloft":
+  - banner:
+    - button "Skip setup esc"
+  - main:
+    - text: ws-a is pinned
+    - heading "Pick a folder to work in." [level=1]
+    - paragraph: Any folder works; a git checkout gets extra help.
+    - img
+    - text: ws-a
+  - contentinfo:
+    - button "Continue ↩"

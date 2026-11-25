@@ -1,0 +1,9 @@
+- text: Codex
+
+- text: No Codex accounts yet — Codex sessions start only once there is one. Each account here is its own Codex sign-in or API key. Every Codex session picks the least-used sign-in, and an API key only when every sign-in is at its limit.
+- button "Sign in to Codex":
+  - img
+  - text: Sign in to Codex
+- button "Paste API key":
+  - img
+  - text: Paste API key
