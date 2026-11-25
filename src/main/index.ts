@@ -594,6 +594,7 @@ const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
   }
 }
 const backendHooks: PluginStartDeps['sessions']['backendHooks'] = {}
+backendHooks.storedByHand = storedSessions
 backendHooks.isOverseerSession = (id) => !!butler?.isButlerSession(id)
 backendHooks.turnOver = (tabId) => runtime.turnOver(tabId)
 backendHooks.askingOf = (tabId) => {
@@ -3414,7 +3415,6 @@ app.whenReady().then(() => {
     sendToRenderer(CH.terminal.cwd, c)
   })
   subscribeTabSubsystems({
-    storedOwnerOf,
     toast: (message) => sendToRenderer(CH.toast.show, message),
     workspaces: () => workspaceMgr,
     announce: announceNow
@@ -3741,12 +3741,7 @@ app.whenReady().then(() => {
     runningBindings,
     remoteRunning,
     sessionsOnDiskOrRunning: (ids) =>
-      butler?.forgetGone(
-        (key) =>
-          ids.has(key) ||
-          (identityOf(key).backendId !== 'claude' &&
-            !storedSessions().some((s) => s.id === identityOf(key).backendId && s.threadGone(key)))
-      ),
+      butler?.forgetGone((key) => sessionBackends.sessionStillThere(key, ids)),
     memberDropped: (sessionId, why) => droppedSessionsLog(`${sessionId} ${why}`)
   })
   const bindingNow = buildDiscordBinding({
@@ -4303,8 +4298,6 @@ function askQuit(): boolean {
 }
 setQuitAsk(askQuit)
 
-let storedQuitPending = false
-let storedQuitStopped = false
 app.on('before-quit', (e) => {
   const decision = quitDecision(Date.now())
   if (decision === 'wait') {
@@ -4326,23 +4319,13 @@ app.on('before-quit', (e) => {
   }
   quitCommitted = true
   guard?.liftAllBeforeQuitting()
-  if (!storedQuitStopped && storedSessions().some((s) => s.hasProcesses())) {
+  const waitsForAnAgent = sessionBackends.quitWaits(
+    () => app.quit(),
+    (backend, error) =>
+      console.error(`[koloft] ${BACKEND_LABEL[backend]} did not stop cleanly:`, error)
+  )
+  if (waitsForAnAgent) {
     e.preventDefault()
-    if (!storedQuitPending) {
-      storedQuitPending = true
-      void Promise.all(
-        storedSessions().map((s) =>
-          s
-            .stopAll()
-            .catch((error) =>
-              console.error(`[koloft] ${BACKEND_LABEL[s.id]} did not stop cleanly:`, error)
-            )
-        )
-      ).finally(() => {
-        storedQuitStopped = true
-        app.quit()
-      })
-    }
     return
   }
   for (const { leaving } of claudeTabExits.values()) {
@@ -4361,7 +4344,7 @@ app.on('before-quit', (e) => {
   sessionAccounts?.flushSync()
   savedUsage.flushSync()
   savedHomeUsage.flushSync()
-  for (const stored of storedSessions()) stored.store.flushSync()
+  sessionBackends.flushSync()
   flushAttention()
   flushInbox()
   freshness?.stop()
@@ -5162,7 +5145,7 @@ async function resumeRow(
 }
 
 function showsPromptBeforeBind(tabId: string): boolean {
-  return !!storedOwnerOf(tabId)?.showsPromptBeforeBind?.(tabId)
+  return sessionBackends.showsPromptBeforeBind(tabId)
 }
 
 function boundAndSettled(tabId: string, turnEnded: boolean): boolean {
@@ -5903,18 +5886,7 @@ function registerIpc(): void {
     return r
   })
   ipcMain.handle(CH.workspace.removeConfirmed, async (_e, p: string) => {
-    await Promise.all(
-      storedSessions().flatMap((stored) => {
-        const tabs = new Set(
-          stored
-            .rows(p)
-            .filter((r) => r.running || r.pending)
-            .map((r) => (r.pending ? r.id : stored.aliveTabFor(r.id)))
-            .filter((id): id is string => !!id)
-        )
-        return [...tabs].map((id) => stored.stop(id))
-      })
-    )
+    await sessionBackends.beforeWorkspaceRemoved(p)
     const marked = markedSessionsOf(p)
     workspaceMgr?.removeConfirmed(p)
     cronRunner?.removeWorkspace(p)

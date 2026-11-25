@@ -19,11 +19,15 @@ function wired(over: Partial<TabSubsystems> = {}): { lifecycle: TabLifecycle; ca
       clear: say('attention.clear'),
       tabStopping: say('attention.tabStopping')
     },
-    claude: { onPtyExit: say('claude.onPtyExit'), launchEnded: say('claude.launchEnded') },
-    tracker: { setAlive: say('tracker.setAlive') },
-    storedOwnerOf: () => ({
-      stop: async (tabId, code) => say('owner.stop')(tabId, code)
-    }),
+    backends: {
+      tabExited: ({ tabId, exitCode, signal, crashed }) =>
+        say('backends.tabExited')(
+          tabId,
+          `code ${exitCode}`,
+          `signal ${signal}`,
+          `crashed ${crashed}`
+        )
+    },
     toast: say('toast'),
     workspaces: () => ({
       onTrackerUpdate: say('workspaces.onTrackerUpdate')
@@ -55,31 +59,24 @@ describe('TabLifecycle', () => {
     }
   })
 
-  it('teardown clears attention before Claude Code can mark a crash, and the plugins hear it only after core has marked the tab dead and stopped its session', () => {
+  it('teardown clears attention before any agent can mark a crash, and the plugins hear it only after the agents were told how the tab’s terminal ended', () => {
     const { lifecycle, calls } = wired()
-    lifecycle.emit('teardown', exitOf({ crashed: true, exitCode: 1, left: { treeRoot: '/repo' } }))
+    lifecycle.emit(
+      'teardown',
+      exitOf({ crashed: true, exitCode: 1, signal: 15, left: { treeRoot: '/repo' } })
+    )
     expect(calls).toEqual([
       'attention.clear t1',
-      'claude.onPtyExit t1 true',
-      'tracker.setAlive t1 false',
-      'owner.stop t1 1',
-      'claude.launchEnded t1',
+      'backends.tabExited t1 code 1 signal 15 crashed true',
       'announce tab-torn-down t1'
     ])
   })
 
-  it('a stored session killed by a signal is stopped with code -1, and a failed stop is a toast', async () => {
+  it('an agent that fails to end its tab after it was told is a toast', () => {
     const { lifecycle, calls } = wired({
-      storedOwnerOf: () => ({
-        stop: async (tabId, code) => {
-          calls.push(`owner.stop ${tabId} ${code}`)
-          throw new Error('stop failed')
-        }
-      })
+      backends: { tabExited: (_exit, endFailed) => endFailed(new Error('stop failed')) }
     })
-    lifecycle.emit('teardown', exitOf({ exitCode: 0, signal: 15 }))
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(calls).toContain('owner.stop t1 -1')
+    lifecycle.emit('teardown', exitOf())
     expect(calls).toContain('toast Error: stop failed')
   })
 

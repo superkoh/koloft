@@ -18,10 +18,33 @@ import type { Turn } from '@shared/turns'
 import { identityOf, sourceOf, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { hostOf } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
+import type { TabEnded } from '../moment'
 import type { TranscriptPlaces } from '../transcriptPlaces'
 import { rowsOfEveryAgent, type RowsOfEveryAgent, type SessionRowsSource } from './sessionRows'
 
 export type ModeClass = 'bypass' | 'prompting'
+
+export type TabExit = Pick<TabEnded, 'tabId' | 'exitCode' | 'signal' | 'crashed'>
+
+export interface TabEndsWiredByHand {
+  id: BackendId
+  onPtyExit(tabId: string, crashed: boolean): void
+  setAlive(tabId: string, alive: boolean): void
+  launchEnded(tabId: string): void
+}
+
+export interface StoredWiredByHand {
+  id: BackendId
+  store: { flushSync(): void }
+  rows(workspace: string): BackendSessionRow[]
+  threadGone(key: string): boolean
+  hasProcesses(): boolean
+  stopAll(): Promise<void>
+  hasTab(tabId: string): boolean
+  aliveTabFor(key: string): string | undefined
+  stop(tabId: string, nativeExitCode?: number): Promise<void>
+  showsPromptBeforeBind?(tabId: string): boolean
+}
 
 export interface SessionBackend extends SessionRowsSource {
   id: BackendId
@@ -68,6 +91,10 @@ export class SessionBackends {
   private adapters = new Map<BackendId, SessionBackend>()
   private cleanExitAt = new Map<string, number>()
   private questionsAsked = 0
+  private quitEnding = false
+  private quitEnded = false
+  tabEndsByHand: TabEndsWiredByHand | undefined
+  storedByHand: () => readonly StoredWiredByHand[] = () => []
   isOverseerSession: (tabOrSessionId: string) => boolean = () => false
   turnOver: (tabId: string) => boolean = () => false
   askingOf: (tabId: string) => string | undefined = () => undefined
@@ -205,6 +232,63 @@ export class SessionBackends {
 
   async workStillRunning(tabId: string): Promise<boolean> {
     return (await this.ownerOfTab(tabId)?.workStillRunning(tabId)) ?? false
+  }
+
+  tabExited(exit: TabExit, endFailed: (error: unknown) => void): void {
+    this.tabEndsByHand?.onPtyExit(exit.tabId, exit.crashed)
+    this.tabEndsByHand?.setAlive(exit.tabId, false)
+    void this.storedByHand()
+      .find((s) => s.hasTab(exit.tabId))
+      ?.stop(exit.tabId, exit.signal ? -1 : exit.exitCode)
+      .catch(endFailed)
+    this.tabEndsByHand?.launchEnded(exit.tabId)
+  }
+
+  quitWaits(quit: () => void, endFailed: (backend: BackendId, error: unknown) => void): boolean {
+    if (this.quitEnded || !this.storedByHand().some((s) => s.hasProcesses())) return false
+    if (!this.quitEnding) {
+      this.quitEnding = true
+      void Promise.all(
+        this.storedByHand().map((s) => s.stopAll().catch((error) => endFailed(s.id, error)))
+      ).finally(() => {
+        this.quitEnded = true
+        quit()
+      })
+    }
+    return true
+  }
+
+  flushSync(): void {
+    for (const stored of this.storedByHand()) stored.store.flushSync()
+  }
+
+  async beforeWorkspaceRemoved(workspace: string): Promise<void> {
+    await Promise.all(
+      this.storedByHand().flatMap((stored) => {
+        const tabs = new Set(
+          stored
+            .rows(workspace)
+            .filter((r) => r.running || r.pending)
+            .map((r) => (r.pending ? r.id : stored.aliveTabFor(r.id)))
+            .filter((id): id is string => !!id)
+        )
+        return [...tabs].map((id) => stored.stop(id))
+      })
+    )
+  }
+
+  showsPromptBeforeBind(tabId: string): boolean {
+    return !!this.storedByHand()
+      .find((s) => s.hasTab(tabId))
+      ?.showsPromptBeforeBind?.(tabId)
+  }
+
+  sessionStillThere(key: string, foundOrRunning: ReadonlySet<string>): boolean {
+    return (
+      foundOrRunning.has(key) ||
+      (identityOf(key).backendId !== this.tabEndsByHand?.id &&
+        !this.storedByHand().some((s) => s.id === identityOf(key).backendId && s.threadGone(key)))
+    )
   }
 
   async historyRows(

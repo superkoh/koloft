@@ -19,55 +19,7 @@ import type { BackendId, BackendSessionInfo, BackendSessionRow, HostId } from '@
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import { agentManifest } from '@core/agent/registry'
 import { coversTerminalWhileResuming } from '../../../../src/renderer/src/agentUi'
-
-function stubBackend(
-  id: BackendId,
-  rows: () => Promise<BackendSessionRow[]> = async () => [],
-  sessions: BackendSessionInfo[] = []
-) {
-  return {
-    id,
-    availability: async () => ({ id, available: true }),
-    list: () => sessions,
-    historyRows: rows,
-    create: async () => ({ ok: true as const, id: 'tab', cwd: '/repo' }),
-    resume: async () => ({ ok: true as const, id: 'tab', cwd: '/repo' }),
-    forgetAvailability: () => {},
-    resumePlan: async () => ({ action: 'unavailable' as const, reason: 'not-found' as const }),
-    hasTab: () => false,
-    workspaceOfTab: () => undefined,
-    aliveTabFor: () => undefined,
-    stop: () => {},
-    archive: () => true,
-    adopt: () => {},
-    transcriptExists: () => true,
-    observe: () => {},
-    occupantOf: () => null,
-    accountUsable: () => true,
-    trustsFolder: () => true,
-    turns: async () => [],
-    transcriptPlaces: () => undefined,
-    permissionClass: () => 'prompting' as const,
-    peerNames: () => async () => null,
-    runningElsewhere: () => false,
-    workStillRunning: async () => false,
-    ...rowsKeptInMemory({
-      rows: () => [],
-      members: () => new Set<string>(),
-      localHistoryFolders: async () => []
-    })
-  } satisfies SessionBackend
-}
-
-const lifecycle = () => ({
-  prompted: vi.fn(),
-  bound: vi.fn(),
-  exited: vi.fn(),
-  clearAttention: vi.fn(),
-  open: vi.fn(),
-  turnEnded: vi.fn(),
-  asked: vi.fn()
-})
+import { lifecycle, stubBackend } from '../../helpers/sessionBackendStub'
 
 const row = (id: string, mtime: number): BackendSessionRow => ({
   id,
