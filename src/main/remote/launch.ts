@@ -132,7 +132,10 @@ export const EXEC_ARGS_THROUGH_THE_STATUS_RELAY = [
   'exec "$@"'
 ]
 
-const TAB_SCRIPT_DIR_RE = REMOTE_TABS_DIR.replace(/^\$HOME/, '').replace(/\./g, '\\.')
+const TAB_SCRIPT_DIR_RE = REMOTE_TABS_DIR.replace(/^\$HOME/, '').replace(
+  /[\\^$.*+?()[\]{}|]/g,
+  '\\$&'
+)
 const AGENT_EXIT_255_PASSED_AS = SSH_LINK_BROKE_EXIT - 1
 const EXIT_OF_A_SHELL_HUNG_UP_ON = 129
 
