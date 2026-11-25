@@ -46,15 +46,7 @@ import type { Hosts } from '../../../main/host/hosts'
 import type { Host } from '../../../main/host/host'
 import type { Machine } from '../../../main/host/machine'
 import type { RemoteSync } from '../../../main/remote/sync'
-import {
-  AGENT_DROP_NAME,
-  NOT_ITS_PASS,
-  REQUEST_NAME,
-  replyJson,
-  tabSpokenFor
-} from '../../../main/agentRequests'
-import { holdsPass, isStartedBeforeTabPasses } from '../../../main/tabPass'
-import { refused, type AgentReply } from '@core/command'
+import { AGENT_DROP_NAME } from '../../../main/agentRequests'
 import { errorText } from '@core/errorText'
 import { accountEnv, sessionIdOfTmux, tmuxSessionName } from '../../../main/remote/launch'
 import {
@@ -159,7 +151,6 @@ export interface ClaudeBackendDeps {
   machineOfTab(tabId: string): string | undefined
   liveRegistryOn(host: string): Promise<string>
   messages: Omit<MessageSocketDeps, 'tracker'> & Pick<ClaudeMessageDeps, 'noteKoloftSent'>
-  otherTabOnMachine?(machine: string, tmuxName: string, launchTab: string): string | undefined
   projectRules?(workspace: string): Promise<string | undefined>
   workspaceInstructions?(workspace: string): Promise<string[]>
 }
@@ -240,45 +231,6 @@ async function remoteExitOnDisk(
   return undefined
 }
 
-class CallerOnTheMachine {
-  private state: 'unseen' | 'runs' | 'stopped' = 'unseen'
-  private asked = false
-  private checking?: Promise<void>
-
-  constructor(
-    private host: Machine,
-    private requestId: string,
-    private pid: number
-  ) {}
-
-  stillWaiting = (): boolean => {
-    this.asked = true
-    void this.check()
-    return this.state !== 'stopped'
-  }
-
-  async stoppedWaiting(): Promise<boolean> {
-    if (this.asked && this.state !== 'stopped') {
-      await this.checking
-      await this.check()
-    }
-    return this.state === 'stopped'
-  }
-
-  private check(): Promise<void> {
-    this.checking ??= this.host
-      .requestCallerWaits(this.requestId, this.pid)
-      .catch(() => undefined)
-      .then((seen) => {
-        this.checking = undefined
-        if (seen === 'request-gone' || (seen === 'gone' && this.state === 'runs'))
-          this.state = 'stopped'
-        else if (seen === 'runs' && this.state === 'unseen') this.state = 'runs'
-      })
-    return this.checking
-  }
-}
-
 export class ClaudeBackend implements SessionBackend {
   readonly id = 'claude'
   readonly worktreeRecords = KEEPS_NO_WORKTREE_RECORDS
@@ -292,11 +244,6 @@ export class ClaudeBackend implements SessionBackend {
   private closedClaudes = new Map<string, { pids: Set<number>; until: number }>()
   private heldBeforeStartup = new Map<string, string>()
   private messages?: SessionMessages
-  agentReply?: (
-    tabId: string | undefined,
-    raw: unknown,
-    stillWaiting?: () => boolean
-  ) => Promise<AgentReply>
 
   constructor(private d: ClaudeBackendDeps) {}
 
@@ -657,9 +604,7 @@ export class ClaudeBackend implements SessionBackend {
       if (isNews && !isNews(full, JSON.stringify(obj))) return
       this.handleHookRegistration(obj)
     }
-    const drops = machine
-      ? this.watchMachineDrops(dir, machine, handle)
-      : watchJsonDrops(dir, () => handle)
+    const drops = machine ? this.watchMachineDrops(dir, handle) : watchJsonDrops(dir, () => handle)
     const tabNoteFirst = machine
       ? (statusLog: string): void => {
           const note = `${statusLog.slice(0, -STATUS_LOG_SUFFIX.length)}.json`
@@ -681,18 +626,9 @@ export class ClaudeBackend implements SessionBackend {
 
   private watchMachineDrops(
     dir: string,
-    machine: string,
     hookReport: (obj: unknown, full: string) => void
   ): fs.FSWatcher | null {
-    const agentRequest = oncePerName((name) => {
-      const id = REQUEST_NAME.exec(name)?.[1]
-      return id ? (raw): void => this.answerMachineRequest(machine, id, raw) : null
-    })
-    return watchAndSweepJsonDrops(
-      dir,
-      (name) => (AGENT_DROP_NAME.test(name) ? agentRequest(name) : hookReport),
-      agentRequest
-    )
+    return watchJsonDrops(dir, (name) => (AGENT_DROP_NAME.test(name) ? null : hookReport))
   }
 
   private watchStatusLogs(
@@ -785,7 +721,7 @@ export class ClaudeBackend implements SessionBackend {
     return report.tmux ? this.tabRunningTmux(report.tmux) : undefined
   }
 
-  private tabRunningTmux(tmuxName: string, machine?: string): string | undefined {
+  tabRunningTmux(tmuxName: string, machine?: string): string | undefined {
     const { pty, tracker } = this.d
     for (const s of tracker.list()) {
       const remote = s.alive ? tracker.remoteOf(s.tabId) : undefined
@@ -793,67 +729,6 @@ export class ClaudeBackend implements SessionBackend {
       if (!machine || remote.host === machine) return s.tabId
     }
     return undefined
-  }
-
-  // ADR-0052
-  private callerOnMachine(machine: string, raw: unknown): { tabId?: string; refusal?: string } {
-    const r = (raw ?? {}) as { tabId?: unknown; tmux?: unknown; pass?: unknown }
-    if (typeof r.pass === 'string' && r.pass) {
-      const asked = typeof r.tabId === 'string' ? r.tabId : ''
-      const facts = this.d.pty.get(asked)
-      if (!facts) return {}
-      if (!holdsPass(asked, r.pass)) return { refusal: NOT_ITS_PASS }
-      const tabId = tabSpokenFor(asked, facts)
-      return this.liveTabOnMachine(machine, tabId) === tabId ? { tabId } : {}
-    }
-    const named = this.namedOnMachine(machine, r)
-    if (!named) return {}
-    return isStartedBeforeTabPasses(named) ? { tabId: named } : { refusal: NOT_ITS_PASS }
-  }
-
-  private liveTabOnMachine(machine: string, tabId: string, tmux = ''): string | undefined {
-    if (this.d.machineOfTab(tabId) === machine && this.d.pty.get(tabId)) return tabId
-    const other = this.d.otherTabOnMachine?.(machine, tmux, tabId)
-    return other && this.d.pty.get(other) ? other : undefined
-  }
-
-  private namedOnMachine(
-    machine: string,
-    r: { tabId?: unknown; tmux?: unknown }
-  ): string | undefined {
-    const tmux = typeof r.tmux === 'string' ? r.tmux : ''
-    const byTmux = tmux && this.tabRunningTmux(tmux, machine)
-    if (byTmux) return byTmux
-    const asked = typeof r.tabId === 'string' ? r.tabId : ''
-    const facts = this.d.pty.get(asked)
-    return this.liveTabOnMachine(machine, facts ? tabSpokenFor(asked, facts) : asked, tmux)
-  }
-
-  private fromOwnWorkbenchShell(raw: unknown): boolean {
-    const { tabId } = (raw ?? {}) as { tabId?: unknown }
-    return typeof tabId === 'string' && !!this.d.pty.get(tabId)?.util
-  }
-
-  private answerMachineRequest(machine: string, requestId: string, raw: unknown): void {
-    const { tabId, refusal } = this.callerOnMachine(machine, raw)
-    const host = this.d.hosts.machine(machine)
-    const noOneWaits = (raw as { reply?: unknown } | null)?.reply === false
-    if (!this.agentReply || (!tabId && !refusal && !this.fromOwnWorkbenchShell(raw))) {
-      if (noOneWaits) void host.answerRequest(requestId, null)
-      return
-    }
-    const pid = (raw as { pid?: unknown } | null)?.pid
-    const caller =
-      noOneWaits || typeof pid !== 'number'
-        ? undefined
-        : new CallerOnTheMachine(host, requestId, pid)
-    const replied = refusal
-      ? Promise.resolve(refused(refusal))
-      : this.agentReply(tabId, raw, caller?.stillWaiting)
-    void replied.then(async (reply) => {
-      const nobodyReads = noOneWaits || !!(await caller?.stoppedWaiting())
-      await host.answerRequest(requestId, nobodyReads ? null : replyJson(reply))
-    })
   }
 
   private handleStatusRegistration(raw: unknown): void {

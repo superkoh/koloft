@@ -316,6 +316,7 @@ import type {
 } from '@shared/types'
 import { copyWorktreeIncludes } from './sessionWorktrees'
 import { AgentRequests, tabSpokenFor } from './agentRequests'
+import { MachineRequests } from './remote/machineRequests'
 import { errorText } from '@core/errorText'
 import { projectRulesForTheButler } from '@shared/agentGuide'
 import {
@@ -2990,7 +2991,19 @@ app.whenReady().then(() => {
     }
     butlerHearsSoon()
   })
-  claudeBackend.agentReply = (tabId, raw, stillWaiting) =>
+  const machineRequests = new MachineRequests({
+    pty: ptyMgr,
+    hosts,
+    remoteTargets: () => workspaceMgr?.remoteTargets() ?? [],
+    userData: () => app.getPath('userData'),
+    machineOfTab,
+    tabRunningTmux: (tmuxName, machine) => claudeBackend.tabRunningTmux(tmuxName, machine),
+    otherTabOnMachine: (machine, tmuxName, launchTab) =>
+      storedSessions()
+        .map((s) => s.tabOnMachine?.(machine, tmuxName, launchTab))
+        .find(Boolean)
+  })
+  machineRequests.agentReply = (tabId, raw, stillWaiting) =>
     agentRequests.replyFor(tabId, raw, stillWaiting)
   claudeBackend.watchShimRegistrations(regDir)
   if (watchOpenRequests(openDir)) ptyMgr.openDir = openDir
@@ -3382,6 +3395,7 @@ app.whenReady().then(() => {
       void gitAccounts?.refreshRepoKeys(wsPaths).then(() => workspaceMgr?.restampLive())
       startedPlugins.github.sweepNow()
       claudeBackend.watchRemoteHookMirrors()
+      machineRequests.watchRemoteHookMirrors()
     },
     jobCountFor: (wsPath) => cronRunner?.jobCountFor(wsPath) ?? 0,
     remoteRunning,
@@ -5225,11 +5239,7 @@ const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
     whenMessagingSocket,
     whenMessagingSocketOnMachine,
     noteKoloftSent: (tabId, note) => messaging.noteKoloftSent(tabId, note)
-  },
-  otherTabOnMachine: (machine, tmuxName, launchTab) =>
-    storedSessions()
-      .map((s) => s.tabOnMachine?.(machine, tmuxName, launchTab))
-      .find(Boolean)
+  }
 }
 
 // ADR-0007
