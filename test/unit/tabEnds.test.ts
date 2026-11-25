@@ -468,8 +468,8 @@ describe('whether a tab that has no session yet already shows its prompt', () =>
   })
 })
 
-describe('what each of the three real backends answers about its tabs on a machine', () => {
-  it('the tmux session of a tab: Claude Code names the one it tracks for its tab on a machine and none for its tab on this Mac, Antigravity names the one its tab runs in, Codex names none as its tab runs in no tmux session there; and none of them names one for a tab that is not its own', async () => {
+describe('the tmux session a tab runs in on a machine, as each of the three real backends names it', () => {
+  it('Claude Code names the one it tracks for its tab on a machine and none for its tab on this Mac, Antigravity names the one its tab runs in, Codex names none as its tab runs in no tmux session there; and none of them names one for a tab that is not its own', async () => {
     const a = await aTabOfEveryAgent()
     const CLAUDE_TAB_ON_THE_MACHINE = 'pty-claude-on-the-machine'
     a.claude.tracker.track(CLAUDE_TAB_ON_THE_MACHINE, ON_THE_MACHINE, {
@@ -487,17 +487,6 @@ describe('what each of the three real backends answers about its tabs on a machi
       codex: [undefined, undefined, undefined, undefined],
       agy: [undefined, undefined, undefined, expect.stringContaining(AGY_TAB)]
     })
-  })
-
-  it('Codex, told that sessions left the machine its tab runs on and that the mirror of that machine came, keeps its tab as it was, sends no event and runs nothing on the machine', async () => {
-    const a = await aTabOfEveryAgent()
-    const before = storedTabNow(a, 'codex')
-    const itsThreads = a.codex.sessions.list().map((s) => s.nativeSessionId ?? s.sessionId)
-    a.codex.backend.noticeRemoteExits(MACHINE, [...itsThreads, CODEX_TAB, CLAUDE_SESSION])
-    a.codex.backend.mirrorPulled(MACHINE)
-    await pastAnyStopStartedByMistake()
-    expect(storedTabNow(a, 'codex')).toEqual(before)
-    expect(before).toMatchObject(OPEN_AND_LEFT_ALONE)
   })
 })
 

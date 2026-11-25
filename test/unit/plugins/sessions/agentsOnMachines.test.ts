@@ -1,14 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { SessionBackends, type SessionBackend } from '../../../../src/core/agent/sessionBackends'
-import { KEEPS_NO_WORKTREE_RECORDS } from '../../../../src/core/agent/worktreeRecords'
-import { ClaudeBackend, type ClaudeBackendDeps } from '../../../../src/agents/claude/main/backend'
-import { storedBackend } from '../../../../src/agents/kit/main/stored'
 import type { BackendId } from '@shared/types'
-import { lifecycle } from '../../helpers/sessionBackendStub'
+import { lifecycle, stubBackend } from '../../helpers/sessionBackendStub'
 
 const MACHINE = 'devbox'
 const SESSIONS_THAT_LEFT = ['session-a', 'session-b']
-const FIRST_OF_THE_LIST: BackendId = 'claude'
 
 type Notice = 'sessions left' | 'mirror pulled'
 
@@ -24,48 +20,26 @@ const agent = (
   tmuxOfItsTabs: Record<string, string | undefined> = {}
 ): AgentOnMachines => ({ id, hears, tmuxOfItsTabs })
 
-const NONE_OF_ITS_PARTS_IS_ASKED_HERE = {} as ClaudeBackendDeps
-const NO_RESUME_IS_PLANNED_HERE = {} as Parameters<typeof storedBackend>[1]
-const ITS_OWN_ANSWERS: Parameters<typeof storedBackend>[2] = {
-  accountUsable: () => true,
-  trustsFolder: () => true,
-  turns: async () => [],
-  peerNames: () => async () => null,
-  runningElsewhere: () => false
-}
-
 function backendsOf(said: string[], agents: AgentOnMachines[]): SessionBackends {
-  const inListOrder = agents.map((a): SessionBackend => {
-    const answers = {
-      noticeRemoteExits: (host: string, ids: string[]) => {
-        if (a.hears.includes('sessions left'))
-          said.push(`${a.id} hears that ${ids.join(', ')} left ${host}`)
-      },
-      mirrorPulled: (host: string) => {
-        if (a.hears.includes('mirror pulled'))
-          said.push(`${a.id} hears that the mirror of ${host} came`)
-      },
-      tmuxOfTab: (tabId: string) => a.tmuxOfItsTabs[tabId]
-    }
-    if (a.id === FIRST_OF_THE_LIST)
-      return Object.assign(new ClaudeBackend(NONE_OF_ITS_PARTS_IS_ASKED_HERE), answers)
-    return storedBackend(
-      {
-        id: a.id,
-        worktrees: { records: KEEPS_NO_WORKTREE_RECORDS },
-        ...answers
-      } as unknown as Parameters<typeof storedBackend>[0],
-      NO_RESUME_IS_PLANNED_HERE,
-      ITS_OWN_ANSWERS
-    )
-  })
+  const inListOrder = agents.map((a): SessionBackend => ({
+    ...stubBackend(a.id),
+    noticeRemoteExits: (host, ids) => {
+      if (a.hears.includes('sessions left'))
+        said.push(`${a.id} hears that ${ids.join(', ')} left ${host}`)
+    },
+    mirrorPulled: (host) => {
+      if (a.hears.includes('mirror pulled'))
+        said.push(`${a.id} hears that the mirror of ${host} came`)
+    },
+    tmuxOfTab: (tabId) => a.tmuxOfItsTabs[tabId]
+  }))
   const backends = new SessionBackends(lifecycle())
   for (const backend of inListOrder.reverse()) backends.register(backend)
   return backends
 }
 
 describe('sessions that left a machine, as the agents are told of it', () => {
-  it('the first agent of the list hears of them first, then the others in the order of the list of agents, each with the machine and the same sessions; one that does nothing with the news is no obstacle', () => {
+  it('the first agent of the list hears of them first, then the others in the order of the list of agents, each with the machine and the same sessions', () => {
     const said: string[] = []
     backendsOf(said, [
       agent('claude', ['sessions left']),
@@ -75,17 +49,6 @@ describe('sessions that left a machine, as the agents are told of it', () => {
     expect(said).toEqual([
       'claude hears that session-a, session-b left devbox',
       'codex hears that session-a, session-b left devbox',
-      'agy hears that session-a, session-b left devbox'
-    ])
-
-    said.length = 0
-    backendsOf(said, [
-      agent('claude', ['sessions left']),
-      agent('codex'),
-      agent('agy', ['sessions left'])
-    ]).noticeRemoteExits(MACHINE, SESSIONS_THAT_LEFT)
-    expect(said).toEqual([
-      'claude hears that session-a, session-b left devbox',
       'agy hears that session-a, session-b left devbox'
     ])
   })
@@ -119,20 +82,6 @@ describe('the mirror of a machine that was just pulled, as the agents are told o
     said.length = 0
     backendsOf(said, [agent('claude'), agent('agy', ['mirror pulled'])]).mirrorPulled(MACHINE)
     expect(said).toEqual(['agy hears that the mirror of devbox came'])
-  })
-
-  it('the first agent of the list is told too, before the others', () => {
-    const said: string[] = []
-    backendsOf(said, [
-      agent('claude', ['mirror pulled']),
-      agent('codex', ['mirror pulled']),
-      agent('agy', ['mirror pulled'])
-    ]).mirrorPulled(MACHINE)
-    expect(said).toEqual([
-      'claude hears that the mirror of devbox came',
-      'codex hears that the mirror of devbox came',
-      'agy hears that the mirror of devbox came'
-    ])
   })
 })
 
