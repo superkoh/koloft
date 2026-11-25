@@ -42,42 +42,8 @@ export interface PickFacts {
   listed?: ListedModel[]
 }
 
-const knownEfforts = (values: unknown[]): CronEffort[] =>
+export const knownEfforts = (values: unknown[]): CronEffort[] =>
   CRON_EFFORTS.filter((e) => values.includes(e))
-
-// CODEX§14
-export function codexListedModels(reply: unknown): ListedModel[] {
-  const data = (reply as { data?: unknown } | null)?.data
-  if (!Array.isArray(data)) return []
-  return data.flatMap((m: { id?: unknown; supportedReasoningEfforts?: unknown }) =>
-    typeof m?.id !== 'string'
-      ? []
-      : [
-          {
-            id: m.id,
-            efforts: knownEfforts(
-              (Array.isArray(m.supportedReasoningEfforts) ? m.supportedReasoningEfforts : []).map(
-                (e: unknown) => (e as { reasoningEffort?: unknown })?.reasoningEffort ?? e
-              )
-            )
-          }
-        ]
-  )
-}
-
-// AGY§21
-export function agyListedModels(stdout: string): ListedModel[] {
-  const efforts = new Map<string, CronEffort[]>()
-  for (const line of stdout.split('\n')) {
-    const id = line.split('\t')[0].trim()
-    const cut = id.lastIndexOf('-')
-    const effort = id.slice(cut + 1)
-    if (cut < 1 || !isCronEffort(effort)) continue
-    const base = id.slice(0, cut)
-    efforts.set(base, [...(efforts.get(base) ?? []), effort])
-  }
-  return [...efforts].map(([id, taken]) => ({ id, efforts: knownEfforts(taken) }))
-}
 
 const lastKnown = (backend: BackendId): ListedModel[] =>
   NAMED_MODELS[backend]

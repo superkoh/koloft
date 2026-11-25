@@ -1,7 +1,34 @@
+import os from 'os'
 import path from 'path'
 import type { McpServer } from '@shared/types'
-import type { AgentCatalog } from '@core/agent/agentsMain'
+import type { AgentCatalog, AgentOneShot } from '@core/agent/agentsMain'
+import { withSystemFirst, type ModelAndEffort } from '@core/assistModels'
 import { textOrNull } from '../../../main/mcpServers'
+
+// CODEX§15
+const CODEX_ONE_SHOT = (launch: ModelAndEffort): string[] => [
+  'exec',
+  '--skip-git-repo-check',
+  '--ephemeral',
+  '--ignore-user-config',
+  '--ignore-rules',
+  '-s',
+  'read-only',
+  ...(launch.model ? ['-m', launch.model] : []),
+  ...(launch.effort ? ['-c', `model_reasoning_effort="${launch.effort}"`] : []),
+  '-C',
+  os.tmpdir(),
+  '-'
+]
+
+// CODEX§15
+export const codexOneShot: AgentOneShot = {
+  argv: (_job, launch) => CODEX_ONE_SHOT(launch),
+  stdin: withSystemFirst,
+  answer: (out) => out,
+  secondTryWhenLate: true,
+  saysItHasNoSuchModel: /model is not supported/
+}
 
 const CODEX_TABLE = /^[ \t]*\[[ \t]*(?:"[^"\n]*"|[^\]\s"])+[ \t]*\]/gm
 const CODEX_SERVER_TABLE = /^\s*\[\s*mcp_servers\.(?:"([^"]+)"|([A-Za-z0-9_-]+))\s*\]/

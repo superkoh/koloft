@@ -1,6 +1,37 @@
 import path from 'path'
-import type { AgentCatalog } from '@core/agent/agentsMain'
+import type { AgentCatalog, AgentOneShot } from '@core/agent/agentsMain'
+import { withSystemFirst, type ModelAndEffort } from '@core/assistModels'
 import { foldersUpToRoot, jsonServers, textOrNull, textsIn } from '../../../main/mcpServers'
+
+// AGY§20 AGY§21
+const AGY_ONE_SHOT = (task: string, launch: ModelAndEffort): string[] => [
+  '-p',
+  task,
+  '--output-format',
+  'json',
+  ...(launch.model ? ['--model', launch.model] : []),
+  ...(launch.effort ? ['--effort', launch.effort] : [])
+]
+
+// AGY§20
+function agyResponse(out: string): string | null {
+  try {
+    const result = JSON.parse(out) as { status?: unknown; response?: unknown }
+    return result.status === 'SUCCESS' && typeof result.response === 'string'
+      ? result.response
+      : null
+  } catch {
+    return null
+  }
+}
+
+export const agyOneShot: AgentOneShot = {
+  argv: (job, launch) => AGY_ONE_SHOT(withSystemFirst(job), launch),
+  stdin: () => '',
+  answer: agyResponse,
+  // AGY§21
+  saysItHasNoSuchModel: /invalid model selection/
+}
 
 // AGY§30
 export const AGY_PROJECT_MCP_FILE = '.agents/mcp_config.json'

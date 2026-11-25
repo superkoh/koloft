@@ -1,5 +1,6 @@
 // ADR-0054
 import type { AccountAddResult, McpServer } from '@shared/types'
+import type { AssistJob, ModelAndEffort } from '../assistModels'
 import {
   AGENT_IDS,
   agentManifest,
@@ -13,6 +14,14 @@ export interface OneShotTarget {
   env: NodeJS.ProcessEnv
   args?: string[]
   done(): void
+}
+
+export interface AgentOneShot {
+  argv(job: AssistJob, launch: ModelAndEffort): string[]
+  stdin(job: AssistJob): string
+  answer(out: string): string | null
+  secondTryWhenLate?: true
+  saysItHasNoSuchModel?: RegExp
 }
 
 export interface AgentCatalog {

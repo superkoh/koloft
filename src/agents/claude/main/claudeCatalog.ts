@@ -1,6 +1,7 @@
 import path from 'path'
 import type { McpServer } from '@shared/types'
-import type { AgentCatalog } from '@core/agent/agentsMain'
+import type { AgentCatalog, AgentOneShot } from '@core/agent/agentsMain'
+import type { ModelAndEffort } from '@core/assistModels'
 import { runsPlaywrightMcp } from '../../../main/browserControlEnv'
 import {
   asRecord,
@@ -68,6 +69,31 @@ export async function ownersClaudePlaywrightMcp(cwd: string): Promise<string[]> 
       .map((folder) => textOrNull(path.join(folder, PROJECT_MCP_FILE)))
   ])
   return claudePlaywrightServers(claudeJson, projectFiles, claudeProjectKey(cwd))
+}
+
+// CC§9
+const CLAUDE_ONE_SHOT = (system: string, launch: ModelAndEffort): string[] => [
+  '-p',
+  ...(launch.model ? ['--model', launch.model] : []),
+  ...(launch.effort ? ['--effort', launch.effort] : []),
+  '--no-session-persistence',
+  '--setting-sources',
+  '',
+  '--strict-mcp-config',
+  '--mcp-config',
+  '{"mcpServers":{}}',
+  '--system-prompt',
+  system,
+  '--tools',
+  ''
+]
+
+// CC§9
+export const claudeOneShot: AgentOneShot = {
+  argv: (job, launch) => CLAUDE_ONE_SHOT(job.system, launch),
+  stdin: (job) => job.prompt,
+  answer: (out) => out,
+  saysItHasNoSuchModel: /issue with the selected model/
 }
 
 export const claudeCatalog: AgentCatalog = {

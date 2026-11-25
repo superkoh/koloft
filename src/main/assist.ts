@@ -2,108 +2,21 @@ import { execFile } from 'node:child_process'
 import os from 'node:os'
 import type { BackendId } from '@shared/types'
 import { assistBackendsFor, assistLaunchOn } from '@shared/assistPicks'
-import {
-  EVERY_ACCOUNT_TAKES,
-  type Assist,
-  type AssistJob,
-  type ModelAndEffort
-} from '@core/assistModels'
+import { EVERY_ACCOUNT_TAKES, type Assist, type ModelAndEffort } from '@core/assistModels'
 import { takenEffort } from '@shared/cronModels'
 import { envMs } from '@core/agent/sessionRuntime'
-import type { OneShotTarget } from '@core/agent/agentsMain'
+import type { AgentOneShot, OneShotTarget } from '@core/agent/agentsMain'
+import { claudeOneShot } from '@agents/claude/main/claudeCatalog'
+import { codexOneShot } from '@agents/codex/main/codexCatalog'
+import { agyOneShot } from '@agents/agy/main/agyCatalog'
 
 const ASSIST_TIMEOUT_MS = envMs('KOLOFT_ASSIST_TIMEOUT_MS', 15_000)
 export const ASSIST_ANSWERS_WITHIN_MS = 2 * ASSIST_TIMEOUT_MS
 
-// CC§9
-const CLAUDE_ONE_SHOT = (system: string, launch: ModelAndEffort): string[] => [
-  '-p',
-  ...(launch.model ? ['--model', launch.model] : []),
-  ...(launch.effort ? ['--effort', launch.effort] : []),
-  '--no-session-persistence',
-  '--setting-sources',
-  '',
-  '--strict-mcp-config',
-  '--mcp-config',
-  '{"mcpServers":{}}',
-  '--system-prompt',
-  system,
-  '--tools',
-  ''
-]
-
-// CODEX§15
-const CODEX_ONE_SHOT = (launch: ModelAndEffort): string[] => [
-  'exec',
-  '--skip-git-repo-check',
-  '--ephemeral',
-  '--ignore-user-config',
-  '--ignore-rules',
-  '-s',
-  'read-only',
-  ...(launch.model ? ['-m', launch.model] : []),
-  ...(launch.effort ? ['-c', `model_reasoning_effort="${launch.effort}"`] : []),
-  '-C',
-  os.tmpdir(),
-  '-'
-]
-
-// AGY§20 AGY§21
-const AGY_ONE_SHOT = (task: string, launch: ModelAndEffort): string[] => [
-  '-p',
-  task,
-  '--output-format',
-  'json',
-  ...(launch.model ? ['--model', launch.model] : []),
-  ...(launch.effort ? ['--effort', launch.effort] : [])
-]
-
-// AGY§20
-function agyResponse(out: string): string | null {
-  try {
-    const result = JSON.parse(out) as { status?: unknown; response?: unknown }
-    return result.status === 'SUCCESS' && typeof result.response === 'string'
-      ? result.response
-      : null
-  } catch {
-    return null
-  }
-}
-
-const withSystemFirst = (job: AssistJob): string => `${job.system}\n\n${job.prompt}`
-
-const ONE_SHOT: Record<
-  BackendId,
-  {
-    argv(job: AssistJob, launch: ModelAndEffort): string[]
-    stdin(job: AssistJob): string
-    answer(out: string): string | null
-    secondTryWhenLate?: true
-    saysItHasNoSuchModel?: RegExp
-  }
-> = {
-  // CC§9
-  claude: {
-    argv: (job, launch) => CLAUDE_ONE_SHOT(job.system, launch),
-    stdin: (job) => job.prompt,
-    answer: (out) => out,
-    saysItHasNoSuchModel: /issue with the selected model/
-  },
-  // CODEX§15
-  codex: {
-    argv: (_job, launch) => CODEX_ONE_SHOT(launch),
-    stdin: withSystemFirst,
-    answer: (out) => out,
-    secondTryWhenLate: true,
-    saysItHasNoSuchModel: /model is not supported/
-  },
-  agy: {
-    argv: (job, launch) => AGY_ONE_SHOT(withSystemFirst(job), launch),
-    stdin: () => '',
-    answer: agyResponse,
-    // AGY§21
-    saysItHasNoSuchModel: /invalid model selection/
-  }
+const ONE_SHOT: Record<BackendId, AgentOneShot> = {
+  claude: claudeOneShot,
+  codex: codexOneShot,
+  agy: agyOneShot
 }
 
 export interface AssistDeps {

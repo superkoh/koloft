@@ -2,7 +2,13 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { execFile } from 'child_process'
-import type { AccountKind, AccountView, QuotaBucket } from '@shared/types'
+import {
+  isCronEffort,
+  type AccountKind,
+  type AccountView,
+  type CronEffort,
+  type QuotaBucket
+} from '@shared/types'
 import type { AgentAccounts } from '@core/agent/agentsMain'
 import {
   AUTO_PROBE_MS,
@@ -19,7 +25,7 @@ import {
   type HomeAccountsDeps
 } from '../../kit/main/homeAccounts'
 import type { AgyHomePick, AgySessions } from './agySessions'
-import { agyListedModels, type ListedModel } from '@shared/sessionPicks'
+import { knownEfforts, type ListedModel } from '@shared/sessionPicks'
 import { record } from '@core/unknownValue'
 import { readJson, writeWholeBeforeVisible } from '../../../main/jsonDrops'
 import { AGY_APP_DIR } from './agyStore'
@@ -223,6 +229,20 @@ export function readAgyQuota(
       (error, stdout) => resolve(error ? undefined : agyQuotaFrom(stdout))
     ).stdin?.end()
   })
+}
+
+// AGY§21
+export function agyListedModels(stdout: string): ListedModel[] {
+  const efforts = new Map<string, CronEffort[]>()
+  for (const line of stdout.split('\n')) {
+    const id = line.split('\t')[0].trim()
+    const cut = id.lastIndexOf('-')
+    const effort = id.slice(cut + 1)
+    if (cut < 1 || !isCronEffort(effort)) continue
+    const base = id.slice(0, cut)
+    efforts.set(base, [...(efforts.get(base) ?? []), effort])
+  }
+  return [...efforts].map(([id, taken]) => ({ id, efforts: knownEfforts(taken) }))
 }
 
 // AGY§21
