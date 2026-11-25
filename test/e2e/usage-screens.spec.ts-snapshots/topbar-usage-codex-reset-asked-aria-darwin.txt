@@ -1,0 +1,6 @@
+- text: capped WALLED
+- group "5h walled, back in 40m": 100%
+- group "7d resets at 3-6 09:30": 92%
+- text: 2 resets saved, first expires 3-5 09:30 Use 1 of 2 saved resets on capped now? Its limits start again from 0.
+- button "Use"
+- button "Cancel"

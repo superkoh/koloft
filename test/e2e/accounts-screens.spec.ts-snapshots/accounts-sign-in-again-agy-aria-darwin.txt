@@ -1,0 +1,9 @@
+- text: Sign in again logged-off
+- textbox "Name this account (e.g. work)": logged-off
+- button "Cancel"
+- button "Sign in"
+- text: Koloft opens a terminal tab that runs
+- code: agy
+- text: for this account only. Finish the sign-in there; the tab closes itself when
+- code: agy
+- text: ends. Signed in, the account joins the pool; if not, this page says so. Sign in, then pick a colour scheme and answer Google’s Terms and data-use screen yourself, then type /exit. Your Antigravity conversations, rules, plugins and MCP servers are shared by every account.

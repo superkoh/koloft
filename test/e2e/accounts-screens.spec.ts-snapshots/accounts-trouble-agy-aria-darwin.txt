@@ -1,0 +1,19 @@
+- text: Antigravity
+
+- switch "In the pool" [checked]
+- text: logged-off EXPIRED · out of pool
+- button "Sign in again"
+- button "Delete account":
+  - img
+- text: Not signed in — use Sign in again
+- switch "In the pool" [checked]
+- text: drained
+- button "Delete account":
+  - img
+- text: Gemini Models · 7d 100% Gemini Models · 5h 65% Gemini Models · 7d resets 3-6 09:30
+- button "Sign in with Google":
+  - img
+  - text: Sign in with Google
+- button "Paste Gemini API key":
+  - img
+  - text: Paste Gemini API key

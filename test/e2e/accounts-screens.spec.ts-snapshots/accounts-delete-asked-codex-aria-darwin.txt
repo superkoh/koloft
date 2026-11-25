@@ -1,0 +1,8 @@
+- switch "In the pool" [checked]
+- text: capped
+- button "Delete account":
+  - img
+- text: Delete capped? Its sign-in folder stays on disk, so its sessions stay in your history.
+- button "Delete"
+- button "Cancel"
+- text: 5h 100% 7d 92% 5h resets 10:10 1 reset saved, expires 3-5 09:30

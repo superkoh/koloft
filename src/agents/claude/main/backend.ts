@@ -109,7 +109,7 @@ import {
   replacesTheConversation,
   type HookReport
 } from '../../../main/hookRouting'
-import { registeredByTabRoot } from '../../../main/shim'
+import { registeredByTabRoot } from './claudeShim'
 import { oncePerName, watchAndSweepJsonDrops, watchJsonDrops } from '../../../main/jsonDrops'
 import { copyWorktreeIncludes, type ScriptRunner } from '../../../main/sessionWorktrees'
 import { GIT_REF_RE } from '../../../main/gitSteps'

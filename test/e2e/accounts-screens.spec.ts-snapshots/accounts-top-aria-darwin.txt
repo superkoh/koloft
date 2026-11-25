@@ -1,0 +1,14 @@
+- heading "Accounts" [level=3]
+- paragraph: Every session in Koloft runs on an account from its agent’s section below, never on the login already on this Mac. Each new session picks its agent’s least-used sign-in, and an API key only when every sign-in is at its limit.
+
+- text: Skip permission prompts Adds
+- code: "--dangerously-skip-permissions"
+- text: to Claude and Antigravity when Koloft injects an account, and starts new Codex sessions with
+- code: "-a never -s danger-full-access"
+- text: — never overrides permission flags you pass yourself.
+- switch [checked]
+
+- text: Account usage Reads again, right now, how much every enabled account of every agent has used.
+- button "Refresh usage":
+  - img
+  - text: Refresh usage

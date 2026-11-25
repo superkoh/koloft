@@ -1,0 +1,17 @@
+- dialog "Welcome to Koloft":
+  - banner:
+    - button "Skip setup esc"
+  - main:
+    - text: Signed in · Antigravity
+    - heading "One sign-in. Koloft does the rest." [level=1]
+    - paragraph: Koloft adds its own account and names it. Your Mac’s logins stay untouched.
+    - tablist:
+      - tab "Claude Code last used":
+        - text: Claude Code
+        - emphasis: last used
+      - tab "Codex"
+      - tab "Antigravity CLI" [selected]
+    - img
+    - text: "Signed in to Antigravity The account is named “Antigravity-2”. Add more in Settings ▸ Accounts: each new session then takes the one with the most left."
+  - contentinfo:
+    - button "Continue ↩"

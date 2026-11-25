@@ -1,0 +1,6 @@
+- text: Paste token
+- textbox "Account name (e.g. personal)"
+- textbox "sk-ant-oat01-… (from claude setup-token)"
+- button "Cancel"
+- button "Verify and save" [disabled]
+- text: What you paste is used only to verify and to write the Keychain entry — never echoed, never written to a file. A failed check still saves the account, marked UNVERIFIED.

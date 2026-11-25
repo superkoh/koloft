@@ -16,6 +16,7 @@ vi.mock('electron', async () => {
 
 import { app } from 'electron'
 import { setupShim, type ShimPaths } from '../../src/main/shim'
+import { CANNOT_WRITE_THE_REQUEST, everyAgentsShimScripts } from './helpers/agentShims'
 import { startToolShim, type ToolShim } from '../../src/main/toolShim'
 import { knowPluginStates } from '../../src/core/switches'
 
@@ -113,7 +114,7 @@ exit 44
 `
 
 beforeAll(() => {
-  shared = setupShim(GIT_REQUEST_DIR, BUTLER_FOLDER)
+  shared = setupShim(GIT_REQUEST_DIR, BUTLER_FOLDER, everyAgentsShimScripts())
   scratch = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-shim-folder-runs-')))
   fakeBin = path.join(scratch, 'bin')
   securityOnlyBin = path.join(scratch, 'security-only')
@@ -154,7 +155,7 @@ describe('the shim folder every session tab and shell tab on this Mac shares, pi
       fs.chmodSync(path.join(shared.shimDir, name), 0o644)
     }
     try {
-      setupShim(GIT_REQUEST_DIR, BUTLER_FOLDER)
+      setupShim(GIT_REQUEST_DIR, BUTLER_FOLDER, everyAgentsShimScripts())
       expect(scriptsIn(shared.shimDir, new Set())).toEqual(files)
       for (const name of files) {
         expect(fs.readFileSync(path.join(shared.shimDir, name), 'utf8')).toBe(before.get(name))
@@ -171,13 +172,13 @@ describe('the shim folder every session tab and shell tab on this Mac shares, pi
     const everyFile = scriptsIn(shared.shimDir, new Set())
     knowPluginStates({ passwords: { on: false } })
     try {
-      setupShim(GIT_REQUEST_DIR, BUTLER_FOLDER)
+      setupShim(GIT_REQUEST_DIR, BUTLER_FOLDER, everyAgentsShimScripts())
       expect(scriptsIn(shared.shimDir, new Set())).toEqual(
         everyFile.filter((n) => !sudoFiles.includes(n))
       )
     } finally {
       knowPluginStates({})
-      setupShim(GIT_REQUEST_DIR, BUTLER_FOLDER)
+      setupShim(GIT_REQUEST_DIR, BUTLER_FOLDER, everyAgentsShimScripts())
     }
     expect(scriptsIn(shared.shimDir, new Set())).toEqual(everyFile)
     expect(sudoFiles.map((n) => fs.readFileSync(path.join(shared.shimDir, n), 'utf8'))).toEqual(
@@ -209,6 +210,7 @@ describe('the shim folder Koloft writes for each Codex or Antigravity tab on thi
       },
       {
         backend,
+        cannotWriteTheRequest: CANNOT_WRITE_THE_REQUEST[backend],
         userZdotdir: USER_ZDOTDIR,
         open: () => {},
         agent: agentTools ? () => {} : undefined,

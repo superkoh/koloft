@@ -1,0 +1,10 @@
+- dialog "Welcome to Koloft":
+  - banner:
+    - button "Skip setup esc"
+  - main:
+    - text: No sessions on this Mac yet
+    - heading "Pick a folder to work in." [level=1]
+    - paragraph: Any folder works; a git checkout gets extra help.
+    - button "A folder on another machine (SSH)"
+  - contentinfo:
+    - button "Choose Folder… ↩"

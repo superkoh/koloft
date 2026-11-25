@@ -1,0 +1,6 @@
+- text: Add OpenAI API key
+- textbox "Account name (e.g. personal)"
+- textbox "sk-proj-… (OpenAI API key)"
+- button "Cancel"
+- button "Save" [disabled]
+- text: "Koloft hands the key to codex login, which keeps it in this account’s own sign-in folder; Koloft itself never echoes or stores it. Codex does not check the key here: a wrong one shows as signed in and fails at the first message a session sends."

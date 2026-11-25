@@ -224,7 +224,8 @@ import {
 } from '@shared/browserRoute'
 import { PASTED_PICTURE_EXTENSIONS, pastedPicturesIn, withPictures } from '@shared/pastedPictures'
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
-import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
+import { pidAlive } from './leftovers'
+import { scanLeftovers, stopLeftover } from './leftoverProcesses'
 import { parseSessionPorts, scanPortsHere, scanPortsOnMachine } from './sessionPorts'
 import { reachesThisMacsServer } from '@core/thisMacsServers'
 import { mapAtMost } from '@core/mapAtMost'
@@ -325,6 +326,9 @@ import { sleep } from '@core/sleep'
 import { claudeCatalog, ownersClaudePlaywrightMcp } from '@agents/claude/main/claudeCatalog'
 import { codexCatalog } from '@agents/codex/main/codexCatalog'
 import { agyCatalog } from '@agents/agy/main/agyCatalog'
+import { claudeTools } from '@agents/claude/main/claudeShim'
+import { codexTools } from '@agents/codex/main/codexShim'
+import { agyTools } from '@agents/agy/main/agyShim'
 import { claudeSearch, claudeUsage } from '@agents/claude/main/claudeUsage'
 import { codexSearch, codexUsage } from '@agents/codex/main/codexUsage'
 import { agySearch, agyUsage } from '@agents/agy/main/agyUsage'
@@ -380,6 +384,7 @@ import {
   AgentsMain,
   type AgentCatalog,
   type AgentMain,
+  type AgentTools,
   type OneShotTarget
 } from '@core/agent/agentsMain'
 import { createProject } from './newProject'
@@ -1518,6 +1523,11 @@ const catalogs: Record<BackendId, AgentCatalog> = {
   codex: codexCatalog(codexSharedConfig),
   agy: agyCatalog(ownersGemini, isGitCheckoutAsync)
 }
+const tools: Record<BackendId, AgentTools> = {
+  claude: claudeTools,
+  codex: codexTools,
+  agy: agyTools
+}
 const usages: Record<BackendId, AgentUsage> = {
   claude: claudeUsage(() => claudeStore),
   codex: codexUsage(
@@ -1556,6 +1566,7 @@ for (const id of SESSION_BACKENDS)
     id,
     oneShotTarget: oneShotTargets[id],
     catalog: catalogs[id],
+    tools: tools[id],
     usage: usages[id],
     search: searches[id]
   })
@@ -2716,7 +2727,8 @@ app.whenReady().then(() => {
   const gitRequestDir = newGitRequestDir()
   const { shimDir, regDir, openDir, pickDir, agentDir, gitHelper, ghWrapper } = setupShim(
     gitRequestDir,
-    conductorFolder(app.getPath('userData'))
+    conductorFolder(app.getPath('userData')),
+    agentsMain.shimScripts()
   )
   ptyMgr.shimDir = shimDir
   ptyMgr.regDir = regDir

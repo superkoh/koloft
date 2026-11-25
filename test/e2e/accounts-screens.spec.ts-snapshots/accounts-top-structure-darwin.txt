@@ -1,0 +1,45 @@
+div.set-ph
+  {display: block; border-width: - - 1px -; border-style: none none solid none; border-color: - - rgba(255, 255, 255, 0.1) -; padding: 0px 0px 12px 0px; margin: 0px 0px 12px 0px}
+  h3
+    {display: block; font-size: 15px; font-weight: 650; letter-spacing: -0.15px}
+    "Accounts"
+  p
+    {display: block; color: rgb(144, 139, 132); font-size: 12px; line-height: 1.55; margin: 3px 0px 0px 0px}
+    "Every session in Koloft runs on an account from its agent’s section below, never on the login already on this Mac. Each new session picks its agent’s least-used sign-in, and an API key only when every sign-in is at its limit."
+
+div.set-row
+  {display: flex; align-items: center; border-width: - - 1px -; border-style: none none solid none; border-color: - - rgba(255, 255, 255, 0.1) -; padding: 12px 0px 12px 0px; gap: 18px}
+  div.set-lab
+    {display: block; min-width: 0px; flex-grow: 1; flex-basis: 0%}
+    b
+      {display: block; font-size: 13px; font-weight: 550}
+      "Skip permission prompts"
+    small
+      {display: block; color: rgb(144, 139, 132); font-size: 11.5px; line-height: 1.55; margin: 1px 0px 0px 0px}
+      "Adds to Claude and Antigravity when Koloft injects an account, and starts new Codex sessions with — never overrides permission flags you pass yourself."
+      code
+        {display: inline; font-family: monospace; font-size: 10.5px; padding: 0px 4px 0px 4px}
+        "--dangerously-skip-permissions"
+      code
+        {display: inline; font-family: monospace; font-size: 10.5px; padding: 0px 4px 0px 4px}
+        "-a never -s danger-full-access"
+  input.switch [role="switch" aria-checked="true" type="checkbox" .value="on" .checked=true]
+    {display: block; position: relative; color: rgb(0, 0, 0); background-color: rgb(236, 150, 112); width: 36px; height: 21px; flex-shrink: 0; font-family: Arial; font-size: 13.3333px; border-radius: 999px}
+    ::after {display: block; position: absolute; background-color: rgb(243, 241, 238); box-shadow: rgba(0, 0, 0, 0.45) 0px 1px 2px 0px; min-width: 0px; min-height: 0px; content: ""; border-radius: 50%}
+
+div.set-row
+  {display: flex; align-items: center; border-width: - - 1px -; border-style: none none solid none; border-color: - - rgba(255, 255, 255, 0.1) -; padding: 12px 0px 12px 0px; gap: 18px}
+  div.set-lab
+    {display: block; min-width: 0px; flex-grow: 1; flex-basis: 0%}
+    b
+      {display: block; font-size: 13px; font-weight: 550}
+      "Account usage"
+    small
+      {display: block; color: rgb(144, 139, 132); font-size: 11.5px; line-height: 1.55; margin: 1px 0px 0px 0px}
+      "Reads again, right now, how much every enabled account of every agent has used."
+  button.mini
+    {display: flex; background-color: rgb(52, 52, 58); align-items: center; font-size: 13px; font-weight: 600; line-height: 1; text-align: center; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.17); border-radius: 7px; padding: 7px 14px 7px 14px; gap: 5px}
+    "Refresh usage"
+    svg
+      {display: block; width: 14px; height: 14px; overflow-x: hidden; overflow-y: hidden}
+      shape 7c888dbd

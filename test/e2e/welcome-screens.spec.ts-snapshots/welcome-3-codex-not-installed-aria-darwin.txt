@@ -1,0 +1,15 @@
+- dialog "Welcome to Koloft":
+  - banner:
+    - button "Skip setup esc"
+  - main:
+    - text: One step needs you
+    - heading "One sign-in. Koloft does the rest." [level=1]
+    - paragraph: Koloft adds its own account and names it. Your Mac’s logins stay untouched.
+    - tablist:
+      - tab "Claude Code"
+      - tab "Codex" [selected]
+      - tab "Antigravity CLI"
+    - text: "Koloft installs Codex first. A terminal tab opens and Codex sends you to your browser. It closes by itself once you are in. The account is named “Codex”. Add more in Settings ▸ Accounts: each new session then takes the one with the most left."
+  - contentinfo:
+    - button "Install Codex and sign in ↩"
+    - button "I’ll sign in later"

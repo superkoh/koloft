@@ -16,6 +16,7 @@ export type AgentVerb = (args: string[], caller: AgentCaller) => AgentReply | Pr
 
 export const EXIT_USAGE = 2
 export const AGENT_SHIM_WAITS_MS = 10_000
+export const COULD_NOT_REACH_KOLOFT = 'koloft: could not reach Koloft.'
 
 export const NOT_PINNED = 'koloft: pin this workspace in the sidebar first.'
 
