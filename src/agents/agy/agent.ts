@@ -17,6 +17,7 @@ export const agent = {
   command: 'agy',
   // AGY§3
   installCommand: `curl -fsSL ${AGY_INSTALLER_URL} | bash`,
+  nodePackageFolderNames: [],
   wordsThatNameMe: {
     anyCase: ['agy', 'antigravity', 'google', 'gemini'],
     wholeWord: [

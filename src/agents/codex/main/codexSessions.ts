@@ -95,12 +95,8 @@ import { CodexSideServers } from './codexSideServers'
 import { mapAtMost } from '@core/mapAtMost'
 import { seedAssistMemory } from '../../../main/assistMemory'
 import { pipeSecretTo } from '../../../main/secretOnStdin'
-import {
-  CODEX_TMP_DIR,
-  CODEX_TMP_FOLDER,
-  endCodexAppServersLeftByACrash,
-  removeFoldersLeftByEndedRuns
-} from '../../../main/leftovers'
+import { CODEX_TMP_DIR, removeFoldersLeftByEndedRuns } from '../../../main/leftovers'
+import { CODEX_TMP_FOLDER, endCodexAppServersLeftByACrash } from './codexLeftovers'
 import { codexSessionKey } from '@agents/kit/main/sessionStore'
 import { resolveCodexRuntime, updateCodex } from './codexRuntime'
 import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './codexMinimum'

@@ -13,6 +13,7 @@ export const agent = {
   command: 'codex',
   // CODEX§22
   installCommand: 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh',
+  nodePackageFolderNames: ['codex'],
   wordsThatNameMe: {
     anyCase: ['codex', 'openai', 'gpt'],
     wholeWord: [

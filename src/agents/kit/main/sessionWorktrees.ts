@@ -1,7 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { randomUUID } from 'crypto'
-import { isValidWorktreeName } from '@shared/worktreeName'
+import { isValidWorktreeName, SESSION_WORKTREES_FOLDER } from '@shared/worktreeName'
 import { barePath, isRemoteKey } from '@shared/remoteKey'
 import type { WorktreeRecords, WorktreeResource } from '@core/agent/worktreeRecords'
 import {
@@ -197,12 +197,12 @@ export class SessionWorktrees {
   // CC§3 CODEX§6
   async recover(sessionCwd: string): Promise<WorktreeResource> {
     const listedRoot = worktreeHomeRoot(sessionCwd)
-    if (!listedRoot) throw new Error('Not a .claude/worktrees folder')
+    if (!listedRoot) throw new Error(`Not a ${SESSION_WORKTREES_FOLDER} folder`)
     const name = path.basename(sessionCwd)
     validName(name)
     const io = this.io(listedRoot)
     const root = io.real(listedRoot)
-    const worktreePath = `${root}/.claude/worktrees/${name}`
+    const worktreePath = `${root}/${SESSION_WORKTREES_FOLDER}/${name}`
     if (await io.exists(worktreePath)) return this.adopt(root, worktreePath)
     return this.materialize({
       id: randomUUID(),
@@ -239,7 +239,7 @@ export class SessionWorktrees {
 
   private async createAt(root: string, name: string, base: string): Promise<WorktreeResource> {
     const io = this.io(root)
-    const target = `${root}/.claude/worktrees/${name}`
+    const target = `${root}/${SESSION_WORKTREES_FOLDER}/${name}`
     if (await io.exists(target)) throw new Error('Worktree directory already exists')
     const branch = `worktree-${name}`
     if (await branchExists(io, root, branch)) throw new Error('Worktree branch already exists')
