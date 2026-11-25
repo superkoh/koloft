@@ -10,7 +10,7 @@ import {
   PROBE_MODEL,
   FALLBACK_PROBE_MODEL,
   FABLE_RETRY_MS
-} from '../../src/main/usageProbe'
+} from '../../src/agents/claude/main/claudeAccountProbe'
 import type { AccountMeta } from '../../src/shared/types'
 
 const NOW_MS = 1_000_000_000_000
