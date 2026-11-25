@@ -1303,6 +1303,31 @@ the removal if Koloft quits first.
   - The tab's hooks got a SessionStart `source=startup` carrying a third
     `session_id`, which never wrote a transcript, at the same second. Every later
     Stop / UserPromptSubmit carried the new id.
+- **After `/background` the background process reads the `--settings` file by its path
+  once the window's claude has already exited; with the file gone it never starts.**
+  2026-11-25, CC 2.1.332 linux-arm64 in the e2e SSH lab image (Docker, `--network none`,
+  user `kuser`), claude in a plain tmux pane with `--settings <tabs>/T.json
+  --append-system-prompt-file <tabs>/T.prompt.md`, `ANTHROPIC_API_KEY` (pre-approved) and
+  `ANTHROPIC_BASE_URL` at a local stand-in Messages API, a logging hook on every event;
+  one prompt, then `/background`. The window's claude fired SessionEnd and exited; the
+  daemon gave the job to a spare (`bg claimed-spare … (slash)`), whose SessionStart came
+  about 0.2 s after that SessionEnd; its command line held `--settings <tabs>/T.json` and
+  no `--append-system-prompt-file`. With the file left in place the background session
+  started, 3 of 3 runs. With `rm -f` of both files run right after the window's claude
+  exited, it crashed, 3 of 3: `bg settled <id> (crashed): exit 1 before init — Error:
+  Settings file not found: <tabs>/T.json` in `~/.claude/daemon.log`. Not measured:
+  whether a settled or stopped background job is ever started again from that path, and
+  which account kinds Anthropic's own address lets into the background (above: an OAuth
+  token is let in, an API key or auth token may be refused).
+- **A running claude reads its `--settings` file and its `--append-system-prompt-file`
+  once, at start.** Same day, binary and lab: changing both files' content, or deleting
+  both, after the first turn changed nothing — every hook kept its first command
+  (UserPromptSubmit, Stop, the SessionEnd and SessionStart of `/clear`, PreCompact and the
+  compact SessionStart of `/compact`, the SessionEnd of `kill-session`), and every request
+  after it, the compaction's summary requests too, held the first prompt file's word; the
+  screen showed no error. One run each way. Only hooks and the prompt text were looked
+  at: whether `env`, `permissions`, the status line and subagents also take the first
+  read is not measured.
 - **Fork subagents (`subagent_type: "fork"`) in a `-p` run: off on 2.1.301, gated since
   2.1.302.** `strings`, 2026-10-17, not run: 2.1.301 returns `"disabled"` for every
   non-interactive run; 2.1.302 does so only when `CLAUDE_CODE_FORK_SUBAGENT` is not set
@@ -1315,7 +1340,9 @@ background-move bullets and the `/fork` copy probe (2026-10-27, CC 2.1.311) as d
 above. Koloft dependents: the fork gate and session_id
 extraction in `src/plugins/sessions/main/hooks.ts`'s injected script (marked `CC§5`);
 `src/main/hookRouting.ts`, where a tab follows `continued-in` or leaves a start that
-never wrote a transcript.
+never wrote a transcript; `src/agents/claude/main/claudeLaunch.ts`, where a tab on
+another machine removes its owner text once read and its project prompt once claude
+ends, and leaves its settings file there.
 
 ## §6 Settings precedence & the statusLine protocol
 

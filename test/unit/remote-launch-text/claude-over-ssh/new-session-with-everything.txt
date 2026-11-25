@@ -52,14 +52,18 @@ if [ "$1" = run ]; then
   [ -n "$KOLOFT_TAB_PASS" ] && ( umask 077; printf 'set-environment -t %s KOLOFT_TAB_ID %s\nset-environment -t %s KOLOFT_TAB_PASS %s\n' "k-<session id>" pty-t1 "k-<session id>" "$KOLOFT_TAB_PASS" > "$HOME/.koloft/tabs/pty-t1.keys" ) && tmux -L koloft source-file "$HOME/.koloft/tabs/pty-t1.keys"; rm -f "$HOME/.koloft/tabs/pty-t1.keys"
   KOLOFT_PORT_OFFSET=17; export KOLOFT_PORT_OFFSET
   trap : INT QUIT
+  trap 'rm -f "$HOME/.koloft/tabs/pty-t1.prompt.$$.md"; exit 129' HUP
   (
+  koloft_owner_text=$(cat "$HOME/.koloft/tabs/pty-t1.owner.md"); rm -f "$HOME/.koloft/tabs/pty-t1.owner.md"
+  mv -f "$HOME/.koloft/tabs/pty-t1.prompt.md" "$HOME/.koloft/tabs/pty-t1.prompt.$$.md"
   PATH="$M/claude-bin/:$PATH"; export PATH
-  set -- claude --settings "$HOME/.koloft/tabs/pty-t1.json" --plugin-dir "$M/docs-plugin/" --plugin-dir "$M/agent-plugin/" --append-system-prompt-file "$HOME/.koloft/tabs/pty-t1.prompt.md" --append-system-prompt "$(cat "$HOME/.koloft/tabs/pty-t1.owner.md")" '--session-id' '<session id>' '-w' 'pinned-wt' '--model' 'pinned-model' '--effort' 'xhigh' '--permission-mode' 'acceptEdits' '--name' 'PinnedName' '--' 'FIRST PROMPT'
+  set -- claude --settings "$HOME/.koloft/tabs/pty-t1.json" --plugin-dir "$M/docs-plugin/" --plugin-dir "$M/agent-plugin/" --append-system-prompt-file "$HOME/.koloft/tabs/pty-t1.prompt.$$.md" --append-system-prompt "$koloft_owner_text" '--session-id' '<session id>' '-w' 'pinned-wt' '--model' 'pinned-model' '--effort' 'xhigh' '--permission-mode' 'acceptEdits' '--name' 'PinnedName' '--' 'FIRST PROMPT'
   [ -x /usr/sbin/taskpolicy ] && set -- /usr/sbin/taskpolicy -a "$@"
   python3 -c 'import pty, termios' >/dev/null 2>&1 && exec python3 "$M/status-relay.py" "$@"
   exec "$@"
   )
   c=$?
+  rm -f "$HOME/.koloft/tabs/pty-t1.prompt.$$.md"
   [ $c = 0 ] || tmux -L koloft capture-pane -p -t "$TMUX_PANE" > "$HOME/.koloft/tabs/pty-t1.screen" 2>/dev/null
   echo $c > "$HOME/.koloft/tabs/pty-t1.exit"
   exit

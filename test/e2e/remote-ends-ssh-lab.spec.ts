@@ -144,8 +144,12 @@ async function boundClaude(page: Page): Promise<{ tabId: string; sessionId: stri
   return found!
 }
 
-async function claudeTabOnKtKey(page: Page): Promise<{ tabId: string; sessionId: string }> {
+async function claudeTabOnKtKey(
+  page: Page,
+  withWorkspaceDefaults = false
+): Promise<{ tabId: string; sessionId: string }> {
   await addMachine(page, 'kt-key', 'kuser')
+  if (withWorkspaceDefaults) await workspaceDefaultsWritten(page, 'kt-key')
   await startSessionIn(page, 'kt-key', { remote: true })
   const bound = await boundClaude(page)
   await expect(rowOfTab(page, bound.tabId)).toHaveClass(/\bst-waiting\b/, {
@@ -153,6 +157,26 @@ async function claudeTabOnKtKey(page: Page): Promise<{ tabId: string; sessionId:
   })
   return bound
 }
+
+async function workspaceDefaultsWritten(page: Page, wsName: string): Promise<void> {
+  await page.locator('.ws-head', { hasText: wsName }).click({ button: 'right' })
+  await page.locator('.menu .mi', { hasText: 'Session defaults…' }).click()
+  const dlg = page.getByRole('dialog', { name: 'Session defaults' })
+  await dlg.getByRole('textbox', { name: 'How agents pick' }).fill('Pick haiku for small jobs.')
+  await dlg.getByRole('textbox', { name: 'Instructions' }).fill('Answer in plain words.')
+  await dlg.locator('.btn-primary', { hasText: 'Save' }).click()
+  await expect(dlg).toHaveCount(0)
+}
+
+const textFilesOfTabOn = (lab: SshLab, user: string, tabId: string): string[] =>
+  lines(runOnTarget(lab, user, 'ls -A .koloft/tabs'))
+    .filter((name) => name.startsWith(`${tabId}.`) && /\.(json|md)$/.test(name))
+    .sort()
+
+const WHILE_CLAUDE_RUNS = (tabId: string): unknown[] => [
+  `${tabId}.json`,
+  expect.stringMatching(new RegExp(`^${tabId}\\.prompt\\.\\d+\\.md$`))
+]
 
 async function claudeAnswersOnScreen(page: Page, tabId: string, words: string): Promise<void> {
   await runIn(page, centerTerm(page), `/answer ${words}`)
@@ -214,13 +238,15 @@ const tabFolderOnThisMac = (env: E2EEnv, tabId: string): string =>
 
 test.describe('how a Claude Code and a Codex session on a real sshd machine behind a jump host end, drop and come back (Docker)', () => {
   // PLATFORM§35 ADR-0044
-  test('E-SSH-E1: closing a Claude Code tab ends its tmux session on the machine and every process of the tab there; its row stays, cold', async ({
+  // CC§5
+  test('E-SSH-E1: closing a Claude Code tab ends its tmux session on the machine and every process of the tab there, and takes its project prompt from there, its owner text gone since claude started; its settings stay there, and its row stays, cold', async ({
     env
   }) => {
     await withLab(env, async ({ app, page, lab }) => {
-      const { sessionId } = await claudeTabOnKtKey(page)
+      const { tabId, sessionId } = await claudeTabOnKtKey(page, true)
       expect(tmuxSessionsOn(lab, 'kuser')).toEqual([`k-${sessionId}`])
       expect(tabScriptsRunningOn(lab, 'kuser').length).toBeGreaterThan(0)
+      expect(textFilesOfTabOn(lab, 'kuser', tabId)).toEqual(WHILE_CLAUDE_RUNS(tabId))
 
       await sendShortcut(app, 'shortcut:close-tab')
       await expect
@@ -228,16 +254,17 @@ test.describe('how a Claude Code and a Codex session on a real sshd machine behi
           timeout: 30_000
         })
         .toEqual([[], []])
+      expect(textFilesOfTabOn(lab, 'kuser', tabId)).toEqual([`${tabId}.json`])
       await expect(wsRows(page, 'kt-key')).toHaveClass(/\bcold\b/, { timeout: 30_000 })
     })
   })
 
   // PLATFORM§33 PLATFORM§35
-  test('E-SSH-E2: when the ssh connection to the machine drops, a Claude Code tab attaches again to the same claude, still running in tmux there, and the next prompt is answered', async ({
+  test('E-SSH-E2: when the ssh connection to the machine drops, a Claude Code tab attaches again to the same claude, still running in tmux there with its project prompt still there, and the next prompt is answered', async ({
     env
   }) => {
     await withLab(env, async ({ page, lab }) => {
-      const { tabId, sessionId } = await claudeTabOnKtKey(page)
+      const { tabId, sessionId } = await claudeTabOnKtKey(page, true)
       await claudeAnswersOnScreen(page, tabId, 'before the drop')
       const panes = tmuxPanesOn(lab, 'kuser')
       expect(panes).toHaveLength(1)
@@ -251,23 +278,25 @@ test.describe('how a Claude Code and a Codex session on a real sshd machine behi
         .toBe('1')
       expect(tmuxSessionsOn(lab, 'kuser')).toEqual([`k-${sessionId}`])
       expect(tmuxPanesOn(lab, 'kuser')).toEqual(panes)
+      expect(textFilesOfTabOn(lab, 'kuser', tabId)).toEqual(WHILE_CLAUDE_RUNS(tabId))
 
       await claudeAnswersOnScreen(page, tabId, 'after the drop')
     })
   })
 
   // PLATFORM§35
-  test('E-SSH-E3: a Claude Code tab on the machine keeps its claude running in tmux there while Koloft is closed; the reopened Koloft attaches to that same claude, never a second one, and the next prompt is answered', async ({
+  test('E-SSH-E3: a Claude Code tab on the machine keeps its claude running in tmux there while Koloft is closed, with its project prompt still there; the reopened Koloft attaches to that same claude, never a second one, and the next prompt is answered', async ({
     env
   }) => {
     await withLab(env, async ({ page: firstWindow, lab, quitKoloft, openKoloftAgain }) => {
-      const { sessionId } = await claudeTabOnKtKey(firstWindow)
+      const { tabId: firstTab, sessionId } = await claudeTabOnKtKey(firstWindow, true)
       const panes = tmuxPanesOn(lab, 'kuser')
       expect(panes).toHaveLength(1)
 
       await quitKoloft()
       expect(tmuxSessionsOn(lab, 'kuser')).toEqual([`k-${sessionId}`])
       expect(tmuxPanesOn(lab, 'kuser')).toEqual(panes)
+      expect(textFilesOfTabOn(lab, 'kuser', firstTab)).toEqual(WHILE_CLAUDE_RUNS(firstTab))
 
       const page = await openKoloftAgain()
       const row = wsRows(page, 'kt-key')
@@ -278,6 +307,7 @@ test.describe('how a Claude Code and a Codex session on a real sshd machine behi
       await claudeAnswersOnScreen(page, reopened.tabId, 'after the quit')
       expect(tmuxSessionsOn(lab, 'kuser')).toEqual([`k-${sessionId}`])
       expect(tmuxPanesOn(lab, 'kuser')).toEqual(panes)
+      expect(textFilesOfTabOn(lab, 'kuser', firstTab)).toEqual(WHILE_CLAUDE_RUNS(firstTab))
     })
   })
 
