@@ -506,6 +506,7 @@ These are the slots, values, facts and agent flags in use today:
 | slot | `session-opening` | Browser control; half a sentence in the session prompt |
 | slot for each agent | `session-helper-rules` | listed by Sessions core, filled by each agent; the numbered rules of the session prompt for handing work to a helper, which name the agent's own tools for it |
 | slot for each agent | `session-questions` | listed by Sessions core, filled by each agent; the session prompt's part on asking the owner with the agent's question tool, empty for an agent that needs none |
+| slot for each agent | `session-send-left-to-its-own-tool` | listed by Sessions core, filled by each agent; the first sentence of what `koloft session send` answers a caller whose own tool reaches the target, empty for an agent whose sessions do not talk to each other with a tool of their own |
 | slot | `helper-rule-own-worktree` | Sessions core; the rule, in `session-helper-rules`, for work that needs a worktree of its own, up to where an agent may add to the sentence |
 | slot | `helper-rule-shared-checkout` | Sessions core; the sentences that end that rule: no branch change in a shared checkout, one session for each pull request |
 | slot | `helper-rule-watched-session` | Sessions core; the rule for work the owner should be able to watch |
