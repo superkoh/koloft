@@ -1,0 +1,86 @@
+#!/bin/sh
+: koloft gh wrapper
+self="$(cd "$(dirname "$0")" >/dev/null 2>&1 && pwd)"
+folder="$(cd '/fixture/butler-folder' 2>/dev/null && pwd -P)"
+if [ -n "$folder" ] && [ -x "$self/koloft" ]; then
+  case "$(pwd -P)/" in "$folder"/*) exec "$self/koloft" gh "$@" ;; esac
+fi
+real=""
+IFS=:
+set -f
+for d in $PATH; do
+  [ "$d" = "$self" ] && continue
+  [ -x "$d/gh" ] || continue
+  head -n 2 "$d/gh" 2>/dev/null | grep -q "koloft gh wrapper" && continue
+  real="$d/gh"
+  break
+done
+set +f
+unset IFS
+if [ -z "$real" ]; then
+  echo "gh: not found" >&2
+  exit 127
+fi
+if [ "$KOLOFT_GH_HANDED_OFF_PID" = "$$" ] && [ "$KOLOFT_GH_HANDED_OFF_TO" = "$real" ]; then
+  echo "koloft: the gh wrapper came back to itself through $real; that gh runs this one again, so take it off PATH or let it run the real gh." >&2
+  exit 1
+fi
+export KOLOFT_GH_HANDED_OFF_PID="$$" KOLOFT_GH_HANDED_OFF_TO="$real"
+acct="$(git config --get koloft.account 2>/dev/null)"
+plat="$(git config --get koloft.platform 2>/dev/null)"
+case "$plat" in
+  github|ghes) [ -n "$acct" ] || exec "$real" "$@" ;;
+  *) exec "$real" "$@" ;;
+esac
+case "$1 $2" in
+  "auth login"|"auth logout"|"auth switch"|"auth refresh"|"auth setup-git"|"auth token"|"auth status")
+    echo "koloft: this repository uses the Koloft git account $acct; manage it in Koloft Settings ▸ Accounts ▸ Git accounts." >&2
+    exit 1
+    ;;
+esac
+proto=""
+host=""
+dir='/fixture/git-requests'
+newid() {
+  u="$(uuidgen 2>/dev/null | tr 'A-Z' 'a-z')"
+  if [ -z "$u" ] && [ -r /proc/sys/kernel/random/uuid ]; then u="$(cat /proc/sys/kernel/random/uuid)"; fi
+  echo "$u"
+}
+unreachable() {
+  echo "koloft: could not reach Koloft for git credentials." >&2
+  exit 1
+}
+send() {
+  id="$(newid)"
+  [ -n "$id" ] || id="$$-$(date +%s)"
+  part="$dir/git-$id.part"
+  if ! { printf '{"kind":"%s","account":"%s","protocol":"%s","host":"%s"}\n' "$1" "$2" "$proto" "$host" > "$part"; } 2>/dev/null || ! mv "$part" "$dir/git-$id.json" 2>/dev/null; then
+    rm -f "$part" 2>/dev/null
+    unreachable
+  fi
+}
+ask() {
+  send "$1" "$2"
+  res="$dir/gitres-$id.json"
+  deadline=$(( $(date +%s) + 10 ))
+  while [ ! -f "$res" ] && [ "$(date +%s)" -lt "$deadline" ]; do sleep 0.05; done
+  if [ ! -f "$res" ]; then
+    rm -f "$dir/git-$id.json" 2>/dev/null
+    unreachable
+  fi
+  reply="$(cat "$res" 2>/dev/null)"
+  rm -f "$res" 2>/dev/null
+}
+ask gh-token "$acct"
+tok="$(printf '%s' "$reply" | LC_ALL=C sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
+if [ -z "$tok" ]; then
+  echo "koloft: Koloft did not hand over the token for $acct; sign in again in Settings ▸ Accounts." >&2
+  exit 1
+fi
+unset GH_TOKEN GITHUB_TOKEN GH_ENTERPRISE_TOKEN GITHUB_ENTERPRISE_TOKEN
+if [ "$plat" = ghes ]; then
+  export GH_ENTERPRISE_TOKEN="$tok" GH_HOST="$(git config --get koloft.host 2>/dev/null)"
+else
+  export GH_TOKEN="$tok" GH_HOST=github.com
+fi
+exec "$real" "$@"

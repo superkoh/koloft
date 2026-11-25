@@ -1,0 +1,5 @@
+koloft_found_zdotdir="${ZDOTDIR-}"
+if [ -n "$koloft_user_zdotdir" ]; then ZDOTDIR="$koloft_user_zdotdir"; else unset ZDOTDIR; fi
+[ -f "${ZDOTDIR:-$HOME}/.zlogout" ] && . "${ZDOTDIR:-$HOME}/.zlogout"
+koloft_user_zdotdir="${ZDOTDIR-}"
+export ZDOTDIR="$koloft_found_zdotdir"

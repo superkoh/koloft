@@ -1,0 +1,17 @@
+bash_env  file 0644
+gh  link → /fixture/shim/gh
+git  link → /fixture/git-bin/git
+koloft  file 0755
+koloft-askpass  file 0755
+koloft-guide.txt  file 0644  (Koloft's agent guide with the project rules: its text is pinned by agentGuide.test.ts)
+open  file 0755
+playwright-cli  link → /fixture/playwright-bin/playwright-cli
+sudo  file 0755
+zdot/  folder 0755
+zdot/.zlogin  file 0644
+zdot/.zlogout  file 0644
+zdot/.zprofile  file 0644
+zdot/.zshenv  file 0644
+zdot/.zshrc  file 0644
+
+request folder /tmp/koloft-cx-open-<pid>-<uuid>/  folder 0700
