@@ -27,12 +27,12 @@ import type { SendResult, StartResult, StartSpec } from './sendAndStart'
 import {
   BACKEND_LABEL,
   PEER_TRAITS,
-  reachedBySendMessage,
   SESSION_BACKENDS,
   backendIdOf,
   identityOf,
   messagingOf,
-  namedAtLaunch
+  namedAtLaunch,
+  talksWithItsOwnTool
 } from '@shared/sessionBackend'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import { textItCannotHold, withoutBlankEdges } from './messageText'
@@ -177,11 +177,7 @@ function sendMessageReaches(
   to: BackendId,
   toMachine: string | undefined
 ): boolean {
-  return (
-    reachedBySendMessage(from.backendId) &&
-    reachedBySendMessage(to) &&
-    from.remote?.host === toMachine
-  )
+  return from.backendId === to && talksWithItsOwnTool(to) && from.remote?.host === toMachine
 }
 
 function transcriptPart(
@@ -635,7 +631,7 @@ async function launchSibling(
 ): Promise<{ tabId: string; name: string | undefined } | null> {
   const backend = args.backend ?? me.backendId
   const caller: SessionCaller = {
-    name: (await d.peerNames()(me)) ?? (reachedBySendMessage(me.backendId) ? me.title : undefined),
+    name: (await d.peerNames()(me)) ?? (talksWithItsOwnTool(me.backendId) ? me.title : undefined),
     id: idToReach(me),
     label: BACKEND_LABEL[me.backendId],
     assist: conductorTab !== undefined,

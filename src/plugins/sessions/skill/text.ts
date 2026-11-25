@@ -3,9 +3,8 @@ import {
   BACKEND_LABEL,
   SESSION_BACKENDS,
   kindsOf,
-  messagingOf,
   namedAtLaunch,
-  reachedBySendMessage,
+  talksWithItsOwnTool,
   whenAny
 } from '@shared/sessionBackend'
 import { listsModels } from '@shared/sessionPicks'
@@ -14,21 +13,19 @@ import { EVERY_KIND, PICKED_FLAGS } from '../prompts/text'
 
 const ALL_KINDS = kindsOf(SESSION_BACKENDS, 'and')
 const KINDS_WITH_A_MESSAGE_TOOL_OF_THEIR_OWN = kindsOf(
-  SESSION_BACKENDS.filter(reachedBySendMessage),
+  SESSION_BACKENDS.filter(talksWithItsOwnTool),
   'or'
 )
 const KINDS_WITHOUT_ONE = kindsOf(
-  SESSION_BACKENDS.filter((b) => !reachedBySendMessage(b)),
+  SESSION_BACKENDS.filter((b) => !talksWithItsOwnTool(b)),
   'or'
 )
 const KINDS_UNNAMED_REMOTELY = kindsOf(
   SESSION_BACKENDS.filter((b) => !namedAtLaunch(b, true)),
   'or'
 )
-const KINDS_TYPED_INTO = kindsOf(
-  SESSION_BACKENDS.filter((b) =>
-    [false, true].some((remote) => messagingOf(b, remote) === 'typed')
-  ),
+const KINDS_THAT_MIGHT_NOT_TAKE_A_MESSAGE_WHILE_THEIR_TURN_RUNS = kindsOf(
+  SESSION_BACKENDS.filter((b) => agentManifest(b).flags.mightNotTakeAMessageWhileItsTurnRuns),
   'or'
 )
 const KINDS_WHOSE_MODELS_KOLOFT_LISTS = kindsOf(SESSION_BACKENDS.filter(listsModels), 'or')
@@ -73,7 +70,7 @@ How to talk to a session you started:{{koloft-help-own-message-tool}}
     Any other pair (a ${KINDS_WITHOUT_ONE} session${whenAny(KINDS_WITH_A_MESSAGE_TOOL_OF_THEIR_OWN, (kinds) => `, or a ${kinds} session talking to one`)}): use "koloft session send".
 
 koloft session send <id or name> "<message>"
-    Send a message to any session in any workspace: ${EVERY_KIND}{{koloft-help-send-but-own-message-tool}}. A closed one is resumed first${whenAny(KINDS_TYPED_INTO, (kinds) => `, and a ${kinds} session, which Koloft types into, only gets it once its turn has ended`)}; then you are told "Will deliver when … is ready." at once, and if it never gets there you hear "[Koloft] Could not deliver to …" later.
+    Send a message to any session in any workspace: ${EVERY_KIND}{{koloft-help-send-but-own-message-tool}}. A closed one is resumed first${whenAny(KINDS_THAT_MIGHT_NOT_TAKE_A_MESSAGE_WHILE_THEIR_TURN_RUNS, (kinds) => `, and a ${kinds} session, which Koloft types into, only gets it once its turn has ended`)}; then you are told "Will deliver when … is ready." at once, and if it never gets there you hear "[Koloft] Could not deliver to …" later.
     Report back to the session that started you, with the id it gave you. If it is not running, Koloft starts it again first.
     Example: koloft session send 0199c3f2-7a41-7c30-9e55-1d2b8f6a0c11 "Tell me what you found."
 

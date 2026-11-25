@@ -8,13 +8,20 @@ import {
   identityOf,
   launchMenus,
   messagingOf,
-  reachedBySendMessage,
   SESSION_BACKENDS,
   sessionKey,
   shownAsInstalled,
+  talksWithItsOwnTool,
   turnedOffLine,
   type Capabilities
 } from '@shared/sessionBackend'
+import { ClaudeBackend, type ClaudeBackendDeps } from '../../../../src/agents/claude/main/backend'
+import { codexBackend } from '../../../../src/agents/codex/main/backend'
+import type { CodexSessions } from '../../../../src/agents/codex/main/codexSessions'
+import { agyBackend } from '../../../../src/agents/agy/main/backend'
+import type { AgySessions } from '../../../../src/agents/agy/main/agySessions'
+import type { ResumeProbes } from '../../../../src/main/resumePlan'
+import { KEEPS_NO_WORKTREE_RECORDS } from '../../../../src/core/agent/worktreeRecords'
 import type { BackendId, BackendSessionInfo, BackendSessionRow, HostId } from '@shared/types'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import { agentManifest } from '@core/agent/registry'
@@ -308,9 +315,40 @@ describe('koloft help on how sessions talk to each other', () => {
     const addsTheExcept = SESSION_BACKENDS.filter((b) =>
       Object.hasOwn(agentManifest(b).slotAdditions, 'koloft-help-send-but-own-message-tool')
     )
-    const leftToItsOwnTool = SESSION_BACKENDS.filter(reachedBySendMessage)
+    const leftToItsOwnTool = SESSION_BACKENDS.filter(talksWithItsOwnTool)
     expect(addsTheLine).toEqual(leftToItsOwnTool)
     expect(addsTheExcept).toEqual(leftToItsOwnTool)
+  })
+})
+
+describe('mightNotTakeAMessageWhileItsTurnRuns (the flag that picks the names the help says only get a message once their turn has ended)', () => {
+  it('is yes for exactly the agents whose own session backend says it might not take a message while the turn runs, so the help and what the sender is told cannot part', async () => {
+    const NO_RESUME_IS_PLANNED_HERE = {} as ResumeProbes
+    const sessionsOf = <T>(id: BackendId): T =>
+      ({ id, worktrees: { records: KEEPS_NO_WORKTREE_RECORDS } }) as T
+    const backends: Record<BackendId, SessionBackend> = {
+      claude: new ClaudeBackend({} as ClaudeBackendDeps),
+      codex: codexBackend(
+        sessionsOf<CodexSessions>('codex'),
+        NO_RESUME_IS_PLANNED_HERE,
+        () => NO_RESUME_IS_PLANNED_HERE,
+        async () => {},
+        async () => undefined
+      ),
+      agy: agyBackend(
+        sessionsOf<AgySessions>('agy'),
+        NO_RESUME_IS_PLANNED_HERE,
+        () => NO_RESUME_IS_PLANNED_HERE
+      )
+    }
+    const theTurnRuns = async () => false
+    const saysItMightNot: BackendId[] = []
+    for (const b of SESSION_BACKENDS)
+      if (await backends[b].mightNotTakeAMessageNow('tab', theTurnRuns)) saysItMightNot.push(b)
+    expect(saysItMightNot).toEqual(
+      SESSION_BACKENDS.filter((b) => agentManifest(b).flags.mightNotTakeAMessageWhileItsTurnRuns)
+    )
+    expect(saysItMightNot).toEqual(['agy'])
   })
 })
 
