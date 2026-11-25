@@ -450,6 +450,32 @@ describe('the order a launch on another machine keeps', () => {
     expect(tab.started[1].typedLine).toContain('a=attach')
   })
 
+  it('a Claude Code session the machine still runs, ended by Koloft while a resume of it is already deciding to attach, is started anew by the next resume: the attach does not use up the note that Koloft ended it', async () => {
+    let endedMidway = false
+    const tab: ClaudeTab = claudeWith(
+      { alive: () => new Set([RUNNING_THERE]) },
+      {
+        remoteTab: {
+          host: MACHINE,
+          projectsRoot: path.join(world.userData, 'projects'),
+          tmuxName: `k-${RUNNING_THERE}`
+        }
+      },
+      recordingSsh((readable) => {
+        if (readable.includes('show-environment') && !endedMidway) {
+          endedMidway = true
+          tab.backend.stop(TAB)
+        }
+        return {}
+      })
+    )
+    expect((await claudeTabOn(tab, { resumeSessionId: RUNNING_THERE })).ok).toBe(true)
+    expect(endedMidway).toBe(true)
+    expect(tab.started[0].typedLine).toContain('a=attach')
+    expect((await claudeTabOn(tab, { resumeSessionId: RUNNING_THERE })).ok).toBe(true)
+    expect(tab.started[1].typedLine).toContain('a=start')
+  })
+
   it("a Claude Code session on a machine that cannot be reached is refused with ssh's own reason before anything else is decided: no account is picked, and a launch whose arguments are wrong gets that reason too", async () => {
     const pickAccount = vi.fn(async () => ACCOUNT)
     const outOfReach = claudeWith(

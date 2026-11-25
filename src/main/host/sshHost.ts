@@ -1090,7 +1090,8 @@ exit ${CALLER_GONE_EXIT}`,
       shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
       resized: this.resized,
       launchCommand: (tabId, content) => {
-        if (sessionKnownBeforeItStarts) this.killedSessions.delete(named.session)
+        if (sessionKnownBeforeItStarts && mode === 'start')
+          this.killedSessions.delete(named.session)
         const dir = tabPackageDir(tabs.userData, tabId)
         markStartedBeforeTabPasses(tabId, keyless)
         writeTabPackage(dir, { ...content, tabId, tmuxName, machineName: pkg.name })
