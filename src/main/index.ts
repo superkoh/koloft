@@ -21,7 +21,7 @@ import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { TerminalOutput } from './flowControl'
 import type { CommandOutput } from '@core/agent/commandOutput'
-import { codexShowsAPanel } from '@agents/codex/shared/inputBox'
+import { codexShowsAPanelOnItsScreen } from '@agents/codex/shared/inputBox'
 import type { TreeIo } from './sessionWorktrees'
 import { sharedProcessTable, type ProcessTable } from './processTable'
 import {
@@ -365,8 +365,7 @@ import {
 import type { McpServer } from '@shared/types'
 import {
   LIVE_REGISTRY_ON_A_MACHINE_SH,
-  claudeShowsAPanel,
-  claudeShowsAPanelOnMachine,
+  claudeShowsAPanelInTab,
   whenMessagingSocket,
   whenMessagingSocketOnMachine
 } from '@agents/claude/main/claudeSessionRegistry'
@@ -595,23 +594,15 @@ type PanelOpen = (
   screen?: string[]
 ) => Promise<boolean | undefined>
 
-function panelOnScreen(shows: (lines: string[]) => boolean | undefined): PanelOpen {
-  return async (tabId, _sessionId, screen) => {
-    const lines = screen ?? (await screenLines(tabId))
-    const somethingDrawn = lines?.some((line) => line.trim())
-    return lines && somethingDrawn ? shows(lines) : undefined
-  }
-}
+const codexPanelOpen = codexShowsAPanelOnItsScreen(screenLines)
 
 const panelOpenOn: Record<BackendId, PanelOpen> = {
-  claude: async (tabId, sessionId) => {
-    if (!sessionId) return undefined
-    const host = tracker.remoteOf(tabId)?.host
-    if (!host) return claudeShowsAPanel(sessionId)
-    const registry = await liveClaudeRegistryOn(host).catch(() => undefined)
-    return registry === undefined ? undefined : claudeShowsAPanelOnMachine(registry, sessionId)
-  },
-  codex: panelOnScreen(codexShowsAPanel),
+  claude: (tabId, sessionId) =>
+    claudeShowsAPanelInTab(tabId, sessionId, {
+      remoteHostOf: (tab) => tracker.remoteOf(tab)?.host,
+      liveRegistryOn: liveClaudeRegistryOn
+    }),
+  codex: (tabId, _sessionId, screen) => codexPanelOpen(tabId, screen),
   agy: async () => undefined
 }
 
