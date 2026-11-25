@@ -1,3 +1,4 @@
+import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import {
@@ -1093,7 +1094,12 @@ exit ${CALLER_GONE_EXIT}`,
       launchCommand: (tabId, content) => {
         const dir = tabPackageDir(tabs.userData, tabId)
         markStartedBeforeTabPasses(tabId, keyless)
-        writeTabPackage(dir, { ...content, tabId, tmuxName, machineName: pkg.name })
+        try {
+          writeTabPackage(dir, { ...content, tabId, tmuxName, machineName: pkg.name })
+        } catch (error) {
+          fs.rmSync(dir, { recursive: true, force: true })
+          throw error
+        }
         return this.tabLaunchLine(pkg, dir, tabId, mode)
       }
     }

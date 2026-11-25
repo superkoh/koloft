@@ -97,6 +97,7 @@ import {
   buildMachinePackage,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
   tmuxSessionName,
+  removeTabPackagesNoTabNeeds,
   utilShellLine,
   writeTabPassFile,
   CLAUDE_AUTH_ENV_VARS,
@@ -2738,6 +2739,7 @@ app.whenReady().then(() => {
   linkOrUnlink(path.join(shimDir, 'git'), gitFirstBin && path.join(gitFirstBin, 'git'))
   removeStaleLoginDirs(app.getPath('userData'))
   endAgyOneShots(path.join(app.getPath('userData'), 'agy-one-shots'))
+  removeTabPackagesNoTabNeeds(app.getPath('userData'))
   gitAccounts = new GitAccountService({
     userData: app.getPath('userData'),
     requestDir: gitRequestDir,
@@ -3677,6 +3679,7 @@ app.on('before-quit', (e) => {
   }
   worktreeExits.koloftQuits()
   endAgyOneShots(path.join(app.getPath('userData'), 'agy-one-shots'))
+  removeTabPackagesNoTabNeeds(app.getPath('userData'))
   stopScheduledTasks()
   discordLink?.stop()
   discordBinding?.flush()

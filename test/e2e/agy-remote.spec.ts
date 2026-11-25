@@ -607,6 +607,34 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
     }
   })
 
+  test("a remote tab's folder of files to send, with its account file, that a crash left on this Mac is removed at start-up, and one still there at quit is removed at quit, while the machine package and the accounts' own folders stay", async ({
+    env
+  }) => {
+    setUp(env)
+    const tabs = path.join(env.userData, 'remote', 'tabs')
+    const machinePackage = path.join(env.userData, 'remote', 'pkg', 'kept.txt')
+    const accounts = path.join(env.userData, 'agy-homes')
+    const leaveTabFolder = (tabId: string): void => {
+      fs.mkdirSync(path.join(tabs, tabId), { recursive: true })
+      fs.writeFileSync(path.join(tabs, tabId, `${tabId}.env`), "KOLOFT_AGY_KEY='made-up-key'\n")
+    }
+    leaveTabFolder('pty-crash-1')
+    fs.mkdirSync(path.dirname(machinePackage), { recursive: true })
+    fs.writeFileSync(machinePackage, 'kept')
+    const accountsBefore = fs.readdirSync(accounts)
+    const app = await launchApp(env)
+    try {
+      await waitBooted(await app.firstWindow())
+      expect(fs.existsSync(tabs)).toBe(false)
+      leaveTabFolder('pty-never-typed-2')
+    } finally {
+      await quitAndClose(app)
+    }
+    expect(fs.existsSync(tabs)).toBe(false)
+    expect(fs.readFileSync(machinePackage, 'utf8')).toBe('kept')
+    expect(fs.readdirSync(accounts)).toEqual(accountsBefore)
+  })
+
   test('an Antigravity agent that dies on the machine keeps its tab: the screen says its exit code, Koloft says it ended unexpectedly with no key pressed, and its row stays saying “exited (code 137)” with the “exited” mark', async ({
     env
   }) => {

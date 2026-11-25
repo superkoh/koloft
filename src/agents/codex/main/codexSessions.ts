@@ -1305,6 +1305,8 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   protected async endRun(run: CodexRun): Promise<void> {
+    if (run.machine)
+      fs.rmSync(this.machine(run.machine).tabFiles(run.tabId).dir, { recursive: true, force: true })
     await run.transport.stop()
   }
 
