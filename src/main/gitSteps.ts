@@ -1,4 +1,5 @@
 import type { GitHead, GitReadiness, GitStepResult, PrWorktreeResult } from '@shared/types'
+import { SESSION_WORKTREES_FOLDER } from '@shared/worktreeName'
 import { pullErrorReason } from './gitFreshness'
 
 export interface GitRunResult {
@@ -38,7 +39,7 @@ export async function addPrWorktree(
 ): Promise<PrWorktreeResult> {
   const top = await run(['rev-parse', '--show-toplevel'])
   if (top.code !== 0) return refused(top, 'worktree add')
-  const dir = `${top.stdout.trim()}/.claude/worktrees/pr-${pr}`
+  const dir = `${top.stdout.trim()}/${SESSION_WORKTREES_FOLDER}/pr-${pr}`
   const local = await run(['show-ref', '--verify', '--quiet', `refs/heads/${branch}`])
   if (local.code !== 0) {
     const fetched = await run(['fetch', 'origin', `pull/${pr}/head:${branch}`], true)

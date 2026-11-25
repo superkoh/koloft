@@ -8,6 +8,9 @@ export function isValidWorktreeName(name: string): boolean {
 
 export const NEW_WORKTREE_NAME_MAX_CHARS = 30
 
+// CC§3
+export const SESSION_WORKTREES_FOLDER = '.claude/worktrees'
+
 export function isUsableNewWorktreeName(name: string): boolean {
   return isValidWorktreeName(name) && name.toLowerCase() !== 'main'
 }

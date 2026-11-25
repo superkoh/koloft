@@ -39,45 +39,34 @@
         "src/main/remote/launch.ts": "C10",
         "src/main/remote/paths.ts": "C10"
       },
-      "src/agents/agy/main/backend.ts": {
-        "src/main/accounts.ts": "C4",
-        "src/main/resumePlan.ts": "C9"
-      },
+      "src/agents/agy/main/backend.ts": { "src/main/accounts.ts": "C4" },
       "src/agents/claude/main/backend.ts": {
         "src/main/accountPicker.ts": "C4",
         "src/main/accounts.ts": "C4",
-        "src/main/gitSteps.ts": "C9",
         "src/main/remote/launch.ts": "C10",
         "src/main/remote/paths.ts": "C10",
         "src/main/remote/sync.ts": "C10",
-        "src/main/resumePlan.ts": "C9",
         "src/main/shim.ts": "C8",
         "src/main/statusline.ts": "C9"
       },
       "src/agents/claude/main/claudeLaunch.ts": {
         "src/main/agentPlugin.ts": "C7",
         "src/main/remote/launch.ts": "C10",
-        "src/main/remote/paths.ts": "C10",
-        "src/main/resumePlan.ts": "C9"
+        "src/main/remote/paths.ts": "C10"
       },
       "src/agents/claude/main/claudeProbe.ts": { "src/main/loginShell.ts": "C8" },
       "src/agents/claude/main/claudeSessionStore.ts": {
         "src/main/sessionSearch.ts": "C6",
         "src/main/usageCache.ts": "C6"
       },
-      "src/agents/claude/main/claudeWorktreeExit.ts": { "src/main/resumePlan.ts": "C9" },
       "src/agents/claude/main/sessionTracker.ts": {
         "src/main/accountPicker.ts": "C4",
         "src/main/remote/install.ts": "C10",
         "src/main/remote/paths.ts": "C10",
-        "src/main/resumePlan.ts": "C9",
         "src/main/rowActivity.ts": "C3",
         "src/main/taskProcs.ts": "C9"
       },
-      "src/agents/codex/main/backend.ts": {
-        "src/main/accounts.ts": "C4",
-        "src/main/resumePlan.ts": "C9"
-      },
+      "src/agents/codex/main/backend.ts": { "src/main/accounts.ts": "C4" },
       "src/agents/codex/main/codexAccounts.ts": {
         "src/main/accountPicker.ts": "C4",
         "src/main/usageProbe.ts": "C6"
@@ -103,13 +92,10 @@
         "src/main/toolShim.ts": "C8"
       },
       "src/agents/codex/main/codexTransport.ts": { "src/main/leftovers.ts": "C9" },
-      "src/agents/kit/main/sessionWorktrees.ts": { "src/main/resumePlan.ts": "C9" },
-      "src/agents/kit/main/stored.ts": { "src/main/resumePlan.ts": "C9" },
       "src/agents/kit/main/storedSessions.ts": {
         "src/main/accountPicker.ts": "C4",
         "src/main/cliRuntime.ts": "C8",
         "src/main/loginShell.ts": "C8",
-        "src/main/resumePlan.ts": "C9",
         "src/main/sessionSearch.ts": "C6",
         "src/main/toolInstall.ts": "C8",
         "src/main/usageCache.ts": "C6"
