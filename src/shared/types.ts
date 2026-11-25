@@ -284,16 +284,6 @@ export interface CodexLimits {
   resets?: { available: number; firstExpiresAt?: number }
 }
 
-// CODEX§15
-export const CODEX_RESET_OUTCOMES = [
-  'reset',
-  'nothingToReset',
-  'noCredit',
-  'alreadyRedeemed'
-] as const
-
-export type CodexResetOutcome = (typeof CODEX_RESET_OUTCOMES)[number] | 'failed'
-
 export interface QuotaBucket {
   label: string
   used: number
@@ -1224,8 +1214,7 @@ export interface CoreApi {
     remove(name: string, kind: AccountKind): Promise<boolean>
     toggle(name: string, kind: AccountKind, enabled: boolean): Promise<void>
     probe(): Promise<AccountView[]>
-    // CODEX§15
-    codexUseReset(name: string): Promise<CodexResetOutcome>
+    act(kind: AccountKind, name: string, action: string): Promise<string>
     beginSignIn(kind: AccountKind, name: string, again?: boolean): Promise<SignInStart>
     heldSignInFailure(): Promise<SignInProgress | null>
     onSignInProgress(cb: (news: SignInNews) => void): () => void

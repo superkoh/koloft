@@ -191,7 +191,7 @@ const api: KoloftApi = {
     remove: (name, kind) => ipcRenderer.invoke(CH.accounts.remove, name, kind),
     toggle: (name, kind, enabled) => ipcRenderer.invoke(CH.accounts.toggle, name, kind, enabled),
     probe: () => ipcRenderer.invoke(CH.accounts.probe),
-    codexUseReset: (name) => ipcRenderer.invoke(CH.accounts.codexUseReset, name),
+    act: (kind, name, action) => ipcRenderer.invoke(CH.accounts.act, kind, name, action),
     beginSignIn: (kind, name, again) =>
       ipcRenderer.invoke(CH.accounts.beginSignIn, kind, name, again),
     heldSignInFailure: () => ipcRenderer.invoke(CH.accounts.signInProgress),

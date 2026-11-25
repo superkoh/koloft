@@ -11,7 +11,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { IconReload, IconSettings } from '../icons'
-import type { AccountView, CodexLimitWindow, CodexResetOutcome } from '@shared/types'
+import type { AccountView, CodexLimitWindow } from '@shared/types'
 import {
   accountWalled,
   autoProbeDue,
@@ -275,7 +275,7 @@ export function TopbarUsage(): JSX.Element | null {
                   groups={fromShape}
                   now={now}
                   probing={probing}
-                  onAct={(a) => window.api.accounts.codexUseReset(a.name)}
+                  onAct={(a, action) => window.api.accounts.act(a.kind, a.name, action)}
                 />
               )}
               {claude && (
@@ -692,7 +692,7 @@ function NotProbedNote({ a }: { a: AccountView }): JSX.Element {
   )
 }
 
-const RESET_OUTCOME_TEXT: Record<Exclude<CodexResetOutcome, 'reset'>, string> = {
+const RESET_OUTCOME_TEXT: Record<string, string> = {
   nothingToReset: 'Codex says there is nothing to reset right now.',
   noCredit: 'No saved reset is left on this account.',
   alreadyRedeemed: 'That reset was already used.',
@@ -721,8 +721,8 @@ function CodexRow({
   const balance = !dead && l ? codexBalanceLabel(l, now) : ''
   const useReset = async (): Promise<void> => {
     setConfirm('using')
-    const outcome = await window.api.accounts.codexUseReset(a.name)
-    setConfirm(outcome === 'reset' ? null : { said: RESET_OUTCOME_TEXT[outcome] })
+    const outcome = await window.api.accounts.act(a.kind, a.name, 'useReset')
+    setConfirm(outcome === 'reset' ? null : { said: RESET_OUTCOME_TEXT[outcome] ?? '' })
   }
   return (
     <div className={'tbu-row' + (dead ? ' dim' : '')}>

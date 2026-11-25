@@ -192,7 +192,7 @@
       "const picked = pickCodexHome()",
       "const shot = oneShotAgyHome(",
       "const { agyPicker, agyHomeFor, agyApiKeyOf, pickAgyHome, agyBinary, probeAgyAccounts } = agyAccounts",
-      "const { pickCodexHome, codexUseReset, probeCodexAccounts } = codexAccounts",
+      "const { pickCodexHome, probeCodexAccounts } = codexAccounts",
       "endAgyOneShots(path.join(app.getPath('userData'), 'agy-one-shots'))",
       "endAgyOneShots(path.join(app.getPath('userData'), 'agy-one-shots'))",
       "endAgyOneShots,",
@@ -242,7 +242,6 @@
       "import { pickMachineAccount } from '@agents/claude/main/claudeAccountEnv'",
       "import { setupStatusline, setupAgyStatusline, statusLineSetting } from './statusline'",
       "instance: codexMachineInstance(userData),",
-      "ipcMain.handle(CH.accounts.codexUseReset, (_e, name: string) => codexUseReset(name))",
       "leftWorktree: (resource) => removeUntouchedWorktree(agySessions, resource),",
       "leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),",
       "let agySessions: ReturnType<typeof buildAgySessions> | null = null",
@@ -573,9 +572,6 @@
       "type ClaudeSessionStoreDeps",
       "} from '@agents/claude/main/claudeSessionStore'"
     ],
-    "src/preload/index.ts": [
-      "codexUseReset: (name) => ipcRenderer.invoke(CH.accounts.codexUseReset, name),"
-    ],
     "src/renderer/src/accounts.css": [".acct-badge.nofable {"],
     "src/renderer/src/closeSession.ts": [
       "if (backend === 'claude' && !exit.signal && exit.exitCode === SHIM_FOUND_NO_ACCOUNT_EXIT)"
@@ -611,7 +607,6 @@
       "codexResetOffered(a) &&",
       "codexResetOffered,",
       "codexWalled,",
-      "const RESET_OUTCOME_TEXT: Record<Exclude<CodexResetOutcome, 'reset'>, string> = {",
       "const agy = agyRows.filter((a) => a.quota)",
       "const agyRows = accounts.filter(",
       "const armed = claude && meteredArmed(accounts, Math.floor(now / 1000))",
@@ -623,7 +618,6 @@
       "const fable = g.kind === 'bar' && g.fable && g.fable.frac > g.frac ? g.fable : null",
       "const homePools = [{ label: 'Codex', accounts: codex }]",
       "const members = accounts.filter((a) => a.kind === 'oauth' && a.enabled)",
-      "const outcome = await window.api.accounts.codexUseReset(a.name)",
       "const pool = codexPoolSnapshot(h.subscriptions, now)",
       "const total = claude ? poolGlyph(members, now) : null",
       "fable: boolean",
@@ -634,10 +628,9 @@
       "function CodexRow({",
       "function codexSubline(w: CodexLimitWindow): Subline {",
       "glyphs: h.subscriptions.map((a) => codexGlyph(a, now)),",
-      "import type { AccountView, CodexLimitWindow, CodexResetOutcome } from '@shared/types'",
+      "import type { AccountView, CodexLimitWindow } from '@shared/types'",
       "label=\"fable\"",
       "nothingToReset: 'Codex says there is nothing to reset right now.',",
-      "onAct={(a) => window.api.accounts.codexUseReset(a.name)}",
       "p={claudePool}",
       "style={{ height: fable.spent ? '100%' : `${Math.round(fable.frac * 100)}%` }}",
       "title=\"Claude\"",
@@ -754,7 +747,6 @@
     "src/shared/butlerStart.ts": [
       "if (backend !== 'claude' && !backendAvailable(inputs.installed, backend))"
     ],
-    "src/shared/ipcChannels.ts": ["codexUseReset: 'accounts:codex-use-reset',"],
     "src/shared/preview.ts": [
       "/\\/(CLAUDE|AGENTS|SKILL)\\.md$/,",
       "/\\/\\.claude\\/(skills|agents|commands)\\//,",
@@ -789,13 +781,10 @@
       "...(typeof a.fableCheckedAt === 'number' && Number.isFinite(a.fableCheckedAt)",
       "? { fableCheckedAt: a.fableCheckedAt }",
       "codex?: { observation: 'live' | 'degraded' }",
-      "codexUseReset(name: string): Promise<CodexResetOutcome>",
-      "export const CODEX_RESET_OUTCOMES = [",
       "export const PLACEHOLDER_SESSION_TITLE = PLACEHOLDER_TITLES.claude",
       "export interface ClaudeSessionInfo extends BackendSessionInfo {",
       "export interface CodexLimitWindow {",
       "export interface CodexLimits {",
-      "export type CodexResetOutcome = (typeof CODEX_RESET_OUTCOMES)[number] | 'failed'",
       "export type FableCapability = 'yes' | 'no' | 'unknown'",
       "fable: FableCapability",
       "fable: a.fable === 'yes' || a.fable === 'no' ? a.fable : 'unknown',",

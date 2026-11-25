@@ -21,6 +21,7 @@ import type {
 } from '@core/agent/usageShape'
 import { API_KEY_BADGE, lineUnder, pillSpoken } from '@agents/kit/shared/usage'
 import { agent } from '../agent'
+import { USE_A_SAVED_RESET } from '../shared/savedResets'
 
 // CODEX§15
 function balanceLabel(l: CodexLimits, nowMs: number): string {
@@ -59,7 +60,7 @@ const RESET_OUTCOMES: UsageAction['outcomes'] = {
 
 function resetAction(a: AccountView): UsageAction {
   return {
-    id: 'useReset',
+    id: USE_A_SAVED_RESET,
     offered: codexResetOffered(a),
     label: 'Use a reset',
     ask: {

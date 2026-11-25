@@ -10,7 +10,7 @@ import {
 } from '@shared/types'
 import { ACCOUNT_KINDS_OF, noAccountLine } from '@shared/accountUsage'
 import { stripTerminalCodes } from '@core/terminalCodes'
-import type { AgentAccounts, StartAsk } from '@core/agent/agentsMain'
+import { NO_SUCH_ACTION, type AgentAccounts, type StartAsk } from '@core/agent/agentsMain'
 import {
   findAccount,
   keychainRead,
@@ -475,7 +475,8 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
         ? { ok: true, progress: { kind: 'oauth', name, again, phase: 'starting' } }
         : { ok: false, error: started }
     },
-    cancelSignIn: () => cancelLogins()
+    cancelSignIn: () => cancelLogins(),
+    act: async () => NO_SUCH_ACTION
   }
 
   return {

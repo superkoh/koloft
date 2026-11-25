@@ -35,7 +35,7 @@ const accounts = {
   probe: () => Promise.resolve(shown),
   heldSignInFailure: () => Promise.resolve(null),
   onSignInProgress: () => () => {},
-  codexUseReset: () => answerReset()
+  act: () => answerReset()
 }
 const rest = anyApi() as Record<string, unknown>
 ;(window as unknown as { api: unknown }).api = new Proxy(
