@@ -8,7 +8,7 @@ import {
   whenAny
 } from '@shared/sessionBackend'
 
-const reachesTheWorkbenchBrowserOverSsh = (b: BackendId): boolean =>
+export const reachesTheWorkbenchBrowserOverSsh = (b: BackendId): boolean =>
   capabilitiesFor(b, 'ssh').browserControl === true
 const PRODUCTS_REACHING_THE_WORKBENCH_BROWSER_OVER_SSH = productList(
   SESSION_BACKENDS.filter(reachesTheWorkbenchBrowserOverSsh),

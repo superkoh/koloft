@@ -47,8 +47,24 @@ export type AgentAccountsUiOf<Manifest extends AgentManifest> = Omit<
   >
 }
 
+export interface WhatItsSessionsAsk {
+  asks: string
+  askInstead: string
+}
+
+export interface AgentWelcomeWords {
+  howItSignsIn: string
+  whatItsSessionsAsk: WhatItsSessionsAsk
+}
+
+export interface AgentSettingsWords {
+  whatItRunsOn: string
+}
+
 export interface AgentUi {
   id: AgentId
   mark: IconType
   accounts: AgentAccountsUi
+  welcome: AgentWelcomeWords
+  settings: AgentSettingsWords
 }
