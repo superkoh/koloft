@@ -198,8 +198,8 @@ import {
 } from './resumePlan'
 import { branchExists, type GitOut, type TidyResult } from '@core/worktree'
 import { codexConfigFile } from '@agents/codex/main/codexTrust'
+import { HomeAccountPicker } from '@agents/kit/main/homeAccountPicker'
 import {
-  HomeAccountPicker,
   codexHomeOf,
   codexHomes,
   limitsFrom,
