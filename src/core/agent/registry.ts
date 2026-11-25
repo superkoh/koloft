@@ -1,8 +1,23 @@
 // ADR-0054
 import { AGENTS, OWNER_OF_UNNAMED_OLD_DATA, PICKED_ON_FIRST_OPEN } from '@agents/list'
-import type { AgentFlags, AgentManifest } from './manifest'
+import type { AccountKindFacts, AgentFlags, AgentManifest } from './manifest'
 
-export type AgentId = (typeof AGENTS)[number]['id']
+type ListedAgent = (typeof AGENTS)[number]
+
+export type AgentId = ListedAgent['id']
+
+export type AccountKindId = ListedAgent['accountKinds'][number]['id']
+
+type SignInFolderKindOf<Agent extends ListedAgent> = Extract<
+  Agent['accountKinds'][number],
+  { isASignInFolder: true }
+>['id']
+
+export type SignInFolderOf = {
+  [
+    Agent in ListedAgent as [SignInFolderKindOf<Agent>] extends [never] ? never : Agent['id']
+  ]: SignInFolderKindOf<Agent>
+}
 
 export const AGENT_MANIFESTS: readonly AgentManifest[] = AGENTS
 
@@ -10,6 +25,16 @@ export const AGENT_IDS: readonly AgentId[] = AGENTS.map((agent) => agent.id)
 
 export function agentManifest(id: AgentId): AgentManifest {
   return AGENT_MANIFESTS.find((agent) => agent.id === id)!
+}
+
+const ACCOUNT_KIND_FACTS: readonly AccountKindFacts[] = AGENT_MANIFESTS.flatMap(
+  (agent) => agent.accountKinds
+)
+
+export const ACCOUNT_KIND_IDS = ACCOUNT_KIND_FACTS.map((kind) => kind.id) as AccountKindId[]
+
+export function accountKindFacts(id: AccountKindId): AccountKindFacts {
+  return ACCOUNT_KIND_FACTS.find((kind) => kind.id === id)!
 }
 
 export function ofEachAgent<T>(value: (id: AgentId) => T): Record<AgentId, T> {

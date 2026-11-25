@@ -1,0 +1,147 @@
+##### no real claude on PATH
+--- exit code ---
+127
+--- stderr ---
+koloft-shim: real 'claude' not found on PATH
+
+
+##### a new session on a subscription account, with sign-ins a login shell exported
+--- exit code ---
+0
+--- stderr ---
+koloft: → acct1
+every account is at its limit
+
+--- asked Koloft for an account ---
+{"tabId":"tab-pinned","ts":<ts>,"backend":"claude"}
+--- asked the Keychain ---
+find-generic-password -s koloft-dev-claude-oauth -a acct1 -w
+--- the real claude got these arguments ---
+--dangerously-skip-permissions
+--session-id
+<uuid>
+--- its environment, where it differs from what the shim was given ---
+ANT_ACCOUNT=acct1
+CLAUDE_CODE_OAUTH_TOKEN=secret-from-the-fake-keychain
+ANTHROPIC_API_KEY (taken away)
+ANTHROPIC_AUTH_TOKEN (taken away)
+
+##### a print run on an API key account
+--- exit code ---
+0
+--- stderr ---
+koloft: → acct1
+
+--- asked Koloft for an account ---
+{"tabId":"tab-pinned","ts":<ts>,"backend":"claude"}
+--- asked the Keychain ---
+find-generic-password -s koloft-dev-anthropic-api -a acct1 -w
+--- the real claude got these arguments ---
+-p
+say hi
+--- its environment, where it differs from what the shim was given ---
+ANTHROPIC_API_KEY=secret-from-the-fake-keychain
+ANT_ACCOUNT=acct1
+ANTHROPIC_AUTH_TOKEN (taken away)
+CLAUDE_CODE_OAUTH_TOKEN (taken away)
+
+##### a new session on a custom endpoint that pins its own model and would get a guessed window
+--- exit code ---
+0
+--- asked Koloft for an account ---
+{"tabId":"tab-pinned","ts":<ts>,"backend":"claude"}
+--- asked the Keychain ---
+find-generic-password -s koloft-dev-custom-endpoint -a acct1 -w
+--- the real claude got these arguments ---
+--session-id
+<uuid>
+--- its environment, where it differs from what the shim was given ---
+ANTHROPIC_AUTH_TOKEN=secret-from-the-fake-keychain
+ANTHROPIC_BASE_URL=https://endpoint.example/v1
+ANTHROPIC_DEFAULT_FABLE_MODEL=their-model
+ANTHROPIC_DEFAULT_HAIKU_MODEL=their-model
+ANTHROPIC_DEFAULT_OPUS_MODEL=their-model
+ANTHROPIC_DEFAULT_SONNET_MODEL=their-model
+ANTHROPIC_MODEL=their-model
+ANT_ACCOUNT=acct1
+CLAUDE_CODE_DISABLE_1M_CONTEXT=1
+CLAUDE_CODE_SUBAGENT_MODEL=their-model
+CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1
+
+##### an account Koloft already picked
+--- exit code ---
+0
+--- the real claude got these arguments ---
+--session-id
+<uuid>
+--- its environment, where it differs from what the shim was given ---
+(no change)
+
+##### no usable account
+--- exit code ---
+78
+--- stderr ---
+koloft: No Claude account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.
+
+--- asked Koloft for an account ---
+{"tabId":"tab-pinned","ts":<ts>,"backend":"claude"}
+
+##### Koloft never answers the pick
+--- exit code ---
+78
+--- stderr ---
+koloft: picking an account took too long. Try again.
+
+--- asked Koloft for an account ---
+{"tabId":"tab-pinned","ts":<ts>,"backend":"claude"}
+
+##### outside a Koloft tab
+--- exit code ---
+78
+--- stderr ---
+koloft: claude runs here only inside a Koloft tab, on an account from Settings ▸ Accounts.
+
+
+##### the account’s sign-in is not in the Keychain
+--- exit code ---
+78
+--- stderr ---
+koloft: could not read the sign-in of ghost from the Keychain. Try again, or sign it in again in Settings ▸ Accounts.
+
+--- asked Koloft for an account ---
+{"tabId":"tab-pinned","ts":<ts>,"backend":"claude"}
+--- asked the Keychain ---
+find-generic-password -s koloft-dev-claude-oauth -a ghost -w
+
+##### older than the minimum, and the update lifts it
+--- exit code ---
+0
+--- stderr ---
+[Koloft] Claude Code 0.0.1 is older than 2.1.293, the oldest this Koloft supports. Updating it now...
+
+--- updated the real program ---
+update
+--- the real claude got these arguments ---
+--session-id
+<uuid>
+--- its environment, where it differs from what the shim was given ---
+(no change)
+
+##### older than the minimum, and the update cannot lift it
+--- exit code ---
+1
+--- stderr ---
+[Koloft] Claude Code 0.0.1 is older than 2.1.293, the oldest this Koloft supports. Updating it now...
+[Koloft] Claude Code is still older than 2.1.293. Run "claude update" yourself, then start the session again.
+
+--- updated the real program ---
+update
+
+##### an interactive claude typed in a Koloft shell tab
+--- exit code ---
+1
+--- stderr ---
+⛔ Koloft — this is a Koloft terminal, not an agent surface.
+   Start interactive Claude from the sidebar's ＋ (⌘N).
+   Non-interactive use is fine: claude -p · --help · doctor · mcp · …
+
