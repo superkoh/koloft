@@ -3,6 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { koloftAssist } from '../../src/main/assist'
+import { agyTokenFile, oneShotAgyHome } from '../../src/agents/agy/main/agyAccounts'
 import type { AssistSetting, BackendId } from '../../src/shared/types'
 import { DEFAULT_SETTINGS } from '../../src/shared/settingsOps'
 
@@ -143,6 +144,30 @@ describe('Koloft Assist', () => {
       .trim()
       .split('\n')
     expect(argv.slice(argv.indexOf('json') + 1)).toEqual(['--model', 'gemini-4-argon'])
+  })
+
+  it('removes the throwaway folder, and the copy of the sign-in token in it, of a job cancelled while its target was being made', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-assist-cancelled-'))
+    const home = path.join(root, 'agy-homes', 'work')
+    fs.mkdirSync(path.dirname(agyTokenFile(home)), { recursive: true })
+    fs.writeFileSync(agyTokenFile(home), 'made-up token', { mode: 0o600 })
+    const agy = recordingBinary('agy', JSON.stringify({ status: 'SUCCESS', response: 'NEWS' }))
+    const cancel = new AbortController()
+    let shotDir = ''
+    const reply = await koloftAssist({
+      picks: picksOf({ backend: 'agy' }),
+      enabled: () => true,
+      target: async () => {
+        const shot = oneShotAgyHome(home, path.join(root, 'agy-one-shots'), false)
+        shotDir = shot.dir
+        cancel.abort()
+        return { binary: agy.bin, env: {}, args: [`--gemini_dir=${shot.dir}`], done: shot.done }
+      },
+      onThisAccount: async (_backend, asked) => asked
+    })({ ...JOB, signal: cancel.signal })
+    expect(reply).toBeNull()
+    expect(read(agy.log + '.argv')).toBeNull()
+    await vi.waitFor(() => expect(fs.existsSync(shotDir)).toBe(false))
   })
 
   it('counts the wait for the account’s models toward the job’s time limit', async () => {
