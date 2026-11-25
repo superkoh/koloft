@@ -1,6 +1,7 @@
 import { GenIcon, type IconType } from 'react-icons'
 import type { AgentUi } from '@core/agent/agentUi'
 import { agent } from '../agent'
+import { usage } from './usage'
 import './ui.css'
 
 const AntigravityMark: IconType = GenIcon({
@@ -19,5 +20,6 @@ const AntigravityMark: IconType = GenIcon({
 
 export const ui: AgentUi = {
   id: agent.id,
-  mark: AntigravityMark
+  mark: AntigravityMark,
+  usage
 }
