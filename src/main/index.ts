@@ -438,7 +438,8 @@ import { docsWritingOn } from '@plugins/docs-writing/api'
 import { koloftPrompt, type SessionsWithStore } from '@plugins/sessions/api'
 import { localFile } from './realFiles'
 import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
-import { koloftAssist, type AssistTarget } from './assist'
+import { koloftAssist } from './assist'
+import { AgentsMain, type AgentMain, type OneShotTarget } from '@core/agent/agentsMain'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
 import { TreeRemovals } from './treeRemovals'
@@ -1699,25 +1700,30 @@ const workbenchCommands: PluginStartDeps['workbench']['commands'] = {
   }
 }
 
-const assistTargets: Record<BackendId, () => Promise<AssistTarget | null>> = {
+const leavesNothingToCleanUp = (): void => {}
+const oneShotTargets: Record<BackendId, AgentMain['oneShotTarget']> = {
   claude: async () => {
     const env = await pickedAccountEnv()
     if (!env) return null
-    return { binary: ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude', env }
+    const binary = ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude'
+    return { binary, env, done: leavesNothingToCleanUp }
   },
   codex: async () => {
     const picked = pickCodexHome()
     if (!picked || !codexSessions || !(await codexSessions.availability()).available) return null
     const binary = codexSessions.cliBinary
     if (!binary) return null
-    return { binary, env: { ...codexSessions.defaultEnv, CODEX_HOME: picked.home } }
+    const env = { ...codexSessions.defaultEnv, CODEX_HOME: picked.home }
+    return { binary, env, done: leavesNothingToCleanUp }
   },
   agy: () => agyOneShotTarget()
 }
+const agentsMain = new AgentsMain()
+for (const id of SESSION_BACKENDS) agentsMain.register({ id, oneShotTarget: oneShotTargets[id] })
 const assist = koloftAssist({
   picks: loadSettings,
   enabled: (backend) => !turnedOffNow(backend),
-  target: (backend) => assistTargets[backend](),
+  target: (backend) => agentsMain.oneShotTarget(backend),
   onThisAccount: assistJobPick
 })
 const assistRuns = new Map<number, AbortController>()
@@ -2980,7 +2986,7 @@ async function addHomeKey(
 }
 
 // AGY§6 AGY§20
-async function agyOneShotTarget(): Promise<AssistTarget | null> {
+async function agyOneShotTarget(): Promise<OneShotTarget | null> {
   const picked = agyPicker.pick(accountViews())
   const binary = await agyBinary()
   if (!picked || !binary) return null
