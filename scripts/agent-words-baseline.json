@@ -567,9 +567,6 @@
       "return idIn(commandWithEnv, 'CLAUDE_CODE_SESSION_ID')"
     ],
     "src/main/loginShell.ts": ["const AGENT_COMMANDS = ['claude', 'codex', 'agy'] as const"],
-    "src/main/machineTrees.ts": [
-      "/^(?:\\S*\\/)?(?:node\\s+\\S*\\/(?:claude|codex|agy)(?:\\.js)?\\s|node\\s+\\S*\\/(?:claude-code|codex)\\/\\S*\\s|(?:claude|codex|agy)(?:\\s|$))/"
-    ],
     "src/main/mcpServers.ts": [
       "...jsonServers('claude', projectFiles)",
       "...listed('claude', doc.mcpServers),",
