@@ -10,6 +10,7 @@ import {
   type CodexSessionDeps
 } from '../../../../src/agents/codex/main/codexSessions'
 import { storedBackend } from '../../../../src/agents/kit/main/stored'
+import { ClaudeBackend, type ClaudeBackendDeps } from '../../../../src/agents/claude/main/backend'
 import { codexSessionKey } from '../../../../src/agents/kit/main/sessionStore'
 import type { WorktreeResource } from '../../../../src/core/agent/worktreeRecords'
 import type {
@@ -1095,6 +1096,72 @@ describe('CodexSessions', () => {
       backend.resume({ sessionId: key, cwd: worktree, mode: 'direct' })
     ).resolves.toEqual({ ok: false, code: 'cwd-missing' })
   })
+
+  it.each([
+    { where: 'on this Mac', machine: undefined },
+    { where: 'on another machine', machine: 'box' }
+  ])(
+    'a resume into a worktree a Claude Code tab on the same machine works in asks where to resume, $where',
+    async ({ machine }) => {
+      const at = (p: string): string => keyedOn(machine, p)!
+      const worktree = '/srv/repo/.claude/worktrees/w1'
+      const resource: WorktreeResource = {
+        id: randomUUID(),
+        originalCwd: at('/srv/repo'),
+        worktreePath: at(worktree),
+        worktreeName: 'w1',
+        worktreeBranch: 'worktree-w1',
+        originalHeadCommit: 'a'.repeat(40),
+        state: 'ready',
+        managed: true
+      }
+      sessions.store.putResource(resource)
+      const key = codexSessionKey(A, machine)
+      sessions.store.upsertMember({
+        id: A,
+        key,
+        workspacePath: at('/srv/repo'),
+        cwd: at(worktree),
+        title: 'Saved',
+        createdAt: 1,
+        updatedAt: 1,
+        worktreeResourceId: resource.id
+      })
+      const claudeCode = new ClaudeBackend({
+        tracker: {
+          list: () => [
+            {
+              tabId: 'claude-tab',
+              sessionId: 'claude-session',
+              title: 'Claude Code at work',
+              alive: true,
+              cwd: worktree,
+              treeRoot: worktree,
+              ...(machine ? { remote: { host: machine } } : {})
+            }
+          ]
+        },
+        store: () => undefined
+      } as unknown as ClaudeBackendDeps)
+      const probes = {
+        dirExists: (p: string) => p === at(worktree),
+        occupantOf: (dir: string) => claudeCode.occupantOf(dir),
+        ...gitProbes(localGitOut)
+      }
+      const backend = storedBackend(
+        sessions,
+        probes,
+        { runningElsewhere: async () => false } as never,
+        () => probes
+      )
+
+      await expect(backend.resumePlan(key)).resolves.toMatchObject({
+        action: 'dialog',
+        worktreePath: at(worktree),
+        occupiedBy: 'Claude Code at work'
+      })
+    }
+  )
 
   it('a session in a deleted .claude/worktrees folder Koloft has no record of, even one reached through a symlink, is rebuilt there on resume, on its worktree-<name> branch while that lives, and is recorded from then on, as a Claude Code one is; a rebuild that fails records nothing', async () => {
     const gitIn = (dir: string, ...args: string[]) =>
