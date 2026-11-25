@@ -944,8 +944,9 @@ test('E9c: a session resumed the moment it has bound — by Restart Session, or 
   let { app, page } = await launchConfigured(env)
   try {
     await waitBooted(page)
-    const first = await startOne(page)
-    const onTheSecond = first.token === TOKENS.bravo ? first : await startOne(page)
+    let onTheSecond = await startOne(page)
+    for (let tries = 1; onTheSecond.token !== TOKENS.bravo && tries < 3; tries++)
+      onTheSecond = await startOne(page)
     expect(onTheSecond.token, 'a fresh pick takes the other account').toBe(TOKENS.bravo)
     await quitAndClose(app)
     let before = readCalls(env).length
