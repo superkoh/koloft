@@ -33,6 +33,11 @@ export const agent = {
   },
   // CC§9
   skillPrefix: '/',
+  // CC§9
+  skillFolders: {
+    inTheWorkspace: { skills: ['.claude/skills'], commands: ['.claude/commands'] },
+    inTheHome: { skills: ['.claude/skills'], commands: ['.claude/commands'] }
+  },
   questionToolName: 'AskUserQuestion',
   // CC§30
   instructionFileNames: ['CLAUDE.md', 'AGENTS.md'],
@@ -93,7 +98,11 @@ export const agent = {
     // CC§14
     questionToolTakesNoOptionDescriptions: false,
     // CC§2
-    turnEndCanComeBeforeItsReplyIsWritten: true
+    turnEndCanComeBeforeItsReplyIsWritten: true,
+    // CC§9
+    typesASkillOnlyByTheNameInItsFile: false,
+    // CC§20
+    refusesATypedSkillMarkedNotUserInvocable: true
   },
   pureFunctions: { effortsAModelTakes: () => CRON_EFFORTS, draftInItsInputBox: inputBoxDraft },
   // CC§7
