@@ -67,7 +67,6 @@ vi.mock('../../src/agents/codex/main/codexTransport', async (importOriginal) => 
 
 import { BROWSER_TAB_ENV } from '@shared/browserTabEnv'
 import { codexEnvironment } from '../../src/agents/codex/main/codexTransport'
-import { BackgroundFile } from '../../src/main/backgroundFile'
 import { PtyManager } from '../../src/main/ptyManager'
 import {
   agySessionsIn,
@@ -121,6 +120,11 @@ const OF_A_CODEX_SESSION = {
   CODEX_SESSION_ID: 'parent-codex-session',
   CODEX_SHELL: '1',
   CODEX_CI: '1',
+  CODEX_APP_TOOLS_PIPE_PATH: '/parent-codex-app/tools.sock',
+  CODEX_INTERNAL_ORIGINATOR_OVERRIDE: 'parent-codex-app',
+  CODEX_MCP_NODE_PATH: '/parent-codex-app/node',
+  CODEX_PERMISSION_PROFILE: 'parent-profile',
+  CODEX_SAGE_BACKFILL_TRACKER_TAB_REUSE: '1',
   KOLOFT_CODEX_SAID: '/parent-koloft/codex-open/parent/said',
   KOLOFT_CODEX_DISCORD_SAID: '/parent-koloft/hook-sessions/pty-parent-1.discord-said',
   KOLOFT_CODEX_REPLY_LANGUAGE: '/parent-koloft/codex-reply-language.sh',
@@ -178,9 +182,8 @@ beforeEach(() => {
 
 afterEach(async () => {
   for (const stop of stops) await stop()
-  await BackgroundFile.whenAllWritten()
   loginShellOfWhoeverRunsTheTests.mockRestore()
-  world.gone()
+  await world.gone()
 })
 
 function nothingButThis(env: NodeJS.ProcessEnv): void {

@@ -41,9 +41,9 @@ beforeEach(() => {
   world = makeWorld()
 })
 
-afterEach(() => {
+afterEach(async () => {
   knowPluginStates({})
-  world.gone()
+  await world.gone()
 })
 
 function machinePackageWith(passwords: boolean): Built {
