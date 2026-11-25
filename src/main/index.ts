@@ -664,6 +664,7 @@ interface ClaudeTabExit {
 const claudeTabExits = new Map<string, ClaudeTabExit>()
 const closedTabs = new Map<string, LeftTab | null>()
 const treeRemovals = new TreeRemovals()
+const worktreesBeingPrepared = new Map<string, Promise<unknown>>()
 
 function watchForWorktreeRemoval(tabId: string, data: string): void {
   let exit = claudeTabExits.get(tabId)
@@ -3207,7 +3208,7 @@ app.whenReady().then(() => {
     remoteTreeIo: machineTreeIo,
     worktreesOfEveryAgent: {
       recorded: (dir: string) => sessionBackends.worktreeRecords.recorded(dir),
-      preparing: new Map<string, Promise<unknown>>()
+      preparing: worktreesBeingPrepared
     },
     realFilesOn,
     changed: sessionsChanged,
@@ -4538,6 +4539,7 @@ function removeUntouchedWorktree(
       sleeperTrees,
       cronRunner,
       sessionBackends,
+      worktreesOfEveryAgent: { preparing: worktreesBeingPrepared },
       treeRemovals,
       removeTree,
       hostGitOut,

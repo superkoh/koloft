@@ -8,8 +8,9 @@ export interface UntouchedWorktreeRemovalDeps {
   cronRunner: { tidiesFolder(tree: string): boolean } | null | undefined
   sessionBackends: {
     occupantOf(dir: string): string | null
-    readonly worktreeRecords: Pick<WorktreeRecordsOfEveryAgent, 'untouched'>
+    readonly worktreeRecords: Pick<WorktreeRecordsOfEveryAgent, 'untouched' | 'of'>
   }
+  worktreesOfEveryAgent: { readonly preparing: ReadonlyMap<string, unknown> }
   treeRemovals: Pick<TreeRemovals, 'has' | 'run'>
   removeTree(
     git: GitOut,
@@ -30,6 +31,11 @@ export async function removeUntouchedWorktreeWith(
   if (sleeperTrees().includes(tree) || cronRunner?.tidiesFolder(tree)) return
   if (sessionBackends.occupantOf(tree)) return
   if (!owner || !(await sessionBackends.worktreeRecords.untouched(owner.id, resource))) return
+  if (d.worktreesOfEveryAgent.preparing.has(tree)) return
+  const keptByAnotherAgent = sessionBackends.worktreeRecords
+    .of(resource.originalCwd)
+    .some((r) => r.backendId !== owner.id && r.record.worktreePath === tree)
+  if (keptByAnotherAgent) return
   if (treeRemovals.has(tree)) return
   const problem = await treeRemovals.run(tree, () =>
     removeTree(hostGitOut, {
