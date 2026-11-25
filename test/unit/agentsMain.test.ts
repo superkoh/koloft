@@ -6,8 +6,15 @@ import {
   type AgentTools,
   type OneShotTarget
 } from '../../src/core/agent/agentsMain'
-import { AGENT_IDS, agentManifest, type AgentId } from '../../src/core/agent/registry'
+import {
+  AGENT_IDS,
+  accountKindFacts,
+  agentManifest,
+  type AccountKindId,
+  type AgentId
+} from '../../src/core/agent/registry'
 import { ACCOUNT_KINDS_OF } from '../../src/shared/accountUsage'
+import type { SignInNews, SignInProgress } from '../../src/shared/types'
 import { accountsThatAreNeverAsked } from './helpers/agentAccounts'
 import { NOTHING_TO_READ_OR_SEARCH } from './helpers/agentMainParts'
 
@@ -36,8 +43,32 @@ const accountsThatSayWhoTheyAre = (id: AgentId, asked: string[]): AgentAccounts 
   folderSaysItRunsOnAKey: (kind, name) => {
     asked.push(`${id} reads ${kind} ${name}`)
     return true
+  },
+  signIn: async (kind, name, again) => {
+    asked.push(`${id} signs in ${kind} ${name}`)
+    return { ok: true, progress: { kind, name, again, phase: 'starting' } }
+  },
+  cancelSignIn: (kind, name) => {
+    asked.push(`${id} cancels ${kind} ${name}`)
   }
 })
+
+const progressOf = (
+  kind: AccountKindId,
+  name: string,
+  phase: SignInProgress['phase']
+): SignInProgress => ({ kind, name, again: false, phase })
+
+const watched = (
+  agents: AgentsMain
+): { news: SignInNews[]; heldChanges: (SignInProgress | null)[] } => {
+  const seen = { news: [] as SignInNews[], heldChanges: [] as (SignInProgress | null)[] }
+  agents.watchSignIns((news, heldFailureChanged) => {
+    seen.news.push(news)
+    if (heldFailureChanged) seen.heldChanges.push(news.heldFailure)
+  })
+  return seen
+}
 
 const agentsWithAccounts = (ids: readonly AgentId[], asked: string[] = []): AgentsMain => {
   const agents = new AgentsMain()
@@ -169,5 +200,98 @@ describe('the agents registered with their main-process side', () => {
     agents.forgetAccount(kind, 'work')
     expect(agents.folderSaysItRunsOnAKey(kind, 'work')).toBe(false)
     expect(asked).toEqual([])
+  })
+
+  it('starts a sign-in with the agent whose manifest lists that kind of account, and refuses a kind that does not sign in through a browser without asking any agent', async () => {
+    const asked: string[] = []
+    const agents = agentsWithAccounts(AGENT_IDS, asked)
+
+    for (const id of AGENT_IDS)
+      for (const kind of ACCOUNT_KINDS_OF[id]) {
+        asked.length = 0
+        const started = await agents.signIn(kind, 'work', false)
+        if (accountKindFacts(kind).signsInThroughABrowser) {
+          expect(started.ok).toBe(true)
+          expect(asked).toEqual([`${id} signs in ${kind} work`])
+        } else {
+          expect(started).toEqual({ ok: false, error: 'invalid-name' })
+          expect(asked).toEqual([])
+        }
+      }
+  })
+
+  it('does not hold the failure of a sign-in that was never handed to a terminal tab, as Claude Code’s in the background is not: its box lives in the window', () => {
+    const agents = agentsWithAccounts(AGENT_IDS)
+    const seen = watched(agents)
+    const failed = progressOf('oauth', 'work', 'failed')
+
+    agents.signInChanged(progressOf('oauth', 'work', 'starting'))
+    agents.signInChanged(failed)
+
+    expect(agents.heldSignInFailure()).toBeNull()
+    expect(seen.news.at(-1)).toEqual({ progress: failed, heldFailure: null })
+    expect(seen.heldChanges).toEqual([])
+  })
+
+  it('holds the failure of a sign-in that was handed to a terminal tab, and a newer one takes its place, from whichever agent it comes', () => {
+    const agents = agentsWithAccounts(AGENT_IDS)
+    const seen = watched(agents)
+    const first = progressOf('codex-home', 'work', 'failed')
+    const second = progressOf('agy-home', 'home', 'failed')
+
+    agents.signInChanged(progressOf('codex-home', 'work', 'inATab'))
+    agents.signInChanged(progressOf('agy-home', 'home', 'inATab'))
+    agents.signInChanged(first)
+    expect(agents.heldSignInFailure()).toBe(first)
+    agents.signInChanged(second)
+
+    expect(agents.heldSignInFailure()).toBe(second)
+    expect(seen.heldChanges).toEqual([first, second])
+    expect(seen.news.at(-1)).toEqual({ progress: second, heldFailure: second })
+  })
+
+  it('holds the failure of every terminal tab of one account, when two were open for it at once', () => {
+    const agents = agentsWithAccounts(AGENT_IDS)
+    const seen = watched(agents)
+    const first = { ...progressOf('codex-home', 'work', 'failed'), tail: 'the first tab' }
+    const second = { ...progressOf('codex-home', 'work', 'failed'), tail: 'the second tab' }
+
+    agents.signInChanged(progressOf('codex-home', 'work', 'inATab'))
+    agents.signInChanged(progressOf('codex-home', 'work', 'inATab'))
+    agents.signInChanged(first)
+    agents.signInChanged(second)
+
+    expect(seen.heldChanges).toEqual([first, second])
+  })
+
+  it('ending a sign-in forgets the failure held for that account first, then asks the agent that keeps that kind of account to cancel it', () => {
+    const asked: string[] = []
+    const agents = agentsWithAccounts(AGENT_IDS, asked)
+    agents.watchSignIns((news, heldFailureChanged) => {
+      if (heldFailureChanged) asked.push(`held is now ${news.heldFailure?.name ?? 'nothing'}`)
+    })
+    agents.signInChanged(progressOf('codex-home', 'work', 'inATab'))
+    agents.signInChanged(progressOf('codex-home', 'work', 'failed'))
+    asked.length = 0
+
+    agents.endSignIn('codex-home', 'work')
+
+    expect(agents.heldSignInFailure()).toBeNull()
+    expect(asked).toEqual(['held is now nothing', 'codex cancels codex-home work'])
+  })
+
+  it('ending the sign-in of another account leaves the failure held as it is', () => {
+    const asked: string[] = []
+    const agents = agentsWithAccounts(AGENT_IDS, asked)
+    const failed = progressOf('codex-home', 'work', 'failed')
+    agents.signInChanged(progressOf('codex-home', 'work', 'inATab'))
+    agents.signInChanged(failed)
+    const seen = watched(agents)
+
+    agents.endSignIn('oauth', 'home')
+
+    expect(agents.heldSignInFailure()).toBe(failed)
+    expect(seen.heldChanges).toEqual([])
+    expect(asked).toEqual(['claude cancels oauth home'])
   })
 })

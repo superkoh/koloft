@@ -17,6 +17,7 @@ import {
   setAgyApiKeyRoute
 } from '../../src/agents/agy/main/agyAccounts'
 import type { AccountMeta } from '../../src/shared/types'
+import type { AgentAccounts } from '../../src/core/agent/agentsMain'
 
 let root: string
 let home: string
@@ -461,7 +462,10 @@ describe('probeAgyAccounts (a probe round of every Antigravity account)', () => 
       keychainRead,
       keychainWrite: async () => true,
       ownersGemini: () => owners,
-      agySessions: () => null
+      agySessions: () => null,
+      signInInATab: async () => {
+        throw new Error('no sign-in here')
+      }
     })
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
     await probeAgyAccounts()
@@ -471,5 +475,55 @@ describe('probeAgyAccounts (a probe round of every Antigravity account)', () => 
     fs.rmSync(blocker)
     await probeAgyAccounts()
     expect(keychainRead).toHaveBeenCalledWith('agy-home', 'work')
+  })
+})
+
+describe('signing in to an Antigravity account', () => {
+  it('signs in in a terminal tab, and has nothing running to cancel: the sign-in is that tab, which ends when the user closes it', async () => {
+    const touched: string[] = []
+    const signInInATab = vi.fn(async () => ({ ok: false as const, error: 'duplicate' as const }))
+    const touch = (dep: string) => (): undefined => {
+      touched.push(dep)
+      return undefined
+    }
+    const { accounts }: { accounts: AgentAccounts } = agyHomeAccounts({
+      app: { getPath: () => path.join(root, 'userData') },
+      accountViews: () => [],
+      allLimitedNotice: touch('allLimitedNotice'),
+      findAccount: touch('findAccount'),
+      foldHomeSignIn: touch('foldHomeSignIn'),
+      listAccounts: () => [],
+      noteHomeAccount: touch('noteHomeAccount'),
+      pushHomeAccount: touch('pushHomeAccount'),
+      savedHomeUsageOf: touch('savedHomeUsageOf'),
+      usageViews: new Map(),
+      viewKey: (name, kind) => `${kind}:${name}`,
+      sessionAccounts: touch('sessionAccounts'),
+      keychainRead: async () => {
+        touched.push('keychainRead')
+        return null
+      },
+      keychainWrite: async () => {
+        touched.push('keychainWrite')
+        return true
+      },
+      ownersGemini: () => owners,
+      agySessions: () => {
+        touched.push('agySessions')
+        return null
+      },
+      signInInATab
+    })
+
+    expect(await accounts.signIn('agy-home', 'work', false)).toEqual({
+      ok: false,
+      error: 'duplicate'
+    })
+    expect(signInInATab).toHaveBeenCalledWith('agy-home', 'work', false, {
+      homeLogin: expect.any(Function),
+      probeHomeAccount: expect.any(Function)
+    })
+    accounts.cancelSignIn('agy-home', 'work')
+    expect(touched).toEqual([])
   })
 })
