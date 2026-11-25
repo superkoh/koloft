@@ -51,7 +51,6 @@ vi.mock('../../src/agents/codex/main/codexTransport', async (importOriginal) => 
 
 import type { CreateTabOptions } from '@shared/types'
 import { agySessionKey } from '../../src/agents/kit/main/sessionStore'
-import { BackgroundFile } from '../../src/main/backgroundFile'
 import type { MachineAccount } from '../../src/agents/claude/main/claudeLaunch'
 import { tabPackageDir } from '../../src/main/remote/paths'
 import {
@@ -116,8 +115,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   for (const stop of stops) await stop()
-  await BackgroundFile.whenAllWritten()
-  world.gone()
+  await world.gone()
 })
 
 const part = (title: string, text: string | undefined): string =>

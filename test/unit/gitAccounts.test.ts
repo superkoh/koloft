@@ -53,7 +53,8 @@ beforeEach(async () => {
   rereadSettingsOnNextLoad()
 })
 
-afterAll(() => {
+afterAll(async () => {
+  await BackgroundFile.whenAllWritten()
   fs.rmSync(userData, { recursive: true, force: true })
 })
 
