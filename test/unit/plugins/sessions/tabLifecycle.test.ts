@@ -19,14 +19,13 @@ function wired(over: Partial<TabSubsystems> = {}): { lifecycle: TabLifecycle; ca
       clear: say('attention.clear'),
       tabStopping: say('attention.tabStopping')
     },
-    claude: { onPtyExit: say('claude.onPtyExit') },
+    claude: { onPtyExit: say('claude.onPtyExit'), launchEnded: say('claude.launchEnded') },
     tracker: { setAlive: say('tracker.setAlive') },
     storedOwnerOf: () => ({
       stop: async (tabId, code) => say('owner.stop')(tabId, code)
     }),
     toast: say('toast'),
     workspaces: () => ({
-      launchEnded: say('workspaces.launchEnded'),
       onTrackerUpdate: say('workspaces.onTrackerUpdate')
     }),
     announce: <T>(moment: Moment<T>, m: T) => {
@@ -64,7 +63,7 @@ describe('TabLifecycle', () => {
       'claude.onPtyExit t1 true',
       'tracker.setAlive t1 false',
       'owner.stop t1 1',
-      'workspaces.launchEnded t1',
+      'claude.launchEnded t1',
       'announce tab-torn-down t1'
     ])
   })

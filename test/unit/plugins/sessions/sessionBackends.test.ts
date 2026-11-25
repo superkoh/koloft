@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { SessionBackends, type SessionBackend } from '../../../../src/core/agent/sessionBackends'
+import { rowsKeptInMemory } from '../../../../src/agents/kit/main/rowsKeptInMemory'
 import { sessionEventFromHook } from '../../../../src/agents/claude/main/sessionTracker'
 import {
   capabilitiesFor,
@@ -49,7 +50,12 @@ function stubBackend(
     permissionClass: () => 'prompting' as const,
     peerNames: () => async () => null,
     runningElsewhere: () => false,
-    workStillRunning: async () => false
+    workStillRunning: async () => false,
+    ...rowsKeptInMemory({
+      rows: () => [],
+      members: () => new Set<string>(),
+      localHistoryFolders: async () => []
+    })
   } satisfies SessionBackend
 }
 
@@ -428,5 +434,54 @@ describe('whether work a session started still runs after its turn ended', () =>
     expect(await registry.workStillRunning('busy')).toBe(true)
     expect(await registry.workStillRunning('done')).toBe(false)
     expect(await registry.workStillRunning('nobodys')).toBe(false)
+  })
+})
+
+describe('the rows every agent gives for a workspace', () => {
+  const rowsOf = (id: BackendId): Pick<SessionBackend, 'rowsPass' | 'members' | 'usedFolders'> =>
+    rowsKeptInMemory({
+      rows: () => [
+        {
+          id: `${id}-row`,
+          title: id,
+          cwd: '/repo',
+          worktree: 'main',
+          running: true,
+          invalidCwd: false,
+          mtime: 1
+        }
+      ],
+      members: () => new Set([`${id}-row`]),
+      localHistoryFolders: async () => [
+        { path: `/used-by-${id}`, sessions: 1, mtime: 1, agents: {} }
+      ]
+    })
+
+  it('are asked for in the order of the list of agents, whatever order the agents were registered in, each marked with its agent; an agent that is not there is left out', async () => {
+    const registry = new SessionBackends(lifecycle())
+    const inRegistrationOrder: BackendId[] = [...SESSION_BACKENDS].reverse()
+    for (const id of inRegistrationOrder) registry.register({ ...stubBackend(id), ...rowsOf(id) })
+    const now = () => ({
+      bindings: new Map<string, string>(),
+      running: new Set<string>(),
+      hidden: () => false
+    })
+    const place = { path: '/repo', realPath: '/repo', worktreeDirs: async () => [] }
+    const asked = await registry.rows
+      .rowsPass({ everywhere: true, bindings: new Map() })
+      .in(place, now)
+    expect(asked.map((answer) => answer.kept.map((r) => r.backendId))).toEqual(
+      SESSION_BACKENDS.map((id) => [id])
+    )
+    expect((await registry.rows.usedFolders()).map((f) => f.path)).toEqual(
+      SESSION_BACKENDS.map((id) => `/used-by-${id}`)
+    )
+
+    const withoutTheFirst = new SessionBackends(lifecycle())
+    for (const id of SESSION_BACKENDS.slice(1))
+      withoutTheFirst.register({ ...stubBackend(id), ...rowsOf(id) })
+    expect([...withoutTheFirst.rows.members()]).toEqual(
+      SESSION_BACKENDS.slice(1).map((id) => `${id}-row`)
+    )
   })
 })

@@ -4,8 +4,6 @@ import {
   aggregateSessions,
   extractJsonlMeta,
   extractJsonlTail,
-  filterOwned,
-  hasHistory,
   planRescan,
   resolvePending,
   TITLE_MAX,
@@ -13,7 +11,8 @@ import {
   type Bucket,
   type SessionMeta,
   type RescanState
-} from '../../src/main/sessionAggregate'
+} from '../../src/agents/claude/main/sessionAggregate'
+import { filterOwned, hasHistory } from '../../src/core/agent/sessionRows'
 import {
   handoverInOwnersLanguage,
   withHandover

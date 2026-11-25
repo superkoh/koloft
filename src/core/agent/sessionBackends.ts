@@ -19,10 +19,11 @@ import { identityOf, sourceOf, SESSION_BACKENDS } from '@shared/sessionBackend'
 import { hostOf } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { TranscriptPlaces } from '../transcriptPlaces'
+import { rowsOfEveryAgent, type RowsOfEveryAgent, type SessionRowsSource } from './sessionRows'
 
 export type ModeClass = 'bypass' | 'prompting'
 
-export interface SessionBackend {
+export interface SessionBackend extends SessionRowsSource {
   id: BackendId
   recoversWorktrees?: true
   availability(): Promise<BackendAvailability>
@@ -73,6 +74,12 @@ export class SessionBackends {
   docVerdictsOf: (sessionId: string) => Record<string, DocVerdict> | undefined = () => undefined
   noAccountMessage: (backend: BackendId) => string = (backend) => NO_USABLE_ACCOUNT[backend]
   turnedOff: (backend: BackendId) => string | null = () => null
+  readonly rows: RowsOfEveryAgent = rowsOfEveryAgent(() =>
+    SESSION_BACKENDS.flatMap((id) => {
+      const backend = this.adapters.get(id)
+      return backend ? [{ id, rows: backend }] : []
+    })
+  )
 
   constructor(private lifecycle: SessionLifecycle) {}
 

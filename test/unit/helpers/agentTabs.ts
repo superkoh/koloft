@@ -255,7 +255,7 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
       }),
       (machine) => machineIn(world, machine, c.machine)
     ),
-    workspaces: () => null,
+    store: () => null,
     remoteSync: () => null,
     userData: () => world.userData,
     setupLine: () => undefined,

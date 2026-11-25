@@ -64,7 +64,7 @@ function backendWithDirs(): {
   const backend = new ClaudeBackend({
     pty: { get: () => pty, pidOf: () => 4242, clearResumeIntent: () => {} },
     tracker: fakeTracker(),
-    workspaces: () => null,
+    store: () => null,
     events: (id: string, event: unknown) => events.push([id, event])
   } as unknown as ClaudeBackendDeps)
   const statusLog = path.join(hookRegDir, `${tabId}.status.jsonl`)
@@ -160,10 +160,10 @@ function machineBackend(): {
       setRemoteTmuxName: () => {},
       list: () => Object.keys(MACHINE_TABS).map((tabId) => ({ tabId, alive: true }))
     },
-    workspaces: () => ({
-      remoteTargets: () => [{ host: 'devbox', paths: [] }],
+    remoteTargets: () => [{ host: 'devbox', paths: [] }],
+    sessionRebound: () => {},
+    store: () => ({
       onSessionStart: () => {},
-      onSessionRebind: () => {},
       onSessionBound: () => {},
       dropOwnership: () => {}
     }),
@@ -492,7 +492,7 @@ describe('ClaudeBackend: the resume check before a restart', () => {
           return true
         }
       },
-      workspaces: () => ({
+      store: () => ({
         transcriptFileOf: (key: string) => (key === sessionId ? listed : undefined)
       })
     } as unknown as ClaudeBackendDeps)
