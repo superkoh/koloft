@@ -19,6 +19,7 @@ jobs:
     # macOS on purpose. Koloft only runs on macOS, and parts of the unit suite spawn
     # real processes and read real `ps` output rather than mocking them.
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
@@ -45,6 +46,7 @@ jobs:
       - run: npm run typecheck
 
       - run: npm run test:unit
+        timeout-minutes: 25
 
       # The e2e layer is deliberately not a gate: it drives a real built app through
       # Playwright, and the project has no full-suite gate by doctrine (AGENTS.md).

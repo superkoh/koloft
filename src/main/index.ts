@@ -380,6 +380,7 @@ import {
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
 import { TreeRemovals } from './treeRemovals'
+import { removeUntouchedWorktreeWith } from './untouchedWorktreeRemoval'
 import { worktreeExitFollow } from './worktreeExitFollow'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import {
@@ -651,6 +652,7 @@ const worktreeExits = worktreeExitFollow({
 })
 const closedTabs = new Map<string, LeftTab | null>()
 const treeRemovals = new TreeRemovals()
+const worktreesBeingPrepared = new Map<string, Promise<unknown>>()
 
 const attentionDeps: PluginStartDeps['sessions']['attention'] = {
   onChange: (pending, event) => {
@@ -1766,6 +1768,8 @@ const sessionDeps: SessionVerbDeps = {
     const title = options.name ?? BACKEND_LABEL[options.kind]
     return launchQuietTab(options, title, { launch: options })
   },
+  handOverLaunch: (backend, handOver, task) =>
+    sessionBackends.handOverLaunch(backend, handOver, task),
   assist,
   ...messaging.forSessionVerbs,
   get startedSessions() {
@@ -2941,7 +2945,7 @@ app.whenReady().then(() => {
     remoteTreeIo: machineTreeIo,
     worktreesOfEveryAgent: {
       recorded: (dir: string) => sessionBackends.worktreeRecords.recorded(dir),
-      preparing: new Map<string, Promise<unknown>>()
+      preparing: worktreesBeingPrepared
     },
     realFilesOn,
     changed: sessionsChanged,
@@ -4243,24 +4247,25 @@ async function endAndRemove(
   return true
 }
 
-async function removeUntouchedWorktree(
+function removeUntouchedWorktree(
   owner: { readonly id: BackendId } | null | undefined,
   resource: WorktreeResource
 ): Promise<void> {
-  const tree = resource.worktreePath
-  if (sleeperTrees().includes(tree) || cronRunner?.tidiesFolder(tree)) return
-  if (sessionBackends.occupantOf(tree)) return
-  if (!owner || !(await sessionBackends.worktreeRecords.untouched(owner.id, resource))) return
-  if (treeRemovals.has(tree)) return
-  const problem = await treeRemovals.run(tree, () =>
-    removeTree(hostGitOut, {
-      root: resource.originalCwd,
-      treeRoot: tree,
-      worktreeName: resource.worktreeName,
-      branches: [`worktree-${resource.worktreeName}`]
-    })
+  return removeUntouchedWorktreeWith(
+    {
+      sleeperTrees,
+      cronRunner,
+      sessionBackends,
+      worktreesOfEveryAgent: { preparing: worktreesBeingPrepared },
+      treeRemovals,
+      removeTree,
+      hostGitOut,
+      dirExists: (dir) => hosts.of(dir).dirExists(dir),
+      toast: (text) => sendToRenderer(CH.toast.show, text)
+    },
+    owner,
+    resource
   )
-  if (problem && (await hosts.of(tree).dirExists(tree))) sendToRenderer(CH.toast.show, problem)
 }
 
 function cronRunTree(root: string, worktree?: string): ProjectInfo {

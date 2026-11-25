@@ -28,7 +28,7 @@ import {
   type RealFilesOnMachine
 } from '../../../main/realFiles'
 import { ClaudeTouchedFiles, toolFilePath } from './claudeTouchedFiles'
-import { claudeToolDid } from '../../../main/rowActivity'
+import { claudeToolDid } from './claudeToolDid'
 import { TitleSources } from '../../../main/titleSources'
 import { UsageMeter } from '../../../main/usageMeter'
 import { wakeupItem } from '@core/scheduleLabel'
@@ -41,7 +41,7 @@ import type { RemoteTab } from '../../../main/host/host'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
 import { claudeWroteIt, commandOutputOf } from './claudeCommandOutput'
 import type { CommandOutput } from '@core/agent/commandOutput'
-import { withoutHandover } from '@plugins/sessions/main/handoverPreamble'
+import { withoutHandover } from './handoverCut'
 import { messageText } from '@plugins/sessions/main/messageText'
 import {
   parseRecord,

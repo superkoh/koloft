@@ -53,7 +53,7 @@ import {
 import { rereadWhenRowsInMemoryChange } from './rowsInMemoryChanged'
 
 const AVAILABILITY_FAILURE_MS = 60_000
-const EMIT_THROTTLE_MS = 500
+export const EMIT_THROTTLE_MS = 500
 // CODEX§2 AGY§8
 const NEW_SESSION_LIST_LAG_MS = 30_000
 
@@ -220,7 +220,8 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     this.worktrees = new SessionWorktrees(this.store, deps.worktreesOfEveryAgent, deps.remoteTreeIo)
     this.rereadWhenItsRowsChanged = rereadWhenRowsInMemoryChange({
       pinned: () => deps.pinnedWorkspaces(),
-      rows: (workspace) => this.rows(workspace),
+      rows: (workspace) =>
+        this.rows(workspace).map((r) => (r.pending ? { ...r, mtime: undefined } : r)),
       members: () => this.members(),
       reread: () => deps.rereadRows()
     })
@@ -1019,6 +1020,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       ? this.store.getResource(m.worktreeResourceId)
       : this.store.listResources().find((r) => r.worktreePath === t?.cwd)
     let cwd = m?.cwd ?? t!.cwd
+    await this.worktrees.whenSettled(resource?.worktreePath ?? cwd)
     if (
       await rebuildsTheWorktree(
         req.mode,

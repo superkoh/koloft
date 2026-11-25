@@ -37,9 +37,9 @@ import { OWNER_ASLEEP_PUSH } from '../../../../src/plugins/butler/api'
 import {
   OWNER_WORDS_QUOTED_CHARS,
   handoverInOwnersLanguage,
-  handoverPreamble,
-  withHandover
+  handoverPreamble
 } from '../../../../src/plugins/sessions/main/handoverPreamble'
+import { withHandover } from '../../../../src/core/handOver'
 import { A_HELPER_HAS_IT, FROM_KOLOFT } from '../../../../src/plugins/sessions/main/messageOpenings'
 import { crossSessionLine } from '../../../../src/agents/claude/main/crossSessionMessage'
 import type { SentNote } from '../../../../src/core/agent/sessionBackends'

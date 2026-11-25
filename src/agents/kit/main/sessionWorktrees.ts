@@ -132,10 +132,29 @@ export class SessionWorktrees {
     return this.createAt(root, name, await io.git(originalCwd, ['rev-parse', 'HEAD']))
   }
 
+  async whenSettled(worktreePath: string): Promise<void> {
+    const { preparing } = this.everyAgent
+    for (let p = preparing.get(worktreePath); p; p = preparing.get(worktreePath))
+      await p.catch(() => undefined)
+  }
+
   async adopt(originalCwd: string, checkoutPath: string): Promise<WorktreeResource> {
+    const { preparing } = this.everyAgent
+    const target = this.io(originalCwd).real(checkoutPath)
+    for (let p = preparing.get(target); p; p = preparing.get(target)) await p.catch(() => undefined)
+    const work = this.adoptSettled(originalCwd, target)
+    const held = work.catch(() => null)
+    preparing.set(target, held)
+    try {
+      return await work
+    } finally {
+      if (preparing.get(target) === held) preparing.delete(target)
+    }
+  }
+
+  private async adoptSettled(originalCwd: string, target: string): Promise<WorktreeResource> {
     const io = this.io(originalCwd)
     const root = await rootOf(io, originalCwd)
-    const target = io.real(checkoutPath)
     if (target === root) throw new Error('Select a linked worktree')
     const checkout = (await checkouts(io, root)).find((c) => c.path === target)
     if (!checkout) throw new Error('The checkout is not a worktree of this repository')
@@ -296,7 +315,7 @@ export class SessionWorktrees {
     try {
       return await work
     } finally {
-      preparing.delete(at)
+      if (preparing.get(at) === work) preparing.delete(at)
       this.preparingHere.delete(at)
     }
   }

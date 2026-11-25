@@ -19,6 +19,7 @@ export function storedBackend<R extends StoredRun, H extends HistoryEntry, P>(
     | 'worktreeExitWatch'
     | 'send'
     | 'mightNotTakeAMessageNow'
+    | 'handOverLaunch'
     | 'showsAPanel'
   >,
   machineProbes?: (cwd: string) => ResumeProbes

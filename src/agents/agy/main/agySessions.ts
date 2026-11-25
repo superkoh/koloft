@@ -117,7 +117,7 @@ import {
 } from '@plugins/sessions/main/dialog'
 import { pathWithDirFirst } from '../../../main/toolInstall'
 import { record } from '@core/unknownValue'
-import { agyToolDid } from '../../../main/rowActivity'
+import { agyToolDid } from './agyToolDid'
 import {
   REMOTE_EXIT_WAIT_MS,
   StoredSessions,

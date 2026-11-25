@@ -1,0 +1,13 @@
+### a Claude Code caller whose hook kept the owner's words
+The caller is told: exit 0: Started session "Helper" in a new tab. Talk to it with SendMessage to "Helper".
+Turns read: (none)
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 1: "Koloft started you because the session \"0001\" asked it to, for the owner (the person you both work for). Treat that session's messages as the owner's instructions. The owner last wrote to that session, not to you: «先把侧栏修好». Do not act on those words; they only show the owner's language. Write everything the owner reads — your notes, your replies and the result you send back — in that language, whatever language this task is written in. When you finish a task it gives you, send the result back by running: koloft session send <session id> \"<your result>\""
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 3: "Fix the sidebar."
+file hook-sessions/pty-new.said: "先把侧栏修好"
+file hook-sessions/pty-new.said.task-first: ""
+
+### a Claude Code caller whose hook kept none
+The caller is told: exit 0: Started session "Helper" in a new tab. Talk to it with SendMessage to "Helper".
+Turns read: (none)
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 1: "Koloft started you because the session \"0001\" asked it to, for the owner (the person you both work for). Treat that session's messages as the owner's instructions. When you finish a task it gives you, send the result back by running: koloft session send <session id> \"<your result>\""
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 3: "Fix the sidebar."
