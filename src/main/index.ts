@@ -594,6 +594,7 @@ const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
   }
 }
 const backendHooks: PluginStartDeps['sessions']['backendHooks'] = {}
+backendHooks.storedRemoteByHand = storedSessions
 backendHooks.isKoloftsOwnSession = (id) => !!butler?.isButlerSession(id)
 backendHooks.turnOver = (tabId) => runtime.turnOver(tabId)
 backendHooks.askingOf = (tabId) => {
@@ -4112,13 +4113,8 @@ app.whenReady().then(() => {
       tracker.fillMachineScratchpads(host)
       workspaceMgr?.onRemoteChanged()
     },
-    onLeft: (host, ids) => {
-      claudeBackend.noticeRemoteExits(host, ids)
-      for (const s of storedSessions()) s.noticeRemoteExits?.(host, ids)
-    },
-    onHooksPulled: (host) => {
-      for (const s of storedSessions()) s.followMirrors?.(host)
-    },
+    onLeft: (host, ids) => sessionBackends.noticeRemoteExits(host, ids),
+    onHooksPulled: (host) => sessionBackends.mirrorPulled(host),
     onShells: (host, shells) => {
       for (const s of shells) ptyMgr.shellOnMachineSaid(host, s.tabId, s.name, s.cwd)
     },
@@ -6055,8 +6051,7 @@ async function sessionPorts(tabId: string): Promise<ListeningPort[] | null> {
   ]
   const machine = machineOfTab(tabId)
   if (!machine) return parseSessionPorts(await scanPortsHere(tags))
-  const tmuxName =
-    tracker.remoteOf(tabId)?.tmuxName ?? storedOwnerOf(tabId)?.tmuxOfTab?.(tabId) ?? ''
+  const tmuxName = sessionBackends.tmuxOfTab(tabId) ?? ''
   await loginEnvReady()
   return parseSessionPorts(await scanPortsOnMachine(machine, tags, tmuxName, remoteControlDir))
 }

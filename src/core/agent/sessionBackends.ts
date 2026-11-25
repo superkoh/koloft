@@ -31,6 +31,18 @@ export type ModeClass = 'bypass' | 'prompting'
 
 export type TabExit = Pick<TabEnded, 'tabId' | 'exitCode' | 'signal' | 'crashed'>
 
+export interface RemoteWiredByHand {
+  noticeRemoteExits(host: string, sessionIds: string[]): void
+  tmuxOfTab(tabId: string): string | undefined
+}
+
+export interface StoredRemoteWiredByHand {
+  hasTab(tabId: string): boolean
+  noticeRemoteExits?(host: string, sessionIds: string[]): void
+  followMirrors?(host: string): void
+  tmuxOfTab?(tabId: string): string | undefined
+}
+
 export interface SessionBackend extends SessionRowsSource {
   id: BackendId
   recoversWorktrees?: true
@@ -85,6 +97,8 @@ export class SessionBackends {
   private cleanExitAt = new Map<string, number>()
   private questionsAsked = 0
   private agentsAtQuit: 'not asked to end' | 'ending' | 'ended' = 'not asked to end'
+  remoteByHand: RemoteWiredByHand | undefined
+  storedRemoteByHand: () => readonly StoredRemoteWiredByHand[] = () => []
   isKoloftsOwnSession: (tabOrSessionId: string) => boolean = () => false
   turnOver: (tabId: string) => boolean = () => false
   askingOf: (tabId: string) => string | undefined = () => undefined
@@ -270,6 +284,24 @@ export class SessionBackends {
     if (foundOrRunning.has(key)) return true
     const backend = this.adapters.get(identityOf(key).backendId)
     return !backend || !backend.sessionGone(key)
+  }
+
+  noticeRemoteExits(host: string, sessionIds: string[]): void {
+    this.remoteByHand?.noticeRemoteExits(host, sessionIds)
+    for (const stored of this.storedRemoteByHand()) stored.noticeRemoteExits?.(host, sessionIds)
+  }
+
+  mirrorPulled(host: string): void {
+    for (const stored of this.storedRemoteByHand()) stored.followMirrors?.(host)
+  }
+
+  tmuxOfTab(tabId: string): string | undefined {
+    return (
+      this.remoteByHand?.tmuxOfTab(tabId) ??
+      this.storedRemoteByHand()
+        .find((s) => s.hasTab(tabId))
+        ?.tmuxOfTab?.(tabId)
+    )
   }
 
   async historyRows(
