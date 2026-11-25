@@ -66,10 +66,6 @@
         "src/main/rowActivity.ts": "C3"
       },
       "src/agents/codex/main/backend.ts": { "src/main/accounts.ts": "C4" },
-      "src/agents/codex/main/codexAccounts.ts": {
-        "src/main/accountPicker.ts": "C4",
-        "src/main/usageProbe.ts": "C6"
-      },
       "src/agents/codex/main/codexLeftovers.ts": { "src/main/leftovers.ts": "C9" },
       "src/agents/codex/main/codexMachine.ts": {
         "src/main/remote/install.ts": "C10",
@@ -92,6 +88,10 @@
         "src/main/toolShim.ts": "C8"
       },
       "src/agents/codex/main/codexTransport.ts": { "src/main/leftovers.ts": "C9" },
+      "src/agents/kit/main/homeAccountPicker.ts": {
+        "src/main/accountPicker.ts": "C4",
+        "src/main/usageProbe.ts": "C6"
+      },
       "src/agents/kit/main/storedSessions.ts": {
         "src/main/accountPicker.ts": "C4",
         "src/main/cliRuntime.ts": "C8",
