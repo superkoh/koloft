@@ -60,6 +60,18 @@ function commitsOnlyOn(
   ])
 }
 
+export function stillOpenIn(title: string, treeRoot: string): string {
+  return `The session "${title}" is still open in ${treeRoot}.`
+}
+
+export function anotherSessionIn(
+  occupantOf: (dir: string) => string | null,
+  treeRoot: string
+): string[] {
+  const occupant = occupantOf(treeRoot)
+  return occupant ? [stillOpenIn(occupant, treeRoot)] : []
+}
+
 export const GITHUB_NOT_ASKED =
   'Koloft could not ask GitHub whether a merged pull request holds them. If one does, nothing is lost, and pushing would only bring back the branch GitHub deleted.'
 
