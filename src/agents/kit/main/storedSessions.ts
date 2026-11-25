@@ -53,7 +53,7 @@ import {
 import { rereadWhenRowsInMemoryChange } from './rowsInMemoryChanged'
 
 const AVAILABILITY_FAILURE_MS = 60_000
-const EMIT_THROTTLE_MS = 500
+export const EMIT_THROTTLE_MS = 500
 // CODEX§2 AGY§8
 const NEW_SESSION_LIST_LAG_MS = 30_000
 
