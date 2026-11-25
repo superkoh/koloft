@@ -328,7 +328,7 @@ export function oneShotAgyHome(
     }
     if (apiKey) writeAgyJson(settingsFile(dir), { modelProvider: 'gemini' })
   } catch (err) {
-    fs.rmSync(dir, { recursive: true, force: true })
+    endAgyOneShots(dir)
     throw err
   }
   return {

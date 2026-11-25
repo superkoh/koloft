@@ -324,6 +324,7 @@ describe('oneShotAgyHome (a throwaway folder for one agy -p run, AGY§6 AGY§20)
     fs.chmodSync(tmpRoot(), 0o500)
     try {
       expect(() => endAgyOneShots(tmpRoot())).not.toThrow()
+      expect(fs.readdirSync(tmpRoot())).toHaveLength(1)
     } finally {
       fs.chmodSync(tmpRoot(), 0o700)
     }
