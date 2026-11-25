@@ -13,7 +13,6 @@
       "src/agents/agy/main/agyTab.ts": { "src/plugins/sessions/main/hooks.ts": "C9" },
       "src/agents/claude/main/backend.ts": { "src/plugins/sessions/main/hooks.ts": "C9" },
       "src/agents/claude/main/sessionTracker.ts": {
-        "src/plugins/sessions/main/handoverPreamble.ts": "C2",
         "src/plugins/sessions/main/messageText.ts": "C6"
       },
       "src/agents/codex/main/codexMachine.ts": { "src/plugins/sessions/main/hooks.ts": "C9" },

@@ -13,10 +13,8 @@ import {
   type RescanState
 } from '../../src/agents/claude/main/sessionAggregate'
 import { filterOwned, hasHistory } from '../../src/core/agent/sessionRows'
-import {
-  handoverInOwnersLanguage,
-  withHandover
-} from '../../src/plugins/sessions/main/handoverPreamble'
+import { handoverInOwnersLanguage } from '../../src/plugins/sessions/main/handoverPreamble'
+import { withHandover } from '../../src/core/handOver'
 import { PENDING_SESSION_TITLE, PLACEHOLDER_SESSION_TITLE, type SessionRow } from '@shared/types'
 
 const WS = '/Users/dev/proj'

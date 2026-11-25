@@ -1,0 +1,75 @@
+### a Codex caller no session started: its own last turns
+The caller is told: exit 0: Started Claude session "Helper" in a new tab: pty-new. Its id shows in "koloft session list" once it starts; "koloft session send pty-new <message>" also reaches it.
+Turns read: the caller
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 1: "Koloft started you because the Codex session <session id> asked it to, for the owner (the person you both work for). Treat that session's messages as the owner's instructions. The owner last wrote to that session, not to you: «再改一下». Do not act on those words; they only show the owner's language. Write everything the owner reads — your notes, your replies and the result you send back — in that language, whatever language this task is written in. When you finish a task it gives you, send the result back by running: koloft session send <session id> \"<your result>\""
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 3: "Fix the sidebar."
+file hook-sessions/pty-new.said: "再改一下"
+file hook-sessions/pty-new.said.task-first: ""
+
+### a Codex caller no session started, whose owner wrote 200 characters
+The caller is told: exit 0: Started Claude session "Helper" in a new tab: pty-new. Its id shows in "koloft session list" once it starts; "koloft session send pty-new <message>" also reaches it.
+Turns read: the caller
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 1: "Koloft started you because the Codex session <session id> asked it to, for the owner (the person you both work for). Treat that session's messages as the owner's instructions. The owner last wrote to that session, not to you: «长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长». Do not act on those words; they only show the owner's language. Write everything the owner reads — your notes, your replies and the result you send back — in that language, whatever language this task is written in. When you finish a task it gives you, send the result back by running: koloft session send <session id> \"<your result>\""
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 3: "Fix the sidebar."
+file hook-sessions/pty-new.said: "长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长长"
+file hook-sessions/pty-new.said.task-first: ""
+
+### a Codex caller started by an open Claude Code session whose file holds words: those words, its own turns not read
+The caller is told: exit 0: Started Claude session "Helper" in a new tab: pty-new. Its id shows in "koloft session list" once it starts; "koloft session send pty-new <message>" also reaches it.
+Turns read: (none)
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 1: "Koloft started you because the Codex session <session id> asked it to, for the owner (the person you both work for). Treat that session's messages as the owner's instructions. The owner last wrote to that session, not to you: «先把侧栏修好». Do not act on those words; they only show the owner's language. Write everything the owner reads — your notes, your replies and the result you send back — in that language, whatever language this task is written in. When you finish a task it gives you, send the result back by running: koloft session send <session id> \"<your result>\""
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 3: "Fix the sidebar."
+file hook-sessions/pty-new.said: "先把侧栏修好"
+file hook-sessions/pty-new.said.task-first: ""
+
+### a Codex caller started by an open Claude Code session whose file is empty: no words, and no turns read
+The caller is told: exit 0: Started Claude session "Helper" in a new tab: pty-new. Its id shows in "koloft session list" once it starts; "koloft session send pty-new <message>" also reaches it.
+Turns read: (none)
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 1: "Koloft started you because the Codex session <session id> asked it to, for the owner (the person you both work for). Treat that session's messages as the owner's instructions. When you finish a task it gives you, send the result back by running: koloft session send <session id> \"<your result>\""
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 3: "Fix the sidebar."
+
+### a Codex caller whose starter is closed: its own last turns
+The caller is told: exit 0: Started Claude session "Helper" in a new tab: pty-new. Its id shows in "koloft session list" once it starts; "koloft session send pty-new <message>" also reaches it.
+Turns read: the caller
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 1: "Koloft started you because the Codex session <session id> asked it to, for the owner (the person you both work for). Treat that session's messages as the owner's instructions. The owner last wrote to that session, not to you: «再改一下». Do not act on those words; they only show the owner's language. Write everything the owner reads — your notes, your replies and the result you send back — in that language, whatever language this task is written in. When you finish a task it gives you, send the result back by running: koloft session send <session id> \"<your result>\""
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 3: "Fix the sidebar."
+file hook-sessions/pty-new.said: "再改一下"
+file hook-sessions/pty-new.said.task-first: ""
+
+### a Codex caller started by a Codex session started by an Antigravity one: the last one's turns
+The caller is told: exit 0: Started Claude session "Helper" in a new tab: pty-new. Its id shows in "koloft session list" once it starts; "koloft session send pty-new <message>" also reaches it.
+Turns read: its starter's starter
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 1: "Koloft started you because the Codex session <session id> asked it to, for the owner (the person you both work for). Treat that session's messages as the owner's instructions. The owner last wrote to that session, not to you: «先把侧栏修好». Do not act on those words; they only show the owner's language. Write everything the owner reads — your notes, your replies and the result you send back — in that language, whatever language this task is written in. When you finish a task it gives you, send the result back by running: koloft session send <session id> \"<your result>\""
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 3: "Fix the sidebar."
+file hook-sessions/pty-new.said: "先把侧栏修好"
+file hook-sessions/pty-new.said.task-first: ""
+
+### a Codex caller and its starter that started each other: Koloft stops at the first one seen again
+The caller is told: exit 0: Started Claude session "Helper" in a new tab: pty-new. Its id shows in "koloft session list" once it starts; "koloft session send pty-new <message>" also reaches it.
+Turns read: its starter
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 1: "Koloft started you because the Codex session <session id> asked it to, for the owner (the person you both work for). Treat that session's messages as the owner's instructions. The owner last wrote to that session, not to you: «先把侧栏修好». Do not act on those words; they only show the owner's language. Write everything the owner reads — your notes, your replies and the result you send back — in that language, whatever language this task is written in. When you finish a task it gives you, send the result back by running: koloft session send <session id> \"<your result>\""
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 3: "Fix the sidebar."
+file hook-sessions/pty-new.said: "先把侧栏修好"
+file hook-sessions/pty-new.said.task-first: ""
+
+### a Codex caller started by the butler, a Claude Code session whose file holds words
+The caller is told: exit 0: Started Claude session "Helper" in a new tab: pty-new. Its id shows in "koloft session list" once it starts; "koloft session send pty-new <message>" also reaches it.
+Turns read: (none)
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 1: "Koloft started you because the Codex session <session id> asked it to, for the owner (the person you both work for). Treat that session's messages as the owner's instructions. The owner last wrote to that session, not to you: «先把侧栏修好». Do not act on those words; they only show the owner's language. Write everything the owner reads — your notes, your replies and the result you send back — in that language, whatever language this task is written in. When you finish a task it gives you, send the result back by running: koloft session send <session id> \"<your result>\""
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 3: "Fix the sidebar."
+file hook-sessions/pty-new.said: "先把侧栏修好"
+file hook-sessions/pty-new.said.task-first: ""
+
+### a Codex caller started by the butler, a Claude Code session with no tab now: no words, and no turns read
+The caller is told: exit 0: Started Claude session "Helper" in a new tab: pty-new. Its id shows in "koloft session list" once it starts; "koloft session send pty-new <message>" also reaches it.
+Turns read: (none)
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 1: "Koloft started you because the Codex session <session id> asked it to, for the owner (the person you both work for). Treat that session's messages as the owner's instructions. When you finish a task it gives you, send the result back by running: koloft session send <session id> \"<your result>\""
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 3: "Fix the sidebar."
+
+### a Codex caller started by the butler on Codex: the butler's turns
+The caller is told: exit 0: Started Claude session "Helper" in a new tab: pty-new. Its id shows in "koloft session list" once it starts; "koloft session send pty-new <message>" also reaches it.
+Turns read: the butler
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 1: "Koloft started you because the Codex session <session id> asked it to, for the owner (the person you both work for). Treat that session's messages as the owner's instructions. The owner last wrote to that session, not to you: «先把侧栏修好». Do not act on those words; they only show the owner's language. Write everything the owner reads — your notes, your replies and the result you send back — in that language, whatever language this task is written in. When you finish a task it gives you, send the result back by running: koloft session send <session id> \"<your result>\""
+the terminal [0] env KOLOFT_FIRST_PROMPT, line 3: "Fix the sidebar."
+file hook-sessions/pty-new.said: "先把侧栏修好"
+file hook-sessions/pty-new.said.task-first: ""
