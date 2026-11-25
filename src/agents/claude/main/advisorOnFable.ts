@@ -1,3 +1,5 @@
+import { isAUtilTerminalGuard } from '../../../main/utilTerminalGuard'
+
 export const ADVISOR_SWITCH_ENV = 'CLAUDE_CODE_DISABLE_ADVISOR_TOOL'
 export const KOLOFT_TURNED_THE_ADVISOR_OFF = 'KOLOFT_ADVISOR_OFF'
 
@@ -52,6 +54,7 @@ past_koloft=0
 for d in $PATH; do
   [ -f "$d/claude" ] && [ -x "$d/claude" ] || continue
   if head -n 2 "$d/claude" 2>/dev/null | grep -q "${MACHINE_CLAUDE_MARK}"; then past_koloft=1; continue; fi
+  if ${isAUtilTerminalGuard('"$d/claude"')}; then continue; fi
   [ "$past_koloft" = 1 ] && exec "$d/claude" "$@"
 done
 echo "claude: not found" >&2
