@@ -83,6 +83,8 @@ const SAVED_SESSION = '33333333-3333-4333-8333-333333333333'
 
 const A_THROTTLED_SIGNAL_AND_THE_RESCAN_IT_ASKS_FOR_ARE_OVER_AFTER_MS = 1000
 const QUIET_IS_LOOKED_FOR_EVERY_MS = 50
+const CHANGES_WHILE_A_TAB_STARTS = 3
+const MORE_THAN_THE_THROTTLE_MS = 600
 
 const STILL_RUNNING: BackgroundItem[] = [
   { id: 'bg-1', kind: 'command', label: 'npm run dev', state: 'working' }
@@ -368,6 +370,10 @@ async function theSessionsOfTheApp() {
     aRescanAskedForByAnythingElse: () => during(() => started.refresh()),
     rowOf,
     aBoundTab,
+    binds: (agent: Stored, tabId: string, session: string, cwd: string): void => {
+      if (agent === 'codex') bindCodex(session, cwd)
+      else bindAgy(tabId, session)
+    },
     statusOf: (agent: Agent): string | undefined => runtime.statusOf(tabOf[agent]),
     startsATurn: (agent: Agent): void => {
       if (agent === 'claude') tracker.setStatus(CLAUDE_TAB, 'working')
@@ -450,6 +456,28 @@ describe('a change of a Codex or Antigravity session that is no edge of a turn',
       await app.sessionsOf[other].launch({ kind: other, cwd: world.repo })
       const seen = await app.during(() => app.changesWithNoTurnEdge(agent))
       expect(seen).toEqual(SENT_ONCE_THROUGH_ALL_FOUR_STEPS)
+    }
+  )
+
+  it.each(STORED)(
+    '%s: a tab of its own that is still starting in a pinned workspace makes each of its changes rescan nothing, and that tab binding rescans once',
+    async (_name, agent) => {
+      const app = await theSessionsOfTheApp()
+      const { id } = await app.sessionsOf[agent].launch({ kind: agent, cwd: world.repo })
+      await app.quiet()
+      expect(app.rowOf(world.repo, id)?.pending).toBe(true)
+      const changes = await app.during(async () => {
+        for (let i = 0; i < CHANGES_WHILE_A_TAB_STARTS; i++) {
+          app.changesWithNoTurnEdge(agent)
+          await new Promise((resolve) => setTimeout(resolve, MORE_THAN_THE_THROTTLE_MS))
+        }
+      })
+      expect(changes.list).toBe(CHANGES_WHILE_A_TAB_STARTS)
+      expect(changes.rescan).toBeUndefined()
+      const binding = await app.during(() => app.binds(agent, id, SECOND_SESSION, world.repo))
+      expect(binding.rescan).toBe(1)
+      expect(app.rowOf(world.repo, id)).toBeUndefined()
+      expect(app.rowOf(world.repo, keyOf[agent](SECOND_SESSION))?.running).toBe(true)
     }
   )
 

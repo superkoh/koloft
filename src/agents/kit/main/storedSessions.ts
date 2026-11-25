@@ -221,7 +221,8 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     this.worktrees = new SessionWorktrees(this.store, deps.worktreesOfEveryAgent, deps.remoteTreeIo)
     this.rereadWhenItsRowsChanged = rereadWhenRowsInMemoryChange({
       pinned: () => deps.pinnedWorkspaces(),
-      rows: (workspace) => this.rows(workspace),
+      rows: (workspace) =>
+        this.rows(workspace).map((r) => (r.pending ? { ...r, mtime: undefined } : r)),
       members: () => this.members(),
       reread: () => deps.rereadRows()
     })
