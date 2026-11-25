@@ -7,6 +7,7 @@ import {
   agyTokenFile,
   agyTrustsFolder,
   agyQuotaFrom,
+  endAgyOneShots,
   mergeAgyHooks,
   mergeAgySettings,
   oneShotAgyHome,
@@ -299,6 +300,46 @@ describe('oneShotAgyHome (a throwaway folder for one agy -p run, AGY§6 AGY§20)
     expect(fs.existsSync(agyTokenFile(shot.dir))).toBe(false)
     expect(readJson(settingsOf(shot.dir))).toEqual({ modelProvider: 'gemini' })
     shot.done()
+  })
+
+  it('removes the folder it made when a later step fails, so no part of a token copy is left', () => {
+    fs.mkdirSync(agyTokenFile(home), { recursive: true })
+    expect(() => oneShotAgyHome(home, tmpRoot(), false)).toThrow()
+    expect(fs.readdirSync(tmpRoot())).toEqual([])
+  })
+
+  it("at quit, removes every folder still in use at once and never writes its copy over the account's token, as agy may be part-way through writing it", () => {
+    fs.mkdirSync(path.dirname(agyTokenFile(home)), { recursive: true })
+    fs.writeFileSync(agyTokenFile(home), 'old token', { mode: 0o600 })
+    const shot = oneShotAgyHome(home, tmpRoot(), false)
+    fs.writeFileSync(agyTokenFile(shot.dir), 'half a tok')
+    oneShotAgyHome(home, tmpRoot(), true)
+    endAgyOneShots(tmpRoot())
+    expect(fs.existsSync(tmpRoot())).toBe(false)
+    expect(fs.readFileSync(agyTokenFile(home), 'utf8')).toBe('old token')
+  })
+
+  it('a folder that cannot be removed does not stop Koloft starting or quitting', () => {
+    oneShotAgyHome(home, tmpRoot(), true)
+    fs.chmodSync(tmpRoot(), 0o500)
+    try {
+      expect(() => endAgyOneShots(tmpRoot())).not.toThrow()
+      expect(fs.readdirSync(tmpRoot())).toHaveLength(1)
+    } finally {
+      fs.chmodSync(tmpRoot(), 0o700)
+    }
+  })
+
+  it("at start-up, removes every folder a quit or crash left, with its token copy, and leaves the account's own folder alone", () => {
+    fs.mkdirSync(path.dirname(agyTokenFile(home)), { recursive: true })
+    fs.writeFileSync(agyTokenFile(home), 'fake token', { mode: 0o600 })
+    const left = path.join(tmpRoot(), 'agy-left')
+    fs.mkdirSync(path.dirname(agyTokenFile(left)), { recursive: true })
+    fs.writeFileSync(agyTokenFile(left), 'fake token', { mode: 0o600 })
+    endAgyOneShots(tmpRoot())
+    expect(fs.existsSync(tmpRoot())).toBe(false)
+    expect(fs.readFileSync(agyTokenFile(home), 'utf8')).toBe('fake token')
+    expect(() => endAgyOneShots(tmpRoot())).not.toThrow()
   })
 })
 
