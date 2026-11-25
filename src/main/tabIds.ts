@@ -8,7 +8,7 @@ export function tabIdList(tabId: string, earlier: string[]): string[] {
 }
 
 export function carriedTabIds(newId: string, before: string[], ids: string[]): string[] {
-  const merged = new Set([...before, ...ids])
+  const merged = new Set([...ids, ...before])
   merged.delete(newId)
   return keepingTheFirstStarted([...merged], TAB_IDS_KEPT_PER_TAB - 1)
 }
