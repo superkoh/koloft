@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import type { BackendId } from '@shared/types'
 import { listSkills, type SkillFs, type SkillPlaces } from '../../src/main/skillList'
+import { agentsWithTheirCatalogs } from './helpers/agentCatalogs'
 
 const WS = '/ws-a'
 const HOME = '/home/me'
 const CODEX_HOME = '/home/me/.codex'
-const AT: SkillPlaces = { workspace: WS, home: HOME, codexHome: CODEX_HOME }
+const AT: SkillPlaces = { workspace: WS, home: HOME }
+const ON_THIS_MAC = agentsWithTheirCatalogs({
+  codexConfig: `${CODEX_HOME}/config.toml`,
+  ownersGemini: `${HOME}/.gemini`
+})
+const onThisMac = (backend: BackendId): SkillPlaces => ({
+  ...AT,
+  moreInTheHome: ON_THIS_MAC.moreSkillFoldersEveryAccountReadsOnThisMac(backend)
+})
 
 function fakeFs(disk: Record<string, string | string[]>): SkillFs {
   return {
@@ -88,7 +97,7 @@ describe('listSkills: what the task field offers after you type / (BB-M16)', () 
     skillAt(`${WS}/.agent/skills`, 'agent-project')
     skillAt(`${CODEX_HOME}/skills`, 'codex-home')
     skillAt(`${HOME}/.agents/skills`, 'agents-home')
-    const names = (backend: BackendId, at: SkillPlaces = AT): string[] =>
+    const names = (backend: BackendId, at: SkillPlaces = onThisMac(backend)): string[] =>
       listSkills(fakeFs(disk), backend, at).map((s) => s.name)
 
     it('Claude Code: .claude skills and commands, as /name', () => {
@@ -105,11 +114,7 @@ describe('listSkills: what the task field offers after you type / (BB-M16)', () 
     })
 
     it('Codex on a machine whose CODEX_HOME holds only Koloft’s own skill: no CODEX_HOME folder is read', () => {
-      expect(names('codex', { ...AT, codexHome: undefined })).toEqual([
-        '$agents-project',
-        '$codex-project',
-        '$agents-home'
-      ])
+      expect(names('codex', AT)).toEqual(['$agents-project', '$codex-project', '$agents-home'])
     })
 
     it('Antigravity: .agent, .agents and _agents skills in the project, as /name — none from the home, as the form cannot tell which account folder a run will get', () => {

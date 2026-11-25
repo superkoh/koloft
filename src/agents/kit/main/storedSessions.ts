@@ -21,7 +21,7 @@ import type { SessionPlace } from '../../../main/usageCache'
 import type { CodexApproval, CodexQuestion, SentAnswer } from '@plugins/sessions/main/dialog'
 import type { WorktreeResource } from '@core/agent/worktreeRecords'
 import { SessionStore, hostOfPath, type KeyOf } from './sessionStore'
-import { SessionWorktrees } from './sessionWorktrees'
+import { SessionWorktrees, type WorktreesOfEveryAgent } from './sessionWorktrees'
 import type { TreeIo } from '../../../main/sessionWorktrees'
 import type { PtyManager } from '../../../main/ptyManager'
 import {
@@ -126,6 +126,7 @@ export interface StoredSessionDeps {
   gitAccounts: { configEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv }
   remoteDirExists?(dir: string): Promise<boolean>
   remoteTreeIo?(cwd: string): TreeIo
+  worktreesOfEveryAgent: WorktreesOfEveryAgent
   realFilesOn?: RealFilesOnMachine
   skipPermissions?(): boolean
   hookRegDir?: string
@@ -216,7 +217,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     protected deps: StoredSessionDeps
   ) {
     this.store = new SessionStore(file, keyOf)
-    this.worktrees = new SessionWorktrees(this.store, deps.remoteTreeIo)
+    this.worktrees = new SessionWorktrees(this.store, deps.worktreesOfEveryAgent, deps.remoteTreeIo)
     this.rereadWhenItsRowsChanged = rereadWhenRowsInMemoryChange({
       pinned: () => deps.pinnedWorkspaces(),
       rows: (workspace) => this.rows(workspace),

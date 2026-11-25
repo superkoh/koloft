@@ -1,5 +1,6 @@
 // ADR-0054
-import type { AgentId } from './registry'
+import type { McpServer } from '@shared/types'
+import { AGENT_IDS, type AgentId } from './registry'
 
 export interface OneShotTarget {
   binary: string
@@ -8,9 +9,15 @@ export interface OneShotTarget {
   done(): void
 }
 
+export interface AgentCatalog {
+  moreSkillFoldersEveryAccountReadsOnThisMac(): readonly string[]
+  mcpServersOn(folders: readonly string[]): Promise<McpServer[]>
+}
+
 export interface AgentMain {
   id: AgentId
   oneShotTarget(): Promise<OneShotTarget | null>
+  catalog: AgentCatalog
 }
 
 export class AgentsMain {
@@ -20,7 +27,22 @@ export class AgentsMain {
     this.built.set(agent.id, agent)
   }
 
+  private inListOrder(): AgentMain[] {
+    return AGENT_IDS.flatMap((id) => this.built.get(id) ?? [])
+  }
+
   async oneShotTarget(id: AgentId): Promise<OneShotTarget | null> {
     return (await this.built.get(id)?.oneShotTarget()) ?? null
+  }
+
+  moreSkillFoldersEveryAccountReadsOnThisMac(id: AgentId): readonly string[] {
+    return this.built.get(id)?.catalog.moreSkillFoldersEveryAccountReadsOnThisMac() ?? []
+  }
+
+  async mcpServersOn(folders: readonly string[]): Promise<McpServer[]> {
+    const each = await Promise.all(
+      this.inListOrder().map((agent) => agent.catalog.mcpServersOn(folders))
+    )
+    return each.flat()
   }
 }
