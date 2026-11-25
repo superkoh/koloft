@@ -1,4 +1,5 @@
 export const SLOT_FILLS = {
+  'session-send-left-to-its-own-tool': '',
   'session-helper-rules': `1. {{helper-rule-own-worktree}}. {{helper-rule-shared-checkout}}
 2. {{helper-rule-watched-session}}
 3. A side job that only hands you back an answer, like searching, reading or checking: never a Koloft session. Use a sub-agent (spawn_agent) when the owner asked for sub-agents or for work in the background; otherwise do it yourself. Your sub-agents share this folder, so never let two of them change files at the same time; use rule 1 for that.

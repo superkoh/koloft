@@ -315,9 +315,13 @@ describe('koloft help on how sessions talk to each other', () => {
     const addsTheExcept = SESSION_BACKENDS.filter((b) =>
       Object.hasOwn(agentManifest(b).slotAdditions, 'koloft-help-send-but-own-message-tool')
     )
+    const fillsTheRefusal = SESSION_BACKENDS.filter(
+      (b) => agentManifest(b).slotFills['session-send-left-to-its-own-tool'] !== ''
+    )
     const leftToItsOwnTool = SESSION_BACKENDS.filter(talksWithItsOwnTool)
     expect(addsTheLine).toEqual(leftToItsOwnTool)
     expect(addsTheExcept).toEqual(leftToItsOwnTool)
+    expect(fillsTheRefusal).toEqual(leftToItsOwnTool)
   })
 })
 

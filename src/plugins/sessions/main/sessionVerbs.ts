@@ -30,6 +30,7 @@ import {
   SESSION_BACKENDS,
   backendIdOf,
   identityOf,
+  kindsOf,
   messagingOf,
   namedAtLaunch,
   talksWithItsOwnTool
@@ -55,7 +56,7 @@ import {
 } from '@core/command'
 import { AGENT_PICKED_ON_FIRST_OPEN } from '@core/agent/registry'
 import { errorText } from '@core/errorText'
-import { composePrompt } from '@core/prompt'
+import { composePrompt, fillSlots } from '@core/prompt'
 import type { Commands } from '@core/commands'
 import type { SessionStarted, SessionStarting } from '@core/moment'
 import { AGENT_SHIM_WAITS_MS } from '@core/command'
@@ -263,8 +264,14 @@ function startableWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<stri
   return { ok: true, value: found.value.path }
 }
 
-const CLAUDE_USES_SEND_MESSAGE =
-  'a Claude session talks to another Claude session on the same machine with its SendMessage tool; ListAgents shows their names. This command reaches Codex and Antigravity sessions, Claude sessions on another machine, and the session or Assist that started you.'
+const KINDS_WITHOUT_A_MESSAGE_TOOL_OF_THEIR_OWN = kindsOf(
+  SESSION_BACKENDS.filter((b) => !talksWithItsOwnTool(b)),
+  'and'
+)
+const KINDS_WITH_ONE = kindsOf(SESSION_BACKENDS.filter(talksWithItsOwnTool), 'and')
+
+const leftToItsOwnTool = (caller: BackendId): string =>
+  `${fillSlots('{{session-send-left-to-its-own-tool}}', { agent: caller })} This command reaches ${KINDS_WITHOUT_A_MESSAGE_TOOL_OF_THEIR_OWN} sessions, ${KINDS_WITH_ONE} sessions on another machine, and the session or Assist that started you.`
 
 function matchRef<T>(
   items: T[],
@@ -298,7 +305,7 @@ export function findSiblingTarget(
   const hit = matchOpen(sessions, ref)
   if (!hit) return fail(`there is no open session "${ref}". Run "koloft session list" to see them.`)
   return hit.ok && sendMessageReaches(from, hit.value.backendId, hit.value.remote?.host)
-    ? fail(CLAUDE_USES_SEND_MESSAGE)
+    ? fail(leftToItsOwnTool(from.backendId))
     : hit
 }
 
