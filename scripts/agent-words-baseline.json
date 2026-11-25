@@ -1457,9 +1457,6 @@
       "title: 'Claude Code, Codex and Antigravity sessions',"
     ],
     "src/renderer/src/costs.css": [".acct-badge.agy {", ".acct-badge.codex {"],
-    "src/renderer/src/relocatedNotice.ts": [
-      "return `Workbench followed Claude to ${basename(dir)}`"
-    ],
     "src/renderer/src/sessionRows.ts": [
       ": backend === 'agy'",
       ": backend === 'codex'",

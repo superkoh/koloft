@@ -2,7 +2,13 @@ import { EventEmitter } from 'events'
 import fs from 'fs'
 import path from 'path'
 import os from 'os'
-import type { ClaudeSessionInfo as SessionInfo, SessionStatus, BackgroundItem } from '@shared/types'
+import type {
+  BackendId,
+  ClaudeSessionInfo as SessionInfo,
+  SessionStatus,
+  BackgroundItem
+} from '@shared/types'
+import { agent } from '../agent'
 import type { ReportedTask, SessionEvent } from '@shared/sessionEvent'
 import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
 import { TurnLog, type SaidLine, type Turn as TalkTurn } from '@shared/turns'
@@ -496,7 +502,7 @@ interface Tracked {
 
 export class SessionTracker extends EventEmitter<{
   update: [SessionInfo[]]
-  relocated: [{ tabId: string; dir: string }]
+  relocated: [{ tabId: string; dir: string; backendId: BackendId }]
   'tool-done': [ToolCall & { tabId: string }]
   'command-output': [CommandOutput & { tabId: string }]
   'turn-ended': [{ tabId: string; turn: TalkTurn }]
@@ -1349,7 +1355,8 @@ export class SessionTracker extends EventEmitter<{
     const leftItsWorktreeForItsCheckout = worktreeHomeRoot(t.info.treeRoot) === dir
     t.info.relocated = true
     this.setTreeRoot(t, dir)
-    if (!leftItsWorktreeForItsCheckout) this.emit('relocated', { tabId: t.info.tabId, dir })
+    if (!leftItsWorktreeForItsCheckout)
+      this.emit('relocated', { tabId: t.info.tabId, dir, backendId: agent.id })
   }
 
   private async parseOnce(t: Tracked): Promise<void> {

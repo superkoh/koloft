@@ -3368,7 +3368,7 @@ app.whenReady().then(() => {
     syncAnswerable
   })
   tracker.on('update', sessionsChanged)
-  tracker.on('relocated', (e: { tabId: string; dir: string }) => {
+  tracker.on('relocated', (e: { tabId: string; dir: string; backendId: BackendId }) => {
     pushToSessions.relocated(e)
   })
   runtime.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))

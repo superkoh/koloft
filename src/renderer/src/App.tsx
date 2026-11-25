@@ -949,7 +949,7 @@ export default function App(): JSX.Element {
     () =>
       window.api.sessions.onRelocated((e) => {
         const st = useStore.getState()
-        if (st.activeTabId === e.tabId) st.showToast(relocatedNotice(e.dir))
+        if (st.activeTabId === e.tabId) st.showToast(relocatedNotice(e.backendId, e.dir))
       }),
     []
   )

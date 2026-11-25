@@ -1,5 +1,7 @@
 import { basename } from '@shared/preview'
+import { agentManifest } from '@core/agent/registry'
+import type { BackendId } from '@shared/types'
 
-export function relocatedNotice(dir: string): string {
-  return `Workbench followed Claude to ${basename(dir)}`
+export function relocatedNotice(backend: BackendId, dir: string): string {
+  return `Workbench followed ${agentManifest(backend).name} to ${basename(dir)}`
 }
