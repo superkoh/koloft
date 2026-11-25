@@ -14,6 +14,8 @@ export const agent = {
   productName: 'Claude Code',
   maker: 'Anthropic',
   command: 'claude',
+  // CC§7
+  signInCommand: 'claude setup-token',
   // CC§10
   installCommand: 'curl -fsSL https://claude.ai/install.sh | bash',
   nodePackageFolderNames: ['claude-code'],
@@ -122,7 +124,7 @@ export const agent = {
     draftInItsInputBox: inputBoxDraft,
     priceOf: claudePriceOf
   },
-  // CC§7
+  // CC§7 CC§10
   accountKinds: [
     {
       id: 'oauth',
@@ -130,7 +132,8 @@ export const agent = {
       isASignInFolder: false,
       signsInThroughABrowser: true,
       storesAPastedKeyItself: false,
-      takesAnEndpoint: false
+      takesAnEndpoint: false,
+      asksItsFirstRunQuestionsForEachAccount: false
     },
     {
       id: 'apikey',
@@ -138,7 +141,8 @@ export const agent = {
       isASignInFolder: false,
       signsInThroughABrowser: false,
       storesAPastedKeyItself: false,
-      takesAnEndpoint: false
+      takesAnEndpoint: false,
+      asksItsFirstRunQuestionsForEachAccount: false
     },
     {
       id: 'custom',
@@ -146,7 +150,8 @@ export const agent = {
       isASignInFolder: false,
       signsInThroughABrowser: false,
       storesAPastedKeyItself: false,
-      takesAnEndpoint: true
+      takesAnEndpoint: true,
+      asksItsFirstRunQuestionsForEachAccount: false
     }
   ]
 } as const satisfies AgentManifest

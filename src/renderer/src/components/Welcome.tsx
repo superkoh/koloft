@@ -9,7 +9,7 @@ import {
   type ReactNode
 } from 'react'
 import { createPortal } from 'react-dom'
-import type { BackendId, DiscoveredFolder, SessionRow } from '@shared/types'
+import type { AccountKind, BackendId, DiscoveredFolder, SessionRow } from '@shared/types'
 import { SIGN_IN_FOLDER_OF } from '@shared/types'
 import {
   BACKEND_LABEL,
@@ -17,7 +17,7 @@ import {
   SESSION_BACKENDS,
   backendAvailable
 } from '@shared/sessionBackend'
-import { agentManifest } from '@core/agent/registry'
+import { agentManifest, signInKindOf } from '@core/agent/registry'
 import { accountToSignInAgain, hasUsableAccount } from '@shared/accountUsage'
 import { basename } from '@shared/preview'
 import { foldersToPin } from '@shared/firstRun'
@@ -332,7 +332,7 @@ export function Welcome({
     const failed =
       'Could not start the sign-in. Try again, or add the account in Settings ▸ Accounts.'
     if (pick === 'claude') {
-      beginLogin(again)
+      beginLogin(signInKindOf(pick).id as AccountKind, again)
       setLoginProgress({ phase: 'starting', name })
       setSigningFor('claude')
       if ((await window.api.accounts.startLogin(name, !!again)) !== 'ok') {
