@@ -10,7 +10,7 @@ import {
   writeSudoShims
 } from '@plugins/passwords/main/sudoShim'
 import { ghWrapperScript, gitCredentialHelperScript } from './gitCredentialScripts'
-import { ENSURE_CLAUDE_MINIMUM_FN } from './cliMinimums'
+import { ENSURE_CLAUDE_MINIMUM_FN } from '@agents/claude/main/claudeMinimum'
 import { ADVISOR_OFF_ON_FABLE_FN } from '@agents/claude/main/advisorOnFable'
 import { CLAUDE_AUTH_ENV_VARS } from './remote/launch'
 import { NO_USABLE_ACCOUNT, SHIM_FOUND_NO_ACCOUNT_EXIT } from '@shared/accountUsage'

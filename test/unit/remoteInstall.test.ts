@@ -15,7 +15,8 @@ import {
   parseHeartbeat
 } from '../../src/main/remote/install'
 import { answerOf } from '../../src/main/remote/ssh'
-import { MIN_AGY_VERSION, MIN_CLAUDE_VERSION } from '../../src/main/cliMinimums'
+import { MIN_AGY_VERSION } from '../../src/agents/agy/main/agyMinimum'
+import { MIN_CLAUDE_VERSION } from '../../src/agents/claude/main/claudeMinimum'
 
 const REAL_TOOLS = [
   'sh',

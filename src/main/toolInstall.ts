@@ -1,9 +1,7 @@
 import path from 'path'
 import type { BackendId } from '@shared/types'
 import { shq } from '@shared/shellQuote'
-
-// AGY§3
-export const AGY_INSTALLER_URL = 'https://antigravity.google/cli/install.sh'
+import { AGY_INSTALLER_URL } from '@agents/agy/shared/agyInstaller'
 
 // CC§10 CODEX§22 AGY§3
 const OFFICIAL_INSTALLER: Record<BackendId, string> = {

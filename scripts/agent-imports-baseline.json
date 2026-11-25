@@ -27,7 +27,6 @@
     "agent-main-into-mixed-main": {
       "src/agents/agy/main/agySessions.ts": {
         "src/main/agentPlugin.ts": "C7",
-        "src/main/cliMinimums.ts": "C8",
         "src/main/cliRuntime.ts": "C8",
         "src/main/remote/launch.ts": "C10",
         "src/main/rowActivity.ts": "C3",
@@ -91,12 +90,8 @@
         "src/main/openShimScript.ts": "C8",
         "src/main/rowActivity.ts": "C3"
       },
-      "src/agents/codex/main/codexRuntime.ts": {
-        "src/main/cliMinimums.ts": "C8",
-        "src/main/cliRuntime.ts": "C8"
-      },
+      "src/agents/codex/main/codexRuntime.ts": { "src/main/cliRuntime.ts": "C8" },
       "src/agents/codex/main/codexSessions.ts": {
-        "src/main/cliMinimums.ts": "C8",
         "src/main/leftovers.ts": "C9",
         "src/main/openShimScript.ts": "C8",
         "src/main/remote/launch.ts": "C10",
@@ -134,6 +129,11 @@
         "src/agents/codex/main/codexTrust.ts": "D1"
       },
       "src/main/mcpServers.ts": { "src/agents/claude/main/claudeTrust.ts": "C7" },
+      "src/main/remote/install.ts": {
+        "src/agents/agy/main/agyMinimum.ts": "C10",
+        "src/agents/agy/shared/agyInstaller.ts": "C10",
+        "src/agents/claude/main/claudeMinimum.ts": "C10"
+      },
       "src/main/remote/machinePackageFiles.ts": {
         "src/agents/agy/main/agyHooks.ts": "C10",
         "src/agents/agy/main/agyStore.ts": "C10",
@@ -148,10 +148,12 @@
       "src/main/rowActivity.ts": { "src/agents/claude/main/claudeTouchedFiles.ts": "C3" },
       "src/main/shim.ts": {
         "src/agents/agy/main/agyAccounts.ts": "C8",
-        "src/agents/claude/main/advisorOnFable.ts": "C8"
+        "src/agents/claude/main/advisorOnFable.ts": "C8",
+        "src/agents/claude/main/claudeMinimum.ts": "C8"
       },
       "src/main/statusline.ts": { "src/agents/agy/main/agyHooks.ts": "C9" },
       "src/main/taskProcs.ts": { "src/agents/claude/main/claudeLiveness.ts": "C9" },
+      "src/main/toolInstall.ts": { "src/agents/agy/shared/agyInstaller.ts": "C8" },
       "src/main/usageCache.ts": { "src/agents/agy/main/agyStore.ts": "C6" },
       "src/main/usageScan.ts": { "src/agents/agy/main/agyStore.ts": "C6" }
     },
