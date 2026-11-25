@@ -134,7 +134,7 @@ async function claudeTab(
         return { id: TAB }
       }
     },
-    tracker: { track: () => {}, movePick: () => {}, list: () => [] },
+    tracker: { track: () => {}, movePick: () => {}, list: () => [], infoOf: () => undefined },
     hosts: new Hosts(
       localHost(new GithubRepos(), { moreSkillFoldersEveryAccountReads: () => [] }),
       (machine) =>

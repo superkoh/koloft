@@ -20,8 +20,12 @@ import {
   type WorktreesOfEveryAgent
 } from '../../src/agents/kit/main/sessionWorktrees'
 import type { TreeIo } from '../../src/main/sessionWorktrees'
-import { worktreeRecordsOfEveryAgent } from '../../src/core/agent/worktreeRecords'
+import {
+  worktreeRecordsOfEveryAgent,
+  type WorktreeResource
+} from '../../src/core/agent/worktreeRecords'
 import { TreeRemovals } from '../../src/main/treeRemovals'
+import { removeUntouchedWorktreeWith } from '../../src/main/untouchedWorktreeRemoval'
 import { localGitOut, localGitRun, localHost } from '../../src/main/host/localHost'
 import { GithubRepos } from '../../src/main/githubRepos'
 import { removeTree } from '../../src/plugins/sessions/main/sessionClose'
@@ -34,6 +38,7 @@ import type { BackendId } from '../../src/shared/types'
 const MACHINE = 'lab'
 const SID = '5b0c7a52-3f1e-4d2a-9c8b-7e6f5d4c3b2a'
 const OTHER = 'other-agent' as unknown as BackendId
+const CLAUDE_TAB = 'claude-tab'
 const LONG_ENOUGH_TO_TAKE_A_FOLDER_MS = 1000
 const ROUNDS = 4
 
@@ -118,6 +123,9 @@ function sharedFolder(side: (typeof SIDES)[number], unboundIn?: string) {
   const claudeRepo = side.io ? fs.realpathSync(repo) : repo
   const tree = path.join(claudeRepo, '.claude', 'worktrees', 'foo')
   const launched: { cwd: string; folderThere: boolean; worktree?: string }[] = []
+  const launch: { held?: Promise<void>; fails?: boolean } = {}
+  const liveTabs = new Set<string>()
+  const boundTabs = new Map<string, string>()
   const tabs = ClaudeBackend.prototype as unknown as {
     createTab(spec: { cwd: string; worktree?: string }): Promise<unknown>
   }
@@ -127,7 +135,10 @@ function sharedFolder(side: (typeof SIDES)[number], unboundIn?: string) {
       folderThere: fs.existsSync(barePath(spec.cwd ?? '')),
       worktree: spec.worktree
     })
-    return { ok: true, id: 'claude-tab', cwd: spec.cwd }
+    await launch.held
+    if (launch.fails) return { ok: false, code: 'spawn-failed' }
+    liveTabs.add(CLAUDE_TAB)
+    return { ok: true, id: CLAUDE_TAB, cwd: spec.cwd }
   })
   const claudeGit: string[] = []
   const realHost = side.host()
@@ -138,9 +149,31 @@ function sharedFolder(side: (typeof SIDES)[number], unboundIn?: string) {
       return realHost.gitRun(dir, args)
     }
   }
-  const claude = new ClaudeBackend({
-    tracker: { list: () => [], remoteOf: () => undefined },
+  const hookReports = path.join(directory, `hook-sessions-${Math.random()}`)
+  fs.mkdirSync(hookReports)
+  const claude: ClaudeBackend = new ClaudeBackend({
+    pty: {
+      get: (id: string) => (liveTabs.has(id) ? { alive: true } : undefined),
+      pidOf: () => undefined,
+      kill: (id: string) => void liveTabs.delete(id),
+      clearResumeIntent: () => {}
+    },
+    tracker: {
+      list: () => [],
+      remoteOf: () => undefined,
+      infoOf: (id: string) =>
+        boundTabs.has(id) ? { sessionId: boundTabs.get(id), title: '' } : undefined,
+      bindSession: (id: string, _transcript: string, sid: string) => void boundTabs.set(id, sid),
+      untrack: (id: string) => void boundTabs.delete(id),
+      setAlive: () => {}
+    },
+    events: () => {},
+    sessionRebound: () => {},
     store: () => ({
+      onSessionStart: () => {},
+      onSessionBound: () => {},
+      launchEnded: () => {},
+      dropOwnership: () => {},
       findRow: (id: string) =>
         id !== SID
           ? undefined
@@ -163,24 +196,69 @@ function sharedFolder(side: (typeof SIDES)[number], unboundIn?: string) {
     hosts: { of: () => host, machineOf: () => side.machine },
     resumeProbes: {
       dirExists: dirExistsSync,
-      occupantOf: () => null,
+      occupantOf: (dir: string) => claude.occupantOf(dir),
       recorded: (dir: string) => records.recorded(dir),
       ...gitProbes(localGitOut)
     },
     worktreesBeingPrepared: preparing
   } as unknown as ClaudeBackendDeps)
+  claude.watchLocalHooks(hookReports)
   return {
     theirs,
     preparing,
     tree,
     launched,
+    launch,
     claudeGit,
+    claudeIsIn: (dir: string) => claude.occupantOf(dir),
+    claudeBinds: async (cwd: string) => {
+      fs.writeFileSync(
+        path.join(hookReports, `${CLAUDE_TAB}.json`),
+        JSON.stringify({
+          tabId: CLAUDE_TAB,
+          sessionId: SID,
+          event: 'start',
+          source: 'startup',
+          cwd
+        })
+      )
+      await vi.waitFor(() => expect(boundTabs.get(CLAUDE_TAB)).toBe(SID))
+    },
+    claudeTabEnds: () => {
+      liveTabs.delete(CLAUDE_TAB)
+      claude.tabExited({ tabId: CLAUDE_TAB, exitCode: 1, crashed: false })
+    },
+    theirCloseOf: (made: WorktreeResource) =>
+      removeUntouchedWorktreeWith(
+        {
+          sleeperTrees: () => [],
+          cronRunner: null,
+          sessionBackends: {
+            occupantOf: (dir) => claude.occupantOf(dir),
+            worktreeRecords: records
+          },
+          worktreesOfEveryAgent: everyAgent,
+          treeRemovals: new TreeRemovals(),
+          removeTree,
+          hostGitOut: (dir, args, timeoutMs, onFailure) =>
+            localGitOut(barePath(dir), args, timeoutMs, onFailure),
+          dirExists: async (dir) => fs.existsSync(barePath(dir)),
+          toast: (text) => {
+            throw new Error(text)
+          }
+        },
+        { id: OTHER },
+        made
+      ),
     claudeResumes: () =>
       claude.resume({ sessionId: SID, cwd: side.at(path.join(tree, unboundIn ?? '')) }),
+    claudeResumesToRebuild: () =>
+      claude.resume({ sessionId: SID, cwd: side.at(tree), mode: 'rebuild' }),
     claudeResumesRenamed: (worktree: string) =>
       claude.resume({ sessionId: SID, cwd: side.at(tree), mode: 'renamed', worktree }),
     claudeStartsIn: (worktree: string, workspace = claudeRepo) =>
-      claude.create({ kind: 'claude', cwd: side.at(workspace), worktree })
+      claude.create({ kind: 'claude', cwd: side.at(workspace), worktree }),
+    claudeStartsInTheFolder: () => claude.create({ kind: 'claude', cwd: side.at(tree) })
   }
 }
 
@@ -382,3 +460,75 @@ describe('a session closed for good while another agent wants its worktree, on t
     expect(s.launched).toEqual([])
   })
 })
+
+function holdTheLaunch(s: ReturnType<typeof sharedFolder>): {
+  reached(): Promise<void>
+  release(): void
+} {
+  let release = (): void => {}
+  s.launch.held = new Promise<void>((r) => (release = r))
+  const before = s.launched.length
+  return {
+    reached: () => vi.waitFor(() => expect(s.launched.length).toBe(before + 1)),
+    release
+  }
+}
+
+const folderThere = (made: WorktreeResource): boolean =>
+  fs.existsSync(path.join(barePath(made.worktreePath), 'file.txt'))
+
+describe.each(SIDES)(
+  'a Claude Code tab still starting in an untouched worktree another agent made, $where',
+  (side) => {
+    it('closing the other agent’s tab keeps the folder while a Claude Code resume into it starts and until its tab is bound, then removes it', async () => {
+      const s = sharedFolder(side)
+      const made = await s.theirs.create(side.at(repo), 'foo')
+      const launch = holdTheLaunch(s)
+      const resumed = s.claudeResumes()
+      await launch.reached()
+      await s.theirCloseOf(made)
+      expect(folderThere(made)).toBe(true)
+      launch.release()
+      await expect(resumed).resolves.toMatchObject({ ok: true })
+      await s.theirCloseOf(made)
+      expect(folderThere(made)).toBe(true)
+      await s.claudeBinds(barePath(made.worktreePath))
+      await s.theirCloseOf(made)
+      expect(fs.existsSync(barePath(made.worktreePath))).toBe(false)
+    })
+
+    it('closing the other agent’s tab keeps the folder while a new Claude Code session starts in it, and removes it once that tab ends before it was bound', async () => {
+      const s = sharedFolder(side)
+      const made = await s.theirs.create(side.at(repo), 'foo')
+      const launch = holdTheLaunch(s)
+      const started = s.claudeStartsInTheFolder()
+      await launch.reached()
+      await s.theirCloseOf(made)
+      expect(folderThere(made)).toBe(true)
+      launch.release()
+      await expect(started).resolves.toMatchObject({ ok: true })
+      await s.theirCloseOf(made)
+      expect(folderThere(made)).toBe(true)
+      s.claudeTabEnds()
+      await s.theirCloseOf(made)
+      expect(fs.existsSync(barePath(made.worktreePath))).toBe(false)
+    })
+
+    it('a Claude Code launch into the folder that fails leaves nobody in it, and the close removes it', async () => {
+      const s = sharedFolder(side)
+      const made = await s.theirs.create(side.at(repo), 'foo')
+      s.launch.fails = true
+      await expect(s.claudeResumes()).resolves.toMatchObject({ ok: false })
+      await expect(s.claudeStartsInTheFolder()).resolves.toMatchObject({ ok: false })
+      await s.theirCloseOf(made)
+      expect(fs.existsSync(barePath(made.worktreePath))).toBe(false)
+    })
+
+    it('a Claude Code resume asked to rebuild a worktree that is there again starts in it, not counting itself as in the folder', async () => {
+      const s = sharedFolder(side)
+      await s.theirs.create(side.at(repo), 'foo')
+      await expect(s.claudeResumesToRebuild()).resolves.toMatchObject({ ok: true })
+      expect(s.launched).toEqual([expect.objectContaining({ folderThere: true })])
+    })
+  }
+)

@@ -214,6 +214,12 @@ export async function rebuildWorktree(
   return true
 }
 
+interface StartingLaunch {
+  folder: string
+  name: string
+  tabId?: string
+}
+
 interface RemoteExitDrop {
   name: string
   raw: { event?: string; reason?: string; sessionId?: string }
@@ -252,6 +258,7 @@ export class ClaudeBackend implements SessionBackend {
   readonly id = 'claude'
   readonly worktreeRecords = KEEPS_NO_WORKTREE_RECORDS
   private hookRegDir = ''
+  private readonly startingLaunches = new Set<StartingLaunch>()
   private statusLogCursors = new Map<string, AppendCursor>()
   private statusLogDraining = new Map<string, boolean>()
   private watchedHookMirrors = hookMirrorWatches(
@@ -340,6 +347,7 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   tabExited({ tabId, crashed }: TabExit): void {
+    this.letGoOfTab(tabId)
     this.onPtyExit(tabId, crashed)
     this.d.tracker.setAlive(tabId, false)
     this.d.store()?.launchEnded(tabId)
@@ -389,7 +397,12 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   occupantOf(dir: string): string | null {
-    if (isRemoteKey(dir)) return this.machineOccupantOf(dir)
+    return (
+      (isRemoteKey(dir) ? this.machineOccupantOf(dir) : this.tabHereIn(dir)) ?? this.startingIn(dir)
+    )
+  }
+
+  private tabHereIn(dir: string): string | null {
     const target = path.resolve(dir)
     for (const s of this.d.tracker.list()) {
       if (!s.alive || s.remote) continue
@@ -399,6 +412,57 @@ export class ClaudeBackend implements SessionBackend {
       if (bound && path.resolve(bound.worktreePath) === target) return occupantName(s)
     }
     return null
+  }
+
+  private startingIn(dir: string): string | null {
+    if (!this.startingLaunches.size) return null
+    const folder = preparedKeyOf(dir)
+    for (const launch of this.startingLaunches) if (launch.folder === folder) return launch.name
+    return null
+  }
+
+  private startIn(
+    folder: string,
+    sessionId?: string,
+    launch: StartingLaunch = { folder: '', name: '' }
+  ): StartingLaunch {
+    const row = sessionId ? this.d.store()?.findRow(sessionId) : undefined
+    launch.folder = preparedKeyOf(folder)
+    launch.name = occupantName({ title: row?.title ?? '', sessionId: sessionId ?? '' })
+    this.startingLaunches.add(launch)
+    return launch
+  }
+
+  private async untilItsTabIsBound<R extends { ok: boolean; id?: string }>(
+    launch: StartingLaunch,
+    start: () => Promise<R>
+  ): Promise<R> {
+    try {
+      const r = await start()
+      if (r.ok && r.id && !this.d.tracker.infoOf(r.id)?.sessionId) launch.tabId = r.id
+      else this.letGo(launch)
+      return r
+    } catch (error) {
+      this.letGo(launch)
+      throw error
+    }
+  }
+
+  private notCountingItself<T>(launch: StartingLaunch, ask: () => T): T {
+    this.startingLaunches.delete(launch)
+    try {
+      return ask()
+    } finally {
+      this.startingLaunches.add(launch)
+    }
+  }
+
+  private letGo(launch: StartingLaunch): void {
+    this.startingLaunches.delete(launch)
+  }
+
+  private letGoOfTab(tabId: string): void {
+    for (const launch of this.startingLaunches) if (launch.tabId === tabId) this.letGo(launch)
   }
 
   accountUsable(): boolean {
@@ -474,6 +538,7 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   stop(tabId: string): void {
+    this.letGoOfTab(tabId)
     const sessionId = this.sessionIdOf(tabId)
     const remote = this.d.tracker.remoteOf(tabId)
     if (sessionId && !remote) this.rememberClosedClaude(sessionId)
@@ -1011,6 +1076,7 @@ export class ClaudeBackend implements SessionBackend {
       obj.account || '',
       obj.source || ''
     )
+    this.letGoOfTab(obj.tabId)
     this.d.pty.clearResumeIntent(obj.tabId)
     const nextId = this.sessionIdOf(obj.tabId)
     if (prevId && nextId && nextId !== prevId) {
@@ -1040,36 +1106,46 @@ export class ClaudeBackend implements SessionBackend {
   async create(opts: CreateTabOptions): Promise<CreateTabResult> {
     const asked = typeof opts.cwd === 'string' ? opts.cwd : ''
     const root = hostOf(asked) === 'ssh' ? asked : (this.homeOf(opts.resumeSessionId) ?? asked)
-    if (opts.worktree) await this.refuseANameAnotherAgentHolds(root, opts.worktree)
-    return this.createTab({
-      tabId: opts.tabId,
-      root,
-      resumeSessionId: opts.resumeSessionId,
-      worktree: opts.worktree,
-      model: opts.model,
-      effort: opts.effort,
-      permission: opts.permission,
-      firstPrompt: opts.firstPrompt,
-      ownerWords: opts.ownerWords,
-      name: opts.name,
-      cols: opts.cols,
-      rows: opts.rows,
-      role: opts.role,
-      ownerText: opts.ownerText,
-      conductor: opts.conductor,
-      trustFolder: opts.trustFolder || (!!opts.worktree && !opts.scheduled && !opts.resumeSessionId)
-    })
+    const folder = opts.worktree
+      ? await this.refuseANameAnotherAgentHolds(root, opts.worktree)
+      : root
+    const launch = this.startIn(folder, opts.resumeSessionId)
+    return this.untilItsTabIsBound(launch, () =>
+      this.createTab({
+        tabId: opts.tabId,
+        root,
+        resumeSessionId: opts.resumeSessionId,
+        worktree: opts.worktree,
+        model: opts.model,
+        effort: opts.effort,
+        permission: opts.permission,
+        firstPrompt: opts.firstPrompt,
+        ownerWords: opts.ownerWords,
+        name: opts.name,
+        cols: opts.cols,
+        rows: opts.rows,
+        role: opts.role,
+        ownerText: opts.ownerText,
+        conductor: opts.conductor,
+        trustFolder:
+          opts.trustFolder || (!!opts.worktree && !opts.scheduled && !opts.resumeSessionId)
+      })
+    )
   }
 
   async resume(req: SessionResumeRequest): Promise<SessionResumeResult> {
+    const launch: StartingLaunch = { folder: '', name: '' }
     try {
-      return await this.resumeTab(req)
+      return await this.untilItsTabIsBound(launch, () => this.resumeTab(req, launch))
     } catch (error) {
       return { ok: false, code: 'backend', message: errorText(error) }
     }
   }
 
-  private async resumeTab(req: SessionResumeRequest): Promise<SessionResumeResult> {
+  private async resumeTab(
+    req: SessionResumeRequest,
+    launch: StartingLaunch
+  ): Promise<SessionResumeResult> {
     const sid = req?.sessionId
     const asked = req?.cwd
     if (
@@ -1085,14 +1161,17 @@ export class ClaudeBackend implements SessionBackend {
     let cwd = host.keyed(asked)
     const mode = req.mode ?? 'direct'
     let worktree: string | undefined
+    let newTree: string | undefined
     if (mode === 'renamed') {
       if (typeof req.worktree !== 'string' || !isValidWorktreeName(req.worktree)) {
         return { ok: false, code: 'invalid-args' }
       }
       worktree = req.worktree
-      await this.refuseANameAnotherAgentHolds(cwd, worktree)
+      newTree = await this.refuseANameAnotherAgentHolds(cwd, worktree)
     }
     const bound = this.d.store()?.findRow(sid)?.worktreeState
+    const goesInto = newTree ?? host.keyed(mode === 'main' ? cwd : (bound?.worktreePath ?? cwd))
+    this.startIn(goesInto, sid, launch)
     const rebuildable = !home || !!bound
     const { worktreesBeingPrepared } = this.d
     await whenNobodyPrepares(
@@ -1102,7 +1181,7 @@ export class ClaudeBackend implements SessionBackend {
     if (await rebuildsTheWorktree(req.mode, async () => !rebuildable || host.dirExists(cwd))) {
       const plan = home
         ? await this.machineResumePlan(host, sid)
-        : await this.localWorktreePlan(sid)
+        : await this.localWorktreePlan(sid, launch)
       if (plan.action === 'rebuild') {
         const tree = host.keyed(plan.worktreePath)
         if (
@@ -1148,12 +1227,13 @@ export class ClaudeBackend implements SessionBackend {
     return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
   }
 
-  private async refuseANameAnotherAgentHolds(where: string, name: string): Promise<void> {
+  private async refuseANameAnotherAgentHolds(where: string, name: string): Promise<string> {
     const root = isRemoteKey(where) ? await this.mainCheckoutOn(where) : projectInfoFor(where).root
     const tree = `${root}/${SESSION_WORKTREES_FOLDER}/${name}`
     if (this.d.resumeProbes.recorded?.(tree)) throw new Error(A_NAME_WITH_A_RECOVERY_RECORD)
     if (this.d.worktreesBeingPrepared.has(preparedKeyOf(tree)))
       throw new Error(A_FOLDER_BEING_PREPARED)
+    return tree
   }
 
   private async mainCheckoutOn(where: string): Promise<string> {
@@ -1175,9 +1255,19 @@ export class ClaudeBackend implements SessionBackend {
     return this.localWorktreePlan(sessionId)
   }
 
-  private localWorktreePlan(sessionId: string): Promise<ResumePlan> {
+  private localWorktreePlan(sessionId: string, itself?: StartingLaunch): Promise<ResumePlan> {
     const store = this.d.store()
-    return planResume(store?.findRow(sessionId), this.d.resumeProbes, store?.bucketDirOf(sessionId))
+    const probes = this.d.resumeProbes
+    return planResume(
+      store?.findRow(sessionId),
+      itself
+        ? {
+            ...probes,
+            occupantOf: (dir) => this.notCountingItself(itself, () => probes.occupantOf(dir))
+          }
+        : probes,
+      store?.bucketDirOf(sessionId)
+    )
   }
 
   private async machineResumePlan(host: Host, sessionId: string): Promise<ResumePlan> {
