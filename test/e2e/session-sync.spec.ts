@@ -35,6 +35,7 @@ const LOCAL_SESSION_BINDS_WITHIN_MS = 30_000
 const REMOTE_SESSION_BINDS_WITHIN_MS = 90_000
 const BUSY_TURN_LASTS_MS = 30_000
 const SLOW_TURN_MS = 15_000
+const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
 const told =
   /\(From Koloft:\) origin\/main moved from \w{7} to \w{7}, with 1 new commit: "fix: login keeps the session"\./
 const toldSameFile =
@@ -277,6 +278,45 @@ async function toldBeforeTheTurnEnds(
   for (const tab of tabs)
     expect(fs.existsSync(path.join(homes.notices, `${tab}.notice`))).toBe(false)
 }
+
+const TAKEN_BACK_AFTER_A_RESTART: {
+  backendId: BackendId
+  heard: Heard
+  install: (env: E2EEnv) => void
+  start: (page: Page) => Promise<void>
+}[] = [
+  {
+    backendId: 'claude',
+    heard: claudeHeard,
+    install: () => {},
+    start: async (page) => {
+      await startSessionIn(page, REMOTE_WS_NAME, { remote: true })
+      await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/\bst-waiting\b/, {
+        timeout: REMOTE_SESSION_BINDS_WITHIN_MS
+      })
+    }
+  },
+  {
+    backendId: 'codex',
+    heard: codexHeard,
+    install: installCodexOnFakeRemote,
+    start: async (page) => {
+      await newSessionInWith(page, REMOTE_WS_NAME, 'Codex')
+      await expect(wsRows(page, REMOTE_WS_NAME)).toHaveClass(/\bst-waiting\b/, {
+        timeout: REMOTE_SESSION_BINDS_WITHIN_MS
+      })
+    }
+  },
+  {
+    backendId: 'agy',
+    heard: agyHeard,
+    install: (env) => {
+      installAgy(env)
+      installRemoteAgy(env)
+    },
+    start: (page) => startAgy(page, REMOTE_WS_NAME, REMOTE_SESSION_BINDS_WITHIN_MS)
+  }
+]
 
 test.describe('open sessions hear what changed around them, from Koloft, at their next prompt or tool call, never as a turn of their own', () => {
   test('a Claude session and a Codex session at work when origin/main moves are told before their turn ends, with nobody prompting them, and that turn ends waiting for the owner as any turn does', async ({
@@ -643,6 +683,70 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
       killFakeRemote(env)
     }
   })
+
+  for (const agent of TAKEN_BACK_AFTER_A_RESTART) {
+    test(`after a Koloft restart takes a remote ${agent.backendId} tab back, it is still told when origin/main moves, with its next prompt there, and only once`, async ({
+      env
+    }) => {
+      test.setTimeout(360_000)
+      agent.install(env)
+      seedSettings(env, { hintsOff: true })
+      const author = checkoutWithOrigin(remoteDir(env), machineHome(env))
+      const notices = path.join(machineHome(env), '.koloft', 'hook-sessions')
+      try {
+        const { app, page } = await launchWithRemote(env)
+        try {
+          await addRemoteWorkspace(page, env)
+          await agent.start(page)
+          await page.waitForTimeout(LAYOUT_SAVE_DEBOUNCE_SETTLE_MS)
+        } finally {
+          await quitAndClose(app)
+        }
+
+        const app2 = await launchApp(env)
+        try {
+          const page2 = await app2.firstWindow()
+          await waitBooted(page2)
+          await bound(page2, agent.backendId, REMOTE_SESSION_BINDS_WITHIN_MS)
+          await expect(wsRows(page2, REMOTE_WS_NAME).first()).toHaveClass(/\bst-(waiting|idle)\b/, {
+            timeout: REMOTE_SESSION_BINDS_WITHIN_MS
+          })
+          const tab = await tabOf(page2, agent.backendId)
+          await fetchNow(page2, remoteKey(env))
+          pushUpstream(author, 'fix: login keeps the session')
+          await fetchNow(page2, remoteKey(env))
+          await expect
+            .poll(() => fs.existsSync(path.join(notices, `${tab}.notice`)), {
+              timeout: REMOTE_NOTICE_ARRIVES_WITHIN_MS
+            })
+            .toBe(true)
+
+          await page2.evaluate((id) => window.api.terminal.write(id, 'look again\r'), tab)
+          await expect
+            .poll(() => agent.heard(machineHome(env)), { timeout: REMOTE_NOTICE_ARRIVES_WITHIN_MS })
+            .toMatch(told)
+
+          const heardBefore = agent.heard(machineHome(env))
+          const before = Date.now()
+          await page2.evaluate((id) => window.api.terminal.write(id, 'once more\r'), tab)
+          await expect
+            .poll(
+              async () =>
+                (await pendingAttention(page2)).some(
+                  (m) => m.tabId === tab && m.kind === 'turn-done' && m.at > before
+                ),
+              { timeout: REMOTE_NOTICE_ARRIVES_WITHIN_MS }
+            )
+            .toBe(true)
+          expect(agent.heard(machineHome(env)).slice(heardBefore.length)).not.toMatch(told)
+        } finally {
+          await quitAndClose(app2)
+        }
+      } finally {
+        killFakeRemote(env)
+      }
+    })
+  }
 
   test('on another machine over ssh, when a Codex session writes a file a Claude session in the same folder wrote, each is told the other changed it and to read it again: the waiting Claude session with its next prompt, its red dot as it was', async ({
     env

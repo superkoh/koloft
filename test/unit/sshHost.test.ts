@@ -332,6 +332,26 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       expect(fs.readFileSync(path.join(hookDir, 'res-r1.json'), 'utf8')).toBe(reply)
     })
 
+    it("leaves Koloft's notice under every tab id the tab ran under, merges a new one in only while no agent has taken the last, and drops every copy", async () => {
+      const hookDir = path.join(home, '.koloft', 'hook-sessions')
+      const copy = (id: string): string => path.join(hookDir, `${id}.notice`)
+      const notice = machine().notice(['pty-now', 'pty-started'])
+
+      expect(await notice.leave('first', 'first and second')).toBe('fresh')
+      expect(await notice.leave('second', 'first and second')).toBe('merged')
+      expect(fs.readFileSync(copy('pty-started'), 'utf8')).toBe('first and second\\n\\n')
+      expect(fs.readFileSync(copy('pty-now'), 'utf8')).toBe('first and second\\n\\n')
+
+      fs.rmSync(copy('pty-started'))
+      expect(await notice.leave('third', 'first, second and third')).toBe('fresh')
+      expect(fs.readFileSync(copy('pty-started'), 'utf8')).toBe('third\\n\\n')
+      expect(fs.readFileSync(copy('pty-now'), 'utf8')).toBe('third\\n\\n')
+
+      fs.writeFileSync(`${copy('pty-started')}.turn`, 'third\\n\\n')
+      await notice.drop()
+      expect(fs.readdirSync(hookDir)).toEqual([])
+    })
+
     it("saves a picked element's picture on the machine and answers with its absolute path there, deleting anything older than a day left in its folder", async () => {
       const picks = path.join(home, '.koloft', 'element-picks')
       fs.mkdirSync(picks, { recursive: true })
