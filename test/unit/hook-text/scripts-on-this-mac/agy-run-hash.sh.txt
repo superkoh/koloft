@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# koloft-exec: <the program Koloft runs as>
+export ELECTRON_RUN_AS_NODE=1
+# PLATFORM§36
+export NODE_COMPILE_CACHE='<userData>/statusline/vcache'
+[ -d "$(pwd -P 2>/dev/null)" ] || cd / 2>/dev/null
+[ -n "$COLUMNS" ] && export CCSTATUSLINE_WIDTH="$COLUMNS"
+exec '<the program Koloft runs as>' '<userData>/statusline/agy-statusline.js' '<Koloft's own folder>/node_modules/ccstatusline/dist/ccstatusline.js' '<userData>/statusline/settings.json'

@@ -255,6 +255,7 @@ export interface ClaudeSetup {
   remoteTab?: RemoteTab
   workspaceOfEverySession?: string
   tracker?: Partial<Pick<ClaudeBackendDeps['tracker'], 'track' | 'movePick' | 'bindSession'>>
+  hookSettings?: ClaudeBackendDeps['hookSettings']
 }
 
 export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): ClaudeBackend {
@@ -299,7 +300,7 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
     remoteSync: () => null,
     userData: () => world.userData,
     setupLine: () => undefined,
-    hookSettings: () => undefined,
+    hookSettings: c.hookSettings ?? (() => undefined),
     playwrightMcp: async () => [],
     ptysChanged: () => {},
     events: () => {},
@@ -321,6 +322,7 @@ export interface AgySetup extends WiredIntoTheApp {
   agentTools?: boolean
   apiKey?: string
   signedInOnTheWeb?: boolean
+  builtInStatusLine?: string
   events?: (tabId: string, event: SessionEvent) => void
 }
 
@@ -370,7 +372,7 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
     apiKeyOf: async () => a.apiKey,
     playwrightBin: tools,
     browserEndpoint: () => '',
-    builtInStatusLine: () => undefined,
+    builtInStatusLine: () => a.builtInStatusLine,
     skipPermissions: () => false,
     assistOf: () => undefined,
     agent: { enabled: () => a.agentTools ?? false, answer: () => {} },
@@ -397,6 +399,7 @@ export interface CodexSetup extends WiredIntoTheApp {
   run(machine: string, readable: string): MachineSaid
   ranOnTheMachine: string[]
   agentTools?: boolean
+  builtInStatusLine?: boolean
   events?: (tabId: string, event: SessionEvent) => void
 }
 
@@ -461,7 +464,7 @@ export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): Code
     homeOf: () => undefined,
     assistOf: () => undefined,
     replyLanguageScript: '/koloft/codex-reply-language.sh',
-    builtInStatusLine: () => true,
+    builtInStatusLine: () => c.builtInStatusLine ?? true,
     browserEndpoint: () => '',
     openShimRoot: path.join(world.home, 'codex-open'),
     playwrightBin: path.join(world.home, 'commands', 'bin'),
