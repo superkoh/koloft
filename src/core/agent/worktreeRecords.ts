@@ -38,6 +38,7 @@ export interface WorktreeRecordOfAgent {
 
 export interface WorktreeRecordsOfEveryAgent {
   recorded(dir: string): boolean
+  recordedByAnother(backendId: BackendId, dir: string): boolean
   at(backendId: BackendId, dir: string): WorktreeResource | undefined
   untouched(backendId: BackendId, record: WorktreeResource): Promise<boolean>
   forgetUnusedAt(treeRoot: string): void
@@ -51,6 +52,8 @@ export function worktreeRecordsOfEveryAgent(
     agents().find((a) => a.id === backendId)?.worktreeRecords
   return {
     recorded: (dir) => agents().some((a) => a.worktreeRecords.at(dir) !== undefined),
+    recordedByAnother: (backendId, dir) =>
+      agents().some((a) => a.id !== backendId && a.worktreeRecords.at(dir) !== undefined),
     at: (backendId, dir) => recordsOf(backendId)?.at(dir),
     untouched: async (backendId, record) =>
       (await recordsOf(backendId)?.untouched(record)) ?? false,
