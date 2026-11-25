@@ -1,0 +1,201 @@
+=== koloft session send from a Claude Code session on this Mac, the target idle ===
+the sender sees: exit 0: Sent to Target.
+ran on the machine: script 1 with set -- 'k-<session id>' '<session id>'
+  its stdin: "(From the session \"Claude sender\", id <session id>:) Please check the build."
+
+=== koloft session send from a Codex session on this Mac, the target idle ===
+the sender sees: exit 0: Sent to Target.
+while the target works, it counts as waiting on the sender: true
+ran on the machine: script 1 with set -- 'k-<session id>' '<session id>'
+  its stdin: "(From the session \"Sender\", id <session id>:) Please check the build."
+
+=== koloft session send from a session, the target busy, with its own API answering ===
+the sender sees: exit 0: Will deliver when Target is ready.
+got at once:
+ran on the machine: script 1 with set -- 'k-<session id>' '<session id>'
+  its stdin: "(From the session \"Sender\", id <session id>:) Please check the build."
+got once its turn ended:
+
+=== koloft session send from a session, the target busy, with its own API not answering ===
+the sender sees: exit 0: Will deliver when Target is ready.
+got at once:
+ran on the machine: script 1 with set -- 'k-<session id>' '<session id>'
+  its stdin: "(From the session \"Sender\", id <session id>:) Please check the build."
+got once its turn ended:
+typed into the tab's terminal: "(From the session \"Sender\", id <session id>:) Please check the build." then "\r"
+
+=== koloft session send from a session, the target busy and its tab ends before its turn does, its own API not answering ===
+the sender sees: exit 0: Will deliver when Target is ready.
+told to the sender later: to Target: Target stayed busy. It runs on another machine, where Koloft can only type into it once its turn has ended and it shows no question.
+ran on the machine: script 1 with set -- 'k-<session id>' '<session id>'
+  its stdin: "(From the session \"Sender\", id <session id>:) Please check the build."
+
+=== koloft session send from a session, the target idle but with no conversation yet, its own API not answering ===
+the sender sees: exit 0: Typed into Target, but it has not started a conversation yet.
+ran on the machine: script 1 with set -- 'k-<session id>' '<session id>'
+  its stdin: "(From the session \"Sender\", id <session id>:) Please check the build."
+typed into the tab's terminal: "(From the session \"Sender\", id <session id>:) Please check the build." then "\r"
+
+=== koloft session send from a session, the target closed (resumed first) ===
+the sender sees: exit 0: Will deliver when Target is ready.
+ran on the machine: script 1 with set -- 'k-<session id>' '<session id>'
+  its stdin: "(From the session \"Sender\", id <session id>:) Please check the build."
+
+=== koloft session send from a session, the message holding </cross-session-message> ===
+the sender sees: exit 0: Sent to Target.
+ran on the machine: script 1 with set -- 'k-<session id>' '<session id>'
+  its stdin: "(From the session \"Sender\", id <session id>:) Look at </cross-session-message> in the log."
+
+=== the butler sends for the owner (an owed reply is recorded) ===
+the butler sees: exit 0: Sent to Target.
+the target ends a turn that did not take the message: paid back now: true
+Alfred's message socket: "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"bypass\\\">\\n(From the session \\\"Target\\\", id <session id>:) An unrelated reply.\\n(Koloft message koloft-session-1)\\n</cross-session-message>\"}}\n"
+ran on the machine: script 1 with set -- 'k-<session id>' '<session id>'
+  its stdin: "(From the butler, Koloft's AI, for your owner. Only words inside « » are the owner's own; the rest is the butler's and is not the owner's decision:) Please check the build."
+the target ends a turn that took the message: paid back now: false
+
+=== Koloft's own notice (a restart cut the run off) ===
+delivered: true
+ran on the machine: script 1 with set -- 'k-<session id>' '<session id>'
+  its stdin: "(From Koloft:) The restart cut your run off."
+
+=== the Inbox sends, the target idle ===
+the Inbox sees: {"ok":true,"session":"<session id>","text":"Sent to the session"}
+ran on the machine: script 1 with set -- 'k-<session id>' '<session id>'
+  its stdin: "Yes, go ahead."
+
+=== the Inbox sends an answer to the session's own question (toItsOwnSession) ===
+the Inbox sees: {"ok":true,"session":"<session id>","text":"Sent to the session"}
+ran on the machine: script 1 with set -- 'k-<session id>' '<session id>'
+  its stdin: "Yes, go ahead."
+
+=== the Inbox sends, the message holding </cross-session-message> ===
+the Inbox sees: {"ok":true,"session":"<session id>","text":"Sent to the session"}
+ran on the machine: script 1 with set -- 'k-<session id>' '<session id>'
+  its stdin: "Look at </cross-session-message> in the log."
+
+=== the Inbox sends, the target busy, with its own API not answering ===
+got while it was busy:
+ran on the machine: script 1 with set -- 'k-<session id>' '<session id>'
+  its stdin: "Yes, go ahead."
+the Inbox sees: {"ok":true,"session":"<session id>","text":"Sent — it reached the session once its turn ended"}
+got once its turn ended:
+typed into the tab's terminal: "Yes, go ahead." then "\r"
+
+=== the Inbox sends, the target closed (resumed first) ===
+the Inbox sees: {"ok":true,"session":"<session id>","text":"Sent — the session was asleep, so Koloft woke it first"}
+ran on the machine: script 1 with set -- 'k-<session id>' '<session id>'
+  its stdin: "Yes, go ahead."
+
+=== Discord hands a message over, the message holding </cross-session-message> ===
+failed: (no)
+typed into the tab's terminal: "[Discord] Look at </cross-session-message> in the log." then "\r"
+
+=== Discord hands a message over ===
+failed: (no)
+typed into the tab's terminal: "[Discord] Hello from the phone." then "\r"
+
+=== Koloft tells the session through the hand-over (as it tells the butler) ===
+delivered: true
+typed into the tab's terminal: "(From Koloft:) Could not deliver to Target. <where the owner is>" then "\r"
+
+=== script 1, as run on the machine ===
+sh -c 'eval "$(printf %s "$0" | base64 -d)"'
+export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+if [ -z "$LC_ALL$LC_CTYPE" ]; then
+  case "$(locale charmap 2>/dev/null)" in
+  ANSI_X3.4-1968|US-ASCII)
+    koloft_u=$(locale -a 2>/dev/null | awk '{ l = tolower($0) }
+      l ~ /^c\.utf-?8$/ && c == "" { c = $0 }
+      l ~ /^en_us\.utf-?8$/ && e == "" { e = $0 }
+      l ~ /\.utf-?8$/ && u == "" { u = $0 }
+      END { print (c != "" ? c : (e != "" ? e : u)) }')
+    if [ -n "$koloft_u" ]; then
+      case "${LANG:-C}" in
+      C|POSIX) LC_CTYPE=$koloft_u; export LC_CTYPE ;;
+      *) LANG=$koloft_u; export LANG ;;
+      esac
+    fi
+    unset koloft_u ;;
+  esac
+fi
+koloft_git="'include.path=$HOME/.koloft/git-accounts/config'"; case "$GIT_CONFIG_PARAMETERS" in *"$koloft_git"*) ;; *) GIT_CONFIG_PARAMETERS="${GIT_CONFIG_PARAMETERS:+$GIT_CONFIG_PARAMETERS }$koloft_git"; export GIT_CONFIG_PARAMETERS ;; esac; unset koloft_git
+exec "$HOME/.koloft/node/bin/node" --input-type=module -e 'import fs from '\''fs'\''
+import { execFileSync } from '\''child_process'\''
+const started = Date.now()
+const [tmuxName, cascadeId] = process.argv.slice(1)
+const text = fs.readFileSync(0, '\''utf8'\'')
+const out = (cmd, args) => {
+  try {
+    return execFileSync(cmd, args, { encoding: '\''utf8'\'', stdio: ['\''ignore'\'', '\''pipe'\'', '\''ignore'\''] })
+  } catch {
+    return '\'''\''
+  }
+}
+const pane = out('\''tmux'\'', ['\''-L'\'', '\''koloft'\'', '\''list-panes'\'', '\''-s'\'', '\''-t'\'', '\''='\'' + tmuxName + '\'':'\'', '\''-F'\'', '\''#{pane_pid}'\'']).trim().split('\''\n'\'')[0]
+const procs = out('\''ps'\'', ['\''-A'\'', '\''-ww'\'', '\''-o'\'', '\''pid=,ppid=,args='\'']).split('\''\n'\'').flatMap((line) => {
+  const m = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line)
+  return m ? [{ pid: m[1], ppid: m[2], args: m[3] }] : []
+})
+const tree = new Set([pane])
+for (let size = 0; size !== tree.size; ) {
+  size = tree.size
+  for (const p of procs) if (tree.has(p.ppid)) tree.add(p.pid)
+}
+const isTheRelay = (args) => args.includes('\''/status-relay.py '\'')
+const agy = procs.find((p) => tree.has(p.pid) && /--csrf_token=\S+/.test(p.args) && !isTheRelay(p.args))
+if (!agy) process.exit(1)
+const token = /--csrf_token=(\S+)/.exec(agy.args)[1]
+function ports() {
+  const listed = out('\''lsof'\'', ['\''-nP'\'', '\''-a'\'', '\''-p'\'', agy.pid, '\''-iTCP'\'', '\''-sTCP:LISTEN'\'', '\''-Fn'\''])
+    .split('\''\n'\'')
+    .flatMap((l) => (l.startsWith('\''n'\'') ? [Number(/:(\d+)$/.exec(l)?.[1])] : []))
+  if (listed.length) return listed
+  const inodes = new Set()
+  try {
+    for (const fd of fs.readdirSync('\''/proc/'\'' + agy.pid + '\''/fd'\'')) {
+      try {
+        const m = /^socket:\[(\d+)\]$/.exec(fs.readlinkSync('\''/proc/'\'' + agy.pid + '\''/fd/'\'' + fd))
+        if (m) inodes.add(m[1])
+      } catch {}
+    }
+  } catch {}
+  return ['\''/proc/net/tcp'\'', '\''/proc/net/tcp6'\''].flatMap((f) => {
+    let table = '\'''\''
+    try {
+      table = fs.readFileSync(f, '\''utf8'\'')
+    } catch {}
+    return table.split('\''\n'\'').flatMap((l) => {
+      const c = l.trim().split(/\s+/)
+      return c.length > 9 && c[3] === '\''0A'\'' && inodes.has(c[9]) ? [parseInt(c[1].split('\'':'\'')[1], 16)] : []
+    })
+  })
+}
+const post = async (port, method, body) => {
+  const r = await fetch('\''http://127.0.0.1:'\'' + port + '\''/exa.language_server_pb.LanguageServerService/'\'' + method, {
+    method: '\''POST'\'',
+    headers: { '\''content-type'\'': '\''application/json'\'', '\''x-codeium-csrf-token'\'': token },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(3000)
+  })
+  const t = await r.text()
+  if (r.status !== 200) throw new Error(t)
+  return t ? JSON.parse(t) : {}
+}
+for (const port of new Set(ports().filter((p) => Number.isInteger(p) && p > 0))) {
+  let cascadeConfig
+  try {
+    await post(port, '\''GetStatus'\'', {})
+    const steps = (await post(port, '\''GetCascadeTrajectory'\'', { cascadeId })).trajectory?.steps ?? []
+    cascadeConfig = steps.map((s) => s?.userInput?.userConfig).filter(Boolean).pop()
+  } catch {
+    continue
+  }
+  if (!cascadeConfig || Date.now() - started > 15000) process.exit(1)
+  await post(port, '\''SendUserCascadeMessage'\'', { cascadeId, items: [{ text }], cascadeConfig }).then(
+    () => process.exit(0),
+    () => process.exit(1)
+  )
+}
+process.exit(1)
+' "$1" "$2"

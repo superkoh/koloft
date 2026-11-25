@@ -43,8 +43,8 @@ import {
   outputStartCarry,
   plainTerminalTail
 } from './signInOutput'
-import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
-import { claudeAskLine, storedAskLine } from './rowActivity'
+import type { SessionEvent } from '@shared/sessionEvent'
+import { askWiring } from './askWiring'
 import {
   OpenTabsFile,
   openTabsNow,
@@ -95,9 +95,9 @@ import {
   runSsh,
   runSshBytes,
   problemOf,
-  sshOptions,
-  writeToMachineSocket
+  sshOptions
 } from './remote/ssh'
+import { sessionMessaging } from './sessionMessaging'
 import { BrowserTunnels } from './remote/browserTunnel'
 import { anyFreeMacPort, macPortFree, PageForwards } from './remote/portForward'
 import { remoteAnswerCommand, remoteShCommand } from './remote/install'
@@ -418,8 +418,6 @@ type Recipient = Parameters<ReturnType<SessionsStarted['buildHandOver']>['tell']
 type MergedHeads = NonNullable<Parameters<SessionsStarted['whatIsLeft']>[2]>
 type NoticeFile = ReturnType<SessionsStarted['localNotice']>
 type SyncSession = Parameters<SessionsStarted['sessionSync']['observe']>[0][number]
-type CodexAsk = Parameters<SessionsStarted['codexDialog']>[0]
-type DialogView = ReturnType<SessionsStarted['claudeDialog']>
 type ToolCall = Parameters<SessionsStarted['isAskedCall']>[1]
 
 const pluginIpc: MainIpc = {
@@ -487,7 +485,22 @@ const terminalOutput = new TerminalOutput({
 })
 const runtimeDeps: PluginStartDeps['sessions']['runtime'] = {}
 const trackerDeps: PluginStartDeps['sessions']['tracker'] = {}
-const claudeAsks = new Map<string, AskPayload>()
+const {
+  claudeAsked,
+  forgetClaudeAsk,
+  claudeAskOf,
+  endsTheAsk: claudeToolEndsTheAsk,
+  askingOf,
+  pendingAskOf,
+  ownerAsleepAsked,
+  dialogOf
+} = askWiring({
+  runtime: () => runtime,
+  storedOwnerOf,
+  sessionAsks: () => sessionAsks,
+  readers: () => ({ claudeDialog, codexDialog, questionsOf, isAskedCall }),
+  questionAsked: (asked) => announceNow(QUESTION_ASKED, asked)
+})
 let codexSessions: ReturnType<typeof buildCodexSessions> | null = null
 let agySessions: ReturnType<typeof buildAgySessions> | null = null
 const startupErrors: Partial<Record<BackendId, string>> = {}
@@ -512,12 +525,12 @@ const sessionsEndedThisRun = new Set<string>()
 const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
   turnEnded: (tabId, turn) => announceNow(TURN_ENDED, { tabId, turn }),
   prompted: (tabId) => {
-    claudeAsks.delete(tabId)
+    forgetClaudeAsk(tabId)
     consumeOutletDedupe(tabId)
     announceNow(TURN_STARTED, tabId)
   },
   bound: (tabId, key, idleCompaction) => {
-    claudeAsks.delete(tabId)
+    forgetClaudeAsk(tabId)
     const session = sessionOfTab(tabId)
     if (session) sessionAccounts?.note([session])
     if (!idleCompaction) attention.bound(tabId, key)
@@ -530,10 +543,7 @@ const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
     if (subject.sessionId) sessionsEndedThisRun.add(subject.sessionId)
     attention.onExited(tabId, subject)
   },
-  asked: (tabId, ask, id) => {
-    claudeAsks.set(tabId, ask)
-    announceNow(QUESTION_ASKED, { tabId, id })
-  },
+  asked: claudeAsked,
   clearAttention: (tabId) => attention.clear(tabId),
   open: (tabId, target) => {
     if (path.isAbsolute(target) && !fs.existsSync(target)) return
@@ -543,14 +553,7 @@ const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
 const backendHooks: PluginStartDeps['sessions']['backendHooks'] = {}
 backendHooks.isKoloftsOwnSession = (id) => !!butler?.isButlerSession(id)
 backendHooks.turnOver = (tabId) => runtime.turnOver(tabId)
-backendHooks.askingOf = (tabId) => {
-  if (runtime.statusOf(tabId) !== 'approval') return undefined
-  const owner = storedOwnerOf(tabId)
-  const stored = owner?.openApproval(tabId) ?? owner?.openQuestion(tabId)
-  if (stored) return storedAskLine(stored)
-  const ask = claudeAsks.get(tabId) ?? sessionAsks?.heldAsk(tabId)
-  return ask && claudeAskLine(ask)
-}
+backendHooks.askingOf = askingOf
 function showAskOnItsRow(tabId: string): void {
   if (runtime.statusOf(tabId) === 'approval') pushToSessions.sessions(onSessionsChanged())
 }
@@ -920,19 +923,7 @@ const ownerAsleepDeps: PluginStartDeps['butler']['ownerAsleep'] = {
     return tab ? [tab] : []
   },
   tabs: agentTabIds,
-  asked: async (tabId) => {
-    const stored = await pendingAskOf(tabId)
-    if (stored) {
-      const questions = 'questions' in stored ? stored.questions.length : 0
-      return { question: questions > 0, questions, text: codexDialog(stored).text }
-    }
-    const claude =
-      sessionAsks?.heldAsk(tabId) ??
-      (runtime.statusOf(tabId) === 'approval' ? sessionAsks?.askOf(tabId) : undefined)
-    if (!claude) return undefined
-    const questions = questionsOf(claude).length
-    return { question: questions > 0, questions, text: claudeDialog(claude).text }
-  },
+  asked: ownerAsleepAsked,
   answer: (tabId, reply) => answerSession(tabId, reply, true),
   titleOf: (tabId) => sessionOfTab(tabId)?.title ?? 'A session',
   changedSince: (since) => awayDigest?.changedSince(since) ?? [],
@@ -1270,8 +1261,6 @@ let claudeAgentPlugin: string | undefined
 let claudeDocsPlugin: string | undefined
 const docsPluginWhileOn = (): string | undefined => (docsWritingOn() ? claudeDocsPlugin : undefined)
 
-const CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS = 8
-const CODEX_REQUEST_POLL_MS = 250
 const ATTACHMENTS_KEPT_MS = 7 * 24 * 60 * 60 * 1000
 const SWITCH_FLIPS_GATHER_MS = 2000
 const ATTACHMENTS_PRUNED_EVERY_MS = 24 * 60 * 60 * 1000
@@ -1329,17 +1318,6 @@ async function withPastedPicturesOnItsMachine(
     })
   )
   return { ...options, firstPrompt }
-}
-
-// CODEX§3 CODEX§20
-async function pendingAskOf(tabId: string): Promise<CodexAsk | undefined> {
-  for (let polls = CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS; ; polls--) {
-    const owner = storedOwnerOf(tabId)
-    const ask = owner?.openApproval(tabId) ?? owner?.openQuestion(tabId)
-    if (ask || !polls || !owner) return ask
-    if (runtime.statusOf(tabId) !== 'approval' && !runtime.awaitsInput(tabId)) return undefined
-    await sleep(CODEX_REQUEST_POLL_MS)
-  }
 }
 
 function syncAnswerable(): void {
@@ -1695,28 +1673,47 @@ async function liveClaudeRegistryOn(host: string): Promise<string> {
   return r.stdout
 }
 
-// CC§13
-async function sendPeerLine(tabId: string, line: string, ms: number): Promise<void> {
-  const sessionId = sessionOfTab(tabId)?.sessionId
-  const host = tracker.remoteOf(tabId)?.host
-  if (!sessionId) throw new Error(NO_MESSAGE_SOCKET)
-  if (!host) {
-    const socket = await whenMessagingSocket(sessionId, ms)
-    if (!socket) throw new Error(NO_MESSAGE_SOCKET)
-    return writeLineInTurn(socket, line)
-  }
-  const socket = await whenMessagingSocketOnMachine(sessionId, ms, () => liveClaudeRegistryOn(host))
-  if (!socket) throw new Error(NO_MESSAGE_SOCKET)
-  await writeLineInTurn(`${host}:${socket}`, line, (l) =>
-    writeToMachineSocket(host, socket, l, { controlDir: remoteControlDir })
-  )
-}
-const NO_MESSAGE_SOCKET = 'Koloft could not find where that session takes messages.'
-
-async function queueCodexMessage(tabId: string, text: string, clientId: string): Promise<void> {
-  if (!codexSessions) throw new Error(startupErrors.codex ?? 'Codex is not available.')
-  await codexSessions.queueMessage(tabId, text, clientId)
-}
+const messaging = sessionMessaging({
+  get tracker() {
+    return tracker
+  },
+  get hosts() {
+    return hosts
+  },
+  get codexSessions() {
+    return codexSessions
+  },
+  get hookRegDir() {
+    return hookRegDir
+  },
+  get butler() {
+    return butler
+  },
+  get sessionBackends() {
+    return sessionBackends
+  },
+  get writeLineInTurn() {
+    return writeLineInTurn
+  },
+  get noteOfWhatKoloftSends() {
+    return noteOfWhatKoloftSends
+  },
+  get noteSent() {
+    return noteSent
+  },
+  get buildHandOver() {
+    return buildHandOver
+  },
+  ptyMgr,
+  startupErrors,
+  remoteControlDir,
+  sessionOfTab,
+  machineOfTab,
+  storedOwnerOf,
+  liveClaudeRegistryOn,
+  whenMessagingSocket,
+  whenMessagingSocketOnMachine
+})
 
 const syncRepoKeys = new GitRepoKeys(undefined, (machine, paths) =>
   Promise.all(
@@ -1743,23 +1740,6 @@ function syncSessionsOf(all: SessionInfo[]): SyncSession[] {
         ]
       : []
   )
-}
-
-// ADR-0028
-async function noteSentByKoloft(
-  tabId: string,
-  text: string,
-  id: string | undefined
-): Promise<void> {
-  const note = noteOfWhatKoloftSends(backendIdOf(ptyMgr.get(tabId)?.kind), text, id)
-  if (!note) return
-  const host = machineOfTab(tabId)
-  if (host) return hosts.machine(host).noteSent(tabId, note)
-  if (hookRegDir) noteSent(hookRegDir, tabId, note)
-}
-
-async function deliverViaOwner(tabId: string, text: string): Promise<boolean> {
-  return (await storedOwnerOf(tabId)?.deliver(tabId, text)) ?? false
 }
 
 function noticeOf(tabId: string): NoticeFile | undefined {
@@ -1893,7 +1873,7 @@ const sessionDeps: SessionVerbDeps = {
     return launchQuietTab(options, title, { launch: options })
   },
   assist,
-  queue: async (tabId, text, clientId) => codexSessions?.queueMessage(tabId, text, clientId),
+  ...messaging.forSessionVerbs,
   get startedSessions() {
     return startedSessions
   },
@@ -1928,14 +1908,6 @@ const sessionDeps: SessionVerbDeps = {
   ready: tabTypable,
   bound: tabBound,
   asking: asksTheOwner,
-  sendLine: sendPeerLine,
-  press: async (tabId, keys) => {
-    butler?.firstWordsComing(tabId)
-    await ptyMgr.type(tabId, keys)
-  },
-  deliver: deliverViaOwner,
-  noteSent: noteSentByKoloft,
-  modeOf: (tabId) => sessionBackends.permissionClass(tabId),
   stop: killTabFromMain,
   answer: answerSession,
   undelivered: (callerTab, target, why) => {
@@ -2024,7 +1996,7 @@ const inboxKoloft: PluginStartDeps['inbox']['koloft'] = {
     const s = liveSessionOf(ref)
     return s && { tabId: s.tabId, backend: s.backendId }
   },
-  claudeAskOf: (tabId) => claudeAsks.get(tabId),
+  claudeAskOf,
   pendingAskOf,
   answer: answerSession,
   butlerSide,
@@ -2047,7 +2019,7 @@ const claudeDialogs = new ClaudeDialogWatch({
 trackerDeps.dialogJustClosed = (tabId) => claudeDialogs.justClosedADialog(tabId)
 
 function claudeAskEnded(tabId: string): void {
-  claudeAsks.delete(tabId)
+  forgetClaudeAsk(tabId)
   questionSeen.delete(tabId)
 }
 
@@ -3247,7 +3219,7 @@ app.whenReady().then(() => {
     }
     // PLATFORM§21
     terminalOutput.end(e.id, !sleepers.has(e.id) && !signInNobodyOpened)
-    claudeAsks.delete(e.id)
+    forgetClaudeAsk(e.id)
     tabLifecycle.emit('teardown', exit)
     const sent: TerminalExit = { id: e.id, exitCode: e.exitCode, signal: e.signal }
     const accountIssue = shimAccountRefusals.get(e.id)
@@ -3269,8 +3241,7 @@ app.whenReady().then(() => {
   })
   runtime.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
   tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) => {
-    const ask = claudeAsks.get(tabId)
-    const endsTheAsk = !!ask && isAskedCall(ask, call)
+    const endsTheAsk = claudeToolEndsTheAsk(tabId, call)
     if (endsTheAsk) claudeAskEnded(tabId)
     announceNow(TOOL_DONE, { tabId, call, endsTheAsk })
   })
@@ -3659,10 +3630,6 @@ app.whenReady().then(() => {
     status: (tabId) => runtime.statusOf(tabId),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive
   })
-  const dialogOf = async (tabId: string): Promise<DialogView | undefined> => {
-    const ask = await pendingAskOf(tabId)
-    return ask ? codexDialog(ask) : asks.dialog(tabId)
-  }
   const buttons = buildAskButtons({
     owner: () => bindingNow.owner(),
     dialogText: async (tabId) => (await dialogOf(tabId))?.text,
@@ -3723,16 +3690,7 @@ app.whenReady().then(() => {
     respond: (i, body) => link.respond(i, body)
   })
   const attachmentsDir = path.join(userData, 'discord-attachments')
-  const handOverNow = buildHandOver({
-    ...tabState,
-    alive: (tabId) => !!ptyMgr.get(tabId)?.alive,
-    typable: (tabId) => asks.typable(tabId),
-    ready: (tabId, ready, ms) => ptyMgr.whenReady(tabId, ready, ms),
-    queue: queueCodexMessage,
-    sendLine: sendPeerLine,
-    modeOf: (tabId) => sessionBackends.permissionClass(tabId),
-    noteSent: noteSentByKoloft
-  })
+  const handOverNow = messaging.handOver(tabState, asks)
   handOver = handOverNow
   discordRelay = buildDiscordRelay({
     ...tabState,
@@ -5825,7 +5783,7 @@ const startedPlugins: PluginsStarted = startPlugins(
       session: sessionDeps,
       eachTurn: {
         askBeforeAsksAreMade: showAskOnItsRow,
-        askAsItsAgentGaveIt: (tabId) => claudeAsks.get(tabId)
+        askAsItsAgentGaveIt: claudeAskOf
       },
       commands: sessionsCommands,
       eachState: {

@@ -15,6 +15,7 @@ import {
   type LiveSession
 } from '../../../../src/agents/claude/main/claudeSessionStore'
 import { rowsKeptInMemory } from '../../../../src/agents/kit/main/rowsKeptInMemory'
+import { BackgroundFile } from '../../../../src/main/backgroundFile'
 import { rowsOfEveryAgent } from '../../../../src/core/agent/sessionRows'
 import { projectInfoFor } from '../../../../src/main/projectInfo'
 import { encodeCwd } from '@shared/cwdKey'
@@ -256,8 +257,9 @@ describe('pinned paths before the first rescan', () => {
   })
 })
 
-afterEach(() => {
+afterEach(async () => {
   disposeRows()
+  await BackgroundFile.whenAllWritten()
   fs.rmSync(root, { recursive: true, force: true })
 })
 
