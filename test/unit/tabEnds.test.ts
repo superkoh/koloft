@@ -86,10 +86,31 @@ type Sent = [string, SessionEvent]
 
 const NO_RESUME_IS_PLANNED_HERE = {} as Parameters<typeof codexBackend>[1]
 
-function terminalOf(tabId: string): { pty: unknown; killed: string[] } {
+function terminalOf(tabId: string): {
+  pty: unknown
+  killed: string[]
+  machineNamed: (string | undefined)[]
+  open: Set<string>
+} {
   const killed: string[] = []
+  const machineNamed: (string | undefined)[] = []
+  const open = new Set<string>()
   const { pty } = recordingPty(tabId)
-  return { killed, pty: { ...(pty as object), kill: (id: string) => void killed.push(id) } }
+  const recorded = pty as { create(args: { remoteHost?: string }): unknown }
+  return {
+    killed,
+    machineNamed,
+    open,
+    pty: {
+      ...(pty as object),
+      get: (id: string) => (open.has(id) ? { alive: true } : undefined),
+      create: (args: { remoteHost?: string }) => {
+        machineNamed.push(args.remoteHost)
+        return recorded.create(args)
+      },
+      kill: (id: string) => void killed.push(id)
+    }
+  }
 }
 
 type ThreeAgents = Awaited<ReturnType<typeof aTabOfEveryAgent>>
@@ -152,8 +173,9 @@ async function aTabOfEveryAgent() {
     runningBindings: () => new Map()
   })
   stops.push(() => store.dispose())
+  const claudeTerminal = terminalOf(CLAUDE_TAB)
   const claude = new ClaudeBackend({
-    pty: terminalOf(CLAUDE_TAB).pty,
+    pty: claudeTerminal.pty,
     tracker,
     store: () => store,
     userData: () => world.userData,
@@ -222,7 +244,14 @@ async function aTabOfEveryAgent() {
   })
   return {
     lifecycle,
-    claude: { backend: claude, tracker, store, sent: claudeSent, rowsReread: () => rowsReread },
+    claude: {
+      backend: claude,
+      tracker,
+      store,
+      sent: claudeSent,
+      rowsReread: () => rowsReread,
+      openTerminals: claudeTerminal.open
+    },
     codex: {
       backend: codexAsABackend,
       sessions: codex,
@@ -234,6 +263,8 @@ async function aTabOfEveryAgent() {
       sessions: agy,
       sent: agySent,
       killed: agyTerminal.killed,
+      machineNamed: agyTerminal.machineNamed,
+      openTerminals: agyTerminal.open,
       ranOverSsh: ssh.ran
     },
     whenTornDown,
@@ -487,6 +518,41 @@ describe('the tmux session a tab runs in on a machine, as each of the three real
       codex: [undefined, undefined, undefined, undefined],
       agy: [undefined, undefined, undefined, expect.stringContaining(AGY_TAB)]
     })
+  })
+
+  it('the tab that runs a tmux session on a machine: Claude Code and Antigravity each name their tab there only while that tab’s terminal is open, Codex names none as its tab runs in no tmux session there; none names one on another machine or for a tmux session not its own; and the Antigravity tab’s terminal names that machine, so its tab id alone already finds it there', async () => {
+    const a = await aTabOfEveryAgent()
+    const CLAUDE_TAB_ON_THE_MACHINE = 'pty-claude-on-the-machine'
+    a.claude.tracker.track(CLAUDE_TAB_ON_THE_MACHINE, ON_THE_MACHINE, {
+      host: MACHINE,
+      projectsRoot: path.join(world.home, 'mirror', MACHINE),
+      tmuxName: 'k-a-claude-session'
+    })
+    stops.push(() => a.claude.tracker.untrack(CLAUDE_TAB_ON_THE_MACHINE))
+    const asked: [string, string][] = [
+      [MACHINE, 'k-a-claude-session'],
+      [MACHINE, a.agy.backend.tmuxOfTab(AGY_TAB)!],
+      ['otherbox', 'k-a-claude-session'],
+      ['otherbox', a.agy.backend.tmuxOfTab(AGY_TAB)!],
+      [MACHINE, 'k-not-its-own']
+    ]
+    const answers = (): Record<string, (string | undefined)[]> =>
+      Object.fromEntries(
+        SESSION_BACKENDS.map((id) => [
+          id,
+          asked.map(([host, name]) => a[id].backend.tabOfTmuxSession(host, name))
+        ])
+      )
+    const NONE = [undefined, undefined, undefined, undefined, undefined]
+    expect(answers()).toEqual({ claude: NONE, codex: NONE, agy: NONE })
+    a.claude.openTerminals.add(CLAUDE_TAB_ON_THE_MACHINE)
+    a.agy.openTerminals.add(AGY_TAB)
+    expect(answers()).toEqual({
+      claude: [CLAUDE_TAB_ON_THE_MACHINE, undefined, undefined, undefined, undefined],
+      codex: [undefined, undefined, undefined, undefined, undefined],
+      agy: [undefined, AGY_TAB, undefined, undefined, undefined]
+    })
+    expect(a.agy.machineNamed).toEqual([MACHINE])
   })
 })
 

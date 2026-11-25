@@ -424,9 +424,9 @@ describe('the order a launch on another machine keeps', () => {
   })
 
   // ADR-0044
-  it("a Claude Code session Koloft just ended on the machine, resumed while the machine's last heartbeat still lists it, starts anew and so asks for an account; refused for having none, that resume has already used up the note that Koloft ended the session, so the next one attaches to what the heartbeat lists and asks for no account", async () => {
+  it("a Claude Code session Koloft just ended on the machine, resumed while the machine's last heartbeat still lists it, starts anew and so asks for an account; a resume refused for having none leaves the note that Koloft ended the session, so every later resume before the next heartbeat starts anew and asks for an account again, never attaching to the session that is gone", async () => {
     const why = '"me" is not signed in — sign in again in Settings ▸ Accounts.'
-    const pickAccount = vi.fn(async () => undefined)
+    const pickAccount = vi.fn(async (): Promise<typeof ACCOUNT | undefined> => undefined)
     const tab = claudeWith(
       { pickAccount, noAccountMessage: () => why, alive: () => new Set([RUNNING_THERE]) },
       {
@@ -439,10 +439,41 @@ describe('the order a launch on another machine keeps', () => {
     )
     tab.backend.stop(TAB)
     await expect(claudeTabOn(tab, { resumeSessionId: RUNNING_THERE })).rejects.toThrow(why)
-    expect(pickAccount).toHaveBeenCalledTimes(1)
+    await expect(claudeTabOn(tab, { resumeSessionId: RUNNING_THERE })).rejects.toThrow(why)
+    expect(pickAccount).toHaveBeenCalledTimes(2)
+    pickAccount.mockResolvedValue(ACCOUNT)
     expect((await claudeTabOn(tab, { resumeSessionId: RUNNING_THERE })).ok).toBe(true)
-    expect(pickAccount).toHaveBeenCalledTimes(1)
+    expect(pickAccount).toHaveBeenCalledTimes(3)
+    expect(tab.started[0].typedLine).toContain('a=start')
+    expect((await claudeTabOn(tab, { resumeSessionId: RUNNING_THERE })).ok).toBe(true)
+    expect(pickAccount).toHaveBeenCalledTimes(3)
+    expect(tab.started[1].typedLine).toContain('a=attach')
+  })
+
+  it('a Claude Code session the machine still runs, ended by Koloft while a resume of it is already deciding to attach, is started anew by the next resume: the attach does not use up the note that Koloft ended it', async () => {
+    let endedMidway = false
+    const tab: ClaudeTab = claudeWith(
+      { alive: () => new Set([RUNNING_THERE]) },
+      {
+        remoteTab: {
+          host: MACHINE,
+          projectsRoot: path.join(world.userData, 'projects'),
+          tmuxName: `k-${RUNNING_THERE}`
+        }
+      },
+      recordingSsh((readable) => {
+        if (readable.includes('show-environment') && !endedMidway) {
+          endedMidway = true
+          tab.backend.stop(TAB)
+        }
+        return {}
+      })
+    )
+    expect((await claudeTabOn(tab, { resumeSessionId: RUNNING_THERE })).ok).toBe(true)
+    expect(endedMidway).toBe(true)
     expect(tab.started[0].typedLine).toContain('a=attach')
+    expect((await claudeTabOn(tab, { resumeSessionId: RUNNING_THERE })).ok).toBe(true)
+    expect(tab.started[1].typedLine).toContain('a=start')
   })
 
   it("a Claude Code session on a machine that cannot be reached is refused with ssh's own reason before anything else is decided: no account is picked, and a launch whose arguments are wrong gets that reason too", async () => {
