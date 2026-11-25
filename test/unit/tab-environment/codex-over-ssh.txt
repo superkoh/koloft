@@ -1,4 +1,4 @@
-=== what the process gets: every name Koloft inherited dirty, set or changed ===
+=== everything the process gets ===
 ANTHROPIC_API_KEY=the-users-own-anthropic-key
 ANTHROPIC_AUTH_TOKEN=the-users-own-anthropic-token
 ANT_ACCOUNT=whoever-started-koloft

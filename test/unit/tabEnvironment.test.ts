@@ -1,5 +1,15 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type MockInstance
+} from 'vitest'
 import fs from 'fs'
+import os from 'os'
 import path from 'path'
 import { app } from 'electron'
 
@@ -143,10 +153,13 @@ const OF_THE_KOLOFT_TAB_IT_WAS_STARTED_IN = {
 
 let world: World
 let inherited: Record<string, string>
-let before: NodeJS.ProcessEnv
 let stops: (() => Promise<void>)[]
+let loginShellOfWhoeverRunsTheTests: MockInstance
 
 beforeEach(() => {
+  loginShellOfWhoeverRunsTheTests = vi
+    .spyOn(os, 'userInfo')
+    .mockReturnValue({ ...os.userInfo(), shell: '/bin/zsh' })
   world = makeWorld()
   fs.mkdirSync(path.join(world.home, 'tmp'))
   inherited = {
@@ -158,9 +171,6 @@ beforeEach(() => {
     ...OF_A_CODEX_SESSION,
     ...OF_THE_KOLOFT_TAB_IT_WAS_STARTED_IN
   }
-  before = { ...process.env }
-  for (const name of ['LC_ALL', 'LC_CTYPE', 'PWD']) delete process.env[name]
-  Object.assign(process.env, inherited)
   terminal.spawn.mockClear()
   codexServer.started.length = 0
   stops = []
@@ -169,10 +179,26 @@ beforeEach(() => {
 afterEach(async () => {
   for (const stop of stops) await stop()
   await BackgroundFile.whenAllWritten()
-  for (const name of Object.keys(process.env)) if (!(name in before)) delete process.env[name]
-  Object.assign(process.env, before)
+  loginShellOfWhoeverRunsTheTests.mockRestore()
   world.gone()
 })
+
+function nothingButThis(env: NodeJS.ProcessEnv): void {
+  for (const name of Object.keys(process.env)) delete process.env[name]
+  Object.assign(process.env, env)
+}
+
+async function whileKoloftsOwnEnvironmentIsOnlyWhatItInherited<T>(
+  start: () => T | Promise<T>
+): Promise<T> {
+  const ofThisTestRun = { ...process.env }
+  nothingButThis(inherited)
+  try {
+    return await start()
+  } finally {
+    nothingButThis(ofThisTestRun)
+  }
+}
 
 function koloftsTerminals(): PtyManager {
   const terminals = new PtyManager()
@@ -187,7 +213,7 @@ function koloftsTerminals(): PtyManager {
 
 function asATable(env: NodeJS.ProcessEnv): string {
   const set = Object.entries(env)
-    .filter(([name, value]) => name in inherited || before[name] !== value)
+    .filter(([, value]) => value !== undefined)
     .sort(([a], [b]) => (a < b ? -1 : 1))
     .map(([name, value]) => `${name}=${name === 'KOLOFT_PID' ? '<pid of this Koloft>' : value}`)
   const cleared = Object.keys(inherited)
@@ -195,7 +221,7 @@ function asATable(env: NodeJS.ProcessEnv): string {
     .sort()
   return sameOnEveryRun(
     [
-      '=== what the process gets: every name Koloft inherited dirty, set or changed ===',
+      '=== everything the process gets ===',
       ...set,
       '=== cleared: inherited, and not handed on ===',
       ...cleared
@@ -216,38 +242,41 @@ function ofTheLastTerminalStarted(): string {
 const pin = (table: string, name: string): Promise<void> =>
   expect(table).toMatchFileSnapshot(`${PINNED}/${name}.txt`)
 
-async function claudeTab(cwd: string): Promise<string> {
-  const backend = claudeBackendIn(world, koloftsTerminals(), {
-    machine: { run: recordingSsh().run }
+const claudeTab = (cwd: string): Promise<string> =>
+  whileKoloftsOwnEnvironmentIsOnlyWhatItInherited(async () => {
+    const backend = claudeBackendIn(world, koloftsTerminals(), {
+      machine: { run: recordingSsh().run }
+    })
+    const made = await backend.create({ kind: 'claude', cwd, tabId: TAB })
+    if (!made.ok) throw new Error(`launch refused: ${made.code}`)
+    return ofTheLastTerminalStarted()
   })
-  const made = await backend.create({ kind: 'claude', cwd, tabId: TAB })
-  if (!made.ok) throw new Error(`launch refused: ${made.code}`)
-  return ofTheLastTerminalStarted()
-}
 
-async function agyTab(cwd: string): Promise<string> {
-  const sessions = agySessionsIn(world, koloftsTerminals(), {
-    machine: { run: recordingSsh().run },
-    apiKey: 'api-key-of-the-koloft-account'
+const agyTab = (cwd: string): Promise<string> =>
+  whileKoloftsOwnEnvironmentIsOnlyWhatItInherited(async () => {
+    const sessions = agySessionsIn(world, koloftsTerminals(), {
+      machine: { run: recordingSsh().run },
+      apiKey: 'api-key-of-the-koloft-account'
+    })
+    stops.push(() => sessions.stopAll())
+    await sessions.launch({ kind: 'agy', cwd, tabId: TAB, trustFolder: true })
+    return ofTheLastTerminalStarted()
   })
-  stops.push(() => sessions.stopAll())
-  await sessions.launch({ kind: 'agy', cwd, tabId: TAB, trustFolder: true })
-  return ofTheLastTerminalStarted()
-}
 
-async function codexTab(cwd: string): Promise<{ tab: string; server: string }> {
-  const sessions = codexSessionsIn(world, koloftsTerminals(), {
-    ranOnTheMachine: [],
-    run: () => ({ code: 1, stdout: '', stderr: '' })
+const codexTab = (cwd: string): Promise<{ tab: string; server: string }> =>
+  whileKoloftsOwnEnvironmentIsOnlyWhatItInherited(async () => {
+    const sessions = codexSessionsIn(world, koloftsTerminals(), {
+      ranOnTheMachine: [],
+      run: () => ({ code: 1, stdout: '', stderr: '' })
+    })
+    stops.push(() => sessions.stopAll())
+    await sessions.launch({ kind: 'codex', cwd, tabId: TAB })
+    const server = codexServer.started.at(-1)!
+    return {
+      tab: ofTheLastTerminalStarted(),
+      server: asATable({ ...codexEnvironment(server.env), ...server.sessionEnv })
+    }
   })
-  stops.push(() => sessions.stopAll())
-  await sessions.launch({ kind: 'codex', cwd, tabId: TAB })
-  const server = codexServer.started.at(-1)!
-  return {
-    tab: ofTheLastTerminalStarted(),
-    server: asATable({ ...codexEnvironment(server.env), ...server.sessionEnv })
-  }
-}
 
 describe('the environment each kind of tab hands its process when Koloft itself was started from inside a session of every agent, with the user’s own keys set too — pinned so that moving the rules changes no cell', () => {
   it('a Claude Code tab on this Mac', async () =>
@@ -273,25 +302,33 @@ describe('the environment each kind of tab hands its process when Koloft itself 
   it('an Antigravity tab over SSH (the shell on this Mac that runs ssh)', async () =>
     pin(await agyTab(ON_THE_MACHINE), 'agy-over-ssh'))
 
-  it('a plain terminal tab, and a Workbench terminal of a session', () => {
-    const terminals = koloftsTerminals()
-    const session = terminals.create({ kind: 'shell', koloftShim: KOLOFT_SHIM, cwd: world.repo })
-    const plain = ofTheLastTerminalStarted()
-    terminals.create({
-      kind: 'shell',
-      koloftShim: KOLOFT_SHIM,
-      cwd: world.repo,
-      util: true,
-      ownerTabId: session.id,
-      id: 'pty-workbench-1'
+  it('a plain terminal tab, and a Workbench terminal of a session', async () => {
+    const { plain, workbench } = await whileKoloftsOwnEnvironmentIsOnlyWhatItInherited(() => {
+      const terminals = koloftsTerminals()
+      const session = terminals.create({ kind: 'shell', koloftShim: KOLOFT_SHIM, cwd: world.repo })
+      const ofThePlainOne = ofTheLastTerminalStarted()
+      terminals.create({
+        kind: 'shell',
+        koloftShim: KOLOFT_SHIM,
+        cwd: world.repo,
+        util: true,
+        ownerTabId: session.id,
+        id: 'pty-workbench-1'
+      })
+      return {
+        plain: ofThePlainOne.replaceAll(session.id, '<tab id>'),
+        workbench: ofTheLastTerminalStarted().replaceAll(session.id, '<tab id of its session>')
+      }
     })
-    const workbench = ofTheLastTerminalStarted()
-    return Promise.all([
-      pin(plain.replaceAll(session.id, '<tab id>'), 'plain-terminal'),
-      pin(workbench.replaceAll(session.id, '<tab id of its session>'), 'workbench-terminal')
-    ])
+    await pin(plain, 'plain-terminal')
+    await pin(workbench, 'workbench-terminal')
   })
 
-  it("what Codex's version probe runs with", () =>
-    pin(asATable(codexEnvironment({ ...process.env })), 'codex-version-probe'))
+  it("what Codex's version probe runs with", async () =>
+    pin(
+      await whileKoloftsOwnEnvironmentIsOnlyWhatItInherited(() =>
+        asATable(codexEnvironment({ ...process.env }))
+      ),
+      'codex-version-probe'
+    ))
 })
