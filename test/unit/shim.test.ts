@@ -1228,6 +1228,81 @@ describe('claude shim (nested Koloft instances)', () => {
   }, 30_000)
 })
 
+describe('codex and agy guards (nested Koloft instances)', () => {
+  const GUARD_THAT_SKIPS_ONLY_ITS_OWN_FOLDER = (bin: string): string => `#!/bin/sh
+if [ "$KOLOFT_UTIL" = "1" ]; then
+  :
+fi
+self=$(cd "$(dirname "$0")" && pwd)
+IFS=:
+set -f
+for d in $PATH; do
+  [ "$d" = "$self" ] && continue
+  [ -x "$d/${bin}" ] && exec "$d/${bin}" "$@"
+done
+echo "${bin}: not found" >&2
+exit 127
+`
+
+  function withPeerFolder(bin: string, text: string, run: (peer: string) => void): void {
+    const peer = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-peer-shim-'))
+    try {
+      fs.writeFileSync(path.join(peer, bin), text, { mode: 0o755 })
+      fs.chmodSync(path.join(peer, bin), 0o755)
+      run(peer)
+    } finally {
+      fs.rmSync(peer, { recursive: true, force: true })
+    }
+  }
+
+  const runFrom = (dir: string, bin: 'codex' | 'agy', PATH: string): ShimRun => {
+    const cwd = os.tmpdir()
+    const argsOut = path.join(base, `args-${Math.random().toString(36).slice(2)}`)
+    const envOut = path.join(base, `env-${Math.random().toString(36).slice(2)}`)
+    const res = spawnSync(path.join(dir, bin), ['--version'], {
+      cwd,
+      env: pinnedShimEnvNeverSpreadingProcessEnv(cwd, argsOut, envOut, { PATH }),
+      encoding: 'utf8',
+      timeout: 10_000
+    })
+    return collect(cwd, argsOut, envOut, res.status ?? -1, res.stderr ?? '')
+  }
+
+  it.each(['codex', 'agy'] as const)(
+    "%s skips another Koloft's guard on PATH, one like it or one that skips only its own folder, whichever comes first, and runs the real program instead of the two guards exec'ing each other forever",
+    (bin) => {
+      for (const peerText of [
+        fs.readFileSync(path.join(shimDir, bin), 'utf8'),
+        GUARD_THAT_SKIPS_ONLY_ITS_OWN_FOLDER(bin)
+      ]) {
+        withPeerFolder(bin, peerText, (peer) => {
+          for (const [first, second] of [
+            [shimDir, peer],
+            [peer, shimDir]
+          ]) {
+            const r = runFrom(first, bin, `${first}:${second}:${realBin}:/usr/bin:/bin`)
+            expect(r.status).toBe(0)
+            expect(r.realArgs).toEqual(['--version'])
+          }
+        })
+      }
+    },
+    60_000
+  )
+
+  it.each(['codex', 'agy'] as const)(
+    '%s with two Koloft guards on PATH and no real program says it is not found and ends at once',
+    (bin) => {
+      withPeerFolder(bin, fs.readFileSync(path.join(shimDir, bin), 'utf8'), (peer) => {
+        const r = runFrom(shimDir, bin, `${shimDir}:${peer}:/usr/bin:/bin`)
+        expect(r.status).toBe(127)
+        expect(r.stderr).toBe(`${bin}: not found\n`)
+      })
+    },
+    30_000
+  )
+})
+
 describe('git credential helper and gh wrapper', () => {
   it("are written next to the claude shim, so the shim dir puts Koloft's gh first on a session's PATH, and both reach Koloft through this launch's git request dir", () => {
     expect(ghWrapper).toBe(path.join(shimDir, 'gh'))

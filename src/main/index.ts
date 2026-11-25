@@ -47,8 +47,8 @@ import {
   outputStartCarry,
   plainTerminalTail
 } from './signInOutput'
-import type { AskPayload, SessionEvent } from '@shared/sessionEvent'
-import { claudeAskLine, storedAskLine } from './rowActivity'
+import type { SessionEvent } from '@shared/sessionEvent'
+import { askWiring } from './askWiring'
 import {
   OpenTabsFile,
   openTabsNow,
@@ -427,8 +427,6 @@ type Recipient = Parameters<ReturnType<SessionsStarted['buildHandOver']>['tell']
 type MergedHeads = NonNullable<Parameters<SessionsStarted['whatIsLeft']>[2]>
 type NoticeFile = ReturnType<SessionsStarted['localNotice']>
 type SyncSession = Parameters<SessionsStarted['sessionSync']['observe']>[0][number]
-type CodexAsk = Parameters<SessionsStarted['codexDialog']>[0]
-type DialogView = ReturnType<SessionsStarted['claudeDialog']>
 type ToolCall = Parameters<SessionsStarted['isAskedCall']>[1]
 type AgyHomePick = NonNullable<
   ReturnType<Parameters<SessionsStarted['buildAgySessions']>[0]['pickHome']>
@@ -499,7 +497,22 @@ const terminalOutput = new TerminalOutput({
 })
 const runtimeDeps: PluginStartDeps['sessions']['runtime'] = {}
 const trackerDeps: PluginStartDeps['sessions']['tracker'] = {}
-const claudeAsks = new Map<string, AskPayload>()
+const {
+  claudeAsked,
+  forgetClaudeAsk,
+  claudeAskOf,
+  endsTheAsk: claudeToolEndsTheAsk,
+  askingOf,
+  pendingAskOf,
+  ownerAsleepAsked,
+  dialogOf
+} = askWiring({
+  runtime: () => runtime,
+  storedOwnerOf,
+  sessionAsks: () => sessionAsks,
+  readers: () => ({ claudeDialog, codexDialog, questionsOf, isAskedCall }),
+  questionAsked: (asked) => announceNow(QUESTION_ASKED, asked)
+})
 let codexSessions: ReturnType<typeof buildCodexSessions> | null = null
 let agySessions: ReturnType<typeof buildAgySessions> | null = null
 const startupErrors: Partial<Record<BackendId, string>> = {}
@@ -524,12 +537,12 @@ const sessionsEndedThisRun = new Set<string>()
 const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
   turnEnded: (tabId, turn) => announceNow(TURN_ENDED, { tabId, turn }),
   prompted: (tabId) => {
-    claudeAsks.delete(tabId)
+    forgetClaudeAsk(tabId)
     consumeOutletDedupe(tabId)
     announceNow(TURN_STARTED, tabId)
   },
   bound: (tabId, key, idleCompaction) => {
-    claudeAsks.delete(tabId)
+    forgetClaudeAsk(tabId)
     const session = sessionOfTab(tabId)
     if (session) sessionAccounts?.note([session])
     if (!idleCompaction) attention.bound(tabId, key)
@@ -542,10 +555,7 @@ const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
     if (subject.sessionId) sessionsEndedThisRun.add(subject.sessionId)
     attention.onExited(tabId, subject)
   },
-  asked: (tabId, ask, id) => {
-    claudeAsks.set(tabId, ask)
-    announceNow(QUESTION_ASKED, { tabId, id })
-  },
+  asked: claudeAsked,
   clearAttention: (tabId) => attention.clear(tabId),
   open: (tabId, target) => {
     if (path.isAbsolute(target) && !fs.existsSync(target)) return
@@ -555,14 +565,7 @@ const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
 const backendHooks: PluginStartDeps['sessions']['backendHooks'] = {}
 backendHooks.isKoloftsOwnSession = (id) => !!butler?.isButlerSession(id)
 backendHooks.turnOver = (tabId) => runtime.turnOver(tabId)
-backendHooks.askingOf = (tabId) => {
-  if (runtime.statusOf(tabId) !== 'approval') return undefined
-  const owner = storedOwnerOf(tabId)
-  const stored = owner?.openApproval(tabId) ?? owner?.openQuestion(tabId)
-  if (stored) return storedAskLine(stored)
-  const ask = claudeAsks.get(tabId) ?? sessionAsks?.heldAsk(tabId)
-  return ask && claudeAskLine(ask)
-}
+backendHooks.askingOf = askingOf
 function showAskOnItsRow(tabId: string): void {
   if (runtime.statusOf(tabId) === 'approval') pushToSessions.sessions(onSessionsChanged())
 }
@@ -932,19 +935,7 @@ const ownerAsleepDeps: PluginStartDeps['butler']['ownerAsleep'] = {
     return tab ? [tab] : []
   },
   tabs: agentTabIds,
-  asked: async (tabId) => {
-    const stored = await pendingAskOf(tabId)
-    if (stored) {
-      const questions = 'questions' in stored ? stored.questions.length : 0
-      return { question: questions > 0, questions, text: codexDialog(stored).text }
-    }
-    const claude =
-      sessionAsks?.heldAsk(tabId) ??
-      (runtime.statusOf(tabId) === 'approval' ? sessionAsks?.askOf(tabId) : undefined)
-    if (!claude) return undefined
-    const questions = questionsOf(claude).length
-    return { question: questions > 0, questions, text: claudeDialog(claude).text }
-  },
+  asked: ownerAsleepAsked,
   answer: (tabId, reply) => answerSession(tabId, reply, true),
   titleOf: (tabId) => sessionOfTab(tabId)?.title ?? 'A session',
   changedSince: (since) => awayDigest?.changedSince(since) ?? [],
@@ -1282,8 +1273,6 @@ let claudeAgentPlugin: string | undefined
 let claudeDocsPlugin: string | undefined
 const docsPluginWhileOn = (): string | undefined => (docsWritingOn() ? claudeDocsPlugin : undefined)
 
-const CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS = 8
-const CODEX_REQUEST_POLL_MS = 250
 const ATTACHMENTS_KEPT_MS = 7 * 24 * 60 * 60 * 1000
 const SWITCH_FLIPS_GATHER_MS = 2000
 const ATTACHMENTS_PRUNED_EVERY_MS = 24 * 60 * 60 * 1000
@@ -1341,17 +1330,6 @@ async function withPastedPicturesOnItsMachine(
     })
   )
   return { ...options, firstPrompt }
-}
-
-// CODEX§3 CODEX§20
-async function pendingAskOf(tabId: string): Promise<CodexAsk | undefined> {
-  for (let polls = CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS; ; polls--) {
-    const owner = storedOwnerOf(tabId)
-    const ask = owner?.openApproval(tabId) ?? owner?.openQuestion(tabId)
-    if (ask || !polls || !owner) return ask
-    if (runtime.statusOf(tabId) !== 'approval' && !runtime.awaitsInput(tabId)) return undefined
-    await sleep(CODEX_REQUEST_POLL_MS)
-  }
 }
 
 function syncAnswerable(): void {
@@ -2036,7 +2014,7 @@ const inboxKoloft: PluginStartDeps['inbox']['koloft'] = {
     const s = liveSessionOf(ref)
     return s && { tabId: s.tabId, backend: s.backendId }
   },
-  claudeAskOf: (tabId) => claudeAsks.get(tabId),
+  claudeAskOf,
   pendingAskOf,
   answer: answerSession,
   butlerSide,
@@ -2059,7 +2037,7 @@ const claudeDialogs = new ClaudeDialogWatch({
 trackerDeps.dialogJustClosed = (tabId) => claudeDialogs.justClosedADialog(tabId)
 
 function claudeAskEnded(tabId: string): void {
-  claudeAsks.delete(tabId)
+  forgetClaudeAsk(tabId)
   questionSeen.delete(tabId)
 }
 
@@ -3411,7 +3389,7 @@ app.whenReady().then(() => {
     }
     // PLATFORM§21
     terminalOutput.end(e.id, !sleepers.has(e.id) && !signInNobodyOpened)
-    claudeAsks.delete(e.id)
+    forgetClaudeAsk(e.id)
     tabLifecycle.emit('teardown', exit)
     const sent: TerminalExit = { id: e.id, exitCode: e.exitCode, signal: e.signal }
     const accountIssue = shimAccountRefusals.get(e.id)
@@ -3433,8 +3411,7 @@ app.whenReady().then(() => {
   })
   runtime.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
   tracker.on('tool-done', ({ tabId, ...call }: ToolCall & { tabId: string }) => {
-    const ask = claudeAsks.get(tabId)
-    const endsTheAsk = !!ask && isAskedCall(ask, call)
+    const endsTheAsk = claudeToolEndsTheAsk(tabId, call)
     if (endsTheAsk) claudeAskEnded(tabId)
     announceNow(TOOL_DONE, { tabId, call, endsTheAsk })
   })
@@ -3823,10 +3800,6 @@ app.whenReady().then(() => {
     status: (tabId) => runtime.statusOf(tabId),
     alive: (tabId) => !!ptyMgr.get(tabId)?.alive
   })
-  const dialogOf = async (tabId: string): Promise<DialogView | undefined> => {
-    const ask = await pendingAskOf(tabId)
-    return ask ? codexDialog(ask) : asks.dialog(tabId)
-  }
   const buttons = buildAskButtons({
     owner: () => bindingNow.owner(),
     dialogText: async (tabId) => (await dialogOf(tabId))?.text,
@@ -5989,7 +5962,7 @@ const startedPlugins: PluginsStarted = startPlugins(
       session: sessionDeps,
       eachTurn: {
         askBeforeAsksAreMade: showAskOnItsRow,
-        askAsItsAgentGaveIt: (tabId) => claudeAsks.get(tabId)
+        askAsItsAgentGaveIt: claudeAskOf
       },
       commands: sessionsCommands,
       eachState: {
