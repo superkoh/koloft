@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import fs from 'fs'
+import path from 'path'
 import { app } from 'electron'
 
 vi.mock('electron', async () => {
@@ -49,6 +50,7 @@ vi.mock('../../src/agents/codex/main/codexTransport', async (importOriginal) => 
 })
 
 import type { SessionEvent } from '@shared/sessionEvent'
+import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/agents/claude/main/backend'
 import { SessionTracker } from '../../src/agents/claude/main/sessionTracker'
 import { SessionRuntime } from '../../src/core/agent/sessionRuntime'
@@ -94,16 +96,19 @@ interface ThreeAgents {
 
 let world: World
 let stops: (() => Promise<void> | void)[]
+let toasts: string[]
 
 beforeEach(() => {
   world = makeWorld()
   stops = []
+  toasts = []
 })
 
 afterEach(async () => {
   for (const stop of stops) await stop()
   await BackgroundFile.whenAllWritten()
   world.gone()
+  expect(toasts, 'a tab that ends without a failed stop shows no toast').toEqual([])
 })
 
 async function aTabOfEveryAgent(): Promise<ThreeAgents> {
@@ -118,7 +123,12 @@ async function aTabOfEveryAgent(): Promise<ThreeAgents> {
   } as unknown as ClaudeBackendDeps)
   claude.watchLocalHooks(world.regDir)
   tracker.track(CLAUDE_TAB, world.repo)
-  tracker.bindSession(CLAUDE_TAB, '', CLAUDE_SESSION, world.repo)
+  tracker.bindSession(
+    CLAUDE_TAB,
+    path.join(world.home, 'transcripts', `${CLAUDE_SESSION}.jsonl`),
+    CLAUDE_SESSION,
+    world.repo
+  )
   stops.push(() => tracker.untrack(CLAUDE_TAB))
 
   const codexSent: Sent[] = []
@@ -149,9 +159,7 @@ async function aTabOfEveryAgent(): Promise<ThreeAgents> {
     claude,
     tracker,
     storedOwnerOf: (tabId) => [codex, agy].find((sessions) => sessions.hasTab(tabId)),
-    toast: (message) => {
-      throw new Error(`a tab that ends cleanly shows no toast, and this one showed: ${message}`)
-    },
+    toast: (message) => void toasts.push(message),
     workspaces: () => null,
     announce: <T>(moment: Moment<T>, m: T) => {
       if (moment.name === TAB_TORN_DOWN.name) for (const heard of whenTornDown) heard(m as TabEnded)
@@ -190,23 +198,23 @@ const storedTabNow = (of: ThreeAgents['codex'] | ThreeAgents['agy'], tabId: stri
   killed: [...of.killed]
 })
 
-const UNTOUCHED = { open: true, countsOnItsAccount: true, sent: [], killed: [] }
+const OPEN_AND_LEFT_ALONE = { open: true, countsOnItsAccount: true, killed: [] }
+
+const A_STOP_STARTED_BY_MISTAKE_SHOWS_WITHIN_MS = 50
+
+const pastAnyStopStartedByMistake = (): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, A_STOP_STARTED_BY_MISTAKE_SHOWS_WITHIN_MS))
+
+const REPORTED_AS_EXITED_UNCLEANLY: Sent = [
+  CLAUDE_TAB,
+  { type: 'exited', clean: false, title: PLACEHOLDER_SESSION_TITLE, sessionId: CLAUDE_SESSION }
+]
 
 describe('a session tab whose terminal ended, told to the three agents as the app tells them', () => {
-  it('Claude Code: a tab on this Mac whose claude died without an end report is reported as exited with its session, and its row is no longer alive', async () => {
+  it('Claude Code: a tab on this Mac whose claude died without an end report is reported as exited with its session and its title, and its row is no longer alive', async () => {
     const a = await aTabOfEveryAgent()
     a.lifecycle.emit('teardown', crashed(CLAUDE_TAB))
-    expect(a.claude.sent).toEqual([
-      [
-        CLAUDE_TAB,
-        {
-          type: 'exited',
-          clean: false,
-          title: a.claude.tracker.infoOf(CLAUDE_TAB)?.title,
-          sessionId: CLAUDE_SESSION
-        }
-      ]
-    ])
+    expect(a.claude.sent).toEqual([REPORTED_AS_EXITED_UNCLEANLY])
     expect(a.claude.tracker.infoOf(CLAUDE_TAB)?.alive).toBe(false)
   })
 
@@ -236,47 +244,64 @@ describe('a session tab whose terminal ended, told to the three agents as the ap
 describe('a tab of one agent that ends is nothing to the other two', () => {
   it("Claude Code's tab crashes: the Codex tab and the Antigravity tab stay open, still count on their accounts, send no event, and their terminals are not let go", async () => {
     const a = await aTabOfEveryAgent()
+    const codexBefore = storedTabNow(a.codex, CODEX_TAB)
+    const agyBefore = storedTabNow(a.agy, AGY_TAB)
     a.lifecycle.emit('teardown', crashed(CLAUDE_TAB))
-    await vi.waitFor(() => expect(a.claude.sent).toHaveLength(1))
-    expect(storedTabNow(a.codex, CODEX_TAB)).toEqual(UNTOUCHED)
-    expect(storedTabNow(a.agy, AGY_TAB)).toEqual(UNTOUCHED)
+    expect(a.claude.sent).toEqual([REPORTED_AS_EXITED_UNCLEANLY])
+    await pastAnyStopStartedByMistake()
+    expect(storedTabNow(a.codex, CODEX_TAB)).toEqual(codexBefore)
+    expect(storedTabNow(a.agy, AGY_TAB)).toEqual(agyBefore)
+    expect(codexBefore).toMatchObject(OPEN_AND_LEFT_ALONE)
+    expect(agyBefore).toMatchObject(OPEN_AND_LEFT_ALONE)
   })
 
   it("Codex's tab crashes: Claude Code's row stays alive on its session and Claude Code sends no event, and the Antigravity tab is untouched", async () => {
     const a = await aTabOfEveryAgent()
     const claudeBefore = claudeTabNow(a)
+    const agyBefore = storedTabNow(a.agy, AGY_TAB)
     a.lifecycle.emit('teardown', crashed(CODEX_TAB))
     await vi.waitFor(() => expect(a.codex.sessions.hasTab(CODEX_TAB)).toBe(false))
+    await pastAnyStopStartedByMistake()
     expect(claudeTabNow(a)).toEqual(claudeBefore)
     expect(claudeBefore).toEqual({ alive: true, session: CLAUDE_SESSION, sent: [] })
-    expect(storedTabNow(a.agy, AGY_TAB)).toEqual(UNTOUCHED)
+    expect(storedTabNow(a.agy, AGY_TAB)).toEqual(agyBefore)
+    expect(agyBefore).toMatchObject(OPEN_AND_LEFT_ALONE)
   })
 
   it("Antigravity's tab crashes: Claude Code's row stays alive on its session and Claude Code sends no event, and the Codex tab is untouched", async () => {
     const a = await aTabOfEveryAgent()
     const claudeBefore = claudeTabNow(a)
+    const codexBefore = storedTabNow(a.codex, CODEX_TAB)
     a.lifecycle.emit('teardown', crashed(AGY_TAB))
     await vi.waitFor(() => expect(a.agy.sessions.hasTab(AGY_TAB)).toBe(false))
+    await pastAnyStopStartedByMistake()
     expect(claudeTabNow(a)).toEqual(claudeBefore)
     expect(claudeBefore).toEqual({ alive: true, session: CLAUDE_SESSION, sent: [] })
-    expect(storedTabNow(a.codex, CODEX_TAB)).toEqual(UNTOUCHED)
+    expect(storedTabNow(a.codex, CODEX_TAB)).toEqual(codexBefore)
+    expect(codexBefore).toMatchObject(OPEN_AND_LEFT_ALONE)
   })
 })
 
 describe('an agent told of the end of a tab that is not its own, as each will be once every agent is told of every tab', () => {
   it('Codex stops nothing: its own tab stays open, still counts on its account, sends no event and keeps its terminal', async () => {
     const a = await aTabOfEveryAgent()
+    const before = storedTabNow(a.codex, CODEX_TAB)
     await a.codex.sessions.stop(CLAUDE_TAB, 1)
     await a.codex.sessions.stop(AGY_TAB, 0)
-    expect(storedTabNow(a.codex, CODEX_TAB)).toEqual(UNTOUCHED)
+    await pastAnyStopStartedByMistake()
+    expect(storedTabNow(a.codex, CODEX_TAB)).toEqual(before)
+    expect(before).toMatchObject(OPEN_AND_LEFT_ALONE)
   })
 
   it('Antigravity stops nothing: its own tab stays open, still counts on its account, sends no event, keeps its terminal and runs nothing on the machine', async () => {
     const a = await aTabOfEveryAgent()
+    const before = storedTabNow(a.agy, AGY_TAB)
     const ranBefore = a.agy.ranOverSsh.length
     await a.agy.sessions.stop(CLAUDE_TAB, 1)
     await a.agy.sessions.stop(CODEX_TAB, 0)
-    expect(storedTabNow(a.agy, AGY_TAB)).toEqual(UNTOUCHED)
+    await pastAnyStopStartedByMistake()
+    expect(storedTabNow(a.agy, AGY_TAB)).toEqual(before)
+    expect(before).toMatchObject(OPEN_AND_LEFT_ALONE)
     expect(a.agy.ranOverSsh.slice(ranBefore)).toEqual([])
   })
 })
@@ -311,11 +336,7 @@ describe('what the plugins find when they hear that a tab was torn down', () => 
     a.whenTornDown.push(() => heard.push(claudeTabNow(a)))
     a.lifecycle.emit('teardown', crashed(CLAUDE_TAB))
     expect(heard).toEqual([
-      {
-        alive: false,
-        session: CLAUDE_SESSION,
-        sent: [[CLAUDE_TAB, expect.objectContaining({ type: 'exited', clean: false })]]
-      }
+      { alive: false, session: CLAUDE_SESSION, sent: [REPORTED_AS_EXITED_UNCLEANLY] }
     ])
   })
 })
