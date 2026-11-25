@@ -1,7 +1,14 @@
 // ADR-0054
-import type { AccountAddResult, McpServer } from '@shared/types'
+import type {
+  AccountAddResult,
+  McpServer,
+  SignInNews,
+  SignInProgress,
+  SignInStart
+} from '@shared/types'
 import {
   AGENT_IDS,
+  accountKindFacts,
   agentManifest,
   agentOfAccountKind,
   type AccountKindId,
@@ -47,7 +54,11 @@ export interface AgentAccounts {
   ): Promise<AccountAddResult>
   forget(kind: AccountKindId, name: string): void
   folderSaysItRunsOnAKey(kind: AccountKindId, name: string): boolean
+  signIn(kind: AccountKindId, name: string, again: boolean): Promise<SignInStart>
+  cancelSignIn(kind: AccountKindId, name: string): void
 }
+
+type SignInListener = (news: SignInNews, heldFailureChanged: boolean) => void
 
 export interface AgentMain {
   id: AgentId
@@ -123,5 +134,47 @@ export class AgentsMain {
 
   folderSaysItRunsOnAKey(kind: AccountKindId, name: string): boolean {
     return this.ownerOf(kind)?.accounts.folderSaysItRunsOnAKey(kind, name) ?? false
+  }
+
+  private heldFailure: SignInProgress | null = null
+  private tabsSigningIn = new Map<string, number>()
+  private signInListener: SignInListener = () => {}
+
+  watchSignIns(listener: SignInListener): void {
+    this.signInListener = listener
+  }
+
+  async signIn(kind: AccountKindId, name: string, again: boolean): Promise<SignInStart> {
+    const owner = this.ownerOf(kind)
+    if (!owner || !accountKindFacts(kind).signsInThroughABrowser)
+      return { ok: false, error: 'invalid-name' }
+    return owner.accounts.signIn(kind, name, again)
+  }
+
+  signInChanged(progress: SignInProgress): void {
+    const key = `${progress.kind}:${progress.name}`
+    const tabs = this.tabsSigningIn.get(key) ?? 0
+    if (progress.phase === 'inATab') this.tabsSigningIn.set(key, tabs + 1)
+    const held = progress.phase === 'failed' && tabs > 0
+    if (held) {
+      this.tabsSigningIn.set(key, tabs - 1)
+      this.heldFailure = progress
+    }
+    this.signInListener({ progress, heldFailure: this.heldFailure }, held)
+  }
+
+  heldSignInFailure(): SignInProgress | null {
+    return this.heldFailure
+  }
+
+  forgetHeldSignInFailure(): void {
+    this.heldFailure = null
+    this.signInListener({ progress: null, heldFailure: null }, true)
+  }
+
+  endSignIn(kind: AccountKindId, name: string): void {
+    if (this.heldFailure?.kind === kind && this.heldFailure.name === name)
+      this.forgetHeldSignInFailure()
+    this.ownerOf(kind)?.accounts.cancelSignIn(kind, name)
   }
 }

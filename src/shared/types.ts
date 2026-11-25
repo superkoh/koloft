@@ -26,6 +26,9 @@ export type AccountKind = AccountKindId
 
 export const ACCOUNT_KINDS: readonly AccountKind[] = ACCOUNT_KIND_IDS
 
+export const isAccountKind = (kind: unknown): kind is AccountKind =>
+  ACCOUNT_KINDS.some((k) => k === kind)
+
 export const SIGN_IN_FOLDER_OF = Object.fromEntries(
   AGENT_IDS.flatMap((id) =>
     agentManifest(id)
@@ -328,6 +331,31 @@ export interface LoginProgress {
   tail?: string
   tabId?: string
   cwd?: string
+}
+
+export interface SignInProgress {
+  kind: AccountKind
+  name: string
+  again: boolean
+  phase: 'starting' | 'browser' | 'inATab' | 'saved' | 'failed'
+  url?: string
+  tail?: string
+  tab?: { tabId: string; cwd?: string }
+}
+
+export type SignInStart =
+  | { ok: true; progress: SignInProgress }
+  | { ok: false; error: 'invalid-name' | 'duplicate' | 'unknown' | 'keychain' }
+
+export interface SignInNews {
+  progress: SignInProgress | null
+  heldFailure: SignInProgress | null
+}
+
+export interface SignInCommand {
+  binary?: string
+  env: Record<string, string>
+  args?: string[]
 }
 
 export interface AccountAddResult {
@@ -1223,6 +1251,10 @@ export interface CoreApi {
     // CODEX§15
     codexUseReset(name: string): Promise<CodexResetOutcome>
     onLoginProgress(cb: (p: LoginProgress) => void): () => void
+    beginSignIn(kind: AccountKind, name: string, again?: boolean): Promise<SignInStart>
+    heldSignInFailure(): Promise<SignInProgress | null>
+    onSignInProgress(cb: (news: SignInNews) => void): () => void
+    endSignIn(kind: AccountKind, name: string): void
     onUpdate(cb: (accounts: AccountView[]) => void): () => void
   }
   gitAccounts: {

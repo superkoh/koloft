@@ -4,7 +4,9 @@ import type {
   AccountMeta,
   AccountView,
   BackendId,
-  SignInFolderKind
+  SignInCommand,
+  SignInFolderKind,
+  SignInStart
 } from '@shared/types'
 import type { SavedHomeUsageOf } from '../../../main/savedHomeUsage'
 
@@ -22,6 +24,15 @@ export interface HomeAccountsDeps {
   viewKey(name: string, kind: AccountKind): string
   sessionAccounts():
     { of(backend: BackendId, sessionId: string | undefined): string | undefined } | undefined
+  signInInATab(
+    kind: SignInFolderKind,
+    name: string,
+    again: boolean,
+    own: {
+      homeLogin(name: string): Promise<SignInCommand>
+      probeHomeAccount(name: string): Promise<void>
+    }
+  ): Promise<SignInStart>
 }
 
 interface UtilTerminalPick {
