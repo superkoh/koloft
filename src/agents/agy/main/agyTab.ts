@@ -115,7 +115,7 @@ export function agyTab(s: AgyTabSpec): TabProgram {
     ...(s.start ? [AGY_START_ENV] : [])
   ]
   const run = [
-    ...(s.start ? [`rm -f "$T.start."*.json; mv -f "$T.start.json" ${START_OF_THIS_RUN}`] : []),
+    ...(s.start ? [`mv -f "$T.start.json" ${START_OF_THIS_RUN}`] : []),
     // PLATFORM§35
     ...(s.banner ? [`printf '%s\\n' ${shq(s.banner)}`] : []),
     `A=${remoteAgyHome(s.account)}; G="${REMOTE_GEMINI}"`,

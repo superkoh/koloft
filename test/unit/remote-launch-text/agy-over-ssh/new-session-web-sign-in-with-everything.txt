@@ -108,7 +108,7 @@ if [ "$1" = run ]; then
   trap : INT QUIT
   trap 'rm -f "$T.start.$$.json"; exit 129' HUP
   (
-  rm -f "$T.start."*.json; mv -f "$T.start.json" "$T.start.$$.json"
+  mv -f "$T.start.json" "$T.start.$$.json"
   A="$HOME/.koloft/agy"/'work'; G="$HOME/.gemini"
   mkdir -p "$A/antigravity-cli/cache" "$A/config" "$HOME/.koloft/hook-sessions" && chmod 700 "$HOME/.koloft/agy"
   mkdir -p "$G/antigravity-cli/conversations"; [ "$(readlink "$A/antigravity-cli/conversations")" = "$G/antigravity-cli/conversations" ] || { rm -rf "$A/antigravity-cli/conversations"; ln -s "$G/antigravity-cli/conversations" "$A/antigravity-cli/conversations"; }
