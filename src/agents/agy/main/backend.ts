@@ -4,6 +4,7 @@ import type { SessionBackend } from '@core/agent/sessionBackends'
 import type { AgySessions } from './agySessions'
 import type { ResumeProbes } from '../../../main/resumePlan'
 import { storedBackend } from '@agents/kit/main/stored'
+import { agyMessages } from './agyMessages'
 
 export function agyBackend(
   sessions: AgySessions,
@@ -18,7 +19,8 @@ export function agyBackend(
       trustsFolder: (dir) => sessions.trustsFolder(dir),
       turns: (key, n) => sessions.readTurns(key, n),
       peerNames: () => async () => null,
-      runningElsewhere: () => false
+      runningElsewhere: () => false,
+      ...agyMessages((tabId, text) => sessions.deliver(tabId, text))
     },
     machineProbes
   )

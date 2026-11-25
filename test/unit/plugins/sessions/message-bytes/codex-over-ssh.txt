@@ -107,16 +107,6 @@ Codex's app-server, thread/queue/add: {"threadId":"<session id>","clientUserMess
 noted on the machine: script 1 with set -- 'pty-target'
   its stdin: "(From Koloft:) Could not deliver to Target. <where the owner is>\n"
 
-=== Codex did not start in this Koloft: koloft session send ===
-the sender sees: exit 0: Sent to Target.
-noted on the machine: script 1 with set -- 'pty-target'
-  its stdin: "(From the session \\\"Sender\\\", id <session id>:) Please check the build.\n"
-
-=== Codex did not start in this Koloft: Discord hands a message over ===
-failed: <why Codex could not start>
-noted on the machine: script 1 with set -- 'pty-target'
-  its stdin: "[Discord] Hello again.\n"
-
 === the app-server refuses the queued message ===
 the sender sees: exit 1: koloft: <the fake app-server refuses the request>
 noted on the machine: script 1 with set -- 'pty-target'

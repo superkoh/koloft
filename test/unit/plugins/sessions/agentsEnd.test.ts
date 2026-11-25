@@ -52,7 +52,9 @@ const ITS_OWN_ANSWERS: Parameters<typeof storedBackend>[2] = {
   trustsFolder: () => true,
   turns: async () => [],
   peerNames: () => async () => null,
-  runningElsewhere: () => false
+  runningElsewhere: () => false,
+  send: async () => 'taken',
+  mightNotTakeAMessageNow: async () => false
 }
 
 function backendsOf(

@@ -249,6 +249,7 @@
       "codex: async () => {",
       "codex: codexMachines.has(t.host) || !!codexSessions?.hasHistoryOn(t.host),",
       "codex: panelOnScreen(codexShowsAPanel),",
+      "codexBackend(codexSessions, resumeProbes, machineProbes, messaging.noteKoloftSent)",
       "codexBackend,",
       "codexDialog,",
       "codexHome: path.dirname(codexSharedConfig())",
@@ -331,7 +332,6 @@
       "function ownersGemini(): string {",
       "function shrinkAdoptedClaudePtysOneRowSoFitRepaints(tabs: TabInventoryReply['tabs']): void {",
       "geminiDir: ownersGemini()",
-      "get codexSessions() {",
       "if (!codex.available) return",
       "if (!exited?.alive) claudeDialogs.forget(e.id)",
       "if (!host) return claudeShowsAPanel(sessionId)",
@@ -409,7 +409,6 @@
       "return backendIdOf(pty?.kind) === 'claude' ? pty : undefined",
       "return clicksTheMouse(data) && backendIdOf(ptyMgr.get(tabId)?.kind) === 'claude'",
       "return codexConfigFile(codexSessions?.defaultEnv)",
-      "return codexSessions",
       "return codexSessions!.refreshHistory()",
       "return codexSessions?.listedModels(picked && codexHomeOf(app.getPath('userData'), picked.name))",
       "return listUsageFiles(claudeStore?.transcriptFiles() ?? [], [",
@@ -424,7 +423,6 @@
       "scriptsDir: path.join(userData, 'agy-scripts'),",
       "sendToRenderer(CH.toast.show, `Claude Code did not remove the worktree: ${claudeSaid}`)",
       "sessionBackends.register(agyBackend(agySessions, resumeProbes, machineProbes))",
-      "sessionBackends.register(codexBackend(codexSessions, resumeProbes, machineProbes))",
       "showsDialogsClosing: (tabId) => claudeDialogs.showsDialogsClosing(tabId),",
       "shrinkAdoptedClaudePtysOneRowSoFitRepaints(tabs)",
       "skillsFolder: () => claudeAgentPlugin && pluginSkills(claudeAgentPlugin)",
@@ -640,17 +638,6 @@
       "return startedAHelper(codexTaskName(item.agentPath) ?? 'helper')",
       "type CodexApproval,",
       "type CodexQuestion"
-    ],
-    "src/main/sessionMessaging.ts": [
-      "async function queueCodexMessage(tabId: string, text: string, clientId: string): Promise<void> {",
-      "await d.codexSessions.queueMessage(tabId, text, clientId)",
-      "if (!d.codexSessions) throw new Error(startupErrors.codex ?? 'Codex is not available.')",
-      "liveClaudeRegistryOn(host)",
-      "liveClaudeRegistryOn(host: string): Promise<string>",
-      "liveClaudeRegistryOn,",
-      "queue: async (tabId, text, clientId) => d.codexSessions?.queueMessage(tabId, text, clientId),",
-      "queue: queueCodexMessage,",
-      "readonly codexSessions: {"
     ],
     "src/main/shim.ts": [
       "${ADVISOR_OFF_ON_FABLE_FN}",
@@ -982,7 +969,6 @@
       "ticks: agyTicks,",
       "ticks: codexAsksNoQuestionTakingSeveralPicks,"
     ],
-    "src/plugins/sessions/main/handOver.ts": ["} from '@agents/claude/main/crossSessionMessage'"],
     "src/plugins/sessions/main/handoverPreamble.ts": [
       "const OLDER_SEND_MESSAGE_ENDING = 'with your SendMessage tool.'"
     ],
@@ -1003,11 +989,9 @@
       "export const CODEX_SHELL_WROTE_ENV = 'KOLOFT_SHELL_WROTE'",
       "for f in \"$HOME\"/.claude/sessions/*.json; do",
       "fs.writeFileSync(codexReplyLanguage, CODEX_REPLY_LANGUAGE_SCRIPT)",
-      "if (backend === 'claude') return id === undefined ? undefined : { id }",
       "if [ \"$SECONDS\" -ge \"\\${KOLOFT_ASK_GIVES_UP_AFTER_S:-${ASK_GIVES_UP_A_MINUTE_BEFORE_CLAUDE_ENDS_IT_S}}\" ]; then",
       "import type { KoloftHook } from '@agents/codex/main/codexLaunchConfig'",
       "matcher: 'SendMessage',",
-      "return backend === 'codex' ? { words: text } : undefined",
       "return { hookScript, codexReplyLanguage, settingsDir, regDir }",
       "said=\"$${CODEX_SAID_ENV}\"",
       "sent_words=\"$${CODEX_SENT_WORDS_ENV}\"",
@@ -1055,8 +1039,7 @@
       "'a Claude session talks to another Claude session on the same machine with its SendMessage tool; ListAgents shows their names. This command reaches Codex and Antigravity sessions, Claude sessions on another machine, and the session or Assist that started you.'",
       "? `Started session \"${name}\" in a new tab. Talk to it with SendMessage to \"${name}\".`",
       "? fail(CLAUDE_USES_SEND_MESSAGE)",
-      "const CLAUDE_USES_SEND_MESSAGE =",
-      "import { crossSessionLine, fitsACrossSessionMessage } from '@agents/claude/main/crossSessionMessage'"
+      "const CLAUDE_USES_SEND_MESSAGE ="
     ],
     "src/plugins/sessions/main/slashCommands.ts": [
       "`Nothing came back within ${NOTHING_CAME_BACK_MS / 1000} seconds, so Koloft pressed Esc to close any menu it had opened. A command that asks you to pick something needs its choice written after it, like /model haiku.`",
