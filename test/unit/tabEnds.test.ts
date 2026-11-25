@@ -67,6 +67,7 @@ import {
   agySessionsIn,
   codexSessionsIn,
   LOGIN_PATH_ON_THE_MACHINE,
+  MACHINE,
   makeWorld,
   ON_THE_MACHINE,
   recordingPty,
@@ -464,6 +465,39 @@ describe('whether a tab that has no session yet already shows its prompt', () =>
     expect(neverShowItThatEarly).not.toEqual([])
     for (const id of neverShowItThatEarly)
       expect(a[id].backend.showsPromptBeforeBind(itsTabWithNoSession[id]), id).toBe(false)
+  })
+})
+
+describe('what each of the three real backends answers about its tabs on a machine', () => {
+  it('the tmux session of a tab: Claude Code names the one it tracks for its tab on a machine and none for its tab on this Mac, Antigravity names the one its tab runs in, Codex names none as its tab runs in no tmux session there; and none of them names one for a tab that is not its own', async () => {
+    const a = await aTabOfEveryAgent()
+    const CLAUDE_TAB_ON_THE_MACHINE = 'pty-claude-on-the-machine'
+    a.claude.tracker.track(CLAUDE_TAB_ON_THE_MACHINE, ON_THE_MACHINE, {
+      host: MACHINE,
+      projectsRoot: path.join(world.home, 'mirror', MACHINE),
+      tmuxName: 'k-a-claude-session'
+    })
+    stops.push(() => a.claude.tracker.untrack(CLAUDE_TAB_ON_THE_MACHINE))
+    const tabs = [CLAUDE_TAB, CLAUDE_TAB_ON_THE_MACHINE, CODEX_TAB, AGY_TAB]
+    const named = Object.fromEntries(
+      SESSION_BACKENDS.map((id) => [id, tabs.map((tab) => a[id].backend.tmuxOfTab(tab))])
+    )
+    expect(named).toEqual({
+      claude: [undefined, 'k-a-claude-session', undefined, undefined],
+      codex: [undefined, undefined, undefined, undefined],
+      agy: [undefined, undefined, undefined, expect.stringContaining(AGY_TAB)]
+    })
+  })
+
+  it('Codex, told that sessions left the machine its tab runs on and that the mirror of that machine came, keeps its tab as it was, sends no event and runs nothing on the machine', async () => {
+    const a = await aTabOfEveryAgent()
+    const before = storedTabNow(a, 'codex')
+    const itsThreads = a.codex.sessions.list().map((s) => s.nativeSessionId ?? s.sessionId)
+    a.codex.backend.noticeRemoteExits(MACHINE, [...itsThreads, CODEX_TAB, CLAUDE_SESSION])
+    a.codex.backend.mirrorPulled(MACHINE)
+    await pastAnyStopStartedByMistake()
+    expect(storedTabNow(a, 'codex')).toEqual(before)
+    expect(before).toMatchObject(OPEN_AND_LEFT_ALONE)
   })
 })
 

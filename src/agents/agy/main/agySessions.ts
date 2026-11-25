@@ -1493,7 +1493,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   }
 
   // AGY§29
-  followMirrors(host: string): void {
+  mirrorPulled(host: string): void {
     for (const run of this.runs.values())
       if (run.remote?.host === host && !run.explicitStop) run.log.read()
   }

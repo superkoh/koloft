@@ -336,6 +336,12 @@ export class ClaudeBackend implements SessionBackend {
     return true
   }
 
+  mirrorPulled(): void {}
+
+  tmuxOfTab(tabId: string): string | undefined {
+    return this.d.tracker.remoteOf(tabId)?.tmuxName
+  }
+
   hasTab(tabId: string): boolean {
     return (
       this.d.pty.get(tabId)?.kind === 'claude' ||

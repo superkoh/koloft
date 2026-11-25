@@ -594,7 +594,6 @@ const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
   }
 }
 const backendHooks: PluginStartDeps['sessions']['backendHooks'] = {}
-backendHooks.storedRemoteByHand = storedSessions
 backendHooks.isKoloftsOwnSession = (id) => !!butler?.isButlerSession(id)
 backendHooks.turnOver = (tabId) => runtime.turnOver(tabId)
 backendHooks.askingOf = (tabId) => {
@@ -1849,7 +1848,7 @@ async function noteSentByKoloft(
 }
 
 async function deliverViaOwner(tabId: string, text: string): Promise<boolean> {
-  return (await storedOwnerOf(tabId)?.deliver?.(tabId, text)) ?? false
+  return (await storedOwnerOf(tabId)?.deliver(tabId, text)) ?? false
 }
 
 function noticeOf(tabId: string): NoticeFile | undefined {
@@ -3854,7 +3853,7 @@ app.whenReady().then(() => {
       await storedOwnerOf(tabId)?.answerable?.(tabId)
     },
     answerInPlace: async (tabId, reply) => {
-      return storedOwnerOf(tabId)?.answer?.(tabId, reply) ?? false
+      return storedOwnerOf(tabId)?.answer(tabId, reply) ?? false
     },
     showsDialogsClosing: (tabId) => claudeDialogs.showsDialogsClosing(tabId),
     regDir: hookPaths.regDir

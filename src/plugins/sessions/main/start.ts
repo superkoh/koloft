@@ -46,7 +46,6 @@ type BackendHooks = Partial<
     | 'verdictsOnFilesOf'
     | 'noAccountMessage'
     | 'turnedOff'
-    | 'storedRemoteByHand'
   >
 >
 
@@ -115,10 +114,6 @@ export const start: PluginStart<
   let claudeStore: ClaudeSessionStore | null = null
   const claudeBackend = new ClaudeBackend({ ...d.claude, tracker, store: () => claudeStore })
   sessionBackends.register(claudeBackend)
-  sessionBackends.remoteByHand = {
-    noticeRemoteExits: (host, sessionIds) => claudeBackend.noticeRemoteExits(host, sessionIds),
-    tmuxOfTab: (tabId) => tracker.remoteOf(tabId)?.tmuxName
-  }
   const startedSessions = new StartedSessions(d.startedSessionsFile)
   const { onVerdict, ...judgeDeps } = d.newsJudge
   const newsJudge = new NewsJudge(judgeDeps)

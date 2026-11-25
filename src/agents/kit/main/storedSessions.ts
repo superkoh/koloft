@@ -154,27 +154,19 @@ export const ownerTextApart = (
 
 export interface SessionsWithStore {
   readonly id: BackendId
-  readonly store: SessionStore
   rows(workspace: string): BackendSessionRow[]
-  workspacesFor(cwds: string[]): string[]
   sessionPlaces(): (id: string, host?: string) => SessionPlace | undefined
-  adopt(keys: string[]): void
   members(): Set<string>
   runningBindings(): Map<string, string>
   hasTab(tabId: string): boolean
-  aliveTabFor(key: string): string | undefined
-  stop(tabId: string, nativeExitCode?: number, restarting?: boolean): Promise<void>
   searchable(workspaces: string[]): SearchCandidate[]
   searchSnippets(term: string, signal?: AbortSignal): Promise<{ id: string; snippet: string }[]>
   openApproval(tabId: string): CodexApproval | undefined
   openQuestion(tabId: string): CodexQuestion | undefined
   answerable?(tabId: string): Promise<void>
-  answer?(tabId: string, reply: string): Promise<SentAnswer | false>
-  deliver?(tabId: string, text: string): Promise<boolean>
-  noticeRemoteExits?(host: string, sessionIds: string[]): void
-  followMirrors?(host: string): void
+  answer(tabId: string, reply: string): Promise<SentAnswer | false>
+  deliver(tabId: string, text: string): Promise<boolean>
   tabOnMachine?(host: string, tmuxName: string, launchTab: string): string | undefined
-  tmuxOfTab?(tabId: string): string | undefined
 }
 
 type Place = ProjectInfo & { missing: boolean }
@@ -318,6 +310,11 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   abstract readTurns(key: string, n: number): Promise<Turn[]>
   abstract transcriptPlaces(key: string): TranscriptPlaces | undefined
   abstract showsPromptBeforeBind(tabId: string): boolean
+  abstract noticeRemoteExits(host: string, sessionIds: string[]): void
+  abstract mirrorPulled(host: string): void
+  abstract tmuxOfTab(tabId: string): string | undefined
+  abstract answer(tabId: string, reply: string): Promise<SentAnswer | false>
+  abstract deliver(tabId: string, text: string): Promise<boolean>
 
   protected get label(): string {
     return BACKEND_LABEL[this.id]
