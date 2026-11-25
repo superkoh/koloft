@@ -335,7 +335,7 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
   })
 
   // ADR-0031
-  it('leaves out the handover Koloft puts before a task it hands to a new session', () => {
+  it('leaves out only the English handover Koloft puts at the very start of a task it hands to a new session; a handover translated into the owner’s language stays and names that language, and an owner’s own message that quotes a hand-back line is judged whole', () => {
     const task = withHandover(
       handoverPreamble({ name: 'Global-conductor', id: 'abc-123', label: 'Claude' }),
       'revisa los permisos del mayordomo'
@@ -345,7 +345,10 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
       'Koloft 启动了你，因为会话 "Global-conductor" 让它这样做。完成后运行: koloft session send abc-123 "<your result>"',
       'no toques el código'
     )
-    expect(quoteBeforeModelCall(transcriptWith(translated))).toBe('no toques el código')
+    expect(toldBeforeModelCall(transcriptWith(translated))).toMatch(writesIn('Chinese'))
+    const ownerQuotesAHandBack =
+      '电脑是不是重启过了？照这一行发回：\nkoloft session send abc-123 "<your result>"\n\nok thanks'
+    expect(toldBeforeModelCall(transcriptWith(ownerQuotesAHandBack))).toMatch(writesIn('Chinese'))
   })
 
   // ADR-0031
