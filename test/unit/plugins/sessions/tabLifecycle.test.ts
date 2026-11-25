@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
+import { SessionBackends } from '../../../../src/core/agent/sessionBackends'
 import type { Moment, TabEnded } from '../../../../src/core/moment'
+import {
+  lifecycle as nothingListensToTheSessions,
+  stubBackend
+} from '../../helpers/sessionBackendStub'
 import {
   TabLifecycle,
   subscribeTabSubsystems,
@@ -72,12 +77,19 @@ describe('TabLifecycle', () => {
     ])
   })
 
-  it('an agent that fails to end its tab after it was told is a toast', () => {
-    const { lifecycle, calls } = wired({
-      backends: { tabExited: (_exit, endFailed) => endFailed(new Error('stop failed')) }
+  it('an agent whose ending of the tab fails some time after it was told is a toast, and the plugins have heard of the teardown by then', async () => {
+    const backends = new SessionBackends(nothingListensToTheSessions())
+    backends.register({
+      ...stubBackend('codex'),
+      tabExited: async () => {
+        throw new Error('stop failed')
+      }
     })
+    const { lifecycle, calls } = wired({ backends })
     lifecycle.emit('teardown', exitOf())
-    expect(calls).toContain('toast Error: stop failed')
+    expect(calls).toEqual(['attention.clear t1', 'announce tab-torn-down t1'])
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(calls.slice(2)).toEqual(['toast Error: stop failed'])
   })
 
   it('a tab put to sleep or woken refreshes the workspaces list', () => {

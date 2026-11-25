@@ -112,13 +112,17 @@ beforeEach(() => {
   toasts = []
 })
 
-afterEach(async () => {
+async function theWorldEnds(): Promise<void> {
   try {
     for (const stop of stops) await stop()
     await BackgroundFile.whenAllWritten()
   } finally {
     world.gone()
   }
+}
+
+afterEach(async () => {
+  await theWorldEnds()
   expect(toasts, 'a tab that ends without a failed stop shows no toast').toEqual([])
 })
 
@@ -450,19 +454,16 @@ describe('whether a tab that has no session yet already shows its prompt', () =>
     }
     for (const id of SESSION_BACKENDS) {
       const { backend } = a[id]
-      expect([id, backend.hasTab(itsTabWithNoSession[id])]).toEqual([id, true])
+      expect(backend.hasTab(itsTabWithNoSession[id]), id).toBe(true)
       const itsSession = backend.list().find((s) => s.tabId === itsTabWithNoSession[id])?.sessionId
-      expect([id, itsSession || 'none yet']).toEqual([id, 'none yet'])
+      expect(itsSession || 'none yet', id).toBe('none yet')
     }
     const neverShowItThatEarly = SESSION_BACKENDS.filter(
       (id) => !agentManifest(id).flags.conversationStartsAtFirstPrompt
     )
     expect(neverShowItThatEarly).not.toEqual([])
     for (const id of neverShowItThatEarly)
-      expect([id, a[id].backend.showsPromptBeforeBind(itsTabWithNoSession[id])]).toEqual([
-        id,
-        false
-      ])
+      expect(a[id].backend.showsPromptBeforeBind(itsTabWithNoSession[id]), id).toBe(false)
   })
 })
 
@@ -513,11 +514,11 @@ const everyTabNow = (a: ThreeAgents): unknown => ({
     tabs: a.claude.tracker
       .list()
       .map((s) => ({ tabId: s.tabId, alive: s.alive, session: s.sessionId })),
-    sent: [...a.claude.sent],
     rowsReread: a.claude.rowsReread()
   },
   codex: { tab: storedTabNow(a, 'codex'), rows: storedRowsNow(a, 'codex') },
-  agy: { tab: storedTabNow(a, 'agy'), rows: storedRowsNow(a, 'agy') }
+  agy: { tab: storedTabNow(a, 'agy'), rows: storedRowsNow(a, 'agy') },
+  sentByEveryAgentInOrder: [...a.sentInOrder]
 })
 
 async function startingRowsOfClaudeCode(a: ThreeAgents): Promise<string[]> {
@@ -554,7 +555,7 @@ function endTheTab(a: ThreeAgents, order: Order, exit: TabEnded): void {
   for (const heard of a.whenTornDown) heard(exit)
 }
 
-async function seenFromOutside(order: Order, tabId: string, exit: TabEnded): Promise<unknown> {
+async function seenFromOutside(order: Order, exit: TabEnded): Promise<unknown> {
   const around = { world, stops }
   world = makeWorld()
   stops = []
@@ -570,23 +571,20 @@ async function seenFromOutside(order: Order, tabId: string, exit: TabEnded): Pro
       seen.push({ at: 'the plugins hear the tab was torn down', everyTab: everyTabNow(a) })
     )
     endTheTab(a, order, exit)
-    if (tabId === CODEX_TAB) await stoppedAndGone(a, 'codex')
-    if (tabId === AGY_TAB) await stoppedAndGone(a, 'agy')
+    if (exit.tabId === CODEX_TAB) await stoppedAndGone(a, 'codex')
+    if (exit.tabId === AGY_TAB) await stoppedAndGone(a, 'agy')
     await pastAnyStopStartedByMistake()
     seen.push({
       at: 'once everything settled',
       everyTab: everyTabNow(a),
-      sentInOrder: [...a.sentInOrder],
       startingRowsOfClaudeCode: await startingRowsOfClaudeCode(a),
       ranOnTheMachineOfAntigravity: a.agy.ranOverSsh.slice(sshRanBefore)
     })
     return JSON.parse(sameOnEveryRun(JSON.stringify(seen), world))
   } finally {
     try {
-      for (const stop of stops) await stop()
-      await BackgroundFile.whenAllWritten()
+      await theWorldEnds()
     } finally {
-      world.gone()
       world = around.world
       stops = around.stops
     }
@@ -597,20 +595,20 @@ const momentsSeen = (seen: unknown): string[] => (seen as { at: string }[]).map(
 
 describe('whether Claude Code lets go of a starting tab before or after the other two agents are told that a tab ended', () => {
   it.each([
-    ['Claude Code', 'died', CLAUDE_TAB, crashed(CLAUDE_TAB), 1],
-    ['Claude Code', 'ended without a failure', CLAUDE_TAB, ended(CLAUDE_TAB), 1],
-    ['Codex', 'died', CODEX_TAB, crashed(CODEX_TAB), 0],
-    ['Codex', 'ended without a failure', CODEX_TAB, ended(CODEX_TAB), 0],
-    ['Codex', 'was killed by a signal', CODEX_TAB, ended(CODEX_TAB, { signal: 15 }), 0],
-    ['Antigravity', 'died', AGY_TAB, crashed(AGY_TAB), 0],
-    ['Antigravity', 'ended without a failure', AGY_TAB, ended(AGY_TAB), 0],
-    ['Antigravity', 'was killed by a signal', AGY_TAB, ended(AGY_TAB, { signal: 15 }), 0]
+    ['Claude Code', 'died', crashed(CLAUDE_TAB), 1],
+    ['Claude Code', 'ended without a failure', ended(CLAUDE_TAB), 1],
+    ['Codex', 'died', crashed(CODEX_TAB), 0],
+    ['Codex', 'ended without a failure', ended(CODEX_TAB), 0],
+    ['Codex', 'was killed by a signal', ended(CODEX_TAB, { signal: 15 }), 0],
+    ['Antigravity', 'died', crashed(AGY_TAB), 0],
+    ['Antigravity', 'ended without a failure', ended(AGY_TAB), 0],
+    ['Antigravity', 'was killed by a signal', ended(AGY_TAB, { signal: 15 }), 0]
   ] as const)(
     'cannot be seen from outside when a tab of %s %s, while a Claude Code tab is still starting: every agent’s tabs and rows, the events and their order, the rereads of Claude Code’s rows and what each of them and the plugins find are the same in both orders, and the same as Koloft’s own teardown',
-    async (_agent, _how, tabId, exit, rereads) => {
-      const lettingGoLast = await seenFromOutside(LETS_GO_LAST, tabId, exit)
-      const lettingGoFirst = await seenFromOutside(LETS_GO_FIRST, tabId, exit)
-      const asKoloftDoesIt = await seenFromOutside(AS_KOLOFT_DOES_IT, tabId, exit)
+    async (_agent, _how, exit, rereads) => {
+      const lettingGoLast = await seenFromOutside(LETS_GO_LAST, exit)
+      const lettingGoFirst = await seenFromOutside(LETS_GO_FIRST, exit)
+      const asKoloftDoesIt = await seenFromOutside(AS_KOLOFT_DOES_IT, exit)
 
       expect(lettingGoFirst).toEqual(lettingGoLast)
       expect(asKoloftDoesIt).toEqual(lettingGoLast)

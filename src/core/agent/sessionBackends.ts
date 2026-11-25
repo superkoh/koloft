@@ -78,8 +78,7 @@ export class SessionBackends {
   private adapters = new Map<BackendId, SessionBackend>()
   private cleanExitAt = new Map<string, number>()
   private questionsAsked = 0
-  private quitEnding = false
-  private quitEnded = false
+  private agentsAtQuit: 'not asked to end' | 'ending' | 'ended' = 'not asked to end'
   isKoloftsOwnSession: (tabOrSessionId: string) => boolean = () => false
   turnOver: (tabId: string) => boolean = () => false
   askingOf: (tabId: string) => string | undefined = () => undefined
@@ -224,19 +223,22 @@ export class SessionBackends {
   }
 
   tabExited(exit: TabExit, endFailed: (error: unknown) => void): void {
-    const told = this.builtInListOrder().map((backend) => backend.tabExited(exit))
-    for (const ended of told) void Promise.resolve(ended).catch(endFailed)
+    for (const backend of this.builtInListOrder())
+      void Promise.resolve(backend.tabExited(exit)).catch(endFailed)
   }
 
-  quitWaits(quit: () => void, endFailed: (backend: BackendId, error: unknown) => void): boolean {
+  holdsQuitUntilAgentsEnded(
+    quit: () => void,
+    endFailed: (backend: BackendId, error: unknown) => void
+  ): boolean {
     const backends = this.builtInListOrder()
-    if (this.quitEnded || !backends.some((b) => b.quitWaitsForIt())) return false
-    if (!this.quitEnding) {
-      this.quitEnding = true
+    if (this.agentsAtQuit === 'ended' || !backends.some((b) => b.quitWaitsForIt())) return false
+    if (this.agentsAtQuit === 'not asked to end') {
+      this.agentsAtQuit = 'ending'
       void Promise.all(
         backends.map((b) => b.endBeforeQuit().catch((error) => endFailed(b.id, error)))
       ).finally(() => {
-        this.quitEnded = true
+        this.agentsAtQuit = 'ended'
         quit()
       })
     }

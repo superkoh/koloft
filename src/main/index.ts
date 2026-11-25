@@ -4318,7 +4318,7 @@ app.on('before-quit', (e) => {
   }
   quitCommitted = true
   guard?.liftAllBeforeQuitting()
-  const waitsForAnAgent = sessionBackends.quitWaits(
+  const waitsForAnAgent = sessionBackends.holdsQuitUntilAgentsEnded(
     () => app.quit(),
     (backend, error) =>
       console.error(`[koloft] ${BACKEND_LABEL[backend]} did not stop cleanly:`, error)

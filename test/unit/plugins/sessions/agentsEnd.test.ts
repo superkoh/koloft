@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { SessionBackends, type SessionBackend } from '../../../../src/core/agent/sessionBackends'
+import {
+  SessionBackends,
+  type SessionBackend,
+  type TabExit
+} from '../../../../src/core/agent/sessionBackends'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../../../src/agents/claude/main/backend'
 import { storedBackend } from '../../../../src/agents/kit/main/stored'
 import { sessionKey } from '@shared/sessionBackend'
@@ -35,8 +39,6 @@ function sessionsOf(id: BackendId, over: Partial<SessionsKeptInAStore> = {}): Se
   }
 }
 
-type FirstAgentTold = (tabId: string, crashed: boolean) => void
-
 const NONE_OF_ITS_PARTS_IS_ASKED_HERE = {} as ClaudeBackendDeps
 const NO_RESUME_IS_PLANNED_HERE = {} as Parameters<typeof storedBackend>[1]
 const ITS_OWN_ANSWERS: Parameters<typeof storedBackend>[2] = {
@@ -49,7 +51,7 @@ const ITS_OWN_ANSWERS: Parameters<typeof storedBackend>[2] = {
 
 function backendsOf(
   stored: SessionsKeptInAStore[],
-  firstAgentTold: FirstAgentTold = () => {}
+  firstAgentTold: (tabId: string, crashed: boolean) => void = () => {}
 ): SessionBackends {
   const first = new ClaudeBackend(NONE_OF_ITS_PARTS_IS_ASKED_HERE)
   first.tabExited = ({ tabId, crashed }) => firstAgentTold(tabId, crashed)
@@ -86,10 +88,7 @@ function deferred(): Deferred {
 
 const everyPromiseStepRan = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
 
-const exitOf = (
-  tabId: string,
-  over: { exitCode?: number; signal?: number; crashed?: boolean }
-) => ({
+const exitOf = (tabId: string, over: Partial<TabExit> = {}): TabExit => ({
   tabId,
   exitCode: 0,
   crashed: false,
@@ -131,7 +130,7 @@ describe('a tab whose terminal ended, as the agents are told of it', () => {
     expect(said).toEqual(['claude hears t-agy ended, crashed true', 'agy stops t-agy with 3'])
 
     said.length = 0
-    backends.tabExited(exitOf('t-shell', {}), noFailure)
+    backends.tabExited(exitOf('t-shell'), noFailure)
     expect(said).toEqual(['claude hears t-shell ended, crashed false'])
   })
 
@@ -144,8 +143,8 @@ describe('a tab whose terminal ended, as the agents are told of it', () => {
       }),
       withTabs('agy', ['t-agy'], said)
     ])
-    backends.tabExited(exitOf('t-agy', {}), (error) => failures.push(error))
-    backends.tabExited(exitOf('t-codex', {}), (error) => failures.push(error))
+    backends.tabExited(exitOf('t-agy'), (error) => failures.push(error))
+    backends.tabExited(exitOf('t-codex'), (error) => failures.push(error))
     await everyPromiseStepRan()
     expect(failures.map(String)).toEqual(['Error: the app-server would not close'])
   })
@@ -156,7 +155,7 @@ describe('a tab whose terminal ended, as the agents are told of it', () => {
       said.push(`claude hears ${tabId} ended`)
     )
     backends.tabExited(exitOf('t-codex', { exitCode: 1 }), () => {})
-    backends.tabExited(exitOf('a-tab-of-the-agent-that-was-not-built', {}), () => {})
+    backends.tabExited(exitOf('a-tab-of-the-agent-that-was-not-built'), () => {})
     expect(said).toEqual([
       'claude hears t-codex ended',
       'codex stops t-codex with 1',
@@ -172,7 +171,7 @@ describe('quitting Koloft, as the agents are asked about it', () => {
       sessionsOf('codex', { stopAll: async () => void said.push('codex ends') }),
       sessionsOf('agy', { stopAll: async () => void said.push('agy ends') })
     ])
-    const waits = backends.quitWaits(
+    const waits = backends.holdsQuitUntilAgentsEnded(
       () => said.push('quit again'),
       () => said.push('failed')
     )
@@ -203,8 +202,8 @@ describe('quitting Koloft, as the agents are asked about it', () => {
     const failed = (backend: BackendId, error: unknown): void =>
       void said.push(`${backend} failed: ${String(error)}`)
 
-    expect(backends.quitWaits(quitAgain, failed)).toBe(true)
-    expect(backends.quitWaits(quitAgain, failed)).toBe(true)
+    expect(backends.holdsQuitUntilAgentsEnded(quitAgain, failed)).toBe(true)
+    expect(backends.holdsQuitUntilAgentsEnded(quitAgain, failed)).toBe(true)
     expect(said).toEqual(['codex ends', 'agy ends'])
 
     agyEnded.reject(new Error('its tmux would not answer'))
@@ -215,7 +214,7 @@ describe('quitting Koloft, as the agents are asked about it', () => {
     await everyPromiseStepRan()
     expect(said.slice(3)).toEqual(['quit again'])
 
-    expect(backends.quitWaits(quitAgain, failed)).toBe(false)
+    expect(backends.holdsQuitUntilAgentsEnded(quitAgain, failed)).toBe(false)
     expect(said).toHaveLength(4)
   })
 
@@ -227,7 +226,7 @@ describe('quitting Koloft, as the agents are asked about it', () => {
       sessionsOf('agy', { stopAll: () => agyEnded.promise })
     ])
     const quitAgain = (): void => void said.push('quit again')
-    expect(backends.quitWaits(quitAgain, () => {})).toBe(true)
+    expect(backends.holdsQuitUntilAgentsEnded(quitAgain, () => {})).toBe(true)
     await everyPromiseStepRan()
     expect(said).toEqual([])
     agyEnded.resolve()
@@ -245,9 +244,9 @@ describe('quitting Koloft, as the agents are asked about it', () => {
       })
     ])
     const quitAgain = (): void => void said.push('quit again')
-    expect(backends.quitWaits(quitAgain, () => {})).toBe(false)
+    expect(backends.holdsQuitUntilAgentsEnded(quitAgain, () => {})).toBe(false)
     codexHasWork = true
-    expect(backends.quitWaits(quitAgain, () => {})).toBe(true)
+    expect(backends.holdsQuitUntilAgentsEnded(quitAgain, () => {})).toBe(true)
     await everyPromiseStepRan()
     expect(said).toEqual(['codex ends', 'quit again'])
   })
@@ -393,9 +392,9 @@ describe('whether a session Koloft remembers is still there', () => {
     expect(stillThere(CLAUDE_FOUND)).toBe(true)
     expect(stillThere(CLAUDE_NOT_FOUND)).toBe(false)
     for (const id of ['codex', 'agy'] as const) {
-      expect([id, stillThere(keyOf(id, 'asleep'))]).toEqual([id, true])
-      expect([id, stillThere(keyOf(id, 'listed'))]).toEqual([id, true])
-      expect([id, stillThere(keyOf(id, 'gone'))]).toEqual([id, false])
+      expect(stillThere(keyOf(id, 'asleep')), id).toBe(true)
+      expect(stillThere(keyOf(id, 'listed')), id).toBe(true)
+      expect(stillThere(keyOf(id, 'gone')), id).toBe(false)
     }
   })
 
