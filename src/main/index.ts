@@ -594,7 +594,7 @@ const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
   }
 }
 const backendHooks: PluginStartDeps['sessions']['backendHooks'] = {}
-backendHooks.isOverseerSession = (id) => !!butler?.isButlerSession(id)
+backendHooks.isKoloftsOwnSession = (id) => !!butler?.isButlerSession(id)
 backendHooks.turnOver = (tabId) => runtime.turnOver(tabId)
 backendHooks.askingOf = (tabId) => {
   if (runtime.statusOf(tabId) !== 'approval') return undefined
@@ -607,7 +607,7 @@ backendHooks.askingOf = (tabId) => {
 function showAskOnItsRow(tabId: string): void {
   if (runtime.statusOf(tabId) === 'approval') pushToSessions.sessions(onSessionsChanged())
 }
-backendHooks.docVerdictsOf = (sessionId) => readerDocs.of(sessionId)
+backendHooks.verdictsOnFilesOf = (sessionId) => readerDocs.of(sessionId)
 const noAccountNow = (backend: BackendId): string => noAccountMessage(listAccounts(), backend)
 backendHooks.noAccountMessage = noAccountNow
 backendHooks.turnedOff = turnedOffNow
@@ -3414,7 +3414,6 @@ app.whenReady().then(() => {
     sendToRenderer(CH.terminal.cwd, c)
   })
   subscribeTabSubsystems({
-    storedOwnerOf,
     toast: (message) => sendToRenderer(CH.toast.show, message),
     workspaces: () => workspaceMgr,
     announce: announceNow
@@ -3722,7 +3721,7 @@ app.whenReady().then(() => {
     remoteOrphansOf: (wsPath) => claudeStore?.remoteOrphansOf(wsPath) ?? [],
     killRemoteSession: (host, sessionId) =>
       claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
-    hiddenRow: (id) => sessionBackends.isOverseerSession(id),
+    hiddenRow: (id) => sessionBackends.isKoloftsOwnSession(id),
     parentOf: (rowId) => startedSessions.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
     scratchRoots: scratchRootsAround(os.homedir(), os.tmpdir()),
@@ -3741,12 +3740,7 @@ app.whenReady().then(() => {
     runningBindings,
     remoteRunning,
     sessionsOnDiskOrRunning: (ids) =>
-      butler?.forgetGone(
-        (key) =>
-          ids.has(key) ||
-          (identityOf(key).backendId !== 'claude' &&
-            !storedSessions().some((s) => s.id === identityOf(key).backendId && s.threadGone(key)))
-      ),
+      butler?.forgetGone((key) => sessionBackends.sessionStillThere(key, ids)),
     memberDropped: (sessionId, why) => droppedSessionsLog(`${sessionId} ${why}`)
   })
   const bindingNow = buildDiscordBinding({
@@ -4303,8 +4297,6 @@ function askQuit(): boolean {
 }
 setQuitAsk(askQuit)
 
-let storedQuitPending = false
-let storedQuitStopped = false
 app.on('before-quit', (e) => {
   const decision = quitDecision(Date.now())
   if (decision === 'wait') {
@@ -4326,23 +4318,13 @@ app.on('before-quit', (e) => {
   }
   quitCommitted = true
   guard?.liftAllBeforeQuitting()
-  if (!storedQuitStopped && storedSessions().some((s) => s.hasProcesses())) {
+  const waitsForAnAgent = sessionBackends.holdsQuitUntilAgentsEnded(
+    () => app.quit(),
+    (backend, error) =>
+      console.error(`[koloft] ${BACKEND_LABEL[backend]} did not stop cleanly:`, error)
+  )
+  if (waitsForAnAgent) {
     e.preventDefault()
-    if (!storedQuitPending) {
-      storedQuitPending = true
-      void Promise.all(
-        storedSessions().map((s) =>
-          s
-            .stopAll()
-            .catch((error) =>
-              console.error(`[koloft] ${BACKEND_LABEL[s.id]} did not stop cleanly:`, error)
-            )
-        )
-      ).finally(() => {
-        storedQuitStopped = true
-        app.quit()
-      })
-    }
     return
   }
   for (const { leaving } of claudeTabExits.values()) {
@@ -4361,7 +4343,7 @@ app.on('before-quit', (e) => {
   sessionAccounts?.flushSync()
   savedUsage.flushSync()
   savedHomeUsage.flushSync()
-  for (const stored of storedSessions()) stored.store.flushSync()
+  sessionBackends.flushSync()
   flushAttention()
   flushInbox()
   freshness?.stop()
@@ -4493,8 +4475,7 @@ function agentTabIds(): string[] {
 
 const browserControlOps: PluginStartDeps['browser-control']['cdpOps'] = {
   anotherLiveKoloftOwns: (tabId) => anotherLiveInstanceOwns(tabId, pidAlive),
-  sessionForTab: (tabId) =>
-    claudeBackend.sessionIdOf(tabId) ?? storedOwnerOf(tabId)?.sessionIdOf(tabId) ?? null,
+  sessionForTab: (tabId) => sessionOfTab(tabId)?.sessionId ?? null,
   cameThroughAForward: (guestId, url) => {
     const port = loopbackPortOf(url)
     return port !== null && pageForwards.carries(guestId, port)
@@ -5162,7 +5143,7 @@ async function resumeRow(
 }
 
 function showsPromptBeforeBind(tabId: string): boolean {
-  return !!storedOwnerOf(tabId)?.showsPromptBeforeBind?.(tabId)
+  return sessionBackends.showsPromptBeforeBind(tabId)
 }
 
 function boundAndSettled(tabId: string, turnEnded: boolean): boolean {
@@ -5908,18 +5889,7 @@ function registerIpc(): void {
     return r
   })
   ipcMain.handle(CH.workspace.removeConfirmed, async (_e, p: string) => {
-    await Promise.all(
-      storedSessions().flatMap((stored) => {
-        const tabs = new Set(
-          stored
-            .rows(p)
-            .filter((r) => r.running || r.pending)
-            .map((r) => (r.pending ? r.id : stored.aliveTabFor(r.id)))
-            .filter((id): id is string => !!id)
-        )
-        return [...tabs].map((id) => stored.stop(id))
-      })
-    )
+    await sessionBackends.beforeWorkspaceRemoved(p)
     const marked = markedSessionsOf(p)
     workspaceMgr?.removeConfirmed(p)
     cronRunner?.removeWorkspace(p)
@@ -6067,7 +6037,7 @@ const sessionSearch = new SessionSearch({
   },
   backendSnippets: async (term, signal) =>
     (await Promise.all(storedSessions().map((s) => s.searchSnippets(term, signal)))).flat(),
-  hidden: (id) => sessionBackends.isOverseerSession(id),
+  hidden: (id) => sessionBackends.isKoloftsOwnSession(id),
   scan: (files, term, found) => {
     // PLATFORM§4
     const worker = createTranscriptSearchWorker({ workerData: { files, term } })

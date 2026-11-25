@@ -550,6 +550,10 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     return super.hasProcesses() || this.sideServers.anyOpen || this.machineSideServers.anyOpen
   }
 
+  showsPromptBeforeBind(): boolean {
+    return false
+  }
+
   async stopAll(deadlineMs?: number): Promise<void> {
     await Promise.all([
       super.stopAll(deadlineMs),

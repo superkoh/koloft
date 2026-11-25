@@ -188,7 +188,6 @@
       "'codex-home': async (name, key) => {",
       "(a) => a.enabled && ACCOUNT_KINDS_OF.claude.includes(a.kind)",
       "(claude) => `${MARK_OUTPUT_START}; exec ${claude} setup-token`,",
-      "(identityOf(key).backendId !== 'claude' &&",
       "...(agySessions?.usesHost(t.host)",
       "...(claudeStore?.searchableRows() ?? []),",
       "...(codexSessions?.machinesWithTabs() ?? [])",
@@ -301,7 +300,6 @@
       "claudeBackend.forgetAvailability()",
       "claudeBackend.noticeRemoteExits(host, ids)",
       "claudeBackend.picked(obj.tabId, payload.skipFlag === true)",
-      "claudeBackend.sessionIdOf(tabId) ?? storedOwnerOf(tabId)?.sessionIdOf(tabId) ?? null,",
       "claudeBackend.watchLocalHooks(hookPaths.regDir)",
       "claudeBackend.watchRemoteHookMirrors()",
       "claudeBackend.watchShimRegistrations(regDir)",
@@ -1230,7 +1228,6 @@
       "buildCodexSessions: ({ file, ...deps }) => new CodexSessions(file, deps),",
       "buildCodexSessions: BuildLater<CodexSessionDeps & { file: string }, CodexSessions>",
       "claude: Omit<ClaudeBackendDeps, 'tracker' | 'store'>",
-      "claude: claudeBackend,",
       "claudeBackend,",
       "claudeBackend: ClaudeBackend",
       "const claudeBackend = new ClaudeBackend({ ...d.claude, tracker, store: () => claudeStore })",
@@ -1240,16 +1237,8 @@
       "import { SessionTracker } from '@agents/claude/main/sessionTracker'",
       "let claudeStore: ClaudeSessionStore | null = null",
       "sessionBackends.register(claudeBackend)",
-      "subscribeTabSubsystems: BuildLater<Omit<TabSubsystems, 'attention' | 'claude' | 'tracker'>>",
       "type ClaudeSessionStoreDeps",
       "} from '@agents/claude/main/claudeSessionStore'"
-    ],
-    "src/plugins/sessions/main/tabLifecycle.ts": [
-      "claude: Pick<ClaudeBackend, 'onPtyExit' | 'launchEnded'>",
-      "import type { ClaudeBackend } from '@agents/claude/main/backend'",
-      "import type { SessionTracker } from '@agents/claude/main/sessionTracker'",
-      "lifecycle.on('teardown', ({ tabId }) => s.claude.launchEnded(tabId))",
-      "lifecycle.on('teardown', ({ tabId, crashed }) => s.claude.onPtyExit(tabId, crashed))"
     ],
     "src/plugins/sessions/main/workspaces.ts": [
       "const wtMark = `${path.sep}.claude${path.sep}worktrees${path.sep}`"
