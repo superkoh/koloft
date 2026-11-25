@@ -152,7 +152,6 @@ exited() {
   [ -s "$E.exit" ] && c=$(cat "$E.exit")
   [ "$c" = 255 ] && c=254
   [ -f "$E.screen" ] && awk 'NF { if (seen) for (; n; n--) print ""; seen = 1; n = 0; print; next } { n++ }' "$E.screen"
-  [ -s "$E.exit" ] && { [ "$E" = "$HOME/.koloft/tabs/pty-t1" ] || rm -f "$E.exit" "$E.screen"; rm -f "$HOME/.koloft/tabs/pty-t1.started-by"; }
   rm -f "$HOME/.koloft/tabs/pty-t1.env"; exit $c
 }
 [ "$1" = attach ] && { n="$(cat "$HOME/.koloft/tabs/pty-t1.tmux" 2>/dev/null || echo 'm-pty-t1-t')"; endsUnderTheTabThatStarted "$n"; if tmux -L koloft show-environment -t "$n" KOLOFT_TAB_PASS >/dev/null 2>&1; then [ -n "$KOLOFT_TAB_PASS" ] && ( umask 077; printf 'set-environment -t %s KOLOFT_TAB_ID %s\nset-environment -t %s KOLOFT_TAB_PASS %s\n' "$n" pty-t1 "$n" "$KOLOFT_TAB_PASS" > "$HOME/.koloft/tabs/pty-t1.keys" ) && tmux -L koloft source-file "$HOME/.koloft/tabs/pty-t1.keys"; rm -f "$HOME/.koloft/tabs/pty-t1.keys"; fi; unset KOLOFT_TAB_PASS; tmux -L koloft set -gq set-titles on \; set -gq set-titles-string '#{pane_title}' \; set -gq allow-passthrough on 2>/dev/null; tmux -L koloft -u attach -d -t "$n"; exited; }

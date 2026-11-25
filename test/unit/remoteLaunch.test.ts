@@ -1118,14 +1118,17 @@ cat "$p" >> "$L/prompt"
   const sessionGone = (b: Box): void => fs.rmSync(path.join(b.logs, 'pane-start-command'))
 
   // PLATFORM§35
-  it('a tab that attaches, under a new tab id after a Koloft restart, to a session another tab started ends with the code and shows the screen the agent left there, read from the tab that started it, and leaves neither on the machine', () => {
+  it('a tab that attaches, under a new tab id after a Koloft restart, to a session another tab started ends with the code and shows the screen the agent left there, read from the tab that started it, and the same again on a reconnect, as a tab that started it reads its own', () => {
     const b = box(spec({ tabId: 'OLD' }), { claudeExit: 3 })
     expect(b.run().status).toBe(3)
     startedByOld(b)
     const attached = b.runTab('NEW', 'attach')
     expect(attached.status).toBe(3)
     expect(attached.stdout).toMatch(/the last screen\n$/)
-    expect(fs.readdirSync(b.tabs).filter((n) => /\.(exit|screen|started-by)$/.test(n))).toEqual([])
+    sessionGone(b)
+    const reconnected = b.runTab('NEW', 'attach')
+    expect(reconnected.status).toBe(3)
+    expect(reconnected.stdout).toMatch(/the last screen\n$/)
   })
 
   // PLATFORM§35 PLATFORM§75

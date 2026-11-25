@@ -180,7 +180,6 @@ exited() {
   [ -s "$E.exit" ] && c=$(cat "$E.exit")
   [ "$c" = ${SSH_LINK_BROKE_EXIT} ] && c=${AGENT_EXIT_255_PASSED_AS}
   [ -f "$E.screen" ] && awk 'NF { if (seen) for (; n; n--) print ""; seen = 1; n = 0; print; next } { n++ }' "$E.screen"
-  [ -s "$E.exit" ] && { [ "$E" = "${T}" ] || rm -f "$E.exit" "$E.screen"; rm -f "${T}.started-by"; }
   rm -f "${T}.env"; exit $c
 }
 [ "$1" = attach ] && { n=${attachTo}; endsUnderTheTabThatStarted "$n"; ${passIntoATmuxThatHoldsOne(T, '$n', spec.tabId)}; unset ${TAB_PASS_ENV}; ${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u attach -d -t "$n"; exited; }
