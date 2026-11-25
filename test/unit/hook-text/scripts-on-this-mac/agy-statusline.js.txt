@@ -1,0 +1,38 @@
+const fs = require('fs')
+const { Readable } = require('stream')
+const { pathToFileURL } = require('url')
+const [bundle, config] = process.argv.slice(2)
+try {
+  process.cwd()
+} catch {
+  process.chdir('/')
+}
+let input = {}
+try {
+  input = JSON.parse(fs.readFileSync(0, 'utf8'))
+} catch {
+  process.exit(0)
+}
+if (!input.model) process.exit(0)
+let cost
+try {
+  cost = Number(fs.readFileSync(process.env.KOLOFT_AGY_COST, 'utf8'))
+} catch {}
+if (Number.isFinite(cost)) input.cost = { ...(input.cost || {}), total_cost_usd: cost }
+if (!input.effort) {
+  const raw = typeof input.model?.effort === 'string' ? input.model.effort.trim() : ''
+  const name =
+    typeof input.model === 'object' ? input.model.display_name || input.model.id || '' : ''
+  const fromName =
+    typeof name === 'string'
+      ? /\((low|medium|high|xhigh|max)\)$/i.exec(name.trim())?.[1] || ''
+      : ''
+  const effort = /^(?=.*[a-z0-9])[a-z0-9-]{2,20}$/i.test(raw) ? raw : fromName
+  input.effort = { level: effort || null }
+}
+Object.defineProperty(process, 'stdin', {
+  configurable: true,
+  value: Readable.from([Buffer.from(JSON.stringify(input))], { objectMode: false })
+})
+process.argv = [process.argv[0], bundle, '--config', config]
+import(pathToFileURL(bundle).href)

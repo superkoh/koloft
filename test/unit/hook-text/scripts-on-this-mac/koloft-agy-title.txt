@@ -1,0 +1,24 @@
+#!/bin/sh
+: koloft agy title
+input="$(cat)"
+log="$KOLOFT_AGY_LOG"
+if [ -n "$log" ]; then
+  logged="$(printf '%s' "$input" | tr -d '\n')"
+  [ "${#logged}" -gt 4096 ] && logged="$(printf '%s' "$logged" | LC_ALL=C sed -E 's/"role" *: *"(([^"\\]|\\.){160,})"/"role":""/g')"
+  printf '%s\n' "$logged" >> "$log" 2>/dev/null
+fi
+if [ "$KOLOFT_TMUX_FOLLOW" = 1 ] && [ -n "$TMUX" ]; then
+  id="$(printf '%s' "$input" | tr -d '\n' | sed -n 's/.*"conversation_id" *: *"\([0-9a-f-][0-9a-f-]*\)".*/\1/p')"
+  if [ -n "$id" ]; then
+    # ADR-0044 PLATFORM§35
+    nf="$HOME/.koloft/tabs/$KOLOFT_TAB_ID.tmux"
+    printf 'k-%s' "$id" > "$nf"
+    now="$(tmux display-message -p -t "$TMUX_PANE" '#S' 2>/dev/null)"
+    if [ "$now" != "k-$id" ] && ! tmux rename-session -t "$TMUX_PANE" "k-$id" 2>/dev/null; then
+      if [ -n "$now" ]; then printf '%s' "$now" > "$nf"; else rm -f "$nf"; fi
+    fi
+    [ -n "$log" ] && printf '%s' "$(basename "$log")" > "$(dirname "$log")/k-$id.agy-log"
+  fi
+fi
+[ -n "$KOLOFT_AGY_OWNER_TITLE" ] && printf '%s' "$input" | sh -c "$KOLOFT_AGY_OWNER_TITLE"
+exit 0

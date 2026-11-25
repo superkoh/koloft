@@ -22,7 +22,6 @@ import { allowCrashReload } from './crashGuard'
 import { TerminalOutput } from './flowControl'
 import type { CommandOutput } from '@agents/claude/main/claudeCommandOutput'
 import { codexShowsAPanel } from './inputBox'
-import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from './remote/statusRelay'
 import type { TreeIo } from './sessionWorktrees'
 import { sharedProcessTable, type ProcessTable } from './processTable'
 import {
@@ -37,16 +36,8 @@ import {
   readAgyQuota,
   setAgyApiKeyRoute
 } from '@agents/agy/main/agyAccounts'
-import { AGY_APP_DIR, AGY_LIST_JS, ownersGeminiDir } from '@agents/agy/main/agyStore'
-import {
-  AGY_BRAIN_FLAGS,
-  AGY_HOOK_FILE,
-  AGY_LIST_FILE,
-  AGY_REMOTE_BRAIN,
-  AGY_STATUSLINE_FILE,
-  AGY_TITLE_FILE,
-  agyStatuslineScript
-} from '@agents/agy/main/agyTab'
+import { AGY_APP_DIR, ownersGeminiDir } from '@agents/agy/main/agyStore'
+import { AGY_BRAIN_FLAGS, AGY_REMOTE_BRAIN } from '@agents/agy/main/agyTab'
 import { homeKeyOnDisk } from './homeKeyOnDisk'
 import { watchHistoryOf } from './historyWatch'
 import {
@@ -91,7 +82,7 @@ import { BUTLER_OFF_ITS_AGENT_LOG, butlerStart } from '@shared/butlerStart'
 import { assistBackendsFor, assistLaunchOn, assistRowBackend } from '@shared/assistPicks'
 import { flushAttention, loadLastRunAttention, saveAttention } from './attentionFile'
 import { route, dockBadgeText } from './notifyRouter'
-import { setupShim, utilTerminalGuard } from './shim'
+import { setupShim } from './shim'
 import { openDropTarget, type OpenDrop } from '@core/openDrop'
 import { leaveForOS, openUrlExternally, osOpenFallback } from './osOpen'
 import { enforceGuestAttach, isAppNavigation } from './browserSecurity'
@@ -113,33 +104,12 @@ import {
 } from './remote/ssh'
 import { BrowserTunnels } from './remote/browserTunnel'
 import { anyFreeMacPort, macPortFree, PageForwards } from './remote/portForward'
-import { MACHINE_PLAYWRIGHT_CLI } from './remote/playwrightCli'
-import { MACHINE_CLAUDE } from '@agents/claude/main/advisorOnFable'
+import { remoteAnswerCommand, remoteShCommand } from './remote/install'
+import { codexMachineInstance } from '@agents/codex/main/codexMachine'
 import {
-  ENSURE_CODEX_SH,
-  ENSURE_SH,
-  TMUX_CONF,
-  UTIL_BASH_LOGIN,
-  UTIL_BASH_LOGIN_FILE,
-  UTIL_SH,
-  remoteAnswerCommand,
-  remoteShCommand
-} from './remote/install'
-import {
-  codexMachineInstance,
-  ENSURE_CODEX_FILE,
-  replyLanguageFiles
-} from '@agents/codex/main/codexMachine'
-import { machineGhWrapperScript } from './gitCredentialScripts'
-import {
-  AGENT_PLUGIN_DIR,
-  DOCS_PLUGIN_DIR,
   buildMachinePackage,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
-  SESSION_BIN_DIR,
-  CLAUDE_BIN_DIR,
   tmuxSessionName,
-  UTIL_BIN_DIR,
   utilShellLine,
   writeTabPassFile,
   CLAUDE_AUTH_ENV_VARS,
@@ -158,20 +128,12 @@ import {
 } from './remote/paths'
 import { RemoteSync } from './remote/sync'
 import { machineUsageDirs, usagePulls } from './remote/usageMirror'
-import { OWNER_TYPES_A_SECRET_WITHIN_MS, REMOTE_AGENT_SHIM } from './agentShim'
-import { REMOTE_OPEN_SHIM } from './openShimScript'
+import { machinePackageFiles } from './remote/machinePackageFiles'
+import { OWNER_TYPES_A_SECRET_WITHIN_MS } from './agentShim'
 import { passwordsOn } from '@plugins/passwords/api'
 import { agentsInLoginShell, sshEnvFromLogin } from './loginShell'
 import { oncePerName, watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
-import {
-  AGY_STATUSLINE_JS,
-  bundlePath,
-  DEFAULT_THEME,
-  remoteWrapperScript,
-  setupStatusline,
-  setupAgyStatusline,
-  statusLineSetting
-} from './statusline'
+import { setupStatusline, setupAgyStatusline, statusLineSetting } from './statusline'
 import { setupPlaywrightCli } from './playwrightCli'
 import {
   bundledGcm,
@@ -450,14 +412,7 @@ import {
   WorktreeRemovalWatch
 } from '@agents/claude/main/claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
-import {
-  agentPluginFiles,
-  checkSkillsAgain,
-  pluginSkills,
-  docsPluginFiles,
-  writeAgentPlugin,
-  writeDocsPlugin
-} from './agentPlugin'
+import { checkSkillsAgain, pluginSkills, writeAgentPlugin, writeDocsPlugin } from './agentPlugin'
 import { installThen, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
 
 type SessionsStarted = PluginsStarted['sessions']
@@ -575,6 +530,8 @@ const backendLifecycle: PluginStartDeps['sessions']['backendLifecycle'] = {
   },
   bound: (tabId, key, idleCompaction) => {
     claudeAsks.delete(tabId)
+    const session = sessionOfTab(tabId)
+    if (session) sessionAccounts?.note([session])
     if (!idleCompaction) attention.bound(tabId, key)
     announceNow(SESSION_BOUND, { tabId, key, idleCompaction })
     startedSessions.bound(tabId, key)
@@ -1278,48 +1235,7 @@ function loginEnvReady(): Promise<void> {
 
 function machinePackage(): MachinePackage {
   if (machinePkg) return machinePkg
-  const pkgFiles: Record<string, string | Buffer> = {
-    'ensure.sh': ENSURE_SH,
-    [ENSURE_CODEX_FILE]: ENSURE_CODEX_SH,
-    ...replyLanguageFiles(CODEX_REPLY_LANGUAGE_SCRIPT),
-    'hook.sh': HOOK_SCRIPT,
-    'tmux.conf': TMUX_CONF,
-    'util.sh': UTIL_SH,
-    [UTIL_BASH_LOGIN_FILE]: UTIL_BASH_LOGIN,
-    [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard('claude'),
-    [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex'),
-    [`${UTIL_BIN_DIR}agy`]: utilTerminalGuard('agy'),
-    [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM,
-    [`${SESSION_BIN_DIR}open`]: REMOTE_OPEN_SHIM,
-    [`${SESSION_BIN_DIR}gh`]: machineGhWrapperScript(),
-    [`${CLAUDE_BIN_DIR}playwright-cli`]: MACHINE_PLAYWRIGHT_CLI,
-    [`${SESSION_BIN_DIR}claude`]: MACHINE_CLAUDE,
-    [`${UTIL_BIN_DIR}gh`]: machineGhWrapperScript(),
-    [STATUS_RELAY_FILE]: STATUS_RELAY_PY,
-    [AGY_HOOK_FILE]: AGY_HOOK_SCRIPT,
-    [AGY_TITLE_FILE]: AGY_TITLE_SCRIPT,
-    [AGY_LIST_FILE]: AGY_LIST_JS
-  }
-  if (passwordsOn())
-    for (const [name, text] of Object.entries(SUDO_SHIM_FILES))
-      pkgFiles[`${SESSION_BIN_DIR}${name}`] = text
-  for (const [rel, text] of Object.entries(agentPluginFiles()))
-    pkgFiles[`${AGENT_PLUGIN_DIR}${rel}`] = text
-  for (const [rel, text] of Object.entries(docsPluginFiles()))
-    pkgFiles[`${DOCS_PLUGIN_DIR}${rel}`] = text
-  try {
-    // PLATFORM§36
-    const bundleDir = path.dirname(bundlePath())
-    for (const name of fs.readdirSync(bundleDir))
-      pkgFiles[`statusline/${name}`] = fs.readFileSync(path.join(bundleDir, name))
-    pkgFiles['statusline/package.json'] = '{"type":"module"}\n'
-    pkgFiles['statusline/theme.json'] = JSON.stringify(DEFAULT_THEME, null, 2)
-    pkgFiles['statusline/run.sh'] = remoteWrapperScript()
-    pkgFiles['statusline/agy.cjs'] = AGY_STATUSLINE_JS
-    pkgFiles[AGY_STATUSLINE_FILE] = agyStatuslineScript()
-  } catch (err) {
-    console.error('[koloft] remote statusline bundle unreadable:', err)
-  }
+  const pkgFiles = machinePackageFiles()
   return (machinePkg = buildMachinePackage(machinePackageBase(app.getPath('userData')), pkgFiles))
 }
 
@@ -3505,12 +3421,13 @@ app.whenReady().then(() => {
       sent.accountIssue = accountIssue
     sendToRenderer(CH.terminal.exit, unexpected ? { ...sent, unexpected } : sent)
   })
-  tracker.on('update', () => {
-    const all = onSessionsChanged()
-    pushToSessions.sessions(all)
-    workspaceMgr?.onTrackerUpdate()
-    syncAnswerable()
+  const sessionsChanged = sessionsChangedIn({
+    noteSessions: onSessionsChanged,
+    sendSessions: (all) => pushToSessions.sessions(all),
+    workspaces: () => workspaceMgr,
+    syncAnswerable
   })
+  tracker.on('update', sessionsChanged)
   tracker.on('relocated', (e: { tabId: string; dir: string }) => {
     pushToSessions.relocated(e)
   })
@@ -3543,15 +3460,6 @@ app.whenReady().then(() => {
   savedOpenTabs = readOpenTabs(openTabsPath)
   openTabsFile = new OpenTabsFile(openTabsPath, savedOpenTabs)
   sessionAccounts = new SessionAccounts(path.join(userData, 'session-accounts.json'))
-  const rowsKeptInMemoryChanged = rereadWhenRowsInMemoryChange({
-    pinned: () => workspaceMgr?.pinnedPathList() ?? [],
-    rows: (wsPath) =>
-      storedSessions().flatMap((stored) =>
-        stored.rows(wsPath).map((r) => ({ ...r, backendId: stored.id }))
-      ),
-    members: () => new Set(storedSessions().flatMap((stored) => [...stored.members()])),
-    reread: () => workspaceMgr?.refresh()
-  })
   const storedDeps = {
     pty: ptyMgr,
     runtime,
@@ -3561,11 +3469,9 @@ app.whenReady().then(() => {
     remoteDirExists: (dir: string) => hosts.machineOf(dir)!.sessionDirThere(dir),
     remoteTreeIo: machineTreeIo,
     realFilesOn,
-    changed: () => {
-      const all = onSessionsChanged()
-      pushToSessions.sessions(all)
-      if (workspaceMgr) rowsKeptInMemoryChanged()
-    },
+    changed: sessionsChanged,
+    pinnedWorkspaces: () => workspaceMgr?.pinnedPathList() ?? [],
+    rereadRows: () => workspaceMgr?.refresh(),
     replaced: (oldKey: string, newKey: string) => workspaceMgr?.moveResident(oldKey, newKey),
     events: (tabId: string, event: SessionEvent) => sessionBackends.observe(tabId, event),
     error: (message: string) => sendToRenderer(CH.toast.show, message),
@@ -3737,8 +3643,11 @@ app.whenReady().then(() => {
     rereadGrownRows: () => workspaces.rescanForGrowth(),
     runningBindings,
     remoteRunning,
-    sessionsOnDiskOrRunning: (ids) =>
-      butler?.forgetGone((key) => sessionBackends.sessionStillThere(key, ids)),
+    sessionsOnDiskOrRunning: (ids) => {
+      const stillThere = (key: string): boolean => sessionBackends.sessionStillThere(key, ids)
+      butler?.forgetGone(stillThere)
+      attention.forgetLastRunGone(stillThere)
+    },
     memberDropped: (sessionId, why) => droppedSessionsLog(`${sessionId} ${why}`)
   })
   const bindingNow = buildDiscordBinding({
@@ -6361,8 +6270,6 @@ const {
   buildAgySessions,
   sessionCommand,
   pushToSessions,
-  AGY_HOOK_SCRIPT,
-  AGY_TITLE_SCRIPT,
   agyBackend,
   machineHookSettings,
   pickMachineAccount,
@@ -6377,8 +6284,6 @@ const {
   everyWorkspaceBlock,
   ownerPartsOf,
   everyWorkspaceSavedByTheOwner,
-  CODEX_REPLY_LANGUAGE_SCRIPT,
-  HOOK_SCRIPT,
   forgetAssistMarkers,
   localNotice,
   markAnswerable,
@@ -6410,7 +6315,7 @@ const {
   savedFromTheDialog,
   workspaceBlock,
   scratchRootsAround,
-  rereadWhenRowsInMemoryChange
+  sessionsChangedIn
 } = startedPlugins.sessions
 const { TODO_NEWS } = startedPlugins.todo
 const { koloftInbox, flushInbox } = startedPlugins.inbox
@@ -6418,7 +6323,6 @@ const { buildRunner: buildCronRunner, stop: stopScheduledTasks } = startedPlugin
 const {
   buildAsks: buildSecretAsks,
   writeSudoShims,
-  SUDO_SHIM_FILES,
   SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS
 } = startedPlugins.passwords
 const { buildButler, buildDigest, ownerAsleep } = startedPlugins.butler
