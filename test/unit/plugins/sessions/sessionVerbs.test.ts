@@ -39,6 +39,7 @@ const OLDER_A_HELPER_HAS_IT =
 import { ownerSays } from '../../../../src/shared/agentGuide'
 import type { PickFacts } from '../../../../src/shared/sessionPicks'
 import { handoverPreamble } from '../../../../src/plugins/sessions/main/handoverPreamble'
+import { withHandover } from '../../../../src/core/handOver'
 import { StartedSessions } from '../../../../src/plugins/sessions/main/startedSessions'
 import { turnedOffLine } from '../../../../src/shared/sessionBackend'
 import { EXIT_USAGE, type AgentReply } from '../../../../src/core/command'
@@ -193,6 +194,10 @@ function harness(
       openTabs.add('new-tab')
       return 'new-tab'
     },
+    handOverLaunch: (backend, handOver, task) =>
+      backend === 'codex'
+        ? { role: handOver, firstPrompt: task }
+        : { firstPrompt: withHandover(handOver, task) },
     assist: async (job) =>
       (job.system === 'You translate.'
         ? conducting.translation

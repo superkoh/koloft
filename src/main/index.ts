@@ -1810,6 +1810,8 @@ const sessionDeps: SessionVerbDeps = {
     const title = options.name ?? BACKEND_LABEL[options.kind]
     return launchQuietTab(options, title, { launch: options })
   },
+  handOverLaunch: (backend, handOver, task) =>
+    sessionBackends.handOverLaunch(backend, handOver, task),
   assist,
   ...messaging.forSessionVerbs,
   get startedSessions() {
