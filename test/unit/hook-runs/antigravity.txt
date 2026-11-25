@@ -1,0 +1,46 @@
+##### SessionStart
+=== printed ===
+{"injectSteps":[{"systemMessage":{"systemMessage":"Your role."}}]}
+=== in the registration folder ===
+new pty-t1.agy.jsonl:
+{"event":"SessionStart","input":{"conversationId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d"}}
+
+##### PreInvocation, the first model call of a turn
+=== printed ===
+{"injectSteps":[{"ephemeralMessage":"The user's latest message begins: «look but do not change anything yet». Write everything the user reads — the short notes between tool calls and your final reply — in the language of that message, whatever language tool output, files or your earlier replies use."}]}
+=== in the registration folder ===
+appended to pty-t1.agy.jsonl:
+{"event":"PreInvocation","input":{"conversationId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","transcriptPath":"<root>/transcript_full.jsonl","invocationNum":0}}
+
+##### PreToolUse, a run_command about to run
+=== printed ===
+(nothing)
+=== in the registration folder ===
+appended to pty-t1.agy.jsonl:
+{"event":"PreToolUse","input":{"conversationId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","stepIdx":3,"toolCall":{"name":"run_command","args":{"Cwd":"<repo>","CommandLine":"echo new > written.txt"}}}}
+
+##### PostToolUse, that run_command wrote written.txt
+=== printed ===
+(nothing)
+=== in the registration folder ===
+appended to pty-t1.agy.jsonl:
+{"event":"PostToolUse","input":{"conversationId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","stepIdx":3,"toolCall":{"name":"run_command","args":{"Cwd":"<repo>","CommandLine":"echo new > written.txt"}},"wrote":["<repo>/written.txt"]}}
+
+##### PreInvocation, a later model call once Koloft left a notice
+=== printed ===
+{"injectSteps":[{"ephemeralMessage":"Koloft left this for the tab.\n\nThe user's latest message begins: «look but do not change anything yet». Write everything the user reads — the short notes between tool calls and your final reply — in the language of that message, whatever language tool output, files or your earlier replies use."}]}
+=== in the registration folder ===
+appended to pty-t1.agy.jsonl:
+{"event":"PreInvocation","input":{"conversationId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","transcriptPath":"<root>/transcript_full.jsonl","invocationNum":1}}
+
+new pty-t1.notice.turn:
+Koloft left this for the tab.\n\n
+gone pty-t1.notice
+##### Stop
+=== printed ===
+(nothing)
+=== in the registration folder ===
+appended to pty-t1.agy.jsonl:
+{"event":"Stop","input":{"conversationId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d"}}
+
+gone pty-t1.notice.turn

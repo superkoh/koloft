@@ -1,0 +1,9 @@
+=== the config overrides its server is started with, one per line ===
+tui.status_line=["context-used","five-hour-limit","weekly-limit","git-branch","codex-version","model-with-reasoning","estimated-thread-cost","pull-request-number","current-dir"]
+sandbox_workspace_write.network_access=true
+developer_instructions="<Koloft's \"prompt\" for codex>"
+features.default_mode_request_user_input=true
+hooks.UserPromptSubmit=[{hooks=[{type="command",command="sh \"$KOLOFT_CODEX_REPLY_LANGUAGE\" prompt"}]}]
+hooks.PostToolUse=[{hooks=[{type="command",command="sh \"$KOLOFT_CODEX_REPLY_LANGUAGE\" tool"}]},{matcher="Bash",hooks=[{type="command",command="sh \"$KOLOFT_CODEX_REPLY_LANGUAGE\" shell-after"}]}]
+hooks.Stop=[{hooks=[{type="command",command="sh \"$KOLOFT_CODEX_REPLY_LANGUAGE\" stop"}]}]
+hooks.PreToolUse=[{matcher="Bash",hooks=[{type="command",command="sh \"$KOLOFT_CODEX_REPLY_LANGUAGE\" shell-before"}]}]

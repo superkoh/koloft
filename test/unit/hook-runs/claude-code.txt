@@ -1,0 +1,138 @@
+##### start (a new session)
+=== printed ===
+(nothing)
+=== in the registration folder ===
+new pty-t1.json:
+{"tabId":"pty-t1","event":"start","sessionId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","transcriptPath":"<root>/transcript.jsonl","cwd":"<repo>","reason":"","source":"startup","account":"work","tmux":"","inStatusLog":true}
+
+new pty-t1.status.jsonl:
+{"tabId":"pty-t1","event":"start","sessionId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","transcriptPath":"<root>/transcript.jsonl","cwd":"<repo>","reason":"","source":"startup","account":"work","tmux":"","inStatusLog":true}
+
+##### prompt, typed by the owner
+=== printed ===
+{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"The user's latest message begins: «look but do not change anything yet». Write everything the user reads — the short notes between tool calls, the description of each Bash command, and your final reply — in the language of that message, whatever language tool output, files or your earlier replies use."}}
+
+=== in the registration folder ===
+new pty-t1.said:
+look but do not change anything yet
+
+appended to pty-t1.status.jsonl:
+{"tabId":"pty-t1","event":"prompt","sessionId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","message":"","tmux":""}
+
+##### tool (after any tool call)
+=== printed ===
+{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"The user's latest message begins: «look but do not change anything yet». Write everything the user reads — the short notes between tool calls, the description of each Bash command, and your final reply — in the language of that message, whatever language tool output, files or your earlier replies use."}}
+
+=== in the registration folder ===
+(nothing)
+##### shell-before (a Bash call about to run)
+=== printed ===
+(nothing)
+=== in the registration folder ===
+(nothing)
+##### shell-after (that Bash call wrote written.txt)
+=== printed ===
+(nothing)
+=== in the registration folder ===
+appended to pty-t1.status.jsonl:
+{"tabId":"pty-t1","event":"shell-wrote","sessionId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","tmux":"","wrote":["<repo>/written.txt"]}
+
+##### posttool (a Bash call that changed a pull request)
+=== printed ===
+(nothing)
+=== in the registration folder ===
+(nothing)
+##### sent (a SendMessage that reached the running session named peer)
+=== printed ===
+(nothing)
+=== in the registration folder ===
+appended to pty-t1.status.jsonl:
+{"tabId":"pty-t1","event":"sent","sessionId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","tmux":"","toSession":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"}
+
+##### compacting
+=== printed ===
+(nothing)
+=== in the registration folder ===
+appended to pty-t1.status.jsonl:
+{"tabId":"pty-t1","event":"compacting","sessionId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","trigger":"auto","tmux":""}
+
+##### start (after a compaction)
+=== printed ===
+(nothing)
+=== in the registration folder ===
+rewritten pty-t1.json:
+{"tabId":"pty-t1","event":"start","sessionId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","transcriptPath":"<root>/transcript.jsonl","cwd":"<repo>","reason":"","source":"compact","account":"work","tmux":"","inStatusLog":true}
+
+appended to pty-t1.status.jsonl:
+{"tabId":"pty-t1","event":"start","sessionId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","transcriptPath":"<root>/transcript.jsonl","cwd":"<repo>","reason":"","source":"compact","account":"work","tmux":"","inStatusLog":true}
+{"tabId":"pty-t1","event":"compacted","sessionId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","tmux":""}
+
+##### notify (waiting on a permission)
+=== printed ===
+(nothing)
+=== in the registration folder ===
+appended to pty-t1.status.jsonl:
+{"tabId":"pty-t1","event":"notify","sessionId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","message":"Claude needs your permission to use Bash","tmux":""}
+
+##### ask, in a tab Koloft cannot answer: recorded at once, nothing held
+=== printed ===
+(nothing)
+=== in the registration folder ===
+appended to pty-t1.status.jsonl:
+{"tabId":"pty-t1","event":"ask","sessionId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","tmux":"","ask":{"session_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"rm -rf build"}}}
+
+##### asked (a tab on another machine only records the ask)
+=== printed ===
+(nothing)
+=== in the registration folder ===
+appended to pty-t1.status.jsonl:
+{"tabId":"pty-t1","event":"ask","sessionId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","tmux":"","ask":{"session_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"rm -rf build"}}}
+
+##### ask, in a tab Koloft can answer: it holds the dialog until Koloft writes the answer
+=== printed ===
+{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}
+=== in the registration folder ===
+while it waits:
+new pty-t1.<pid of the hook>.ask.json:
+{"session_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"rm -rf build"}}
+new pty-t1.<pid of the hook>.tick:
+
+once answered:
+(nothing)
+##### stop, with a background task still running and no wakeups
+=== printed ===
+(nothing)
+=== in the registration folder ===
+appended to pty-t1.status.jsonl:
+{"tabId":"pty-t1","event":"stop","sessionId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","message":"","tmux":"","bgl":"bash_1:local-bash","crons":[]}
+
+##### stop, with a notice Koloft left unread
+=== printed ===
+{"decision":"block","reason":"Koloft left this for the tab.\n\n"}
+
+=== in the registration folder ===
+gone pty-t1.notice
+##### stop, the one after the turn went on for the notice
+=== printed ===
+(nothing)
+=== in the registration folder ===
+appended to pty-t1.status.jsonl:
+{"tabId":"pty-t1","event":"stop","sessionId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","message":"","tmux":""}
+
+##### prompt, an owner message the Discord relay sent and noted
+=== printed ===
+{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"The user writes Chinese. Write everything the user reads — the short notes between tool calls, the description of each Bash command, and your final reply — in Chinese, whatever language tool output, files or your earlier replies use."}}
+
+=== in the registration folder ===
+rewritten pty-t1.said:
+也看看 README
+
+appended to pty-t1.status.jsonl:
+{"tabId":"pty-t1","event":"prompt","sessionId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","message":"","tmux":""}
+
+##### end
+=== printed ===
+(nothing)
+=== in the registration folder ===
+rewritten pty-t1.json:
+{"tabId":"pty-t1","event":"end","sessionId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","transcriptPath":"","cwd":"","reason":"prompt_input_exit","source":"","account":"work","tmux":""}

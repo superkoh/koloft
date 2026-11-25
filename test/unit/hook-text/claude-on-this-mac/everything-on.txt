@@ -1,0 +1,152 @@
+=== the settings file the tab is handed (pty-t1.json) ===
+{
+  "skipDangerousModePermissionPrompt": true,
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": ""
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'<userData>/hooks/sessionstart.sh' '<userData>/hook-sessions' 'pty-t1' shell-before"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'<userData>/hooks/sessionstart.sh' '<userData>/hook-sessions' 'pty-t1' start"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'<userData>/hooks/sessionstart.sh' '<userData>/hook-sessions' 'pty-t1' end"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'<userData>/hooks/sessionstart.sh' '<userData>/hook-sessions' 'pty-t1' prompt"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'<userData>/hooks/sessionstart.sh' '<userData>/hook-sessions' 'pty-t1' compacting"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'<userData>/hooks/sessionstart.sh' '<userData>/hook-sessions' 'pty-t1' stop"
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "permission_prompt|worker_permission_prompt|idle_prompt|elicitation_dialog|elicitation_url_dialog",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'<userData>/hooks/sessionstart.sh' '<userData>/hook-sessions' 'pty-t1' notify"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'<userData>/hooks/sessionstart.sh' '<userData>/hook-sessions' 'pty-t1' ask",
+            "timeout": 3600
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'<userData>/hooks/sessionstart.sh' '<userData>/hook-sessions' 'pty-t1' tool"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'<userData>/hooks/sessionstart.sh' '<userData>/hook-sessions' 'pty-t1' shell-after"
+          }
+        ]
+      },
+      {
+        "matcher": "SendMessage",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'<userData>/hooks/sessionstart.sh' '<userData>/hook-sessions' 'pty-t1' sent"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'<userData>/hooks/sessionstart.sh' '<userData>/hook-sessions' 'pty-t1' posttool"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'<userData>/hooks/sessionstart.sh' '<userData>/hook-sessions' 'pty-t1' shell-after"
+          }
+        ]
+      }
+    ]
+  },
+  "statusLine": {
+    "type": "command",
+    "command": "'<userData>/statusline/run-<hash of this install>.sh'",
+    "padding": 0
+  },
+  "permissions": {
+    "allow": [
+      "Bash(koloft *)"
+    ]
+  }
+}
