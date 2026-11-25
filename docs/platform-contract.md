@@ -250,7 +250,12 @@ method. A recheck adds its date, version and command to the bullet.
   `tar: <file>: Cannot open: Permission denied` and `tar: Exiting with failure status due
   to previous errors`, so an `&& echo <marker>` after it prints nothing. (2026-11-24, GNU
   tar 1.34 on Debian bookworm, the e2e Docker ssh lab image, as uid 1000:
-  `tar cf - f | tar xmf - -C <folder with mode 555>`.)
+  `tar cf - f | tar xmf - -C <folder with mode 555>`.) **When the archive holds its top
+  folder (`tar cf - -C <dir> .`), that failed unpack still sets the target folder's mode
+  to the archived folder's**: a `555` folder the login owns was `700` afterwards, with no
+  file in it, and the exit code was still 2 — so the same unpack run again succeeds. (Same
+  day and image: `tar cf - -C <dir with mode 700> . | tar xmf - -C <folder with mode
+  555>`, then `stat -c %a`.)
 - **A copy of a signed system binary saved under another name is SIGKILLed** when run.
 - **A file downloaded by Node has no `com.apple.quarantine` flag**, so an app installed
   from it opens without Gatekeeper.

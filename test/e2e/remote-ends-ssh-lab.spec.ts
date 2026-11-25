@@ -323,32 +323,34 @@ test.describe('how a Claude Code and a Codex session on a real sshd machine behi
     })
   })
 
-  // PLATFORM§3 CODEX§16
-  test('E-SSH-E4: a Claude Code start and a Codex start whose files cannot land on the machine each say so in their tab, leave no tmux session and no app-server there, and remove the tab’s folder, which holds the account’s key, from this Mac', async ({
-    env
-  }) => {
-    installCodexSignedInForTheLab(env)
-    await withLab(
-      env,
-      async ({ page, lab }) => {
-        await addMachine(page, 'kt-key', 'kuser')
-        for (const agent of ['Claude', 'Codex'] as const) {
+  // PLATFORM§3
+  for (const [id, agent, name] of [
+    ['E-SSH-E4', 'Claude', 'Claude Code'],
+    ['E-SSH-E7', 'Codex', 'Codex']
+  ] as const)
+    test(`${id}: a ${name} start whose files cannot land on the machine says so in its tab, leaves no tmux session and no app-server there, and removes the tab’s folder, which can hold the account’s key, from this Mac`, async ({
+      env
+    }) => {
+      installCodexSignedInForTheLab(env)
+      await withLab(
+        env,
+        async ({ page, lab }) => {
+          await addMachine(page, 'kt-key', 'kuser')
           const tabId = await tabOpenedBy(page, () => newSessionInWith(page, 'kt-key', agent))
           await screenOf(page, tabId, A_TAB_THAT_COULD_NOT_START_SAYS_SO_MS).toContain(
             COULD_NOT_PUSH
           )
           await expect.poll(() => fs.existsSync(tabFolderOnThisMac(env, tabId))).toBe(false)
+          expect(tmuxSessionsOn(lab, 'kuser')).toEqual([])
+          expect(tabScriptsRunningOn(lab, 'kuser')).toEqual([])
+          expect(codexServersOn(lab, 'kuser')).toEqual([])
+        },
+        (lab) => {
+          installFakeCodexOnTarget(lab)
+          runOnTarget(lab, 'kuser', NO_TAB_FILES_CAN_LAND)
         }
-        expect(tmuxSessionsOn(lab, 'kuser')).toEqual([])
-        expect(tabScriptsRunningOn(lab, 'kuser')).toEqual([])
-        expect(codexServersOn(lab, 'kuser')).toEqual([])
-      },
-      (lab) => {
-        installFakeCodexOnTarget(lab)
-        runOnTarget(lab, 'kuser', NO_TAB_FILES_CAN_LAND)
-      }
-    )
-  })
+      )
+    })
 
   // ADR-0039 CODEX§16 PLATFORM§33
   test('E-SSH-E5: when the ssh connection to the machine drops, a Codex tab’s relay connects again to the same app-server, still running there, and koloft run by Codex after that answers', async ({
