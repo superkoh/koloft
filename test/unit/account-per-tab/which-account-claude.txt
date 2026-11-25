@@ -11,4 +11,3 @@ only a custom endpoint                                                 → made-
 the only subscription disabled, the other expired                      → none (no-accounts)
 no account at all                                                      → none (no-accounts)
 only other agents' kinds (codex-home, agy-home)                        → none (no-accounts)
-only asking, not starting                                              → no such path: every ask is a start

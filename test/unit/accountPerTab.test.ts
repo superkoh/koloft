@@ -172,7 +172,13 @@ async function claudeRows(): Promise<string[]> {
     line('only a custom endpoint', await pick([proxy], {})),
     line(
       'the only subscription disabled, the other expired',
-      await pick([{ ...pro, enabled: false }, { ...max, status: 'expired' }], both)
+      await pick(
+        [
+          { ...pro, enabled: false },
+          { ...max, status: 'expired' }
+        ],
+        both
+      )
     ),
     line('no account at all', await pick([], {})),
     line(
@@ -242,15 +248,15 @@ describe('which account each start gets, for every kind of account and each situ
   })
 
   it('Codex (codex-home), on this Mac and over SSH alike', async () => {
-    await expect(['=== Codex ===', ...homeRows('codex-home', 'codex')].join('\n')).toMatchFileSnapshot(
-      `${PINNED}/which-account-codex.txt`
-    )
+    await expect(
+      ['=== Codex ===', ...homeRows('codex-home', 'codex')].join('\n')
+    ).toMatchFileSnapshot(`${PINNED}/which-account-codex.txt`)
   })
 
   it('Antigravity (agy-home), on this Mac and over SSH alike', async () => {
-    await expect(['=== Antigravity ===', ...homeRows('agy-home', 'agy')].join('\n')).toMatchFileSnapshot(
-      `${PINNED}/which-account-agy.txt`
-    )
+    await expect(
+      ['=== Antigravity ===', ...homeRows('agy-home', 'agy')].join('\n')
+    ).toMatchFileSnapshot(`${PINNED}/which-account-agy.txt`)
   })
 })
 
@@ -278,7 +284,8 @@ describe('the name of the Keychain entry each kind of account is kept under, as 
         steps.push(`${build} · ${kind}: written, read back ${read === secret ? 'the same' : read}`)
       }
       steps.push(`=== ${build}: the keychain after writing one of each ===`, keychain())
-      for (const kind of EVERY_KIND_KOLOFT_KEEPS_IN_THE_KEYCHAIN) await keychainDelete(kind, `made-up-${kind}`)
+      for (const kind of EVERY_KIND_KOLOFT_KEEPS_IN_THE_KEYCHAIN)
+        await keychainDelete(kind, `made-up-${kind}`)
       steps.push(`=== ${build}: the keychain after deleting each ===`, keychain())
     }
     await expect(steps.join('\n')).toMatchFileSnapshot(`${PINNED}/keychain-entry-names.txt`)

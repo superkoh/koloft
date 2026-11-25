@@ -763,9 +763,9 @@ describe('a settings file an older Koloft wrote', () => {
     expect(new Set(kinds)).toEqual(new Set(EVERY_ACCOUNT_KIND_AS_SAVED_ON_DISK))
     const once = sanitizeLoadedSettings(older).accounts
     expect(once).toStrictEqual(older.accounts)
-    expect(sanitizeLoadedSettings(JSON.parse(JSON.stringify({ accounts: once }))).accounts).toStrictEqual(
-      older.accounts
-    )
+    expect(
+      sanitizeLoadedSettings(JSON.parse(JSON.stringify({ accounts: once }))).accounts
+    ).toStrictEqual(older.accounts)
   })
 
   it('loads the same again from what it writes back', () => {

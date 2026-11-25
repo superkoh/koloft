@@ -165,6 +165,9 @@ const claudeCalls = (env: E2EEnv): ClaudeCall[] =>
     (c) => path.basename(path.dirname(c.cwd)) !== 'conductors'
   )
 
+const assistCalls = (env: E2EEnv): { account: Record<string, string> }[] =>
+  jsonl(path.join(env.home, 'fake-claude-print-calls.jsonl'))
+
 interface CodexServer {
   argv: string[]
   codexHome: string
@@ -346,6 +349,13 @@ test.describe('which account each kind of tab starts on, with which environment 
           )
         )
       }
+      await expect
+        .poll(() => assistCalls(env).length, { timeout: A_LAUNCH_IS_LOGGED_WITHIN_MS })
+        .toBeGreaterThan(0)
+      t.cell('Assist’s one-shot claude -p (the title of a new session)', [
+        '  its account environment:',
+        ...sorted(assistCalls(env)[0].account).map((l) => `  ${l}`)
+      ])
     } finally {
       await quitAndClose(app)
     }
@@ -503,8 +513,11 @@ test.describe('which account each kind of tab starts on, with which environment 
           (s) => path.basename(s.codexHome)
         )
       )
+      expect(
+        await page.evaluate((ws) => window.api.cron.trusted(ws, 'agy'), env.workspaces.b)
+      ).toBe(false)
       t.cell(
-        'Antigravity on this Mac, restarted',
+        'Antigravity on this Mac, after Koloft only asked once whether an account trusts a folder; restarted',
         await startThenResume(
           () => agySessionCalls(env),
           () => START.agy(page, HERE),
