@@ -120,7 +120,9 @@ export const agent = {
     // AGY§31
     typesASkillOnlyByTheNameInItsFile: true,
     // AGY§31
-    refusesATypedSkillMarkedNotUserInvocable: false
+    refusesATypedSkillMarkedNotUserInvocable: false,
+    // AGY§21
+    listsTheModelsAnAccountCanRun: true
   },
   pureFunctions: {
     effortsAModelTakes: agyEffortsAModelTakes,

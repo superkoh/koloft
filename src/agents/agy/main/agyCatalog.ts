@@ -1,6 +1,40 @@
 import path from 'path'
-import type { AgentCatalog } from '@core/agent/agentsMain'
+import type { AgentCatalog, AgentOneShot, OneShotTarget } from '@core/agent/agentsMain'
+import type { ListedModel } from '@shared/sessionPicks'
+import { readAgyModels } from './agyAccounts'
+import { withSystemFirst, type ModelAndEffort } from '@core/assistModels'
 import { foldersUpToRoot, jsonServers, textOrNull, textsIn } from '../../../main/mcpServers'
+
+// AGY§20 AGY§21
+const AGY_ONE_SHOT = (task: string, launch: ModelAndEffort): string[] => [
+  '-p',
+  task,
+  '--output-format',
+  'json',
+  ...(launch.model ? ['--model', launch.model] : []),
+  ...(launch.effort ? ['--effort', launch.effort] : [])
+]
+
+// AGY§20
+function agyResponse(out: string): string | null {
+  try {
+    const result = JSON.parse(out) as { status?: unknown; response?: unknown }
+    return result.status === 'SUCCESS' && typeof result.response === 'string'
+      ? result.response
+      : null
+  } catch {
+    return null
+  }
+}
+
+export const agyOneShot: AgentOneShot = {
+  argv: (job, launch) => AGY_ONE_SHOT(withSystemFirst(job), launch),
+  stdin: () => '',
+  answerFrom: agyResponse,
+  sometimesAnswersLate: false,
+  // AGY§21
+  saysItHasNoSuchModel: /invalid model selection/
+}
 
 // AGY§30
 export const AGY_PROJECT_MCP_FILE = '.agents/mcp_config.json'
@@ -17,8 +51,16 @@ export async function foldersUpToRepoTop(
 
 export const agyCatalog = (
   ownersGemini: () => string,
-  holdsGit: (folder: string) => Promise<boolean>
+  holdsGit: (folder: string) => Promise<boolean>,
+  oneShotTarget: () => Promise<OneShotTarget | null>
 ): AgentCatalog => ({
+  // AGY§21
+  listedModels: async (): Promise<ListedModel[] | undefined> => {
+    const target = await oneShotTarget()
+    if (!target) return undefined
+    return readAgyModels(target.binary, target.env, target.args ?? []).finally(() => target.done())
+  },
+  oneShot: agyOneShot,
   // AGY§4 AGY§31
   moreSkillFoldersEveryAccountReadsOnThisMac: () => [],
   // AGY§30

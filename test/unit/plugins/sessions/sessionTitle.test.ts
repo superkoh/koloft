@@ -8,6 +8,7 @@ import {
 } from '../../../../src/plugins/sessions/main/sessionTitle'
 import { koloftAssist } from '../../../../src/main/assist'
 import { DEFAULT_SETTINGS } from '../../../../src/shared/settingsOps'
+import { EVERY_AGENTS_ONE_SHOT } from '../../helpers/agentOneShots'
 
 function fakeClaude(body: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-title-'))
@@ -26,6 +27,7 @@ function claudeAssist(bin: string, env: NodeJS.ProcessEnv = {}) {
       accounts: []
     }),
     enabled: () => true,
+    oneShot: (backend) => EVERY_AGENTS_ONE_SHOT[backend],
     target: async (backend) =>
       backend === 'claude' ? { binary: bin, env, done: nothingToCleanUp } : null,
     onThisAccount: async (_backend, asked) => asked

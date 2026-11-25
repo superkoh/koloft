@@ -1,0 +1,40 @@
+runs: 2
+--- run 1
+argv:
+  "-p"
+  "--model"
+  "sonnet"
+  "--effort"
+  "low"
+  "--no-session-persistence"
+  "--setting-sources"
+  ""
+  "--strict-mcp-config"
+  "--mcp-config"
+  "{\"mcpServers\":{}}"
+  "--system-prompt"
+  "You write short titles.\nOne line only."
+  "--tools"
+  ""
+stdin: "Task:\nfix the login crash\n\nand the logout one"
+cwd: <tmp>
+env: {"PIN_ACCOUNT":"claude-work","PIN_KEPT":"handed over as it is"}
+--- run 2
+argv:
+  "-p"
+  "--model"
+  "haiku"
+  "--no-session-persistence"
+  "--setting-sources"
+  ""
+  "--strict-mcp-config"
+  "--mcp-config"
+  "{\"mcpServers\":{}}"
+  "--system-prompt"
+  "You write short titles.\nOne line only."
+  "--tools"
+  ""
+stdin: "Task:\nfix the login crash\n\nand the logout one"
+cwd: <tmp>
+env: {"PIN_ACCOUNT":"claude-work","PIN_KEPT":"handed over as it is"}
+answer: "Fix Login Crash\n"
