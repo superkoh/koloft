@@ -41,6 +41,11 @@ export const agent = {
     internalNameEndings: [],
     foldersMadeEmptyAhead: []
   },
+  // CC§9
+  envOfItsSessionThatMisleadsWhatStartsInside: {
+    named: ['CLAUDECODE', 'CLAUDE_EFFORT', 'CLAUDE_JOB_DIR', 'CLAUDE_PID', 'AI_AGENT'],
+    startingWith: ['CLAUDE_CODE_']
+  },
   modelEveryAccountTakes: MODEL_EVERY_ACCOUNT_TAKES,
   namedModels: [
     { id: 'fable', label: 'Fable' },
