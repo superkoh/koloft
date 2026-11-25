@@ -1,0 +1,2 @@
+if shopt -q login_shell && [ -r "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; fi
+export PATH='<userData>/codex-open/<pid>-<uuid>':"$PATH"

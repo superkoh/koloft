@@ -1,0 +1,9 @@
+agy  file 0755
+claude  file 0755
+codex  file 0755
+gh  file 0755
+git-credential-koloft  file 0755
+koloft  file 0755
+koloft-askpass  file 0755
+open  file 0755
+sudo  file 0755

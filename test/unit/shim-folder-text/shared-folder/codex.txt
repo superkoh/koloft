@@ -1,0 +1,88 @@
+#!/bin/sh
+if [ "$KOLOFT_UTIL" = "1" ]; then
+  utilok=0
+  valflag=0
+  sub=""
+  for a in "$@"; do
+    if [ "$valflag" = "1" ]; then
+      valflag=0
+      continue
+    fi
+    case "$a" in
+      -h|--help|-V|--version) utilok=1 ;;
+      -c|--config|--enable|--disable|--remote|--remote-auth-token-env|-i|--image|-m|--model|--local-provider|-p|--profile|-s|--sandbox|-C|--cd|--add-dir|-a|--ask-for-approval) valflag=1 ;;
+      -*) ;;
+      *) [ -z "$sub" ] && sub="$a" ;;
+    esac
+  done
+  case "$sub" in
+    exec|e|review|login|logout|mcp|plugin|mcp-server|app-server|remote-control|app|completion|update|doctor|sandbox|debug|apply|a|queue|archive|delete|migrate-rollouts|migrate-nfs-db|unarchive|exec-server|features|help) utilok=1 ;;
+  esac
+  if [ "$utilok" = "0" ]; then
+    printf '⛔ Koloft — this is a Koloft terminal, not an agent surface.\n' >&2
+    printf '   %s\n' "Start interactive Codex from the sidebar's ＋ (⌘N)." >&2
+    printf '   %s\n' 'Non-interactive use is fine: codex exec · --help · login · mcp · …' >&2
+    exit 1
+  fi
+fi
+if [ "$KOLOFT_UTIL" = "1" ]; then
+  pick=0
+  case "$sub" in exec|e|review|apply|a|app-server|mcp-server) pick=1 ;; esac
+  for a in "$@"; do case "$a" in -h|--help|-V|--version) pick=0 ;; esac; done
+  if [ "$pick" = "1" ]; then
+newid() {
+  u="$(uuidgen 2>/dev/null | tr 'A-Z' 'a-z')"
+  if [ -z "$u" ] && [ -r /proc/sys/kernel/random/uuid ]; then u="$(cat /proc/sys/kernel/random/uuid)"; fi
+  echo "$u"
+}
+refuse() { echo "koloft: $1" >&2; exit 78; }
+pick_field() { printf '%s\n' "$pjson" | sed -n 's/.*"'"$1"'":"\([^"]*\)".*/\1/p'; }
+pick_account() {
+  [ -n "$KOLOFT_PICK_DIR" ] && [ -n "$KOLOFT_TAB_ID" ] && [ -n "$KOLOFT_PID" ] && kill -0 "$KOLOFT_PID" 2>/dev/null ||
+    refuse "$1 runs here only inside a Koloft tab, on an account from Settings ▸ Accounts."
+  pickid="$(newid)"
+  [ -n "$pickid" ] || pickid="$$-$(date +%s)"
+  preq="$KOLOFT_PICK_DIR/req-$pickid.json"
+  pres="$KOLOFT_PICK_DIR/res-$pickid.json"
+  printf '{"tabId":"%s","ts":%s,"backend":"%s"}\n' "$KOLOFT_TAB_ID" "$(date +%s)" "$1" > "$preq" 2>/dev/null
+  pwaits=0
+  while [ ! -f "$pres" ] && [ "$pwaits" -lt 60 ]; do sleep 0.05; pwaits=$((pwaits+1)); done
+  pjson="$(cat "$pres" 2>/dev/null)"
+  rm -f "$preq" "$pres" 2>/dev/null
+  pacct="$(pick_field account)"
+  if [ -z "$pacct" ]; then
+    [ -z "$pjson" ] && refuse "picking an account took too long. Try again."
+    refuse "$2"
+  fi
+}
+# PLATFORM§3 PLATFORM§2 ADR-0001
+read_keychain() {
+  ptokf="$KOLOFT_PICK_DIR/tok-$pickid"
+  ( umask 077; exec security find-generic-password -s "$1" -a "$2" -w > "$ptokf" 2>/dev/null ) &
+  psec=$!
+  pswait=0
+  while kill -0 "$psec" 2>/dev/null && [ "$pswait" -lt 100 ]; do sleep 0.05; pswait=$((pswait+1)); done
+  kill "$psec" 2>/dev/null
+  wait "$psec" 2>/dev/null
+  ptok="$(cat "$ptokf" 2>/dev/null)"
+  rm -f "$ptokf" 2>/dev/null
+}
+    pick_account codex "No Codex account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts."
+    phome="$(pick_field home)"
+    unset CODEX_API_KEY OPENAI_API_KEY
+    export CODEX_HOME="$phome"
+    pbanner="$(pick_field banner)"
+    pwarn="$(pick_field warning)"
+    [ -n "$pbanner" ] && printf '%s\n' "$pbanner" >&2
+    [ -n "$pwarn" ] && printf '%s\n' "$pwarn" >&2
+  fi
+fi
+self=$(cd "$(dirname "$0")" && pwd)
+IFS=:
+set -f
+for d in $PATH; do
+  [ "$d" = "$self" ] && continue
+  [ -x "$d/codex" ] && exec "$d/codex" "$@"
+done
+echo "codex: not found" >&2
+exit 127

@@ -1,0 +1,91 @@
+##### no real agy on PATH
+--- exit code ---
+127
+--- stderr ---
+agy: not found
+
+
+##### agy -p in a Koloft shell tab on a Google account, with a key a login shell exported
+--- exit code ---
+0
+--- stderr ---
+koloft: → g1
+every account is at its limit
+
+--- asked Koloft for an account ---
+{"tabId":"tab-pinned","ts":<ts>,"backend":"agy"}
+--- the real agy got these arguments ---
+--gemini_dir=/koloft/agy-homes/g1
+-p
+say hi
+--- its environment, where it differs from what the shim was given ---
+WSL_INTEROP=koloft
+GEMINI_API_KEY (taken away)
+
+##### agy -p in a Koloft shell tab on a key account
+--- exit code ---
+0
+--- asked Koloft for an account ---
+{"tabId":"tab-pinned","ts":<ts>,"backend":"agy"}
+--- asked the Keychain ---
+find-generic-password -s koloft-dev-agy-home -a acct1 -w
+--- the real agy got these arguments ---
+--gemini_dir=/koloft/agy-homes/acct1
+-p
+say hi
+--- its environment, where it differs from what the shim was given ---
+GEMINI_API_KEY=secret-from-the-fake-keychain
+WSL_INTEROP=koloft
+
+##### the key account’s key is not in the Keychain
+--- exit code ---
+78
+--- stderr ---
+koloft: could not read the key of ghost from the Keychain. Try again, or add it again in Settings ▸ Accounts.
+
+--- asked Koloft for an account ---
+{"tabId":"tab-pinned","ts":<ts>,"backend":"agy"}
+--- asked the Keychain ---
+find-generic-password -s koloft-dev-agy-home -a ghost -w
+
+##### no usable account
+--- exit code ---
+78
+--- stderr ---
+koloft: No Antigravity account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.
+
+--- asked Koloft for an account ---
+{"tabId":"tab-pinned","ts":<ts>,"backend":"agy"}
+
+##### Koloft never answers the pick
+--- exit code ---
+78
+--- stderr ---
+koloft: picking an account took too long. Try again.
+
+--- asked Koloft for an account ---
+{"tabId":"tab-pinned","ts":<ts>,"backend":"agy"}
+
+##### outside a Koloft tab
+--- exit code ---
+78
+--- stderr ---
+koloft: agy runs here only inside a Koloft tab, on an account from Settings ▸ Accounts.
+
+
+##### an interactive agy typed in a Koloft shell tab
+--- exit code ---
+1
+--- stderr ---
+⛔ Koloft — this is a Koloft terminal, not an agent surface.
+   Start interactive Antigravity from the sidebar's ＋ (⌘N).
+   Non-interactive use is fine: agy -p · --help · mcp · …
+
+
+##### agy in a session’s own shell
+--- exit code ---
+0
+--- the real agy got these arguments ---
+(none)
+--- its environment, where it differs from what the shim was given ---
+(no change)

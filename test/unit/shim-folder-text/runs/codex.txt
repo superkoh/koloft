@@ -1,0 +1,65 @@
+##### no real codex on PATH
+--- exit code ---
+127
+--- stderr ---
+codex: not found
+
+
+##### codex exec in a Koloft shell tab, with keys and a home a login shell exported
+--- exit code ---
+0
+--- stderr ---
+koloft: → cx1
+every account is at its limit
+
+--- asked Koloft for an account ---
+{"tabId":"tab-pinned","ts":<ts>,"backend":"codex"}
+--- the real codex got these arguments ---
+exec
+say hi
+--- its environment, where it differs from what the shim was given ---
+CODEX_HOME=/koloft/codex-homes/cx1
+CODEX_API_KEY (taken away)
+OPENAI_API_KEY (taken away)
+
+##### no usable account
+--- exit code ---
+78
+--- stderr ---
+koloft: No Codex account in Koloft can be used. Add one, or fix the one you have, in Settings ▸ Accounts.
+
+--- asked Koloft for an account ---
+{"tabId":"tab-pinned","ts":<ts>,"backend":"codex"}
+
+##### Koloft never answers the pick
+--- exit code ---
+78
+--- stderr ---
+koloft: picking an account took too long. Try again.
+
+--- asked Koloft for an account ---
+{"tabId":"tab-pinned","ts":<ts>,"backend":"codex"}
+
+##### outside a Koloft tab
+--- exit code ---
+78
+--- stderr ---
+koloft: codex runs here only inside a Koloft tab, on an account from Settings ▸ Accounts.
+
+
+##### an interactive codex typed in a Koloft shell tab
+--- exit code ---
+1
+--- stderr ---
+⛔ Koloft — this is a Koloft terminal, not an agent surface.
+   Start interactive Codex from the sidebar's ＋ (⌘N).
+   Non-interactive use is fine: codex exec · --help · login · mcp · …
+
+
+##### codex in a session’s own shell
+--- exit code ---
+0
+--- the real codex got these arguments ---
+(none)
+--- its environment, where it differs from what the shim was given ---
+(no change)
