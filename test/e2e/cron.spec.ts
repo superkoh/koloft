@@ -2387,7 +2387,7 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
     })
   }
 
-  test('BB-M19: a remote job set to "Close it" closes for good once its turn ends: tab, row, and its worktree on the machine', async ({
+  test('BB-M19: a remote job set to "Close it" closes for good once its turn ends: tab, row, and its worktree and branch on the machine', async ({
     env
   }) => {
     test.setTimeout(300_000)
@@ -2411,8 +2411,8 @@ test.describe('Scheduled jobs · main flow (edge cases in cron-edge.spec.ts)', (
       const call = await waitNewCall(env, 0, 120_000)
       const wt = worktreeOf(call)
       expect(wt).not.toBe('')
-      const tree = runTree(fs.realpathSync(remoteDir(env)), wt)
-      expect(call.effectiveCwd).toBe(tree)
+      const tree = runTree(remoteDir(env), wt)
+      expect(call.effectiveCwd, 'claude ran inside the run worktree').toBe(tree)
       await expect
         .poll(async () => (await histLines(page))[0]?.state, { timeout: 90_000 })
         .toBe('Done — closed itself')
