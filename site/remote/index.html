@@ -197,14 +197,15 @@ your Mac                     the other machine
           <li>
             Codex is different: it runs as its own server on the machine, and the Codex screen on
             your Mac talks to that server over ssh. The server is signed in with the Codex account
-            picked on your Mac. A ChatGPT sign-in stays in the server's memory, not in a file on the
-            machine. An API key does not: Codex saves it in a file on the machine, and it stays
-            there after the tab closes. If ssh drops or the Mac sleeps, the running turn keeps going
-            there, and the tab reconnects by itself. Quit Koloft in the middle of a turn, and the
-            turn keeps going there too, so it can finish; open Koloft again while it is still going,
-            and Koloft stops it then. Closing the tab ends the server; a click on the row resumes
-            the same conversation on a new one. Once Codex has opened the session there, close the
-            tab while ssh is down, and the server keeps running there; Koloft says so:
+            picked on your Mac. A sign-in made with <code>codex login</code> is kept only in the
+            server's memory. An API key (a pay-per-use key) is not: Codex saves it on the machine in
+            <code>~/.koloft/codex-home/auth.json</code>, and Koloft does not delete it, even after
+            the tab closes or Koloft quits. If ssh drops or the Mac sleeps, the running turn keeps
+            going there, and the tab reconnects by itself. Quit Koloft in the middle of a turn, and
+            the turn keeps going there too, so it can finish; open Koloft again while it is still
+            going, and Koloft stops it then. Closing the tab ends the server; a click on the row
+            resumes the same conversation on a new one. Once Codex has opened the session there,
+            close the tab while ssh is down, and the server keeps running there; Koloft says so:
             <code
               >Could not stop Codex on &lt;machine&gt;: &lt;why&gt;. It is still running
               there.</code
