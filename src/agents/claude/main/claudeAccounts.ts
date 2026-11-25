@@ -1,6 +1,5 @@
 import os from 'os'
 import {
-  isHttpUrl,
   takesAnEndpoint,
   type AccountAddResult,
   type AccountKind,
@@ -230,10 +229,7 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
     trimmed: string,
     endpoint?: { baseUrl?: string; model?: string }
   ): Promise<AccountAddResult> {
-    const baseUrl = endpoint?.baseUrl?.trim()
-    const model = endpoint?.model?.trim() || undefined
-    if (takesAnEndpoint(kind) && !isHttpUrl(baseUrl))
-      return { ok: false, error: 'invalid-endpoint' }
+    const { baseUrl, model } = endpoint ?? {}
     if (!(await keychainWrite(kind, name, trimmed))) return { ok: false, error: 'unknown' }
     const result = await probeAccount(kind, trimmed, {
       timeoutMs: ACCOUNT_PROBE_TIMEOUT_MS,

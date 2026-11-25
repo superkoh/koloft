@@ -506,8 +506,6 @@ export function agyHomeAccounts(deps: AgyHomeAccountsDeps) {
     return agyProbeRound
   }
 
-  const probeHomeAccount = (name: string): Promise<void> => probeAgyAccount(name)
-
   // AGY§6
   async function storeHomeKey(name: string, key: string): Promise<void> {
     if (!(await keychainWrite('agy-home', name, key))) throw new Error('Keychain write failed.')
@@ -529,7 +527,7 @@ export function agyHomeAccounts(deps: AgyHomeAccountsDeps) {
       setAgyApiKeyRoute(home, !!apiKey)
       return { binary, env: agyAccountEnv(apiKey), args: [`--gemini_dir=${home}`] }
     },
-    probeHomeAccount,
+    probeHomeAccount: (name: string) => probeAgyAccount(name),
     accounts: {
       pickForThisStart: () =>
         answerOfTerminalPick('agy', () => {
@@ -538,7 +536,13 @@ export function agyHomeAccounts(deps: AgyHomeAccountsDeps) {
         }),
       probeAll: probeAgyAccounts,
       addSecret: (_kind, name, secret) =>
-        addHomeKey('agy-home', name, secret, { storeHomeKey, probeHomeAccount }, deps),
+        addHomeKey(
+          'agy-home',
+          name,
+          secret,
+          { storeHomeKey, probeHomeAccount: probeAgyAccount },
+          deps
+        ),
       forget: () => {},
       folderSaysItRunsOnAKey: (_kind, name) => agyKeyOnDisk(app.getPath('userData'), name)
     } satisfies AgentAccounts

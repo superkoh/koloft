@@ -239,8 +239,10 @@ import {
   PLACEHOLDER_TITLES,
   exitedAbnormally,
   GIT_PLATFORMS,
+  isHttpUrl,
   keychainNamespace,
   keepsSecretInKeychain,
+  takesAnEndpoint,
   BACKEND_OF_SIGN_IN_FOLDER,
   isSignInFolderKind,
   type SignInFolderKind,
@@ -2176,7 +2178,10 @@ async function addAccount(
   if (v !== 'ok') return { ok: false, error: v }
   const trimmed = typeof secret === 'string' ? secret.trim() : ''
   if (!trimmed) return { ok: false, error: 'unknown' }
-  return agentsMain.addSecret(kind, name, trimmed, endpoint)
+  const baseUrl = endpoint?.baseUrl?.trim()
+  const model = endpoint?.model?.trim() || undefined
+  if (takesAnEndpoint(kind) && !isHttpUrl(baseUrl)) return { ok: false, error: 'invalid-endpoint' }
+  return agentsMain.addSecret(kind, name, trimmed, { baseUrl, model })
 }
 
 function foldHomeSignIn(name: string, kind: SignInFolderKind, signedIn: boolean): void {

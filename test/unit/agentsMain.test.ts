@@ -5,12 +5,8 @@ import {
   type AgentCatalog,
   type OneShotTarget
 } from '../../src/core/agent/agentsMain'
-import {
-  AGENT_IDS,
-  agentManifest,
-  type AccountKindId,
-  type AgentId
-} from '../../src/core/agent/registry'
+import { AGENT_IDS, type AgentId } from '../../src/core/agent/registry'
+import { ACCOUNT_KINDS_OF } from '../../src/shared/accountUsage'
 import { accountsThatAreNeverAsked } from './helpers/agentCatalogs'
 
 const targetOf = (binary: string): OneShotTarget => ({ binary, env: {}, done: () => {} })
@@ -47,9 +43,6 @@ const agentsWithAccounts = (ids: readonly AgentId[], asked: string[] = []): Agen
     })
   return agents
 }
-
-const kindsOf = (id: AgentId): AccountKindId[] =>
-  agentManifest(id).accountKinds.map((kind) => kind.id as AccountKindId)
 
 describe('the agents registered with their main-process side', () => {
   it('asks the agent that was named, and no other, for its one-shot target', async () => {
@@ -121,7 +114,7 @@ describe('the agents registered with their main-process side', () => {
     const agents = agentsWithAccounts(AGENT_IDS, asked)
 
     for (const id of AGENT_IDS)
-      for (const kind of kindsOf(id)) {
+      for (const kind of ACCOUNT_KINDS_OF[id]) {
         asked.length = 0
         await agents.addSecret(kind, 'work', 'secret')
         agents.forgetAccount(kind, 'work')
@@ -133,7 +126,7 @@ describe('the agents registered with their main-process side', () => {
   it('for a kind of account no built agent lists: adding a secret fails, forgetting does nothing, and its folder says no key', async () => {
     const asked: string[] = []
     const agents = agentsWithAccounts([AGENT_IDS[0]], asked)
-    const kind = kindsOf(AGENT_IDS[1])[0]
+    const kind = ACCOUNT_KINDS_OF[AGENT_IDS[1]][0]
 
     expect(() => agents.addSecret(kind, 'work', 'secret')).toThrow()
     agents.forgetAccount(kind, 'work')

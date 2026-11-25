@@ -1,6 +1,6 @@
 // ADR-0054
 import type { AccountAddResult, McpServer } from '@shared/types'
-import { AGENT_IDS, agentManifest, type AccountKindId, type AgentId } from './registry'
+import { AGENT_IDS, agentOfAccountKind, type AccountKindId, type AgentId } from './registry'
 
 export interface OneShotTarget {
   binary: string
@@ -66,9 +66,8 @@ export class AgentsMain {
   }
 
   private ownerOf(kind: AccountKindId): AgentMain | undefined {
-    return this.inListOrder().find((agent) =>
-      agentManifest(agent.id).accountKinds.some((own) => own.id === kind)
-    )
+    const id = agentOfAccountKind(kind)
+    return id && this.built.get(id)
   }
 
   async pickForThisStart(id: AgentId | undefined, ask: StartAsk): Promise<object> {
