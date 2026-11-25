@@ -113,7 +113,7 @@ import {
 } from '../../../main/openShimScript'
 import { aboveItsTools } from '../../../main/agentLift'
 import { AGENT_SHIM_WAITS_MS } from '@core/command'
-import { codexListedModels, type ListedModel } from '@shared/sessionPicks'
+import { knownEfforts, type ListedModel } from '@shared/sessionPicks'
 import { browserControlEnv } from '../../../main/browserControlEnv'
 import { portOffset } from '@shared/worktreeName'
 import type { CodexApproval, CodexQuestion } from '@plugins/sessions/main/dialog'
@@ -128,6 +128,26 @@ import {
 } from '@agents/kit/main/storedSessions'
 import { promptParts, type LaunchIdentity } from '../../../main/launchPrompt'
 import type { HistoryStore } from '../../../main/historyWatch'
+
+// CODEX§14
+export function codexListedModels(reply: unknown): ListedModel[] {
+  const data = (reply as { data?: unknown } | null)?.data
+  if (!Array.isArray(data)) return []
+  return data.flatMap((m: { id?: unknown; supportedReasoningEfforts?: unknown }) =>
+    typeof m?.id !== 'string'
+      ? []
+      : [
+          {
+            id: m.id,
+            efforts: knownEfforts(
+              (Array.isArray(m.supportedReasoningEfforts) ? m.supportedReasoningEfforts : []).map(
+                (e: unknown) => (e as { reasoningEffort?: unknown })?.reasoningEffort ?? e
+              )
+            )
+          }
+        ]
+  )
+}
 
 const MACHINE_HISTORY_FRESH_MS = 15_000
 

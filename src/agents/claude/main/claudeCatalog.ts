@@ -1,6 +1,7 @@
 import path from 'path'
 import type { McpServer } from '@shared/types'
-import type { AgentCatalog } from '@core/agent/agentsMain'
+import type { AgentCatalog, AgentOneShot } from '@core/agent/agentsMain'
+import type { ModelAndEffort } from '@core/assistModels'
 import { runsPlaywrightMcp } from '../../../main/browserControlEnv'
 import {
   asRecord,
@@ -70,8 +71,37 @@ export async function ownersClaudePlaywrightMcp(cwd: string): Promise<string[]> 
   return claudePlaywrightServers(claudeJson, projectFiles, claudeProjectKey(cwd))
 }
 
+// CC§9
+const CLAUDE_ONE_SHOT = (system: string, launch: ModelAndEffort): string[] => [
+  '-p',
+  ...(launch.model ? ['--model', launch.model] : []),
+  ...(launch.effort ? ['--effort', launch.effort] : []),
+  '--no-session-persistence',
+  '--setting-sources',
+  '',
+  '--strict-mcp-config',
+  '--mcp-config',
+  '{"mcpServers":{}}',
+  '--system-prompt',
+  system,
+  '--tools',
+  ''
+]
+
+export const claudeOneShot: AgentOneShot = {
+  argv: (job, launch) => CLAUDE_ONE_SHOT(job.system, launch),
+  stdin: (job) => job.prompt,
+  answerFrom: (stdout) => stdout,
+  sometimesAnswersLate: false,
+  // CC§9
+  saysItHasNoSuchModel: /issue with the selected model/
+}
+
 export const claudeCatalog: AgentCatalog = {
   moreSkillFoldersEveryAccountReadsOnThisMac: () => [],
+  // CC§31
+  listedModels: async () => undefined,
+  oneShot: claudeOneShot,
   // CC§22
   mcpServersOn: async (folders) => {
     const walks = folders.map((onlyIn) => ({ onlyIn, folders: foldersUpToRoot(onlyIn) }))

@@ -2,114 +2,19 @@ import { execFile } from 'node:child_process'
 import os from 'node:os'
 import type { BackendId } from '@shared/types'
 import { assistBackendsFor, assistLaunchOn } from '@shared/assistPicks'
-import {
-  EVERY_ACCOUNT_TAKES,
-  type Assist,
-  type AssistJob,
-  type ModelAndEffort
-} from '@core/assistModels'
+import { EVERY_ACCOUNT_TAKES, type Assist, type ModelAndEffort } from '@core/assistModels'
 import { takenEffort } from '@shared/cronModels'
 import { envMs } from '@core/agent/sessionRuntime'
-import type { OneShotTarget } from '@core/agent/agentsMain'
+import type { AgentOneShot, OneShotTarget } from '@core/agent/agentsMain'
 
 const ASSIST_TIMEOUT_MS = envMs('KOLOFT_ASSIST_TIMEOUT_MS', 15_000)
 export const ASSIST_ANSWERS_WITHIN_MS = 2 * ASSIST_TIMEOUT_MS
-
-// CC§9
-const CLAUDE_ONE_SHOT = (system: string, launch: ModelAndEffort): string[] => [
-  '-p',
-  ...(launch.model ? ['--model', launch.model] : []),
-  ...(launch.effort ? ['--effort', launch.effort] : []),
-  '--no-session-persistence',
-  '--setting-sources',
-  '',
-  '--strict-mcp-config',
-  '--mcp-config',
-  '{"mcpServers":{}}',
-  '--system-prompt',
-  system,
-  '--tools',
-  ''
-]
-
-// CODEX§15
-const CODEX_ONE_SHOT = (launch: ModelAndEffort): string[] => [
-  'exec',
-  '--skip-git-repo-check',
-  '--ephemeral',
-  '--ignore-user-config',
-  '--ignore-rules',
-  '-s',
-  'read-only',
-  ...(launch.model ? ['-m', launch.model] : []),
-  ...(launch.effort ? ['-c', `model_reasoning_effort="${launch.effort}"`] : []),
-  '-C',
-  os.tmpdir(),
-  '-'
-]
-
-// AGY§20 AGY§21
-const AGY_ONE_SHOT = (task: string, launch: ModelAndEffort): string[] => [
-  '-p',
-  task,
-  '--output-format',
-  'json',
-  ...(launch.model ? ['--model', launch.model] : []),
-  ...(launch.effort ? ['--effort', launch.effort] : [])
-]
-
-// AGY§20
-function agyResponse(out: string): string | null {
-  try {
-    const result = JSON.parse(out) as { status?: unknown; response?: unknown }
-    return result.status === 'SUCCESS' && typeof result.response === 'string'
-      ? result.response
-      : null
-  } catch {
-    return null
-  }
-}
-
-const withSystemFirst = (job: AssistJob): string => `${job.system}\n\n${job.prompt}`
-
-const ONE_SHOT: Record<
-  BackendId,
-  {
-    argv(job: AssistJob, launch: ModelAndEffort): string[]
-    stdin(job: AssistJob): string
-    answer(out: string): string | null
-    secondTryWhenLate?: true
-    saysItHasNoSuchModel?: RegExp
-  }
-> = {
-  // CC§9
-  claude: {
-    argv: (job, launch) => CLAUDE_ONE_SHOT(job.system, launch),
-    stdin: (job) => job.prompt,
-    answer: (out) => out,
-    saysItHasNoSuchModel: /issue with the selected model/
-  },
-  // CODEX§15
-  codex: {
-    argv: (_job, launch) => CODEX_ONE_SHOT(launch),
-    stdin: withSystemFirst,
-    answer: (out) => out,
-    secondTryWhenLate: true,
-    saysItHasNoSuchModel: /model is not supported/
-  },
-  agy: {
-    argv: (job, launch) => AGY_ONE_SHOT(withSystemFirst(job), launch),
-    stdin: () => '',
-    answer: agyResponse,
-    // AGY§21
-    saysItHasNoSuchModel: /invalid model selection/
-  }
-}
 
 export interface AssistDeps {
   picks(): Parameters<typeof assistBackendsFor>[1]
   enabled(backend: BackendId): boolean
   target(backend: BackendId): Promise<OneShotTarget | null>
+  oneShot(backend: BackendId): AgentOneShot | undefined
   onThisAccount(backend: BackendId, asked: ModelAndEffort): Promise<ModelAndEffort>
 }
 
@@ -183,6 +88,8 @@ export function koloftAssist(deps: AssistDeps): Assist {
     const picks = deps.picks()
     for (const backend of assistBackendsFor(job.row, picks)) {
       if (!deps.enabled(backend)) continue
+      const shot = deps.oneShot(backend)
+      if (!shot) continue
       const target = await deps.target(backend).catch((err: unknown) => {
         console.error('[koloft] Assist could not make its one-shot target:', backend, err)
         return null
@@ -192,9 +99,8 @@ export function koloftAssist(deps: AssistDeps): Assist {
         return null
       }
       if (!target) continue
-      const shot = ONE_SHOT[backend]
       const launch = assistLaunchOn(job.row, backend, picks)
-      const limitMs = shot.secondTryWhenLate ? ASSIST_ANSWERS_WITHIN_MS : ASSIST_TIMEOUT_MS
+      const limitMs = shot.sometimesAnswersLate ? ASSIST_ANSWERS_WITHIN_MS : ASSIST_TIMEOUT_MS
       const started = Date.now()
       const spentMs = (): number => Date.now() - started
       const safe = EVERY_ACCOUNT_TAKES[backend]
@@ -208,12 +114,12 @@ export function koloftAssist(deps: AssistDeps): Assist {
             shot.stdin(job),
             signal,
             timeoutMs,
-            (said) => (modelRefused ||= !!shot.saysItHasNoSuchModel?.test(said))
+            (said) => (modelRefused ||= shot.saysItHasNoSuchModel.test(said))
           )
       const answered = async (): Promise<string | null> => {
         const theAccountHas = await deps.onThisAccount(backend, launch)
         if (job.signal?.aborted) return null
-        const first = await (shot.secondTryWhenLate
+        const first = await (shot.sometimesAnswersLate
           ? withASecondTryWhenLate(runWith(theAccountHas), job.signal)
           : runWith(theAccountHas)(job.signal, Math.max(1, ASSIST_TIMEOUT_MS - spentMs())))
         const leftMs = limitMs - spentMs()
@@ -226,7 +132,7 @@ export function koloftAssist(deps: AssistDeps): Assist {
         return runWith({ ...safe, ...(effort && { effort }) })(job.signal, leftMs)
       }
       const out = await answered().finally(() => target.done())
-      return out === null ? null : shot.answer(out)
+      return out === null ? null : shot.answerFrom(out)
     }
     return null
   }

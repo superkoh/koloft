@@ -5033,3 +5033,16 @@ a git repo's parent folders.
 
 Koloft dependents: the repo's own `CLAUDE.md` and `test/CLAUDE.md` are symlinks to the
 `AGENTS.md` beside them (`test/unit/devRules.test.ts`, ADR-0053).
+
+## §31 `claude --help` names no command that lists models
+
+2026-11-25, CC 2.1.332, read from `claude --help` on this Mac: none of its commands
+(`agents`, `attach`, `auth`, `auto-mode`, `doctor`, `gateway`, `import`, `install`, `logs`,
+`mcp`, `plugin`, `purge`, `respawn`, `rm`, `setup-token`, `stop`, `ultrareview`, `update`)
+lists models, and `--model` says "Use an alias for the latest model (e.g. 'fable', 'opus',
+or 'sonnet') or a model's full name." So a launch names a model by its alias and CC picks
+the newest one itself. Not probed: whether an account's models can be read some other way
+(the Messages API's model list, a slash command inside a session).
+
+Koloft dependents: Claude Code's manifest answers no to
+`listsTheModelsAnAccountCanRun`, and its catalog reads no model list.
