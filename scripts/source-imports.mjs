@@ -14,7 +14,8 @@ export const AGENTS_DIR = 'src/agents/'
 export const ENTRY_EACH_LIST_OF_AGENTS_IMPORTS = {
   'src/agents/list.ts': 'agent.ts',
   'src/agents/starts.ts': 'main/start.ts',
-  'src/agents/uis.ts': 'renderer/ui.tsx'
+  'src/agents/uis.ts': 'renderer/ui.tsx',
+  'src/agents/usageWorkerScans.ts': 'main/usageWorkerScan.ts'
 }
 export const LISTS_OF_AGENTS = new Set(Object.keys(ENTRY_EACH_LIST_OF_AGENTS_IMPORTS))
 export const MANIFEST_TYPES = 'src/core/agent/manifest.ts'

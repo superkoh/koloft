@@ -112,7 +112,6 @@ import {
 import { mirrorAgyGemini } from '@agents/agy/main/agyMirror'
 import { mirrorProjectsRoot } from '@agents/claude/main/claudeMirror'
 import { RemoteSync } from './remote/sync'
-import { machineUsageDirs } from './remote/usageMirror'
 import { syncMirrorsOf } from './remote/syncMirrors'
 import { machinePackageFiles } from './remote/machinePackageFiles'
 import { OWNER_TYPES_A_SECRET_WITHIN_MS } from './agentShim'
@@ -230,9 +229,10 @@ import { parseSessionPorts, scanPortsHere, scanPortsOnMachine } from './sessionP
 import { reachesThisMacsServer } from '@core/thisMacsServers'
 import { mapAtMost } from '@core/mapAtMost'
 import { SessionSearch } from './sessionSearch'
-import createTranscriptSearchWorker from './transcriptSearchWorker?nodeWorker'
+import createTranscriptSearchWorker from '@agents/claude/main/transcriptSearchWorker?nodeWorker'
 import createUsageScanWorker from './usageScanWorker?nodeWorker'
-import { UsageCache, listUsageFiles, statOf, type ScannedFile } from './usageCache'
+import { UsageCache, usageFilesOf, statOf } from './usageCache'
+import type { ScannedFile } from '@core/agent/usage'
 import { applyWindowCommand } from '@shared/shortcutDispatch'
 import {
   attentionReason,
@@ -330,6 +330,11 @@ import { agyCatalog } from '@agents/agy/main/agyCatalog'
 import { claudeTools } from '@agents/claude/main/claudeShim'
 import { codexTools } from '@agents/codex/main/codexShim'
 import { agyTools } from '@agents/agy/main/agyShim'
+import { claudeSearch, claudeUsage } from '@agents/claude/main/claudeUsage'
+import { codexSearch, codexUsage } from '@agents/codex/main/codexUsage'
+import { agySearch, agyUsage } from '@agents/agy/main/agyUsage'
+import type { AgentUsage } from '@core/agent/usage'
+import type { AgentSearch } from '@core/agent/search'
 import type { McpServer } from '@shared/types'
 import {
   LIVE_REGISTRY_ON_A_MACHINE_SH,
@@ -1561,6 +1566,38 @@ const accountsOf: Record<BackendId, AgentAccounts> = {
   codex: codexAccounts.accounts,
   agy: agyAccounts.accounts
 }
+const usages: Record<BackendId, AgentUsage> = {
+  claude: claudeUsage(() => claudeStore),
+  codex: codexUsage(
+    () => codexSessions,
+    () => path.dirname(codexSharedConfig()),
+    () => app.getPath('userData')
+  ),
+  agy: agyUsage(
+    () => agySessions,
+    ownersGemini,
+    () => app.getPath('userData')
+  )
+}
+const searches: Record<BackendId, AgentSearch> = {
+  claude: claudeSearch(
+    () => claudeStore,
+    (files, term, found) => {
+      // PLATFORM§4
+      const worker = createTranscriptSearchWorker({ workerData: { files, term } })
+      worker.on('message', (hit: { id: string; snippet: SearchSnippet }) =>
+        found(hit.id, hit.snippet)
+      )
+      worker.on('error', (error) => console.error('[koloft] session search failed', error))
+      return {
+        done: new Promise((resolve) => worker.once('exit', () => resolve())),
+        stop: () => void worker.terminate()
+      }
+    }
+  ),
+  codex: codexSearch(() => codexSessions),
+  agy: agySearch(() => agySessions)
+}
 const agentsMain = new AgentsMain()
 for (const id of SESSION_BACKENDS)
   agentsMain.register({
@@ -1568,7 +1605,9 @@ for (const id of SESSION_BACKENDS)
     oneShotTarget: oneShotTargets[id],
     catalog: catalogs[id],
     tools: tools[id],
-    accounts: accountsOf[id]
+    accounts: accountsOf[id],
+    usage: usages[id],
+    search: searches[id]
   })
 const assist = koloftAssist({
   picks: loadSettings,
@@ -5173,14 +5212,10 @@ function registerIpc(): void {
     cacheFile: () => path.join(app.getPath('userData'), 'usage-cache-4.json'),
     listFiles: async () => {
       await workspaceMgr?.firstScan
-      const userData = app.getPath('userData')
-      return listUsageFiles(claudeStore?.transcriptFiles() ?? [], [
-        {
-          codexHome: path.dirname(codexSharedConfig()),
-          geminiDir: ownersGemini()
-        },
-        ...(workspaceMgr?.remoteTargets() ?? []).map(({ host }) => machineUsageDirs(userData, host))
-      ])
+      return usageFilesOf(
+        agentsMain.inListOrder(),
+        (workspaceMgr?.remoteTargets() ?? []).map(({ host }) => host)
+      )
     },
     stat: statOf,
     scan: (files, scanned, ended) => {
@@ -5190,13 +5225,7 @@ function registerIpc(): void {
       worker.on('error', (error) => console.error('[koloft] usage read failed', error))
       worker.once('exit', ended)
     },
-    codexWorkspaces: (cwds) => codexSessions?.workspacesFor(cwds) ?? cwds,
-    sessionPlaces: () => {
-      const claude = claudeStore?.sessionPlaces()
-      const stored = new Map(storedSessions().map((s) => [s.id, s.sessionPlaces()]))
-      return (backend, id, host) =>
-        backend === 'claude' ? claude?.get(id) : stored.get(backend)?.(id, host)
-    },
+    agents: () => agentsMain.inListOrder(),
     changed: (read) => sendToRenderer(CH.usage.changed, read)
   })
   ipcMain.handle(CH.usage.read, () => usageCache.read())
@@ -5280,28 +5309,9 @@ function registerIpc(): void {
 }
 
 const sessionSearch = new SessionSearch({
-  candidates: () => {
-    const pins = workspaceMgr?.pinnedPathList() ?? []
-    return [
-      ...(claudeStore?.searchableRows() ?? []),
-      ...storedSessions().flatMap((s) => s.searchable(pins))
-    ]
-  },
-  backendSnippets: async (term, signal) =>
-    (await Promise.all(storedSessions().map((s) => s.searchSnippets(term, signal)))).flat(),
+  agents: () => agentsMain.inListOrder(),
+  workspaces: () => workspaceMgr?.pinnedPathList() ?? [],
   hidden: (id) => sessionBackends.isKoloftsOwnSession(id),
-  scan: (files, term, found) => {
-    // PLATFORM§4
-    const worker = createTranscriptSearchWorker({ workerData: { files, term } })
-    worker.on('message', (hit: { id: string; snippet: SearchSnippet }) =>
-      found(hit.id, hit.snippet)
-    )
-    worker.on('error', (error) => console.error('[koloft] session search failed', error))
-    return {
-      done: new Promise((resolve) => worker.once('exit', () => resolve())),
-      stop: () => void worker.terminate()
-    }
-  },
   send: (found) => pushToSessions.searchHits(found)
 })
 

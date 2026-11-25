@@ -15,9 +15,10 @@ import { BACKEND_LABEL, identityOf, sourceOf } from '@shared/sessionBackend'
 import { isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
-import type { SearchCandidate } from '../../../main/sessionSearch'
+import type { SearchCandidate } from '@core/agent/search'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
-import type { SessionPlace } from '../../../main/usageCache'
+import type { SessionPlace, UsagePlaces } from '@core/agent/usage'
+import { placedByOwnRowThenFolder } from './storedUsage'
 import type { CodexApproval, CodexQuestion, SentAnswer } from '@plugins/sessions/main/dialog'
 import type { WorktreeResource } from '@core/agent/worktreeRecords'
 import type { MirrorFolder } from '@core/agent/mirrorFolders'
@@ -165,12 +166,9 @@ export const ownerTextApart = (
 export interface SessionsWithStore {
   readonly id: BackendId
   rows(workspace: string): BackendSessionRow[]
-  sessionPlaces(): (id: string, host?: string) => SessionPlace | undefined
   members(): Set<string>
   runningBindings(): Map<string, string>
   hasTab(tabId: string): boolean
-  searchable(workspaces: string[]): SearchCandidate[]
-  searchSnippets(term: string, signal?: AbortSignal): Promise<{ id: string; snippet: string }[]>
   openApproval(tabId: string): CodexApproval | undefined
   openQuestion(tabId: string): CodexQuestion | undefined
   answerable?(tabId: string): Promise<void>
@@ -557,9 +555,12 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     }
   }
 
-  workspacesFor(cwds: string[]): string[] {
-    const scope = this.rowScope()
-    return cwds.map((cwd) => this.workspaceFor(cwd, scope))
+  usagePlaces(): UsagePlaces {
+    const placeOf = this.sessionPlaces()
+    let scope: RowScope | undefined
+    return placedByOwnRowThenFolder(placeOf, (folder) =>
+      this.workspaceFor(folder, (scope ??= this.rowScope()))
+    )
   }
 
   rows(workspace: string): BackendSessionRow[] {
