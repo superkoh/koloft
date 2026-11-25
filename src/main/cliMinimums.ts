@@ -1,14 +1,4 @@
-import { AGY_INSTALLER_URL } from './toolInstall'
-
-// CC§16 CODEX§7
-export const MIN_CLAUDE_VERSION = '2.1.293'
-export const MIN_CODEX_VERSION = '0.161.0'
-export const TESTED_CODEX_LINE = '0.170'
-// AGY§3
-export const MIN_AGY_VERSION = '1.4.0'
-export const TESTED_AGY_LINE = '1.4'
-
-function ensureMinimumFn(s: {
+export function ensureMinimumFn(s: {
   tool: string
   product: string
   min: string
@@ -29,22 +19,3 @@ ensure_${s.tool}_minimum() {
   return 1
 }`
 }
-
-export const ENSURE_CLAUDE_MINIMUM_FN = ensureMinimumFn({
-  tool: 'claude',
-  product: 'Claude Code',
-  min: MIN_CLAUDE_VERSION,
-  update: '"$1" update',
-  byHand: 'Run "claude update" yourself'
-})
-
-export const AGY_UPDATE_TIMEOUT_MS = 5 * 60_000
-
-// AGY§3
-export const ENSURE_AGY_MINIMUM_FN = ensureMinimumFn({
-  tool: 'agy',
-  product: 'Antigravity CLI',
-  min: MIN_AGY_VERSION,
-  update: `if command -v timeout >/dev/null 2>&1; then timeout ${AGY_UPDATE_TIMEOUT_MS / 1000} "$1" update; else "$1" update; fi`,
-  byHand: `Run "agy update" there as a user who can write the folder agy is in, or install agy for yourself with "curl -fsSL ${AGY_INSTALLER_URL} | bash"`
-})

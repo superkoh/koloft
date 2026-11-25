@@ -1,5 +1,5 @@
-import { encodeCwd } from '@shared/cwdKey'
 import { mapAtMost } from '@core/mapAtMost'
+import type { FolderSplitByWorkspace } from '@core/agent/mirrorFolders'
 import { problemOf, refusedByAFullMaster, type RunResult } from './ssh'
 import {
   heartbeatCmd,
@@ -13,27 +13,7 @@ import {
   type ShellReport
 } from './install'
 import { sessionIdOfTmux } from './launch'
-import { REMOTE_CLAUDE_PROJECTS } from './paths'
 
-// CC§2 CC§4 PLATFORM§34
-function projectFlags(slugs: string[]): string[] {
-  return [
-    '--inplace',
-    '-m',
-    '--delete',
-    ...slugs.flatMap((slug) => {
-      const project = `/${slug}*`
-      return [
-        `--include=${project}/`,
-        `--include=${project}/*.jsonl`,
-        `--include=${project}/*.title`,
-        `--include=${project}/*/`,
-        `--include=${project}/*/**`
-      ]
-    }),
-    '--exclude=*'
-  ]
-}
 // PLATFORM§34
 const HOOK_FLAGS = ['-I', '--inplace', '--delete']
 const FAST_INTERVAL_MS = 2000
@@ -58,7 +38,7 @@ export interface ExtraPull {
 
 export interface RemoteTarget {
   host: string
-  mirrorProjectsRoot: string
+  byWorkspace: FolderSplitByWorkspace[]
   mirrorHookDir: string
   extraPulls?: ExtraPull[]
   paths: string[]
@@ -374,7 +354,8 @@ export class RemoteSync {
       }
       const askGit = Date.now() - st.gitAt >= GIT_INTERVAL_MS
       const watched = [...(this.watches.get(host)?.keys() ?? [])]
-      const slugsNow = (): string[] => target.paths.map((p) => encodeCwd(st.git.get(p)?.real ?? p))
+      const subfoldersNow = (folder: FolderSplitByWorkspace): string[] =>
+        target.paths.map((p) => folder.subfolderOf(st.git.get(p)?.real ?? p))
       const extras = target.extraPulls ?? []
       const hb = await this.deps
         .run(
@@ -382,13 +363,13 @@ export class RemoteSync {
           heartbeatCmd(
             askGit ? target.paths : [],
             watched,
-            slugsNow(),
+            target.byWorkspace.map((f) => ({ folder: f.from, subfolders: subfoldersNow(f) })),
             extras.map((e) => e.from),
             target.shellTabs
           )
         )
         .catch(failedRun)
-      let mirrors: MirrorStamps = { extras: [] }
+      let mirrors: MirrorStamps = { byWorkspace: [], extras: [] }
       if (hb.code === 0) {
         st.connected = true
         st.failures = 0
@@ -428,14 +409,17 @@ export class RemoteSync {
           st.pulled[which] = r.code === 0 ? stamp : undefined
           return r
         }
-        const slugs = slugsNow()
-        const transcriptsPulled = pull(
-          'transcripts',
-          mirrors.transcripts && `${slugs.join(' ')} ${mirrors.transcripts}`,
-          REMOTE_CLAUDE_PROJECTS,
-          target.mirrorProjectsRoot,
-          projectFlags(slugs)
-        )
+        const transcriptsPulled = target.byWorkspace.map((folder, i) => {
+          const subfolders = subfoldersNow(folder)
+          const stamp = mirrors.byWorkspace[i]
+          return pull(
+            `by workspace ${folder.from}`,
+            stamp && `${subfolders.join(' ')} ${stamp}`,
+            folder.from,
+            folder.to,
+            folder.flagsFor(subfolders)
+          )
+        })
         const pullExtras = (atOnce: number): Promise<(RunResult | undefined)[]> =>
           mapAtMost([...extras.keys()], atOnce, (i) =>
             pull(
@@ -450,7 +434,8 @@ export class RemoteSync {
         const extrasPulled = st.pullsOneAtATime
           ? undefined
           : pullExtras(EXTRA_PULLS_BESIDE_THE_TRANSCRIPTS_AND_HOOKS)
-        const transcripts = await transcriptsPulled
+        const transcripts: (RunResult | undefined)[] = []
+        for (const pulled of transcriptsPulled) transcripts.push(await pulled)
         const hooks = await pull(
           'hooks',
           mirrors.hooks,
@@ -459,10 +444,10 @@ export class RemoteSync {
           HOOK_FLAGS
         )
         const extraResults = await (extrasPulled ?? pullExtras(1))
-        if ([transcripts, hooks, ...extraResults].some((r) => r && refusedByAFullMaster(r)))
+        if ([...transcripts, hooks, ...extraResults].some((r) => r && refusedByAFullMaster(r)))
           st.pullsOneAtATime = true
         const pulls = [
-          transcripts,
+          ...transcripts,
           hooks,
           ...extraResults.filter((_, i) => !extras[i].failsQuietly)
         ]

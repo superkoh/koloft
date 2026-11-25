@@ -6,6 +6,8 @@ type ListedAgent = (typeof AGENTS)[number]
 
 export type AgentId = ListedAgent['id']
 
+export type AgentCommand = ListedAgent['command']
+
 export type AccountKindId = ListedAgent['accountKinds'][number]['id']
 
 type SignInFolderKindOf<Agent extends ListedAgent> = Extract<
@@ -22,6 +24,8 @@ export type SignInFolderOf = {
 export const AGENT_MANIFESTS: readonly AgentManifest[] = AGENTS
 
 export const AGENT_IDS: readonly AgentId[] = AGENTS.map((agent) => agent.id)
+
+export const AGENT_COMMANDS: readonly AgentCommand[] = AGENTS.map((agent) => agent.command)
 
 export function agentManifest(id: AgentId): AgentManifest {
   return AGENT_MANIFESTS.find((agent) => agent.id === id)!

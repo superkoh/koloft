@@ -5,20 +5,8 @@ export function remoteBase(userData: string, host: string): string {
   return path.join(userData, 'remote', remoteHostDirName(host))
 }
 
-export function mirrorProjectsRoot(userData: string, host: string): string {
-  return path.join(remoteBase(userData, host), 'projects')
-}
-
 export function mirrorHookDir(userData: string, host: string): string {
   return path.join(remoteBase(userData, host), 'hook-sessions')
-}
-
-export function mirrorAgyGemini(userData: string, host: string): string {
-  return path.join(remoteBase(userData, host), 'agy-gemini')
-}
-
-export function mirrorCodexHome(userData: string, host: string): string {
-  return path.join(remoteBase(userData, host), 'codex-home')
 }
 
 export function machinePackageBase(userData: string): string {
@@ -28,8 +16,6 @@ export function machinePackageBase(userData: string): string {
 export function tabPackageDir(userData: string, tabId: string): string {
   return path.join(userData, 'remote', 'tabs', tabId)
 }
-
-export const REMOTE_CLAUDE_PROJECTS = '.claude/projects'
 
 export const REMOTE_HOME = '$HOME/.koloft'
 export function remoteMachineDir(machineName: string): string {

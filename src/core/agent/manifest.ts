@@ -87,6 +87,7 @@ export interface AgentManifest {
   productName: string
   maker: string
   command: string
+  installCommand: string
   nodePackageFolderNames: readonly string[]
   wordsThatNameMe: AgentWords
   skillPrefix: string

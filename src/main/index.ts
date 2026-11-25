@@ -31,8 +31,7 @@ import {
   oneShotAgyHome,
   readAgyModels
 } from '@agents/agy/main/agyAccounts'
-import { AGY_APP_DIR, ownersGeminiDir } from '@agents/agy/main/agyStore'
-import { AGY_BRAIN_FLAGS, AGY_REMOTE_BRAIN } from '@agents/agy/main/agyTab'
+import { ownersGeminiDir } from '@agents/agy/main/agyStore'
 import { homeKeyOnDisk } from './homeKeyOnDisk'
 import { watchHistoryOf } from './historyWatch'
 import { MARK_OUTPUT_START, SignInOutput } from './signInOutput'
@@ -107,14 +106,15 @@ import {
   browserForwardFile,
   machinePackageBase,
   pageForwardsFile,
-  mirrorAgyGemini,
   mirrorHookDir,
-  mirrorProjectsRoot,
   remoteShellPidFile,
   tabPackageDir
 } from './remote/paths'
+import { mirrorAgyGemini } from '@agents/agy/main/agyMirror'
+import { mirrorProjectsRoot } from '@agents/claude/main/claudeMirror'
 import { RemoteSync } from './remote/sync'
-import { machineUsageDirs, usagePulls } from './remote/usageMirror'
+import { machineUsageDirs } from './remote/usageMirror'
+import { syncMirrorsOf } from './remote/syncMirrors'
 import { machinePackageFiles } from './remote/machinePackageFiles'
 import { OWNER_TYPES_A_SECRET_WITHIN_MS } from './agentShim'
 import { passwordsOn } from '@plugins/passwords/api'
@@ -3488,23 +3488,7 @@ app.whenReady().then(() => {
       )
       return (workspaceMgr?.remoteTargets() ?? []).map((t) => ({
         host: t.host,
-        mirrorProjectsRoot: mirrorProjectsRoot(userData, t.host),
-        mirrorHookDir: mirrorHookDir(userData, t.host),
-        extraPulls: [
-          ...(agySessions?.usesHost(t.host)
-            ? [
-                {
-                  from: AGY_REMOTE_BRAIN,
-                  to: path.join(mirrorAgyGemini(userData, t.host), AGY_APP_DIR, 'brain'),
-                  flags: AGY_BRAIN_FLAGS
-                }
-              ]
-            : []),
-          ...usagePulls(userData, t.host, {
-            codex: codexMachines.has(t.host) || !!codexSessions?.hasHistoryOn(t.host),
-            agy: !!agySessions?.usesHost(t.host)
-          })
-        ],
+        ...syncMirrorsOf(t.host, userData, sessionBackends),
         paths: t.paths,
         hasTabs: live.has(t.host),
         agentTabs: agentTabsOn.has(t.host),
