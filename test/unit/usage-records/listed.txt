@@ -1,0 +1,13 @@
+claude  home/.claude/projects/-ws/c-fork.jsonl  workspace=/ws  session=-  db=-  host=-
+claude  home/.claude/projects/-ws/c-parent.jsonl  workspace=/ws  session=-  db=-  host=-
+claude  home/.claude/projects/-ws/c-parent/subagents/agent-a1.jsonl  workspace=/ws  session=-  db=-  host=-
+claude  home/.claude/projects/-ws/c-quiet.jsonl  workspace=/ws  session=-  db=-  host=-
+codex  home/.codex/sessions/2026/10/15/rollout-2026-10-15T12-00-00-x-main.jsonl  workspace=-  session=-  db=-  host=-
+codex  home/.codex/sessions/2026/10/15/rollout-2026-10-15T12-05-00-x-child.jsonl  workspace=-  session=-  db=-  host=-
+codex  home/.codex/sessions/2026/10/15/rollout-2026-10-15T13-00-00-x-placed.jsonl  workspace=-  session=-  db=-  host=-
+codex  home/.codex/archived_sessions/rollout-2026-09-01T10-00-00-x-old.jsonl  workspace=-  session=-  db=-  host=-
+agy  home/.gemini/antigravity-cli/brain/g-empty/.system_generated/logs/transcript.jsonl  workspace=-  session=g-empty  db=home/.gemini/antigravity-cli/conversations/g-empty.db  host=-
+agy  home/.gemini/antigravity-cli/brain/g-nodb/.system_generated/logs/transcript.jsonl  workspace=-  session=g-nodb  db=home/.gemini/antigravity-cli/conversations/g-nodb.db  host=-
+agy  home/.gemini/antigravity-cli/brain/g-one/.system_generated/logs/transcript.jsonl  workspace=-  session=g-one  db=home/.gemini/antigravity-cli/conversations/g-one.db  host=-
+codex  userData/remote/box/codex-home/sessions/2026/10/15/rollout-2026-10-15T15-00-00-x-remote.jsonl  workspace=-  session=-  db=-  host=box
+agy  userData/remote/box/agy-gemini/antigravity-cli/brain/g-remote/.system_generated/logs/transcript.jsonl  workspace=-  session=g-remote  db=userData/remote/box/agy-gemini/antigravity-cli/conversations/g-remote.db  host=box

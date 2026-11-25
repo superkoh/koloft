@@ -10,6 +10,7 @@ import { COULD_NOT_REACH_KOLOFT } from '../../../src/core/command'
 import { agyTools } from '../../../src/agents/agy/main/agyShim'
 import { accountsThatAreNeverAsked } from './agentAccounts'
 import { EVERY_AGENTS_ONE_SHOT } from './agentOneShots'
+import { NOTHING_TO_READ_OR_SEARCH } from './agentMainParts'
 
 export const EVERY_AGENTS_TOOLS: Record<AgentId, AgentTools> = {
   claude: claudeTools,
@@ -35,7 +36,8 @@ export function everyAgentsShimScripts(): AgentShimScript[] {
         oneShot: EVERY_AGENTS_ONE_SHOT[id]
       },
       tools: EVERY_AGENTS_TOOLS[id],
-      accounts: accountsThatAreNeverAsked
+      accounts: accountsThatAreNeverAsked,
+      ...NOTHING_TO_READ_OR_SEARCH
     })
   return agents.shimScripts()
 }

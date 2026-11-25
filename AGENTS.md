@@ -120,7 +120,8 @@ Working principles:
   src/plugins                           ✗→ a list of agents (read the registry in core)
   a list of agents                      ✓→ only each agent's entry: list.ts its agent.ts,
                                             starts.ts its main/start.ts, uis.ts its
-                                            renderer/ui.tsx
+                                            renderer/ui.tsx, usageWorkerScans.ts (the
+                                            usage worker's) its main/usageWorkerScan.ts
   an agent's folder, and kit            ✗→ anything under src/plugins, a list of agents,
                                             another agent's folder, src/renderer,
                                             src/preload

@@ -3,6 +3,7 @@ import { CRON_EFFORTS } from '@shared/efforts'
 import { ESC } from '@shared/lineEditKeys'
 import { SLOT_ADDITIONS, SLOT_FILLS } from './prompts/text'
 import { inputBoxDraft } from './shared/inputBox'
+import { claudePriceOf } from './shared/claudePrices'
 
 // CC§9
 const MODEL_EVERY_ACCOUNT_TAKES = 'haiku'
@@ -116,7 +117,11 @@ export const agent = {
     // CC§31
     listsTheModelsAnAccountCanRun: false
   },
-  pureFunctions: { effortsAModelTakes: () => CRON_EFFORTS, draftInItsInputBox: inputBoxDraft },
+  pureFunctions: {
+    effortsAModelTakes: () => CRON_EFFORTS,
+    draftInItsInputBox: inputBoxDraft,
+    priceOf: claudePriceOf
+  },
   // CC§7
   accountKinds: [
     {

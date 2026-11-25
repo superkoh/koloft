@@ -3,6 +3,7 @@ import { CRON_EFFORTS } from '@shared/efforts'
 import { EMPTY_THE_BOX, ESC } from '@shared/lineEditKeys'
 import { SLOT_ADDITIONS, SLOT_FILLS } from './prompts/text'
 import { codexComposerDraft } from './shared/inputBox'
+import { codexPriceOf } from './shared/codexPrices'
 
 // CODEX§21
 const CLOSE_PAGER = 'q'
@@ -122,7 +123,8 @@ export const agent = {
   },
   pureFunctions: {
     effortsAModelTakes: () => CRON_EFFORTS,
-    draftInItsInputBox: codexComposerDraft
+    draftInItsInputBox: codexComposerDraft,
+    priceOf: codexPriceOf
   },
   // CODEX§15
   accountKinds: [
