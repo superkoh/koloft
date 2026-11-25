@@ -1,7 +1,6 @@
 import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
-import type { AccountKind } from '@shared/types'
 import { shq } from '@shared/shellQuote'
 import {
   PYTHON3_HAS_PTY,
@@ -31,41 +30,6 @@ export const CLAUDE_AUTH_ENV_VARS = [
   'ANTHROPIC_API_KEY',
   'ANTHROPIC_AUTH_TOKEN'
 ]
-
-// CC§7
-export function claudeCodeGuessesWindowOf(model: string): boolean {
-  return !/claude/i.test(model) && !/\[1m\]$/i.test(model)
-}
-
-export function accountEnv(
-  kind: AccountKind,
-  name: string,
-  secret: string,
-  endpoint?: { baseUrl?: string; model?: string }
-): Record<string, string> {
-  const env: Record<string, string> = { ANT_ACCOUNT: name }
-  if (kind === 'apikey') env.ANTHROPIC_API_KEY = secret
-  else if (kind === 'custom') {
-    env.ANTHROPIC_AUTH_TOKEN = secret
-    if (endpoint?.baseUrl) env.ANTHROPIC_BASE_URL = endpoint.baseUrl
-    // CC§7
-    if (endpoint?.model) {
-      for (const k of [
-        'ANTHROPIC_MODEL',
-        'ANTHROPIC_DEFAULT_OPUS_MODEL',
-        'ANTHROPIC_DEFAULT_SONNET_MODEL',
-        'ANTHROPIC_DEFAULT_HAIKU_MODEL',
-        'ANTHROPIC_DEFAULT_FABLE_MODEL',
-        'CLAUDE_CODE_SUBAGENT_MODEL'
-      ]) {
-        env[k] = endpoint.model
-      }
-      env.CLAUDE_CODE_SUBAGENT_MODEL_FORCE = '1'
-      if (claudeCodeGuessesWindowOf(endpoint.model)) env.CLAUDE_CODE_DISABLE_1M_CONTEXT = '1'
-    }
-  } else env.CLAUDE_CODE_OAUTH_TOKEN = secret
-  return env
-}
 
 export interface MachinePackage {
   dir: string

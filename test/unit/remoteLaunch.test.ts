@@ -8,7 +8,9 @@ import { spawn, spawnSync } from 'child_process'
 
 import {
   accountEnv,
-  claudeCodeGuessesWindowOf,
+  claudeCodeGuessesWindowOf
+} from '../../src/agents/claude/main/claudeAccountEnv'
+import {
   buildMachinePackage,
   killSessionCmd,
   launchLine,
