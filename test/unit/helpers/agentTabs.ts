@@ -2,6 +2,7 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
+import type { SessionEvent } from '@shared/sessionEvent'
 import { AgySessions, type AgySessionDeps } from '../../../src/agents/agy/main/agySessions'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../../src/agents/claude/main/backend'
 import { trustCodexFolder } from '../../../src/agents/codex/main/backend'
@@ -273,6 +274,7 @@ export interface AgySetup {
   agentTools?: boolean
   apiKey?: string
   signedInOnTheWeb?: boolean
+  events?: (tabId: string, event: SessionEvent) => void
 }
 
 export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessions {
@@ -304,7 +306,10 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
     }),
     remoteDirExists: async () => true,
     changed: () => {},
-    events: (tabId, event) => sessions?.observe(tabId, event),
+    events: (tabId, event) => {
+      a.events?.(tabId, event)
+      sessions?.observe(tabId, event)
+    },
     error: () => {},
     noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],
     koloftPrompt: standInForKoloftsPrompt,
@@ -343,6 +348,7 @@ export interface CodexSetup {
   run(machine: string, readable: string): { code: number | null; stdout: string; stderr: string }
   ranOnTheMachine: string[]
   agentTools?: boolean
+  events?: (tabId: string, event: SessionEvent) => void
 }
 
 export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): CodexSessions {
@@ -379,7 +385,7 @@ export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): Code
       loginPath: async () => LOGIN_PATH_ON_THE_MACHINE
     },
     changed: () => {},
-    events: () => {},
+    events: (tabId, event) => c.events?.(tabId, event),
     error: () => {},
     noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],
     koloftPrompt: standInForKoloftsPrompt,
