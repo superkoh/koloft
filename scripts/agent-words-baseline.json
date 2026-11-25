@@ -561,9 +561,7 @@
       "return claudeKeysBecomeMembers(toV4(raw, deps))"
     ],
     "src/main/leftovers.ts": [
-      "export async function endCodexAppServersLeftByACrash(marker: string): Promise<void> {",
       "export const CODEX_TMP_DIR = process.platform === 'darwin' ? '/tmp' : os.tmpdir()",
-      "export const CODEX_TMP_FOLDER = new RegExp(",
       "return idIn(commandWithEnv, 'CLAUDE_CODE_SESSION_ID')"
     ],
     "src/main/loginShell.ts": ["const AGENT_COMMANDS = ['claude', 'codex', 'agy'] as const"],

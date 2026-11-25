@@ -70,6 +70,7 @@
         "src/main/accountPicker.ts": "C4",
         "src/main/usageProbe.ts": "C6"
       },
+      "src/agents/codex/main/codexLeftovers.ts": { "src/main/leftovers.ts": "C9" },
       "src/agents/codex/main/codexMachine.ts": {
         "src/main/remote/install.ts": "C10",
         "src/main/remote/launch.ts": "C10",
