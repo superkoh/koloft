@@ -1,0 +1,6 @@
+=== the status line in file pty-t1.settings.json (its hooks file is pinned in remote-launch-text) ===
+{
+  "command": "/bin/sh \"$HOME/.koloft/m-0000000000000000/statusline/agy.sh\"",
+  "stack_with_default": true,
+  "type": "command"
+}

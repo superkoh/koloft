@@ -254,7 +254,9 @@ export interface ClaudeSetup {
   projectRules?: string
   remoteTab?: RemoteTab
   workspaceOfEverySession?: string
-  tracker?: Partial<Pick<ClaudeBackendDeps['tracker'], 'track' | 'movePick' | 'bindSession'>>
+  tracker?: Partial<ClaudeBackendDeps['tracker']>
+  events?: ClaudeBackendDeps['events']
+  hookSettings?: ClaudeBackendDeps['hookSettings']
 }
 
 export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): ClaudeBackend {
@@ -299,21 +301,31 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
     remoteSync: () => null,
     userData: () => world.userData,
     setupLine: () => undefined,
-    hookSettings: () => undefined,
+    hookSettings: c.hookSettings ?? (() => undefined),
     playwrightMcp: async () => [],
     ptysChanged: () => {},
-    events: () => {},
+    events: c.events ?? (() => {}),
     error: () => {},
     projectRules: async () => c.projectRules
   } as unknown as ClaudeBackendDeps)
 }
 
-export interface AgySetup {
+export interface WiredIntoTheApp {
+  runtime?: SessionRuntime
+  changed?: () => void
+  pinnedWorkspaces?: () => string[]
+  rereadRows?: () => void
+  rootOf?: (dir: string) => string
+}
+
+export interface AgySetup extends WiredIntoTheApp {
   machine: MachineSetup
   agentTools?: boolean
   apiKey?: string
   signedInOnTheWeb?: boolean
+  builtInStatusLine?: string
   events?: (tabId: string, event: SessionEvent) => void
+  runtime?: SessionRuntime
 }
 
 export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessions {
@@ -338,13 +350,15 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
   let sessions: AgySessions | undefined
   const deps: AgySessionDeps = {
     pty: pty as AgySessionDeps['pty'],
-    runtime: new SessionRuntime(),
+    runtime: a.runtime ?? new SessionRuntime(),
     projectInfo: (p) => ({
-      root: p.startsWith('ssh://') ? ON_THE_MACHINE : world.repo,
+      root: p.startsWith('ssh://') ? ON_THE_MACHINE : (a.rootOf?.(p) ?? world.repo),
       treeRoot: p
     }),
     remoteDirExists: async () => true,
-    changed: () => {},
+    changed: () => a.changed?.(),
+    pinnedWorkspaces: () => a.pinnedWorkspaces?.() ?? [],
+    rereadRows: () => a.rereadRows?.(),
     events: (tabId, event) => {
       a.events?.(tabId, event)
       sessions?.observe(tabId, event)
@@ -360,7 +374,7 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
     apiKeyOf: async () => a.apiKey,
     playwrightBin: tools,
     browserEndpoint: () => '',
-    builtInStatusLine: () => undefined,
+    builtInStatusLine: () => a.builtInStatusLine,
     skipPermissions: () => false,
     assistOf: () => undefined,
     agent: { enabled: () => a.agentTools ?? false, answer: () => {} },
@@ -383,11 +397,13 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
   return sessions
 }
 
-export interface CodexSetup {
+export interface CodexSetup extends WiredIntoTheApp {
   run(machine: string, readable: string): MachineSaid
   ranOnTheMachine: string[]
   agentTools?: boolean
+  builtInStatusLine?: boolean
   events?: (tabId: string, event: SessionEvent) => void
+  runtime?: SessionRuntime
 }
 
 export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): CodexSessions {
@@ -401,9 +417,9 @@ export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): Code
     ].filter(Boolean)
   return new CodexSessions(path.join(world.home, 'sessions.json'), {
     pty: pty as CodexSessionDeps['pty'],
-    runtime: new SessionRuntime(),
+    runtime: c.runtime ?? new SessionRuntime(),
     projectInfo: (p) => ({
-      root: p.startsWith('ssh://') ? ON_THE_MACHINE : world.repo,
+      root: p.startsWith('ssh://') ? ON_THE_MACHINE : (c.rootOf?.(p) ?? world.repo),
       treeRoot: p
     }),
     remoteDirExists: async () => true,
@@ -438,7 +454,9 @@ export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): Code
       mirrorDir: () => path.join(world.home, 'mirror-hooks'),
       nextPull: async () => {}
     },
-    changed: () => {},
+    changed: () => c.changed?.(),
+    pinnedWorkspaces: () => c.pinnedWorkspaces?.() ?? [],
+    rereadRows: () => c.rereadRows?.(),
     events: (tabId, event) => c.events?.(tabId, event),
     error: () => {},
     noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],
@@ -449,7 +467,7 @@ export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): Code
     homeOf: () => undefined,
     assistOf: () => undefined,
     replyLanguageScript: '/koloft/codex-reply-language.sh',
-    builtInStatusLine: () => true,
+    builtInStatusLine: () => c.builtInStatusLine ?? true,
     browserEndpoint: () => '',
     openShimRoot: path.join(world.home, 'codex-open'),
     playwrightBin: path.join(world.home, 'commands', 'bin'),
