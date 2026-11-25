@@ -49,6 +49,8 @@ export interface SessionMessages {
   ): Promise<boolean>
 }
 
+export type HandOverLaunch = { role: string; firstPrompt: string } | { firstPrompt: string }
+
 export type TabExit = Pick<TabEnded, 'tabId' | 'exitCode' | 'signal' | 'crashed'>
 
 export interface WorktreeExitWatch {
@@ -65,6 +67,7 @@ export interface SessionBackend extends SessionRowsSource, SessionMessages {
   list(): BackendSessionInfo[]
   historyRows(workspacePath: string): Promise<BackendSessionRow[]>
   create(spec: CreateTabOptions): Promise<CreateTabResult>
+  handOverLaunch(handOver: string, task: string): HandOverLaunch
   resume(request: SessionResumeRequest): Promise<SessionResumeResult>
   resumePlan(key: string): Promise<ResumePlan>
   hasTab(tabId: string): boolean
@@ -293,6 +296,10 @@ export class SessionBackends {
     turnHasEnded: (tabId: string) => Promise<boolean>
   ): Promise<boolean> {
     return this.get(backend).mightNotTakeAMessageNow(tabId, turnHasEnded)
+  }
+
+  handOverLaunch(backend: BackendId, handOver: string, task: string): HandOverLaunch {
+    return this.get(backend).handOverLaunch(handOver, task)
   }
 
   peerNames(): (s: { backendId: BackendId; sessionId: string }) => Promise<string | null> {
