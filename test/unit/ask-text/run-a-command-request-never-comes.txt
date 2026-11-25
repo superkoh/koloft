@@ -31,7 +31,7 @@ Koloft said: Koloft sees no question or approval in it right now.
 what reached the agent: (nothing)
 
 ## Antigravity, read through its API (a tab on this Mac)
-never asks this: Antigravity has no request to trail its state: Koloft reads the ask when its 7501 status arrives (AGY§8)
+never asks this: Antigravity has no request to trail its state: Koloft reads the ask when its 7501 status arrives (AGY§10)
 
 ## Antigravity, read from its tool call and 7501 status only, its API not answering (a tab on another machine has no API client and reads this way: inferred, not checked): Koloft answers by keys
-never asks this: Antigravity has no request to trail its state: Koloft reads the ask when its 7501 status arrives (AGY§8)
+never asks this: Antigravity has no request to trail its state: Koloft reads the ask when its 7501 status arrives (AGY§10)

@@ -47,7 +47,7 @@ Koloft said: a Codex approval takes yes or no.
 what reached the agent: (nothing)
 
 ## Antigravity, read through its API (a tab on this Mac)
-the sample: the 7501 msg with `AGY_CLI_OSC7501_MESSAGES=brief`, "Approve RunCommand" (AGY§8), with no tool call before it
+the sample: the 7501 msg with `AGY_CLI_OSC7501_MESSAGES=brief`, "Approve RunCommand" (AGY§10), with no tool call before it
 the raw ask: 7501 status: state=blocked, kind=permission, msg="Approve RunCommand"
 the session row's small line: Wants to run: Approve RunCommand
 Discord card: body: Antigravity asks to run: Approve RunCommand
@@ -87,7 +87,7 @@ Koloft said: an Antigravity approval takes yes or no.
 what reached the agent: (nothing)
 
 ## Antigravity, read from its tool call and 7501 status only, its API not answering (a tab on another machine has no API client and reads this way: inferred, not checked): Koloft answers by keys
-the sample: the 7501 msg with `AGY_CLI_OSC7501_MESSAGES=brief`, "Approve RunCommand" (AGY§8), with no tool call before it
+the sample: the 7501 msg with `AGY_CLI_OSC7501_MESSAGES=brief`, "Approve RunCommand" (AGY§10), with no tool call before it
 the raw ask: 7501 status: state=blocked, kind=permission, msg="Approve RunCommand"
 the session row's small line: Wants to run: Approve RunCommand
 Discord card: body: Antigravity asks to run: Approve RunCommand
