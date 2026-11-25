@@ -90,7 +90,8 @@ export function buildMachinePackage(
   return { dir, name }
 }
 
-const NEEDS_NO_QUOTING_RE = /^[A-Za-z0-9._=-]+$/
+const A_CHARACTER_NEEDING_NO_QUOTING = '[A-Za-z0-9._=-]'
+const NEEDS_NO_QUOTING_RE = new RegExp(`^${A_CHARACTER_NEEDING_NO_QUOTING}+$`)
 
 export function tmuxSessionName(sessionId: string): string {
   return `k-${sessionId}`
@@ -170,7 +171,7 @@ ${sourceTabPass(spec.tabId)}
 ${onATerminalEvenWhenSshGaveNone('$2', '$3', spec.tabId, `sh '${T}.sh' $1`)}
 E="${T}"
 endsUnderTheTabThatStarted() {
-  s=$(tmux -L koloft list-panes -s -t "=$1:" -F '#{pane_start_command}' 2>/dev/null | sed -n 's|.*${TAB_SCRIPT_DIR_RE}/\\([A-Za-z0-9._=-]*\\)\\.sh.*|\\1|p' | head -n 1)
+  s=$(tmux -L koloft list-panes -s -t "=$1:" -F '#{pane_start_command}' 2>/dev/null | sed -n 's|.*${TAB_SCRIPT_DIR_RE}/\\(${A_CHARACTER_NEEDING_NO_QUOTING}*\\)\\.sh[\\\\"]* run.*|\\1|p' | head -n 1)
   [ -n "$s" ] && printf %s "$s" > "${T}.started-by"
   [ -s "${T}.started-by" ] && E="${REMOTE_TABS_DIR}/$(cat "${T}.started-by")"
 }
@@ -179,7 +180,7 @@ exited() {
   [ -s "$E.exit" ] && c=$(cat "$E.exit")
   [ "$c" = ${SSH_LINK_BROKE_EXIT} ] && c=${AGENT_EXIT_255_PASSED_AS}
   [ -f "$E.screen" ] && awk 'NF { if (seen) for (; n; n--) print ""; seen = 1; n = 0; print; next } { n++ }' "$E.screen"
-  [ "$E" != "${T}" ] && [ -s "$E.exit" ] && rm -f "$E.exit" "$E.screen" "${T}.started-by"
+  [ -s "$E.exit" ] && { [ "$E" = "${T}" ] || rm -f "$E.exit" "$E.screen"; rm -f "${T}.started-by"; }
   rm -f "${T}.env"; exit $c
 }
 [ "$1" = attach ] && { n=${attachTo}; endsUnderTheTabThatStarted "$n"; ${passIntoATmuxThatHoldsOne(T, '$n', spec.tabId)}; unset ${TAB_PASS_ENV}; ${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u attach -d -t "$n"; exited; }
@@ -187,7 +188,7 @@ unset ${ACCOUNT_ENV_HELD_IN_MEMORY}; ${ACCOUNT_ENV_HELD_IN_MEMORY}=$(cat "${T}.e
 sh "$M/ensure.sh"${program.ensureTool ? ` ${program.ensureTool}` : ''} || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
 echo ${shq(spec.banner)}
-rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}" "${T}.exit" "${T}.screen" "${T}.tmux"
+rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}" "${T}.exit" "${T}.screen" "${T}.tmux" "${T}.started-by"
 ${program.beforeTmux}${passIntoATmuxThatHoldsOne(T, spec.tmuxName, spec.tabId)}
 [ -n "$${TAB_PASS_ENV}" ] && ( umask 077; printf '${TAB_PASS_ENV}=%s\\n' "$${TAB_PASS_ENV}" > "${T}${TAB_PASS_FILE_SUFFIX}" ); unset ${TAB_PASS_ENV}
 [ -n "$${ACCOUNT_ENV_HELD_IN_MEMORY}" ] && ( umask 077; printf '%s\\n' "$${ACCOUNT_ENV_HELD_IN_MEMORY}" > "${T}.env" ); unset ${ACCOUNT_ENV_HELD_IN_MEMORY}

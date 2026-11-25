@@ -1110,7 +1110,7 @@ cat "$p" >> "$L/prompt"
   })
 
   const PANES_OF_A_SESSION_TAB_OLD_STARTED =
-    '"claude --agent-id teammate"\n"sh \\"\\$HOME/.koloft/tabs/OLD.sh\\" run"\n'
+    '"less \\$HOME/.koloft/tabs/X.shell"\n"claude --agent-id teammate"\n"sh \\"\\$HOME/.koloft/tabs/OLD.sh\\" run"\n'
   const startedByOld = (b: Box): void => {
     fs.writeFileSync(path.join(b.logs, 'pane-start-command'), PANES_OF_A_SESSION_TAB_OLD_STARTED)
     writeTabPackage(b.tabs, spec({ tabId: 'NEW' }))
@@ -1159,6 +1159,18 @@ cat "$p" >> "$L/prompt"
     const started = b.runTab('NEW')
     expect(started.status).toBe(0)
     expect(started.stdout).not.toContain('the last screen')
+  })
+
+  it('a tab started again in place, after it followed another tab’s session and left it before that agent ended, never takes that agent’s ending as its own', () => {
+    const b = box(spec({ tabId: 'OLD' }), { claudeExit: 3 })
+    startedByOld(b)
+    expect(b.runTab('NEW', 'attach').status).toBe(0)
+    expect(b.run().status).toBe(3)
+    sessionGone(b)
+    fs.writeFileSync(path.join(b.logs, 'running'), '')
+    const again = b.runTab('NEW')
+    expect(again.status).toBe(0)
+    expect(again.stdout).not.toContain('the last screen')
   })
 
   it('an agent that exits 255 ends the tab with 254, since 255 from ssh means the link broke and the tab would reconnect', () => {

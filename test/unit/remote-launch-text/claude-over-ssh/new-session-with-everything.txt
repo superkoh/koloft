@@ -77,7 +77,7 @@ if [ -n "$2" ] && [ ! -t 0 ]; then
 fi
 E="$HOME/.koloft/tabs/pty-t1"
 endsUnderTheTabThatStarted() {
-  s=$(tmux -L koloft list-panes -s -t "=$1:" -F '#{pane_start_command}' 2>/dev/null | sed -n 's|.*/\.koloft/tabs/\([A-Za-z0-9._=-]*\)\.sh.*|\1|p' | head -n 1)
+  s=$(tmux -L koloft list-panes -s -t "=$1:" -F '#{pane_start_command}' 2>/dev/null | sed -n 's|.*/\.koloft/tabs/\([A-Za-z0-9._=-]*\)\.sh[\\"]* run.*|\1|p' | head -n 1)
   [ -n "$s" ] && printf %s "$s" > "$HOME/.koloft/tabs/pty-t1.started-by"
   [ -s "$HOME/.koloft/tabs/pty-t1.started-by" ] && E="$HOME/.koloft/tabs/$(cat "$HOME/.koloft/tabs/pty-t1.started-by")"
 }
@@ -86,7 +86,7 @@ exited() {
   [ -s "$E.exit" ] && c=$(cat "$E.exit")
   [ "$c" = 255 ] && c=254
   [ -f "$E.screen" ] && awk 'NF { if (seen) for (; n; n--) print ""; seen = 1; n = 0; print; next } { n++ }' "$E.screen"
-  [ "$E" != "$HOME/.koloft/tabs/pty-t1" ] && [ -s "$E.exit" ] && rm -f "$E.exit" "$E.screen" "$HOME/.koloft/tabs/pty-t1.started-by"
+  [ -s "$E.exit" ] && { [ "$E" = "$HOME/.koloft/tabs/pty-t1" ] || rm -f "$E.exit" "$E.screen"; rm -f "$HOME/.koloft/tabs/pty-t1.started-by"; }
   rm -f "$HOME/.koloft/tabs/pty-t1.env"; exit $c
 }
 [ "$1" = attach ] && { n="$(cat "$HOME/.koloft/tabs/pty-t1.tmux" 2>/dev/null || echo 'k-<session id>')"; endsUnderTheTabThatStarted "$n"; if tmux -L koloft show-environment -t "$n" KOLOFT_TAB_PASS >/dev/null 2>&1; then [ -n "$KOLOFT_TAB_PASS" ] && ( umask 077; printf 'set-environment -t %s KOLOFT_TAB_ID %s\nset-environment -t %s KOLOFT_TAB_PASS %s\n' "$n" pty-t1 "$n" "$KOLOFT_TAB_PASS" > "$HOME/.koloft/tabs/pty-t1.keys" ) && tmux -L koloft source-file "$HOME/.koloft/tabs/pty-t1.keys"; rm -f "$HOME/.koloft/tabs/pty-t1.keys"; fi; unset KOLOFT_TAB_PASS; tmux -L koloft set -gq set-titles on \; set -gq set-titles-string '#{pane_title}' \; set -gq allow-passthrough on 2>/dev/null; tmux -L koloft -u attach -d -t "$n"; exited; }
@@ -94,7 +94,7 @@ unset account_env; account_env=$(cat "$HOME/.koloft/tabs/pty-t1.env" 2>/dev/null
 sh "$M/ensure.sh" || exit $?
 cd '/home/me/proj' || exit 3
 echo 'koloft: account work'
-rm -f "$HOME/.koloft/hook-sessions/pty-t1.json" "$HOME/.koloft/hook-sessions/pty-t1.status.jsonl" "$HOME/.koloft/tabs/pty-t1.exit" "$HOME/.koloft/tabs/pty-t1.screen" "$HOME/.koloft/tabs/pty-t1.tmux"
+rm -f "$HOME/.koloft/hook-sessions/pty-t1.json" "$HOME/.koloft/hook-sessions/pty-t1.status.jsonl" "$HOME/.koloft/tabs/pty-t1.exit" "$HOME/.koloft/tabs/pty-t1.screen" "$HOME/.koloft/tabs/pty-t1.tmux" "$HOME/.koloft/tabs/pty-t1.started-by"
 ( cd '/home/me/proj' 2>/dev/null && node -e 'const fs=require("fs"),path=require("path");const [f,d]=process.argv.slice(1);let top=null;for(let x=d;;x=path.dirname(x)){let s;try{s=fs.lstatSync(path.join(x,".git"))}catch(e){}if(s&&(s.isDirectory()||s.isFile())){top=x;if(s.isFile())try{const l=fs.readFileSync(path.join(x,".git"),"utf8").split("\n").find((l)=>l.startsWith("gitdir:"));const g=path.resolve(x,l.slice(7).trim());top=path.dirname(path.resolve(g,fs.readFileSync(path.join(g,"commondir"),"utf8").trim()));try{top=fs.realpathSync(top)}catch(e){}}catch(e){top=x}break}if(path.dirname(x)===x)break}const trusted=(p)=>{const ok=(x)=>p[x]&&p[x].hasTrustDialogAccepted===true;if(top!==null&&d!==top&&!d.startsWith(top.endsWith("/")?top:top+"/"))return ok(d);for(let x=d;;x=path.dirname(x)){if(ok(x))return true;if(x===top||path.dirname(x)===x)return false}};let j={};try{j=JSON.parse(fs.readFileSync(f,"utf8"))}catch(e){if(e.code!=="ENOENT")process.exit(0)}const p=(j.projects=j.projects||{});if(trusted(p))process.exit(0);p[d]=Object.assign({},p[d],{hasTrustDialogAccepted:true});fs.writeFileSync(f+".koloft",JSON.stringify(j,null,2),{mode:0o600});fs.renameSync(f+".koloft",f)' "$HOME/.claude.json" "$(pwd -P)" ) >/dev/null 2>&1
 mkdir -p "$HOME/.koloft/hook-sessions" && mv -f "$HOME/.koloft/tabs/pty-t1".said* "$HOME/.koloft/hook-sessions/"
 # CC§10
