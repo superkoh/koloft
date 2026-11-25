@@ -1,0 +1,8 @@
+=== Claude Code on this Mac ===
+  skips permissions: yes
+  --model on its line: (none)
+  its account environment:
+    ANT_ACCOUNT=made-up-roomy
+    CLAUDE_CODE_OAUTH_TOKEN=made-up-oauth-token-of-made-up-roomy
+=== Codex on this Mac ===
+  its server's CODEX_HOME=<home>/userData/codex-homes/made-up-roomy

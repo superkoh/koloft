@@ -308,7 +308,15 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
   } as unknown as ClaudeBackendDeps)
 }
 
-export interface AgySetup {
+export interface WiredIntoTheApp {
+  runtime?: SessionRuntime
+  changed?: () => void
+  pinnedWorkspaces?: () => string[]
+  rereadRows?: () => void
+  rootOf?: (dir: string) => string
+}
+
+export interface AgySetup extends WiredIntoTheApp {
   machine: MachineSetup
   agentTools?: boolean
   apiKey?: string
@@ -338,13 +346,15 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
   let sessions: AgySessions | undefined
   const deps: AgySessionDeps = {
     pty: pty as AgySessionDeps['pty'],
-    runtime: new SessionRuntime(),
+    runtime: a.runtime ?? new SessionRuntime(),
     projectInfo: (p) => ({
-      root: p.startsWith('ssh://') ? ON_THE_MACHINE : world.repo,
+      root: p.startsWith('ssh://') ? ON_THE_MACHINE : (a.rootOf?.(p) ?? world.repo),
       treeRoot: p
     }),
     remoteDirExists: async () => true,
-    changed: () => {},
+    changed: () => a.changed?.(),
+    pinnedWorkspaces: () => a.pinnedWorkspaces?.() ?? [],
+    rereadRows: () => a.rereadRows?.(),
     events: (tabId, event) => {
       a.events?.(tabId, event)
       sessions?.observe(tabId, event)
@@ -383,7 +393,7 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
   return sessions
 }
 
-export interface CodexSetup {
+export interface CodexSetup extends WiredIntoTheApp {
   run(machine: string, readable: string): MachineSaid
   ranOnTheMachine: string[]
   agentTools?: boolean
@@ -401,9 +411,9 @@ export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): Code
     ].filter(Boolean)
   return new CodexSessions(path.join(world.home, 'sessions.json'), {
     pty: pty as CodexSessionDeps['pty'],
-    runtime: new SessionRuntime(),
+    runtime: c.runtime ?? new SessionRuntime(),
     projectInfo: (p) => ({
-      root: p.startsWith('ssh://') ? ON_THE_MACHINE : world.repo,
+      root: p.startsWith('ssh://') ? ON_THE_MACHINE : (c.rootOf?.(p) ?? world.repo),
       treeRoot: p
     }),
     remoteDirExists: async () => true,
@@ -438,7 +448,9 @@ export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): Code
       mirrorDir: () => path.join(world.home, 'mirror-hooks'),
       nextPull: async () => {}
     },
-    changed: () => {},
+    changed: () => c.changed?.(),
+    pinnedWorkspaces: () => c.pinnedWorkspaces?.() ?? [],
+    rereadRows: () => c.rereadRows?.(),
     events: (tabId, event) => c.events?.(tabId, event),
     error: () => {},
     noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],

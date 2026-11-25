@@ -35,7 +35,7 @@ function wired(over: Partial<TabSubsystems> = {}): { lifecycle: TabLifecycle; ca
     },
     toast: say('toast'),
     workspaces: () => ({
-      onTrackerUpdate: say('workspaces.onTrackerUpdate')
+      sessionsChanged: say('workspaces.sessionsChanged')
     }),
     announce: <T>(moment: Moment<T>, m: T) => {
       const tabId = typeof m === 'string' ? m : (m as TabEnded).tabId
@@ -96,12 +96,12 @@ describe('TabLifecycle', () => {
     const { lifecycle, calls } = wired()
     lifecycle.emit('slept')
     lifecycle.emit('woken')
-    expect(calls).toEqual(['workspaces.onTrackerUpdate', 'workspaces.onTrackerUpdate'])
+    expect(calls).toEqual(['workspaces.sessionsChanged', 'workspaces.sessionsChanged'])
   })
 
   it('a sleeping tab closed for good is announced to the plugins before the workspaces list refreshes', () => {
     const { lifecycle, calls } = wired()
     lifecycle.emit('forgotten', 't1')
-    expect(calls).toEqual(['announce tab-forgotten t1', 'workspaces.onTrackerUpdate'])
+    expect(calls).toEqual(['announce tab-forgotten t1', 'workspaces.sessionsChanged'])
   })
 })
