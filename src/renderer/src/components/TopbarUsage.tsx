@@ -33,9 +33,12 @@ import {
   sublineFor,
   ACCOUNT_KINDS_OF,
   type CapsuleGlyph,
-  type PoolSnapshot
+  type PoolSnapshot,
+  type Subline
 } from '@shared/accountUsage'
+import { sublineSpoken, sublineText } from '@shared/usageWords'
 import { useStore } from '../store'
+import { ShapePill, ShapeSections, groupsSpoken, oldestShown, shownGroups } from './usageFromShape'
 import {
   ApiKeyBadge,
   Meter,
@@ -44,7 +47,6 @@ import {
   codexBalanceLabel,
   noLimitsLabel,
   probeErrorLabel,
-  resetIn,
   resetLabel
 } from './accountMeter'
 import '../topbarUsage.css'
@@ -63,7 +65,7 @@ function headAge(oldest: number | null, now: number): string {
 
 export function TopbarUsage(): JSX.Element | null {
   const setSettingsOpen = useStore((s) => s.setSettingsOpen)
-  const [accounts, setAccounts] = useState<AccountView[]>([])
+  const [all, setAccounts] = useState<AccountView[]>([])
   const [now, setNow] = useState(() => Date.now())
   const [pop, setPop] = useState<{ x: number; bottom: number } | null>(null)
   const [probing, setProbing] = useState(false)
@@ -101,8 +103,8 @@ export function TopbarUsage(): JSX.Element | null {
     }
   }, [])
 
-  const accountsRef = useRef(accounts)
-  accountsRef.current = accounts
+  const accountsRef = useRef(all)
+  accountsRef.current = all
   useEffect(() => {
     if (!pop) return
     if (autoProbeDue(accountsRef.current, lastAutoProbe.current, Date.now())) void probe()
@@ -132,6 +134,8 @@ export function TopbarUsage(): JSX.Element | null {
     []
   )
 
+  const fromShape = window.api.usageFromShape ? shownGroups(all, now) : null
+  const accounts = fromShape ? [] : all
   const members = accounts.filter((a) => a.kind === 'oauth' && a.enabled)
   const codex = accounts.filter((a) => a.kind === 'codex-home' && a.enabled)
   const agyRows = accounts.filter(
@@ -162,7 +166,8 @@ export function TopbarUsage(): JSX.Element | null {
       ? [{ label: 'Antigravity', total: null, accounts: agy, glyphs: agy.map(quotaGlyph) }]
       : [])
   ]
-  if (members.length === 0 && capsuleGroups.length === 0) return null
+  if (fromShape ? fromShape.length === 0 : members.length === 0 && capsuleGroups.length === 0)
+    return null
 
   const claude = members.length > 0
   const enabled = accounts.filter((a) => a.enabled && ACCOUNT_KINDS_OF.claude.includes(a.kind))
@@ -204,10 +209,14 @@ export function TopbarUsage(): JSX.Element | null {
       <button
         ref={btnRef}
         className="tbu"
-        aria-label={[
-          ...(claude ? [capsuleAria(members, now)] : []),
-          ...capsuleGroups.map((g) => homeAria(g.glyphs, g.label))
-        ].join('; ')}
+        aria-label={
+          fromShape
+            ? groupsSpoken(fromShape)
+            : [
+                ...(claude ? [capsuleAria(members, now)] : []),
+                ...capsuleGroups.map((g) => homeAria(g.glyphs, g.label))
+              ].join('; ')
+        }
         aria-expanded={pop !== null}
         onMouseEnter={enter}
         onMouseLeave={leave}
@@ -222,6 +231,7 @@ export function TopbarUsage(): JSX.Element | null {
           setPop(null)
         }}
       >
+        {fromShape && <ShapePill groups={fromShape} now={now} />}
         {total && <CapsuleBar glyph={total} total />}
         {members.map((a) => (
           <CapsuleBar key={`${a.kind}:${a.name}`} glyph={capsuleGlyph(a, now)} />
@@ -253,10 +263,21 @@ export function TopbarUsage(): JSX.Element | null {
             <div className="tbu-pop-head">
               <span>Account usage</span>
               <span className="age">
-                {headAge(oldestAt(accounts.filter((a) => a.enabled)), now)}
+                {headAge(
+                  fromShape ? oldestShown(all, now) : oldestAt(accounts.filter((a) => a.enabled)),
+                  now
+                )}
               </span>
             </div>
             <div className="tbu-rows">
+              {fromShape && (
+                <ShapeSections
+                  groups={fromShape}
+                  now={now}
+                  probing={probing}
+                  onAct={(a) => window.api.accounts.codexUseReset(a.name)}
+                />
+              )}
               {claude && (
                 <Section
                   title="Claude"
@@ -406,54 +427,6 @@ function CapsuleBar({ glyph: g, total }: { glyph: CapsuleGlyph; total?: boolean 
   )
 }
 
-type Subline = ReturnType<typeof sublineFor>
-
-function stamp(win: string, epoch: number, now: number): string {
-  return win === '5h' ? resetIn(epoch, now) : resetLabel(epoch, now)
-}
-
-function subText(win: string, s: Subline, now: number): string {
-  switch (s.kind) {
-    case 'time':
-      return stamp(win, s.epoch, now)
-    case 'back':
-      return `back ${stamp(win, s.epoch, now)}`
-    case 'due':
-      return 'due'
-    case 'walled':
-      return 'walled'
-    case 'spent':
-      return s.epoch > 0 ? `spent · ${resetLabel(s.epoch, now)}` : 'spent'
-    default:
-      return ''
-  }
-}
-
-function spoken(win: string, epoch: number, now: number): string {
-  return win === '5h' ? resetIn(epoch, now) : `at ${resetLabel(epoch, now)}`
-}
-
-function subAria(label: string, win: string, s: Subline, now: number): string {
-  switch (s.kind) {
-    case 'time':
-      return `${label} resets ${spoken(win, s.epoch, now)}`
-    case 'back':
-      return s.tone === 'red'
-        ? `${label} walled, back ${spoken(win, s.epoch, now)}`
-        : `${label} rate limited, back ${spoken(win, s.epoch, now)}`
-    case 'due':
-      return `${label} rate limited, reset due`
-    case 'walled':
-      return `${label} walled, no reset time`
-    case 'spent':
-      return s.epoch > 0
-        ? `${label} allowance spent, resets at ${resetLabel(s.epoch, now)}`
-        : `${label} allowance spent`
-    default:
-      return `${label} has no reset time`
-  }
-}
-
 function GridCell({
   label,
   win,
@@ -471,10 +444,14 @@ function GridCell({
 }): JSX.Element {
   const tone = sub.tone === 'red' ? ' alarm' : sub.tone === 'amber' ? ' soon' : ''
   return (
-    <div className="tbu-cell" role="group" aria-label={subAria(label, win, sub, now)}>
+    <div
+      className="tbu-cell"
+      role="group"
+      aria-label={sublineSpoken(label, win === '5h', sub, now)}
+    >
       <Meter v={v} win={win} soi={soi} />
       <span className={'tbu-cell-sub' + tone} aria-hidden>
-        {subText(win, sub, now)}
+        {sublineText(win === '5h', sub, now)}
       </span>
     </div>
   )

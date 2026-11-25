@@ -6,12 +6,7 @@ export const API_KEY_BADGE = { means: 'apiKey', text: 'API KEY', title: null } a
 
 export const NO_LINE: UsageLine = { text: '', spoken: '', tone: 'faint' }
 
-export function lineUnder(
-  label: string,
-  countdown: boolean,
-  s: Subline,
-  nowMs: number
-): UsageLine {
+export function lineUnder(label: string, countdown: boolean, s: Subline, nowMs: number): UsageLine {
   return {
     text: sublineText(countdown, s, nowMs),
     spoken: sublineSpoken(label, countdown, s, nowMs),

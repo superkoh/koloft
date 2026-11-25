@@ -60,7 +60,6 @@ export interface UsageAccount {
 }
 
 export interface UsageTotalCell {
-  column: string
   used: number
   closeness: Closeness
 }

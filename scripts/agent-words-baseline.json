@@ -680,6 +680,7 @@
       "import type { AccountView, CodexLimitWindow, CodexResetOutcome } from '@shared/types'",
       "label=\"fable\"",
       "nothingToReset: 'Codex says there is nothing to reset right now.',",
+      "onAct={(a) => window.api.accounts.codexUseReset(a.name)}",
       "p={claudePool}",
       "style={{ height: fable.spent ? '100%' : `${Math.round(fable.frac * 100)}%` }}",
       "title=\"Claude\"",
@@ -739,6 +740,7 @@
       "'agy',",
       "'claude',",
       "'codex',",
+      ") : a.kind === 'agy-home' && a.status === 'ok' && a.quota && a.quota.length > 0 ? (",
       ") : a.kind === 'custom' ? (",
       ": kind === 'agy-home'",
       ": kind === 'agy-home'",
@@ -799,7 +801,6 @@
       "title=\"Runs agy in a terminal tab for a new Antigravity account\"",
       "title=\"Runs claude setup-token in the background and stores the token for you\"",
       "title=\"Runs codex login in a terminal tab for a new Codex account\"",
-      "{a.kind === 'agy-home' && a.status === 'ok' && a.quota && a.quota.length > 0 ? (",
       "{a.kind === 'custom' && <span className=\"acct-badge custom\">ENDPOINT</span>}",
       "{a.kind === 'oauth' && a.fable === 'no' && (",
       "{a.kind === 'oauth' && a.fable === 'yes' && (",
@@ -832,6 +833,11 @@
     "src/renderer/src/components/settings/WelcomePane.tsx": [
       "['Real Claude Code, Codex and Antigravity terminals', 'yes', 'yes'],",
       "title: 'Claude Code, Codex and Antigravity sessions',"
+    ],
+    "src/renderer/src/components/usageFromShape.tsx": [
+      "className=\"tbu-fable\"",
+      "endpoint: 'custom',",
+      "planLacks: 'nofable'"
     ],
     "src/renderer/src/costs.css": [".acct-badge.agy {", ".acct-badge.codex {"],
     "src/renderer/src/store.ts": [

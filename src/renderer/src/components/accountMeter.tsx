@@ -59,7 +59,8 @@ export function Meter({
   win: string
   soi?: string
 }): JSX.Element {
-  const level = v === null ? '' : win === 'oi' ? fableLevel(v, soi ?? '?') : meterLevel(v)
+  if (v === null) return <MeterBar label={label} v={v} win={win} level="" />
+  const level = win === 'oi' ? fableLevel(v, soi ?? '?') : meterLevel(v)
   return <MeterBar label={label} v={v} win={win} level={level} />
 }
 

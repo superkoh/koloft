@@ -1124,6 +1124,7 @@ export interface CoreApi {
   isDev: boolean
   domRenderer: boolean
   testMode: boolean
+  usageFromShape: boolean
   home: string
   // PLATFORM§5
   app: {

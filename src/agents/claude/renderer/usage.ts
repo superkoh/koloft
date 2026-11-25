@@ -157,13 +157,9 @@ function group(accounts: readonly AccountView[], nowMs: number): UsageGroup {
       used: p.tension,
       second: p.tfable === null ? null : { used: p.tfable, spent: p.fableSpentAll },
       cells: [
-        ...(fiveHour
-          ? [p.t5 === null ? null : { column: '5h', used: p.t5, closeness: meterLevel(p.t5) }]
-          : []),
-        { column: '7d', used: p.t7, closeness: meterLevel(p.t7) },
-        ...(p.tfable === null
-          ? []
-          : [{ column: 'oi', used: p.tfable, closeness: fableLevel(p.tfable, '?') }])
+        ...(fiveHour ? [p.t5 === null ? null : { used: p.t5, closeness: meterLevel(p.t5) }] : []),
+        { used: p.t7, closeness: meterLevel(p.t7) },
+        ...(p.tfable === null ? [] : [{ used: p.tfable, closeness: fableLevel(p.tfable, '?') }])
       ],
       earliestBack: p.earliestBack,
       oldestAt: p.oldestAt

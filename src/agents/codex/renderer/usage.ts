@@ -141,11 +141,7 @@ function group(accounts: readonly AccountView[], nowMs: number): UsageGroup {
       walled: p.walled,
       used: p.tension,
       second: null,
-      cells: p.windows.map((w) => ({
-        column: windowLabel(w.minutes),
-        used: w.mean,
-        closeness: meterLevel(w.mean)
-      })),
+      cells: p.windows.map((w) => ({ used: w.mean, closeness: meterLevel(w.mean) })),
       earliestBack: p.earliestBack,
       oldestAt: p.oldestAt
     },

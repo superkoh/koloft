@@ -37,7 +37,7 @@ function usage(u: Partial<UsageSnapshot>): UsageSnapshot {
 
 const withOi = { hasOi: true, uoi: 0.3, roi: S + 2 * DAY }
 
-export const SUBSCRIPTIONS_OF_ONE_AGENT: Record<string, AccountView[]> = {
+export const CLAUDE_SETS: Record<string, AccountView[]> = {
   claudeFresh: [view('fresh', 'oauth', { fable: 'yes', usage: usage(withOi) })],
   claudeTwo: [
     view('studio', 'oauth', { fable: 'yes', usage: usage({ ...withOi, u5: 0.42, u7: 0.63 }) }),
@@ -48,7 +48,14 @@ export const SUBSCRIPTIONS_OF_ONE_AGENT: Record<string, AccountView[]> = {
     view('garden', 'oauth', { fable: 'no', usage: usage({ u5: 0.75, u7: 0.95 }) }),
     view('walled', 'oauth', {
       fable: 'yes',
-      usage: usage({ u5: 1, s5: 'rejected', r5: S + 40 * MIN, ...withOi, uoi: 0.97, soi: 'rejected' })
+      usage: usage({
+        u5: 1,
+        s5: 'rejected',
+        r5: S + 40 * MIN,
+        ...withOi,
+        uoi: 0.97,
+        soi: 'rejected'
+      })
     }),
     view('soon', 'oauth', { usage: usage({ u5: 1, s5: 'rejected', r5: S + 10 * MIN }) }),
     view('due', 'oauth', { usage: usage({ u7: 1, s7: 'rejected', r7: S - MIN }) }),
@@ -57,11 +64,11 @@ export const SUBSCRIPTIONS_OF_ONE_AGENT: Record<string, AccountView[]> = {
       fable: 'yes',
       usage: usage({ has5h: false, u5: 0, r5: 0, ...withOi, roi: 0 })
     }),
-    view('stale', 'oauth', { usage: usage({ at: NOW - 20 * MIN }) }),
-    view('aging', 'oauth', { usage: usage({ at: NOW - 5 * MIN }) }),
+    view('stale', 'oauth', { usage: usage({ at: NOW - 20 * MIN * 1000 }) }),
+    view('aging', 'oauth', { usage: usage({ at: NOW - 5 * MIN * 1000 }) }),
     view('offline', 'oauth', { probeError: 'network' }),
     view('new', 'oauth'),
-    view('lapsed', 'oauth', { status: 'expired', usage: usage({ at: NOW - HOUR }) }),
+    view('lapsed', 'oauth', { status: 'expired', usage: usage({ at: NOW - HOUR * 1000 }) }),
     view('gone', 'oauth', { status: 'expired', probeError: 'expired' }),
     view('pending', 'oauth', { status: 'unverified' }),
     view('flaky', 'oauth', { usage: usage({}), probeError: 'model-unavailable' }),
@@ -106,7 +113,9 @@ const cappedWindows = [
 ]
 
 export const CODEX_SETS: Record<string, AccountView[]> = {
-  codexOne: [view('plus', 'codex-home', { limits: limits({ credits: { unlimited: false, balance: 1250 } }) })],
+  codexOne: [
+    view('plus', 'codex-home', { limits: limits({ credits: { unlimited: false, balance: 1250 } }) })
+  ],
   codexEveryState: [
     view('plus', 'codex-home', { limits: limits({ credits: { unlimited: true } }) }),
     view('capped', 'codex-home', {
@@ -129,7 +138,7 @@ export const CODEX_SETS: Record<string, AccountView[]> = {
       limits: limits({ windows: [{ minutes: 10080, used: 0.4, resetsAt: 0 }] })
     }),
     view('blank', 'codex-home', { limits: limits({ windows: [] }) }),
-    view('stale', 'codex-home', { limits: limits({ at: NOW - 30 * MIN }) }),
+    view('stale', 'codex-home', { limits: limits({ at: NOW - 30 * MIN * 1000 }) }),
     view('flaky', 'codex-home', { limits: limits({}), probeError: 'network' }),
     view('offline', 'codex-home', { probeError: 'network' }),
     view('new', 'codex-home'),
@@ -155,7 +164,7 @@ const buckets: QuotaBucket[] = [
 export const AGY_SETS: Record<string, AccountView[]> = {
   agyOne: [view('google', 'agy-home', { quota: buckets, quotaAt: NOW })],
   agyEveryState: [
-    view('google', 'agy-home', { quota: buckets, quotaAt: NOW - HOUR }),
+    view('google', 'agy-home', { quota: buckets, quotaAt: NOW - HOUR * 1000 }),
     view('drained', 'agy-home', {
       quota: [{ ...buckets[0], used: 1 }, buckets[1]],
       quotaAt: NOW
@@ -175,11 +184,11 @@ export const AGY_SETS: Record<string, AccountView[]> = {
 }
 
 export const ACCOUNT_SETS: Record<string, AccountView[]> = {
-  ...SUBSCRIPTIONS_OF_ONE_AGENT,
+  ...CLAUDE_SETS,
   ...CODEX_SETS,
   ...AGY_SETS,
   everyAgent: [
-    ...SUBSCRIPTIONS_OF_ONE_AGENT.claudeEveryState,
+    ...CLAUDE_SETS.claudeEveryState,
     ...CODEX_SETS.codexEveryState,
     ...AGY_SETS.agyEveryState
   ],

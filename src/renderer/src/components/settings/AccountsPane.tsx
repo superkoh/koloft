@@ -40,6 +40,7 @@ import {
   probeErrorLabel,
   resetLabel
 } from '../accountMeter'
+import { PaneBadges, PaneUsage, usageOf } from '../usageFromShape'
 import { GitAccountsSection } from './GitAccountsSection'
 import { Switch } from './Switch'
 import { useEscConsumer } from './escScope'
@@ -577,7 +578,8 @@ function AccountRow({
 }): JSX.Element {
   const u = a.usage
   const now = Date.now()
-  const at = measuredAt(a)
+  const shape = window.api.usageFromShape ? usageOf(a, now) : null
+  const at = shape ? (shape.ageShownFrom ?? undefined) : measuredAt(a)
   const stale = at !== undefined ? ageLabel(at, now) : null
   const codexBalance = a.status === 'ok' && a.limits ? codexBalanceLabel(a.limits, now) : ''
   return (
@@ -590,18 +592,24 @@ function AccountRow({
           title={a.enabled ? 'In the pool' : 'Out of the pool'}
         />
         <span className="acct-name">{a.name}</span>
-        {(a.kind === 'apikey' || a.apiKey) && <ApiKeyBadge />}
-        {a.kind === 'custom' && <span className="acct-badge custom">ENDPOINT</span>}
-        {a.kind === 'oauth' && a.fable === 'yes' && (
-          <span
-            className="acct-badge good"
-            title="Plan includes a fable allowance — fable launches are routed here first"
-          >
-            FABLE
-          </span>
-        )}
-        {a.kind === 'oauth' && a.fable === 'no' && (
-          <span className="acct-badge nofable">FABLE</span>
+        {shape ? (
+          <PaneBadges u={shape} />
+        ) : (
+          <>
+            {(a.kind === 'apikey' || a.apiKey) && <ApiKeyBadge />}
+            {a.kind === 'custom' && <span className="acct-badge custom">ENDPOINT</span>}
+            {a.kind === 'oauth' && a.fable === 'yes' && (
+              <span
+                className="acct-badge good"
+                title="Plan includes a fable allowance — fable launches are routed here first"
+              >
+                FABLE
+              </span>
+            )}
+            {a.kind === 'oauth' && a.fable === 'no' && (
+              <span className="acct-badge nofable">FABLE</span>
+            )}
+          </>
         )}
         {a.status === 'expired' && (
           <span className="acct-status expired">EXPIRED · out of pool</span>
@@ -648,7 +656,9 @@ function AccountRow({
           </button>
         </div>
       )}
-      {a.kind === 'agy-home' && a.status === 'ok' && a.quota && a.quota.length > 0 ? (
+      {shape ? (
+        <PaneUsage u={shape} />
+      ) : a.kind === 'agy-home' && a.status === 'ok' && a.quota && a.quota.length > 0 ? (
         <QuotaMeters quota={a.quota} now={now} />
       ) : SIGN_IN_FOLDER_KINDS.includes(a.kind) ? (
         <div className="acct-meters">

@@ -29,7 +29,8 @@ function paneOf(a: AccountView, nowMs: number): UsageBody {
 }
 
 function topBarOf(a: AccountView, nowMs: number): UsageBody {
-  if (a.status !== 'ok') return { instead: 'Not signed in — sign in again from Settings', after: [] }
+  if (a.status !== 'ok')
+    return { instead: 'Not signed in — sign in again from Settings', after: [] }
   if (a.apiKey) return { instead: METERED_NOTE, after: [] }
   return { instead: null, after: firstResets(a.quota ?? [], nowMs) }
 }
