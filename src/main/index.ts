@@ -16,7 +16,7 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 import { pathToFileURL } from 'url'
-import { anotherLiveInstanceOwns, PtyManager, type PtyHandle } from './ptyManager'
+import { anotherLiveInstanceOwns, PtyManager, tabInstancePid, type PtyHandle } from './ptyManager'
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { TerminalOutput } from './flowControl'
@@ -95,6 +95,7 @@ import {
   buildMachinePackage,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
   tmuxSessionName,
+  removeTabPackagesNoTabNeeds,
   utilShellLine,
   writeTabPassFile,
   CLAUDE_AUTH_ENV_VARS,
@@ -2667,6 +2668,7 @@ app.whenReady().then(() => {
   linkOrUnlink(path.join(shimDir, 'git'), gitFirstBin && path.join(gitFirstBin, 'git'))
   removeStaleLoginDirs(app.getPath('userData'))
   endAgyOneShots(path.join(app.getPath('userData'), 'agy-one-shots'))
+  removeRemoteTabFilesNoLiveTabNeeds()
   gitAccounts = new GitAccountService({
     userData: app.getPath('userData'),
     requestDir: gitRequestDir,
@@ -3607,6 +3609,7 @@ app.on('before-quit', (e) => {
   }
   worktreeExits.koloftQuits()
   endAgyOneShots(path.join(app.getPath('userData'), 'agy-one-shots'))
+  removeRemoteTabFilesNoLiveTabNeeds()
   stopScheduledTasks()
   discordLink?.stop()
   discordBinding?.flush()
@@ -3977,6 +3980,14 @@ async function openOnMachine(
 async function isRegularFile(file: string): Promise<boolean> {
   const stat = await fs.promises.stat(file).catch(() => null)
   return !!stat?.isFile()
+}
+
+// ADR-0004
+function removeRemoteTabFilesNoLiveTabNeeds(): void {
+  removeTabPackagesNoTabNeeds(
+    app.getPath('userData'),
+    (name) => tabInstancePid(name) === null || anotherLiveInstanceOwns(name, pidAlive)
+  )
 }
 
 function killTabFromMain(tabId: string): void {
