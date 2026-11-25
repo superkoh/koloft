@@ -14,12 +14,16 @@ export interface OwnersSettings {
   ownersGemini: string
 }
 
+const asked = (): never => {
+  throw new Error('these accounts are never asked')
+}
+
 export const accountsThatAreNeverAsked: AgentAccounts = {
-  pickForThisStart: async () => ({}),
-  probeAll: async () => {},
-  addSecret: async () => ({ ok: false, error: 'unknown' }),
-  forget: () => {},
-  folderSaysItRunsOnAKey: () => false
+  pickForThisStart: asked,
+  probeAll: asked,
+  addSecret: asked,
+  forget: asked,
+  folderSaysItRunsOnAKey: asked
 }
 
 export function agentsWithTheirCatalogs(owners: OwnersSettings): AgentsMain {
