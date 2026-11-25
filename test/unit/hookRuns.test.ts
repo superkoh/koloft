@@ -154,6 +154,10 @@ function runInSh(command: string, input: unknown, env: NodeJS.ProcessEnv): Run {
     env,
     timeout: A_HOOK_RUN_ENDS_WITHIN_MS
   })
+  if (res.error)
+    throw new Error(
+      `${command} did not finish (${res.error.message}, limit ${A_HOOK_RUN_ENDS_WITHIN_MS} ms): ${res.stderr}`
+    )
   if (res.status !== 0) throw new Error(`${command} exited ${res.status}: ${res.stderr}`)
   return { printed: res.stdout }
 }

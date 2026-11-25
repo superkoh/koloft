@@ -49,7 +49,7 @@ function run(command: string, input: string, env: Record<string, string> = {}): 
   const res = spawnSync('/bin/sh', ['-c', command], {
     input,
     encoding: 'utf8',
-    env: { ...BASE_ENV, ...env },
+    env: { ...BASE_ENV, AGY_HOOK_UNDER_TEST: scripts.hook, ...env },
     timeout: CHILD_TIMEOUT_MS
   })
   if (res.error)
@@ -63,7 +63,7 @@ function run(command: string, input: string, env: Record<string, string> = {}): 
 const entry = (): Record<string, unknown[]> =>
   koloftHookEntry(runWithSh(scripts.hook)) as Record<string, unknown[]>
 
-const underDashCommand = (): string => runWithSh(scripts.hook).replace(/^\/bin\/sh /, '/bin/dash ')
+const HOOK_UNDER_DASH = '/bin/dash "$AGY_HOOK_UNDER_TEST"'
 
 function commandFor(event: string): string {
   const [first] = entry()[event] as Record<string, unknown>[]
@@ -219,13 +219,13 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
       ownerSays('先别改代码'),
       modelSays('Let me run the tests first.')
     )
-    expect(toldBeforeModelCall(transcript, `${underDashCommand()} PreInvocation`)).toMatch(
+    expect(toldBeforeModelCall(transcript, `${HOOK_UNDER_DASH} PreInvocation`)).toMatch(
       /^Your last note to the user, «Let me run the tests first\.», is not in Chinese\./
     )
     const start = path.join(dir, 'start.json')
     fs.writeFileSync(start, 'START')
     const underDash = (event: string): string =>
-      run(`${underDashCommand()} ${event}`, JSON.stringify({ conversationId: C1 }), {
+      run(`${HOOK_UNDER_DASH} ${event}`, JSON.stringify({ conversationId: C1 }), {
         KOLOFT_AGY_LOG: log,
         KOLOFT_AGY_START: start
       })
@@ -386,7 +386,7 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
       toolCall: { args: { CommandLine: 'printf x > made.txt', Cwd: repo }, name: 'run_command' }
     }
     const underDash = (event: string, input: unknown): string =>
-      run(commandFor(event).replace(/^\/bin\/sh /, '/bin/dash '), JSON.stringify(input), {
+      run(`${HOOK_UNDER_DASH} ${event}`, JSON.stringify(input), {
         KOLOFT_AGY_LOG: log,
         PATH: process.env.PATH!
       })
@@ -432,7 +432,7 @@ describe('after a gh pr command the status line asks GitHub again', () => {
   })
 
   it('does the same on a machine whose sh is dash', () => {
-    ran('gh pr merge 89 --squash', 'merge it', underDashCommand())
+    ran('gh pr merge 89 --squash', 'merge it', HOOK_UNDER_DASH)
     expect(mtime()).toBeLessThan(OLDER_THAN_THE_CACHE_TTL)
   })
 
