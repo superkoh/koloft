@@ -54,11 +54,13 @@ const SESSION_ID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 const ONE_TIME_TOKEN = /--csrf_token=[0-9a-f]{48}/g
 const TAB_PASS = /KOLOFT_TAB_PASS=[A-Za-z0-9_-]+/g
 const TOOL_FOLDER_OF_ONE_TAB = /\d+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g
+const PROMPT_FILE_NAMED_BY_ITS_TEXT = /agent-prompts\/[0-9a-f]{16}\.md/g
 
 export const sameOnEveryRun = (text: string, world: World): string =>
   text
     .replaceAll(world.home, '<home>')
     .replace(TOOL_FOLDER_OF_ONE_TAB, '<tool folder of this tab>')
+    .replace(PROMPT_FILE_NAMED_BY_ITS_TEXT, 'agent-prompts/<hash of the prompt text>.md')
     .replace(SESSION_ID, '<session id>')
     .replace(ONE_TIME_TOKEN, '--csrf_token=<token>')
     .replace(TAB_PASS, 'KOLOFT_TAB_PASS=<pass>')

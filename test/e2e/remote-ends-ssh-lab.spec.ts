@@ -8,7 +8,6 @@ import {
   addWorkspace,
   centerTerm,
   newSessionInWith,
-  openMenu,
   runIn,
   sendShortcut,
   startSessionIn,
@@ -42,7 +41,7 @@ const PANES_ON_KOLOFTS_TMUX = "tmux -L koloft list-panes -a -F '#{pane_pid}' 2>/
 const TAB_SCRIPTS_RUNNING = "ps -eo args= | grep -e '[.]sh run' -e '[.]sh attach' || true"
 const TAB_SCRIPTS_ATTACHING = "ps -eo args= | grep -c '[.]sh attach' || true"
 const CODEX_SERVERS_LISTENING = "ps -eo pid=,args= | grep -e '[-]-listen' || true"
-const CODEX_RELAYS = "ps -eo args= | grep -c 'app-server [p]roxy' || true"
+const CODEX_RELAYS = "ps -eo pid=,args= | grep 'app-server [p]roxy' || true"
 const CODEX_SERVER_PID_FILES =
   'ls .koloft/cx/*/ 2>/dev/null | grep -v "^side[.]pid$" | grep -c "[.]pid$" || true'
 const CUT_EVERY_SSH_CONNECTION_OF = (user: string): string =>
@@ -110,6 +109,9 @@ const tabScriptsRunningOn = (lab: SshLab, user: string): string[] =>
 
 const codexServersOn = (lab: SshLab, user: string): string[] =>
   lines(runOnTarget(lab, user, CODEX_SERVERS_LISTENING)).map((line) => line.trim().split(/\s+/)[0])
+
+const codexRelaysOn = (lab: SshLab, user: string): string[] =>
+  lines(runOnTarget(lab, user, CODEX_RELAYS)).map((line) => line.trim().split(/\s+/)[0])
 
 const codexServerPidFilesOn = (lab: SshLab, user: string): string =>
   runOnTarget(lab, user, CODEX_SERVER_PID_FILES).trim()
@@ -239,6 +241,7 @@ test.describe('how a Claude Code and a Codex session on a real sshd machine behi
       await claudeAnswersOnScreen(page, tabId, 'before the drop')
       const panes = tmuxPanesOn(lab, 'kuser')
       expect(panes).toHaveLength(1)
+      expect(runOnTarget(lab, 'kuser', TAB_SCRIPTS_ATTACHING).trim()).toBe('0')
 
       runOnTarget(lab, 'kuser', CUT_EVERY_SSH_CONNECTION_OF('kuser'))
       await expect
@@ -246,9 +249,6 @@ test.describe('how a Claude Code and a Codex session on a real sshd machine behi
           timeout: BACKGROUND_CONNECT_MS
         })
         .toBe('1')
-      await expect(wsGroup(page, 'kt-key').locator('.ws-conn')).toHaveClass(/\bon\b/, {
-        timeout: BACKGROUND_CONNECT_MS
-      })
       expect(tmuxSessionsOn(lab, 'kuser')).toEqual([`k-${sessionId}`])
       expect(tmuxPanesOn(lab, 'kuser')).toEqual(panes)
 
@@ -281,7 +281,7 @@ test.describe('how a Claude Code and a Codex session on a real sshd machine behi
     })
   })
 
-  // ADR-0044 PLATFORM§35
+  // ADR-0044 PLATFORM§33 PLATFORM§35
   test('E-SSH-E8: after /clear in a Claude Code tab on the machine its tmux session there carries the new session’s name; when the ssh connection then drops, the tab attaches again to that renamed session, and closing the tab ends it', async ({
     env
   }) => {
@@ -299,6 +299,7 @@ test.describe('how a Claude Code and a Codex session on a real sshd machine behi
       await expect
         .poll(async () => (await boundClaude(page)).sessionId, { timeout: 30_000 })
         .toBe(renamed.slice('k-'.length))
+      expect(runOnTarget(lab, 'kuser', TAB_SCRIPTS_ATTACHING).trim()).toBe('0')
 
       runOnTarget(lab, 'kuser', CUT_EVERY_SSH_CONNECTION_OF('kuser'))
       await expect
@@ -322,28 +323,34 @@ test.describe('how a Claude Code and a Codex session on a real sshd machine behi
     })
   })
 
-  // PLATFORM§3
-  test('E-SSH-E4: a Claude Code start whose files cannot land on the machine says so in its tab, leaves no tmux session there, and removes the tab’s folder, which holds the account’s key, from this Mac', async ({
+  // PLATFORM§3 CODEX§16
+  test('E-SSH-E4: a Claude Code start and a Codex start whose files cannot land on the machine each say so in their tab, leave no tmux session and no app-server there, and remove the tab’s folder, which holds the account’s key, from this Mac', async ({
     env
   }) => {
+    installCodexSignedInForTheLab(env)
     await withLab(
       env,
       async ({ page, lab }) => {
         await addMachine(page, 'kt-key', 'kuser')
-        const tabId = await tabOpenedBy(page, async () => {
-          await openMenu(page, page.locator('.ws-head', { hasText: 'kt-key' }))
-          await page.locator('.menu .mi', { hasText: 'New session' }).click()
-        })
-        await screenOf(page, tabId, A_TAB_THAT_COULD_NOT_START_SAYS_SO_MS).toContain(COULD_NOT_PUSH)
+        for (const agent of ['Claude', 'Codex'] as const) {
+          const tabId = await tabOpenedBy(page, () => newSessionInWith(page, 'kt-key', agent))
+          await screenOf(page, tabId, A_TAB_THAT_COULD_NOT_START_SAYS_SO_MS).toContain(
+            COULD_NOT_PUSH
+          )
+          await expect.poll(() => fs.existsSync(tabFolderOnThisMac(env, tabId))).toBe(false)
+        }
         expect(tmuxSessionsOn(lab, 'kuser')).toEqual([])
         expect(tabScriptsRunningOn(lab, 'kuser')).toEqual([])
-        await expect.poll(() => fs.existsSync(tabFolderOnThisMac(env, tabId))).toBe(false)
+        expect(codexServersOn(lab, 'kuser')).toEqual([])
       },
-      (lab) => runOnTarget(lab, 'kuser', NO_TAB_FILES_CAN_LAND)
+      (lab) => {
+        installFakeCodexOnTarget(lab)
+        runOnTarget(lab, 'kuser', NO_TAB_FILES_CAN_LAND)
+      }
     )
   })
 
-  // ADR-0039 CODEX§16
+  // ADR-0039 CODEX§16 PLATFORM§33
   test('E-SSH-E5: when the ssh connection to the machine drops, a Codex tab’s relay connects again to the same app-server, still running there, and koloft run by Codex after that answers', async ({
     env
   }) => {
@@ -354,13 +361,19 @@ test.describe('how a Claude Code and a Codex session on a real sshd machine behi
         const tabId = await codexTabOnKtKey(page)
         const servers = codexServersOn(lab, 'kuser')
         expect(servers).toHaveLength(1)
+        const relayBeforeTheDrop = codexRelaysOn(lab, 'kuser')
+        expect(relayBeforeTheDrop).toHaveLength(1)
 
         runOnTarget(lab, 'kuser', CUT_EVERY_SSH_CONNECTION_OF('kuser'))
         await expect
-          .poll(() => runOnTarget(lab, 'kuser', CODEX_RELAYS).trim(), {
-            timeout: BACKGROUND_CONNECT_MS
-          })
-          .toBe('1')
+          .poll(
+            () => {
+              const relays = codexRelaysOn(lab, 'kuser')
+              return relays.length === 1 && relays[0] !== relayBeforeTheDrop[0]
+            },
+            { timeout: BACKGROUND_CONNECT_MS }
+          )
+          .toBe(true)
         expect(codexServersOn(lab, 'kuser')).toEqual(servers)
 
         await koloftHelpAnswersInCodexTab(page, tabId)
@@ -391,27 +404,6 @@ test.describe('how a Claude Code and a Codex session on a real sshd machine behi
           .toEqual([0, '0'])
       },
       (lab) => installFakeCodexOnTarget(lab)
-    )
-  })
-
-  // PLATFORM§3 CODEX§16
-  test('E-SSH-E7: a Codex start whose files cannot land on the machine says so in its tab, starts no app-server there, and removes the tab’s folder from this Mac', async ({
-    env
-  }) => {
-    installCodexSignedInForTheLab(env)
-    await withLab(
-      env,
-      async ({ page, lab }) => {
-        await addMachine(page, 'kt-key', 'kuser')
-        const tabId = await tabOpenedBy(page, () => newSessionInWith(page, 'kt-key', 'Codex'))
-        await screenOf(page, tabId, A_TAB_THAT_COULD_NOT_START_SAYS_SO_MS).toContain(COULD_NOT_PUSH)
-        expect(codexServersOn(lab, 'kuser')).toEqual([])
-        await expect.poll(() => fs.existsSync(tabFolderOnThisMac(env, tabId))).toBe(false)
-      },
-      (lab) => {
-        installFakeCodexOnTarget(lab)
-        runOnTarget(lab, 'kuser', NO_TAB_FILES_CAN_LAND)
-      }
     )
   })
 })

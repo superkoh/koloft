@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import fs from 'fs'
 import path from 'path'
+import { app } from 'electron'
 
 const terminal = vi.hoisted(() => {
   const proc = {
@@ -24,6 +25,8 @@ vi.mock('electron', async () => {
   return { app: { getPath: () => base, getName: () => 'koloft-dev', isPackaged: false } }
 })
 
+afterAll(() => fs.rmSync(app.getPath('userData'), { recursive: true, force: true }))
+
 vi.mock('../../src/main/cliRuntime', () => ({
   resolveCliRuntime: async (spec: {
     command: string
@@ -41,26 +44,14 @@ const codexServer = vi.hoisted(() => ({
 }))
 vi.mock('../../src/agents/codex/main/codexTransport', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../src/agents/codex/main/codexTransport')>()
+  const { CodexRpcThatListsNoHooks } = await import('./helpers/codexRpcStub')
   return {
     ...real,
     createCodexTransport: async (options: (typeof codexServer.started)[number]) => {
       codexServer.started.push(options)
       return { url: 'unix:///test/rpc.sock', stop: async () => {}, request: async () => ({}) }
     },
-    CodexRpc: class {
-      request = async (method: string, params: { cwds?: string[] }) =>
-        method === 'hooks/list'
-          ? {
-              data: (params.cwds ?? []).map((cwd) => ({
-                cwd,
-                hooks: [],
-                warnings: [],
-                errors: []
-              }))
-            }
-          : { data: [], nextCursor: null }
-      close = async () => {}
-    }
+    CodexRpc: CodexRpcThatListsNoHooks
   }
 })
 

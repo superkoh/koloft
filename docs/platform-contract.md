@@ -250,8 +250,7 @@ method. A recheck adds its date, version and command to the bullet.
   `tar: <file>: Cannot open: Permission denied` and `tar: Exiting with failure status due
   to previous errors`, so an `&& echo <marker>` after it prints nothing. (2026-11-24, GNU
   tar 1.34 on Debian bookworm, the e2e Docker ssh lab image, as uid 1000:
-  `tar cf - f | tar xmf - -C <folder with mode 555>`. Through Koloft's own push line the
-  tab then reads "could not connect or push files": e2e E-SSH-E4, E-SSH-E7.)
+  `tar cf - f | tar xmf - -C <folder with mode 555>`.)
 - **A copy of a signed system binary saved under another name is SIGKILLed** when run.
 - **A file downloaded by Node has no `com.apple.quarantine` flag**, so an app installed
   from it opens without Gatekeeper.
@@ -2261,14 +2260,12 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   - a program started over ssh with `setsid nohup … &` keeps running under the same pid
     (Codex's `app-server --listen`);
   - the tmux server and its pane keep running under the same pane pid, and a later
-    `tmux attach` over a new connection lands in that pane.
+    `tmux attach` over a new connection lands in that pane, also after the session was
+    renamed.
 
-  Koloft's tab line then ran the tab script again in attach mode, and Codex's relay started
-  a new proxy on the same server, each within the 45 s the cases wait (how many seconds was
-  not measured). (2026-11-24, OpenSSH_10.5p1 on macOS 27 to OpenSSH_9.2p1 on Debian
-  bookworm through a ProxyJump bastion, tmux 3.3a, the e2e Docker ssh lab image; e2e
-  E-SSH-E2, E-SSH-E5, E-SSH-E8. The Antigravity lab case E-SSH-A4 cuts the link the same
-  way.)
+  (2026-11-24, OpenSSH_10.5p1 on macOS 27 to OpenSSH_9.2p1 on Debian bookworm through a
+  ProxyJump bastion, tmux 3.3a, the e2e Docker ssh lab image; e2e E-SSH-E2, E-SSH-E5,
+  E-SSH-E8.)
 
 ## §34 rsync
 

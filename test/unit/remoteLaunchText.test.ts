@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import fs from 'fs'
 import path from 'path'
+import { app } from 'electron'
 
 vi.mock('electron', async () => {
   const nfs = await import('node:fs')
@@ -9,6 +10,8 @@ vi.mock('electron', async () => {
   const base = nfs.mkdtempSync(npath.join(nos.tmpdir(), 'koloft-remote-launch-text-'))
   return { app: { getPath: () => base, getName: () => 'koloft-dev', isPackaged: false } }
 })
+
+afterAll(() => fs.rmSync(app.getPath('userData'), { recursive: true, force: true }))
 
 vi.mock('../../src/main/cliRuntime', () => ({
   resolveCliRuntime: async (spec: {
@@ -24,6 +27,7 @@ vi.mock('../../src/main/cliRuntime', () => ({
 
 vi.mock('../../src/agents/codex/main/codexTransport', async (importOriginal) => {
   const real = await importOriginal<typeof import('../../src/agents/codex/main/codexTransport')>()
+  const { CodexRpcThatListsNoHooks } = await import('./helpers/codexRpcStub')
   return {
     ...real,
     createCodexTransport: async (options: {
@@ -41,20 +45,7 @@ vi.mock('../../src/agents/codex/main/codexTransport', async (importOriginal) => 
         request: async () => ({})
       }
     },
-    CodexRpc: class {
-      request = async (method: string, params: { cwds?: string[] }) =>
-        method === 'hooks/list'
-          ? {
-              data: (params.cwds ?? []).map((cwd) => ({
-                cwd,
-                hooks: [],
-                warnings: [],
-                errors: []
-              }))
-            }
-          : { data: [], nextCursor: null }
-      close = async () => {}
-    }
+    CodexRpc: CodexRpcThatListsNoHooks
   }
 })
 
@@ -264,7 +255,7 @@ async function codexOverSsh(spec: Partial<CreateTabOptions>, agentTools = true):
   ].join('\n')
 }
 
-describe('what Koloft sends to another machine for a tab, and types on this Mac to start it, pinned so that moving the code changes no character', () => {
+describe('what Koloft sends to another machine for a tab of each agent and types on this Mac to start it, and what it hands a Claude Code tab on this Mac, pinned so that moving the code changes no character', () => {
   describe('Claude Code over SSH', () => {
     it('a new session', async () => pin(await claudeOverSsh({}), 'claude-over-ssh/new-session'))
 
@@ -356,13 +347,11 @@ describe('what Koloft sends to another machine for a tab, and types on this Mac 
       const { ssh, sessions } = agyWith()
       await sessions.trustsFolder(ON_THE_MACHINE)
       await sessions.launch({ kind: 'agy', cwd: ON_THE_MACHINE, tabId: TAB })
-      const before = ssh.ran.length
       await sessions.stop(TAB)
+      const readTheTmuxName = ssh.ran.filter((cmd) => cmd.includes('.tmux" 2>/dev/null'))
+      expect(readTheTmuxName).toHaveLength(2)
       await pin(
-        [
-          part('asking about trust', ssh.ran[0]),
-          ranOverSsh(ssh.ran.slice(before, before + 2))
-        ].join('\n'),
+        [part('asking about trust', ssh.ran[0]), ranOverSsh(readTheTmuxName)].join('\n'),
         'agy-over-ssh/trust-asked-and-tab-closed'
       )
     })
@@ -391,9 +380,10 @@ describe('what Koloft sends to another machine for a tab, and types on this Mac 
     it('closing a tab', async () => {
       const { ran, sessions } = codexWith()
       await sessions.launch({ kind: 'codex', cwd: ON_THE_MACHINE, tabId: TAB })
-      const before = ran.length
       await sessions.stop(TAB)
-      await pin(ranOverSsh(ran.slice(before)), 'codex-over-ssh/tab-closed')
+      const stoppedTheServer = ran.filter((cmd) => cmd.endsWith('stop_one "$1"\nexit 0'))
+      expect(stoppedTheServer).toHaveLength(1)
+      await pin(ranOverSsh(stoppedTheServer), 'codex-over-ssh/tab-closed')
     })
   })
 })
@@ -498,8 +488,8 @@ describe('the order a launch on another machine keeps', () => {
     const newClaude = heartbeat()
     const pickAccount = vi.fn(async () => ACCOUNT)
     const claudeLaunching = claudeTabOn(claudeWith({ ...newClaude.machine, pickAccount }))
+    await vi.waitFor(() => expect(newClaude.asked()).toBe(true))
     expect(await settled(claudeLaunching)).toBe(false)
-    expect(newClaude.asked()).toBe(true)
     expect(pickAccount).not.toHaveBeenCalled()
     newClaude.answer()
     expect((await claudeLaunching).ok).toBe(true)
@@ -543,15 +533,13 @@ describe('the order a launch on another machine keeps', () => {
       }
     })
     await claudeTabOn(tab)
-    const inTheScript = /M="\$HOME\/\.koloft\/(m-rebuilt-\d+)"/.exec(scriptOfTheTab())?.[1]
-    expect(inTheScript).toBeDefined()
-    expect(hookSettingsDirs).toEqual([`$HOME/.koloft/${inTheScript}`])
-    expect(tab.started[0].typedLine).toContain(`test -d ${inTheScript} `)
-    expect(tab.started[0].typedLine).not.toContain(`m-rebuilt-${built + 1}`)
-    const others = [...Array(built).keys()]
-      .map((n) => `m-rebuilt-${n + 1}`)
-      .filter((name) => name !== inTheScript)
-    for (const other of others) expect(tab.started[0].typedLine).not.toContain(other)
+    const packagesNamedIn = (text: string): string[] => [
+      ...new Set(text.match(/m-rebuilt-\d+/g) ?? [])
+    ]
+    const inTheScript = packagesNamedIn(scriptOfTheTab())
+    expect(inTheScript).toHaveLength(1)
+    expect(hookSettingsDirs.flatMap(packagesNamedIn)).toEqual(inTheScript)
+    expect(packagesNamedIn(tab.started[0].typedLine ?? '')).toEqual(inTheScript)
   })
 
   it('an Antigravity session on a machine that wants a password first is refused while its settings there are read, in the words that say where to sign in, and opens no tab', async () => {

@@ -4,7 +4,7 @@ exec /usr/sbin/taskpolicy -a claude --model pinned-model --effort xhigh --permis
 CLAUDE_CODE_DECSTBM=1
 CLAUDE_CODE_FORCE_SYNC_OUTPUT=1
 KOLOFT_AGENT_PLUGIN=<home>/koloft/agent-plugin
-KOLOFT_AGENT_PROMPT=<home>/koloft/agent-prompts/364d0bcd0c2ee863.md
+KOLOFT_AGENT_PROMPT=<home>/koloft/agent-prompts/<hash of the prompt text>.md
 KOLOFT_DOCS_PLUGIN=<home>/koloft/docs-plugin
 KOLOFT_FIRST_PROMPT=FIRST PROMPT
 KOLOFT_OWNER_TEXT=OWNER TEXT
