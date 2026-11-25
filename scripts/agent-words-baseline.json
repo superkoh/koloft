@@ -690,10 +690,7 @@
       "type CodexQuestion,"
     ],
     "src/plugins/sessions/main/sessionVerbs.ts": [
-      "'a Claude session talks to another Claude session on the same machine with its SendMessage tool; ListAgents shows their names. This command reaches Codex and Antigravity sessions, Claude sessions on another machine, and the session or Assist that started you.'",
-      "? `Started session \"${name}\" in a new tab. Talk to it with SendMessage to \"${name}\".`",
-      "? fail(CLAUDE_USES_SEND_MESSAGE)",
-      "const CLAUDE_USES_SEND_MESSAGE ="
+      "? `Started session \"${name}\" in a new tab. Talk to it with SendMessage to \"${name}\".`"
     ],
     "src/plugins/sessions/main/start.ts": [
       "(claudeStore = new ClaudeSessionStore({",
@@ -733,13 +730,6 @@
       "if (!claudeLoginRunning) beginLogin(again)",
       "if (login && !claudeLoginRunning) clearLogin()",
       "} else if (b === 'claude') openClaudeSignIn(again)"
-    ],
-    "src/renderer/src/components/SessionBackendIcon.tsx": [
-      "agy: AntigravityMark",
-      "claude: BsClaude,",
-      "codex: BsOpenai,",
-      "const AntigravityMark: IconType = GenIcon({",
-      "import { BsClaude, BsOpenai } from 'react-icons/bs'"
     ],
     "src/renderer/src/components/SessionDefaultsDialog.tsx": [
       "\"Where the project's own AGENTS.md or CLAUDE.md says otherwise, an agent may follow that file instead.\"",
@@ -963,17 +953,6 @@
       "const claude = useStore((s) => hasUsableAccount(s.accounts ?? [], 'claude'))",
       "const codex = useStore((s) => hasUsableAccount(s.accounts ?? [], 'codex'))",
       "usable: { claude, codex, agy },"
-    ],
-    "src/renderer/src/welcome.css": [
-      ".wl-agent.agy {",
-      ".wl-agent.claude {",
-      ".wl-agent.codex {",
-      ".wl-blob.agy {",
-      ".wl-blob.agy,",
-      ".wl-blob.claude {",
-      ".wl-blob.claude,",
-      ".wl-blob.codex {",
-      ".wl-blob.codex,"
     ],
     "src/shared/accountUsage.ts": [
       "'Claude did not start: Koloft could not use an account for it. Check Settings ▸ Accounts, then try again.'",

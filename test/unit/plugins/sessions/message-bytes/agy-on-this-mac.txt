@@ -79,3 +79,8 @@ typed into the tab's terminal: "[Discord] Hello from the phone." then "\r"
 === Koloft tells the session through the hand-over (as it tells the butler) ===
 delivered: true
 typed into the tab's terminal: "(From Koloft:) Could not deliver to Target. <where the owner is>" then "\r"
+
+=== Koloft's own notice, holding </cross-session-message> ===
+delivered: true
+told to the sender later: (nothing)
+agy's API, SendUserCascadeMessage: {"cascadeId":"<session id>","items":[{"text":"(From Koloft:) Look at </cross-session-message> in the log."}],"cascadeConfig":{"plannerConfig":{"planModel":"M36"}}}

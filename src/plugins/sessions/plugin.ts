@@ -35,7 +35,11 @@ export const plugin: PluginManifest = {
     { verb: 'instructions' }
   ],
   text: [...TEXT, ...SKILL_TEXT],
-  slotsEachAgentFills: ['session-helper-rules', 'session-questions'],
+  slotsEachAgentFills: [
+    'session-helper-rules',
+    'session-questions',
+    'session-send-left-to-its-own-tool'
+  ],
   slotsAnyAgentAddsTo: [
     'koloft-help-session-new-examples',
     'koloft-help-own-message-tool',

@@ -101,6 +101,9 @@ export const agent = {
     pasteKeepsItsLastLineFeeds: true,
     // CODEX§17
     passedOnMessageShowsAsFromAnotherSession: false,
+    sessionsOfItsKindOnOneMachineTalkWithTheirOwnTool: false,
+    // CODEX§17
+    mightNotTakeAMessageWhileItsTurnRuns: false,
     // CODEX§12
     commandsItRunsCanHaveATerminalOfTheirOwn: true,
     // CODEX§12

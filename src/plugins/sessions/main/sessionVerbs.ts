@@ -27,12 +27,13 @@ import type { SendResult, StartResult, StartSpec } from './sendAndStart'
 import {
   BACKEND_LABEL,
   PEER_TRAITS,
-  reachedBySendMessage,
   SESSION_BACKENDS,
   backendIdOf,
   identityOf,
+  kindsOf,
   messagingOf,
-  namedAtLaunch
+  namedAtLaunch,
+  talksWithItsOwnTool
 } from '@shared/sessionBackend'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import { textItCannotHold, withoutBlankEdges } from './messageText'
@@ -55,7 +56,7 @@ import {
 } from '@core/command'
 import { AGENT_PICKED_ON_FIRST_OPEN } from '@core/agent/registry'
 import { errorText } from '@core/errorText'
-import { composePrompt } from '@core/prompt'
+import { composePrompt, fillSlots } from '@core/prompt'
 import type { Commands } from '@core/commands'
 import type { SessionStarted, SessionStarting } from '@core/moment'
 import { AGENT_SHIM_WAITS_MS } from '@core/command'
@@ -177,11 +178,7 @@ function sendMessageReaches(
   to: BackendId,
   toMachine: string | undefined
 ): boolean {
-  return (
-    reachedBySendMessage(from.backendId) &&
-    reachedBySendMessage(to) &&
-    from.remote?.host === toMachine
-  )
+  return from.backendId === to && talksWithItsOwnTool(to) && from.remote?.host === toMachine
 }
 
 function transcriptPart(
@@ -267,8 +264,11 @@ function startableWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<stri
   return { ok: true, value: found.value.path }
 }
 
-const CLAUDE_USES_SEND_MESSAGE =
-  'a Claude session talks to another Claude session on the same machine with its SendMessage tool; ListAgents shows their names. This command reaches Codex and Antigravity sessions, Claude sessions on another machine, and the session or Assist that started you.'
+const leftToItsOwnTool = (caller: BackendId): string =>
+  `${fillSlots('{{session-send-left-to-its-own-tool}}', { agent: caller })} This command reaches ${kindsOf(
+    SESSION_BACKENDS.filter((b) => b !== caller),
+    'and'
+  )} sessions, ${BACKEND_LABEL[caller]} sessions on another machine, and the session or Assist that started you.`
 
 function matchRef<T>(
   items: T[],
@@ -302,7 +302,7 @@ export function findSiblingTarget(
   const hit = matchOpen(sessions, ref)
   if (!hit) return fail(`there is no open session "${ref}". Run "koloft session list" to see them.`)
   return hit.ok && sendMessageReaches(from, hit.value.backendId, hit.value.remote?.host)
-    ? fail(CLAUDE_USES_SEND_MESSAGE)
+    ? fail(leftToItsOwnTool(from.backendId))
     : hit
 }
 
@@ -635,7 +635,7 @@ async function launchSibling(
 ): Promise<{ tabId: string; name: string | undefined } | null> {
   const backend = args.backend ?? me.backendId
   const caller: SessionCaller = {
-    name: (await d.peerNames()(me)) ?? (reachedBySendMessage(me.backendId) ? me.title : undefined),
+    name: (await d.peerNames()(me)) ?? (talksWithItsOwnTool(me.backendId) ? me.title : undefined),
     id: idToReach(me),
     label: BACKEND_LABEL[me.backendId],
     assist: conductorTab !== undefined,
@@ -1173,6 +1173,11 @@ export function sessionVerb(d: SessionVerbDeps): {
     if (!session) return false
     const to = openTarget(session)
     const said = `${FROM_KOLOFT}${text}`
+    const cannotHold = textItCannotHold(to.backend, said)
+    if (cannotHold) {
+      d.undelivered(tabId, to, `the message cannot hold the text ${cannotHold}.`)
+      return false
+    }
     try {
       await sendInto(
         to,
