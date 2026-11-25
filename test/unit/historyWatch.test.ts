@@ -4,7 +4,7 @@ import os from 'os'
 import path from 'path'
 import { watchHistory, type HistoryStore } from '../../src/main/historyWatch'
 import { AGY_HISTORY_STORE } from '../../src/agents/agy/main/agyStore'
-import { CODEX_HISTORY_STORE } from '../../src/agents/codex/main/codexTrust'
+import { CODEX_HISTORY_STORE } from '../../src/agents/codex/main/codexSessions'
 
 const SETTLE_MS = 50
 const QUIET_WINDOW_MS = 600

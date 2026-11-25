@@ -20,11 +20,7 @@ import { SESSION_BACKENDS } from '@shared/sessionBackend'
 import type { BackendId, WorktreeInfo } from '@shared/types'
 import type { MainIpc } from '@core/ipc'
 import { BackgroundFile } from '../../../../src/main/backgroundFile'
-import {
-  SessionBackends,
-  type SessionBackend,
-  type SessionLifecycle
-} from '../../../../src/core/agent/sessionBackends'
+import { SessionBackends, type SessionBackend } from '../../../../src/core/agent/sessionBackends'
 import {
   KEEPS_NO_WORKTREE_RECORDS,
   type WorktreeRecordsOfEveryAgent,
@@ -44,6 +40,7 @@ import {
   recordingSsh,
   type World
 } from '../../helpers/agentTabs'
+import { NOTHING_FOLLOWS_A_SESSION } from '../../helpers/claudeRunState'
 import { registerChannels } from '../../../../src/plugins/sessions/main/channels'
 import { CHANNELS } from '../../../../src/plugins/sessions/shared/ipc'
 
@@ -73,23 +70,13 @@ afterEach(async () => {
   fs.rmSync(directory, { recursive: true, force: true })
 })
 
-const lifecycle: SessionLifecycle = {
-  prompted: () => {},
-  bound: () => {},
-  exited: () => {},
-  clearAttention: () => {},
-  open: () => {},
-  turnEnded: () => {},
-  asked: () => {}
-}
-
 function everyAgent(built: readonly BackendId[] = SESSION_BACKENDS): EveryAgent {
   const kept = new Map<BackendId, Keeper>()
   for (const id of KEEPERS.filter((keeper) => built.includes(keeper))) {
     const store = new SessionStore(path.join(directory, `${id}-sessions.json`))
     kept.set(id, { store, worktrees: new SessionWorktrees(store) })
   }
-  const registry = new SessionBackends(lifecycle)
+  const registry = new SessionBackends(NOTHING_FOLLOWS_A_SESSION)
   for (const id of [...built].reverse())
     registry.register({
       id,
