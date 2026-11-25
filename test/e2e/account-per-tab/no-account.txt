@@ -1,0 +1,14 @@
+=== the new-session items of a workspace on this Mac ===
+  New Claude session: shut
+  New Codex session: shut
+  New Antigravity session: shut
+=== the new-session items of a workspace over SSH ===
+  New Claude session: shut
+  New Codex session: shut
+  New Antigravity session: shut
+=== Claude Code on this Mac, its account’s secret gone from the Keychain ===
+  claude started: no
+  the refusal names the account and the Keychain: yes
+=== Claude Code over SSH, its account’s secret gone from the Keychain ===
+  claude started: no
+  a notice says it did not start for want of an account: yes

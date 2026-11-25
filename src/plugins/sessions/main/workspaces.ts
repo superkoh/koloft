@@ -447,7 +447,7 @@ export class WorkspaceManager {
     this.restampLive()
   }
 
-  onTrackerUpdate(): void {
+  sessionsChanged(): void {
     const key = [...this.deps.runningBindings().keys()].join(',')
     if (key !== this.lastRunningKey) {
       this.lastRunningKey = key

@@ -174,6 +174,7 @@ export function setupE2EEnv(): E2EEnv {
         !key.startsWith('KOLOFT_') &&
         !key.startsWith('ANTIGRAVITY_') &&
         !key.startsWith('CLAUDE_CODE_') &&
+        !key.startsWith('ANTHROPIC_') &&
         !key.startsWith('CODEX_') &&
         !key.startsWith('PLAYWRIGHT_') &&
         !key.startsWith('PWTEST_') &&

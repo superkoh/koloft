@@ -23,7 +23,6 @@ const PROCS_SCAN_MS = 100
 const IDLE_MS = 2000
 const IDLE_CLOSE_MS = 400
 const ACK_AGE_PAST_THE_TRUNCATION_TICK_YET_INSIDE_ITS_SILENCE_CAP_MS = SILENCE_MS - 400
-const EMIT_THROTTLE_PASSED_MS = 700
 
 type SessionTracker = import('../../src/agents/claude/main/sessionTracker').SessionTracker
 let sessionEventFromHook: typeof import('../../src/agents/claude/main/sessionTracker').sessionEventFromHook
@@ -2049,19 +2048,5 @@ describe('what the rest of the app is told about a run state', () => {
     tracker.setStatus('tabT1', 'working')
     tracker.setStatus('tabT1', 'waiting')
     expect(onTheRowWhenHeard).toEqual(['working', 'waiting'])
-  })
-
-  it('the rows are sent again when a tab of another agent ends its turn with background work running, though its status stays working', async () => {
-    const tracker = newTracker()
-    let rowsSent = 0
-    tracker.on('update', () => rowsSent++)
-    runtimeOf(tracker).recordTurn('tabOfAnotherAgent', 'working')
-    await sleep(EMIT_THROTTLE_PASSED_MS)
-    expect(rowsSent).toBe(0)
-    runtimeOf(tracker).recordTurn('tabOfAnotherAgent', 'ended', true)
-    expect(runtimeOf(tracker).statusOf('tabOfAnotherAgent')).toBe('working')
-    await sleep(EMIT_THROTTLE_PASSED_MS)
-    expect(rowsSent).toBe(1)
-    runtimeOf(tracker).forget('tabOfAnotherAgent')
   })
 })

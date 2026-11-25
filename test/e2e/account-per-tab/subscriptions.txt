@@ -1,0 +1,32 @@
+=== Claude Code on this Mac ===
+  skips permissions: yes
+  --model on its line: (none)
+  its account environment:
+    ANT_ACCOUNT=made-up-pro
+    CLAUDE_CODE_OAUTH_TOKEN=made-up-oauth-token-of-made-up-pro
+=== Codex on this Mac ===
+  its server's CODEX_HOME=<home>/userData/codex-homes/made-up-codex
+=== Antigravity on this Mac ===
+  --gemini_dir=<home>/userData/agy-homes/made-up-gemini
+  ANT_ACCOUNT=made-up-gemini
+  GEMINI_API_KEY is set: no
+=== Claude Code over SSH ===
+  skips permissions: yes
+  --model on its line: (none)
+  its account environment:
+    ANT_ACCOUNT=made-up-pro
+    CLAUDE_CODE_OAUTH_TOKEN=made-up-oauth-token-of-made-up-pro
+=== Codex over SSH ===
+  the machine's server is signed in with:
+    accessToken=made-up-access-token-of-made-up-codex
+    accountId=made-up-codex
+    type=chatgptAuthTokens
+=== Antigravity over SSH ===
+  --gemini_dir=<home>/fake-ssh/machine/.koloft/agy/made-up-gemini
+  ANT_ACCOUNT=made-up-gemini
+  GEMINI_API_KEY is set: no
+=== Assist’s one-shot claude -p (the title of a new session) ===
+  its account environment:
+    ANT_ACCOUNT=made-up-pro
+    CLAUDE_CODE_OAUTH_TOKEN=made-up-oauth-token-of-made-up-pro
+    KOLOFT_ACCOUNT_PICKED=1
