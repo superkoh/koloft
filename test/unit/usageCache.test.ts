@@ -2,9 +2,16 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { UsageCache, type ScannedFile, type UsageFile } from '../../src/main/usageCache'
+import { UsageCache, type AgentWithUsage } from '../../src/main/usageCache'
+import type { ScannedFile, UsageFile } from '../../src/core/agent/usage'
 import { scanClaudeCalls } from '../../src/agents/claude/main/usageWorkerScan'
-import { costUsdOf, resolvePricing } from '../../src/shared/pricing'
+import { claudeUsage } from '../../src/agents/claude/main/claudeUsage'
+import {
+  placedByOwnRowThenFolder,
+  storedSessionsUsage
+} from '../../src/agents/kit/main/storedUsage'
+import { costUsdOf } from '../../src/shared/pricing'
+import { resolvePricing } from '../../src/core/agent/prices'
 import type { UsageRead, UsageRecord } from '../../src/shared/types'
 
 function record(sessionId: string, outTok: number): UsageRecord {
@@ -34,14 +41,31 @@ let runs: Run[]
 let changes: number
 let places: Map<string, { workspace: string; title: string }>
 
+function agentsPlacingByThisTest(): AgentWithUsage[] {
+  const stored = () => ({
+    usagePlaces: () =>
+      placedByOwnRowThenFolder(
+        (id) => places.get(id),
+        (folder) => folder
+      )
+  })
+  return [
+    {
+      id: 'claude',
+      usage: claudeUsage(() => ({ transcriptFiles: () => [], sessionPlaces: () => places }))
+    },
+    { id: 'codex', usage: storedSessionsUsage(stored, async () => []) },
+    { id: 'agy', usage: storedSessionsUsage(stored, async () => []) }
+  ]
+}
+
 function cache(): UsageCache {
   return new UsageCache({
     cacheFile: () => path.join(dir, 'usage-cache.json'),
     listFiles: async () => listed,
     stat: async (file) => stats.get(file),
     scan: (files, scanned, ended) => void runs.push({ files, scanned, ended }),
-    codexWorkspaces: (cwds) => cwds,
-    sessionPlaces: () => (_backend, id) => places.get(id),
+    agents: agentsPlacingByThisTest,
     changed: () => void changes++
   })
 }
@@ -132,8 +156,7 @@ describe('UsageCache', () => {
       listFiles: async () => [],
       stat: async () => undefined,
       scan: () => {},
-      codexWorkspaces: (cwds) => cwds,
-      sessionPlaces: () => () => undefined,
+      agents: agentsPlacingByThisTest,
       changed: (read) => void pushed.push(read)
     })
 
@@ -152,8 +175,7 @@ describe('UsageCache', () => {
       },
       stat: async () => undefined,
       scan: () => {},
-      codexWorkspaces: (cwds) => cwds,
-      sessionPlaces: () => () => undefined,
+      agents: agentsPlacingByThisTest,
       changed: () => {}
     })
     await expect(usage.read()).rejects.toThrow('no home')

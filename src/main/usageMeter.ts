@@ -1,5 +1,6 @@
 import type { SessionUsage } from '@shared/types'
-import { costUsdOf, resolvePricing, TOKEN_FIELDS, type TokenCounts } from '@shared/pricing'
+import { costUsdOf, TOKEN_FIELDS, type TokenCounts } from '@shared/pricing'
+import { resolvePricing } from '@core/agent/prices'
 import { localDayKey } from '@shared/usageFormat'
 import type { TranscriptRecord } from './transcriptRecord'
 

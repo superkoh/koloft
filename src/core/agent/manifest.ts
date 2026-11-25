@@ -1,5 +1,6 @@
 // ADR-0054
 import type { CronEffort } from '@shared/efforts'
+import type { PriceList } from '@shared/pricing'
 import type { ModelAndEffort } from '../assistModels'
 import type { SettingKey } from '../settings'
 
@@ -71,6 +72,7 @@ export type SmallJobKind = 'smallAndQuick' | 'judgesAReply' | 'picksFromAList'
 export interface AgentPureFunctions {
   effortsAModelTakes(model: string | undefined): readonly CronEffort[]
   draftInItsInputBox(screen: string[]): string | undefined
+  priceOf: PriceList
 }
 
 export interface AccountKindFacts {

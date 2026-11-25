@@ -1,71 +1,34 @@
 import fs from 'fs'
-import path from 'path'
 import type { BackendId, UsageRead, UsageRecord, UsageRow } from '@shared/types'
-import { formatRemoteKey } from '@shared/remoteKey'
 import { PrivateRecordFile } from '@core/privateFile'
 import { mapAtMost } from '@core/mapAtMost'
-import { jsonlUnder } from '@agents/kit/main/usageFiles'
-import {
-  claudeCallKeys,
-  recordsOfClaudeCalls,
-  type ClaudeCalls
-} from '@agents/claude/main/usageWorkerScan'
-import { codexFiles } from '@agents/codex/main/codexUsage'
-import { agyFiles } from '@agents/agy/main/agyUsage'
+import type {
+  AgentUsage,
+  CachedUsageFile,
+  FileStat,
+  ScannedFile,
+  UsageFile
+} from '@core/agent/usage'
 
-export interface UsageFile {
-  file: string
-  backend: BackendId
-  workspace: string
-  sessionId?: string
-  db?: string
-  host?: string
+export interface AgentWithUsage {
+  id: BackendId
+  usage: AgentUsage
 }
-
-export interface SessionPlace {
-  workspace: string
-  title: string
-}
-
-export interface ScannedFile {
-  file: string
-  records: UsageRecord[]
-  claudeCalls?: ClaudeCalls
-  bornAt?: string
-  cwd?: string
-}
-
-interface FileStat {
-  mtimeMs: number
-  size: number
-}
-
-interface CachedFile extends FileStat, UsageFile, Omit<ScannedFile, 'file'> {}
 
 export interface UsageCacheDeps {
   cacheFile: () => string
   listFiles: () => Promise<UsageFile[]>
   stat: (file: string) => Promise<FileStat | undefined>
   scan: (files: UsageFile[], scanned: (file: ScannedFile) => void, ended: () => void) => void
-  codexWorkspaces: (cwds: string[]) => string[]
-  sessionPlaces: () => (
-    backend: BackendId,
-    sessionId: string,
-    host?: string
-  ) => SessionPlace | undefined
+  agents: () => readonly AgentWithUsage[]
   changed: (read: UsageRead) => void
 }
 
 const FILES_AT_ONCE = 16
 export class UsageCache {
   private reading = false
-  private readonly cached: PrivateRecordFile<CachedFile>
-  private claudeGeneration = 0
-  private claudeOnce?: { generation: number; recordsByFile: Map<string, UsageRecord[]> }
-  private readonly unpackedClaude = new WeakMap<
-    ClaudeCalls,
-    { keys: string[]; records: UsageRecord[] }
-  >()
+  private readonly cached: PrivateRecordFile<CachedUsageFile>
+  private readonly generations = new Map<BackendId, number>()
 
   constructor(private readonly deps: UsageCacheDeps) {
     this.cached = new PrivateRecordFile(deps.cacheFile)
@@ -78,6 +41,10 @@ export class UsageCache {
 
   private snapshot(): UsageRead {
     return { ...this.rows(), reading: this.reading }
+  }
+
+  private changedFilesOf(backend: BackendId): void {
+    this.generations.set(backend, (this.generations.get(backend) ?? 0) + 1)
   }
 
   private async refresh(): Promise<void> {
@@ -102,8 +69,10 @@ export class UsageCache {
         else stale.set(f.file, { ...f, ...stat })
       })
       const gone = Object.keys(cached).filter((file) => !present.has(file))
-      if (gone.some((file) => cached[file].claudeCalls)) this.claudeGeneration++
-      for (const file of gone) delete cached[file]
+      for (const file of gone) {
+        this.changedFilesOf(cached[file].backend)
+        delete cached[file]
+      }
       if (!stale.size) {
         if (gone.length) this.cached.save()
         return ended()
@@ -113,7 +82,7 @@ export class UsageCache {
         ({ file, ...scanned }) => {
           const f = stale.get(file)
           if (!f) return
-          if (scanned.claudeCalls || cached[file]?.claudeCalls) this.claudeGeneration++
+          this.changedFilesOf(f.backend)
           cached[file] = { ...f, ...scanned }
         },
         () => {
@@ -127,60 +96,28 @@ export class UsageCache {
     }
   }
 
-  private unpacked(calls: ClaudeCalls): { keys: string[]; records: UsageRecord[] } {
-    let found = this.unpackedClaude.get(calls)
-    if (!found) {
-      found = { keys: claudeCallKeys(calls).filter(Boolean), records: recordsOfClaudeCalls(calls) }
-      this.unpackedClaude.set(calls, found)
-    }
-    return found
-  }
-
-  // CC§5
-  private claudeRecordsCountingEachCallOnce(files: CachedFile[]): Map<string, UsageRecord[]> {
-    if (this.claudeOnce?.generation === this.claudeGeneration) return this.claudeOnce.recordsByFile
-    const startOf = (e: CachedFile): number => Date.parse(e.bornAt ?? '') || Infinity
-    const oldestFirst = files
-      .filter((e) => e.claudeCalls)
-      .sort((a, b) => startOf(a) - startOf(b) || (a.file < b.file ? -1 : 1))
-    const counted = new Set<string>()
-    const recordsByFile = new Map<string, UsageRecord[]>()
-    for (const e of oldestFirst) {
-      const { keys, records } = this.unpacked(e.claudeCalls!)
-      const copies = new Set(keys.filter((k) => counted.has(k)))
-      for (const k of keys) counted.add(k)
-      recordsByFile.set(
-        e.file,
-        copies.size ? recordsOfClaudeCalls(e.claudeCalls!, copies) : records
-      )
-    }
-    this.claudeOnce = { generation: this.claudeGeneration, recordsByFile }
-    return recordsByFile
-  }
-
   private rows(): Pick<UsageRead, 'rows' | 'titles'> {
     const files = Object.values(this.cached.get())
-    const claude = this.claudeRecordsCountingEachCallOnce(files)
-    const entries = files
-      .map((e) => (claude.has(e.file) ? { ...e, records: claude.get(e.file)! } : e))
-      .filter((e) => e.records.length)
-    const placeOf = this.deps.sessionPlaces()
-    const placed = new Map<CachedFile, string>()
-    for (const e of entries) {
-      if (e.backend === 'claude') continue
-      const own = placeOf(e.backend, e.sessionId ?? e.records[0].sessionId, e.host)
-      if (own) placed.set(e, own.workspace)
+    const agents = this.deps.agents()
+    const recordsByFile = new Map<string, UsageRecord[]>()
+    for (const { id, usage } of agents) {
+      const own = files.filter((e) => e.backend === id)
+      for (const [file, records] of usage.recordsOf(own, this.generations.get(id) ?? 0))
+        recordsByFile.set(file, records)
     }
-    const unplacedCodex = entries.filter((e) => e.backend === 'codex' && !placed.has(e))
-    const fromCwd = this.deps.codexWorkspaces(
-      unplacedCodex.map((e) => (e.host && e.cwd ? formatRemoteKey(e.host, e.cwd) : (e.cwd ?? '')))
-    )
-    unplacedCodex.forEach((e, i) => placed.set(e, fromCwd[i]))
+    const entries = files
+      .map((e) => {
+        const records = recordsByFile.get(e.file)
+        return records && records !== e.records ? { ...e, records } : e
+      })
+      .filter((e) => e.records.length)
+    const places = new Map(agents.map(({ id, usage }) => [id, usage.placesNow()]))
     const titles: Record<string, string> = {}
     const rows = entries.flatMap((e) => {
-      const workspace = placed.get(e) ?? e.workspace
+      const placesOfItsAgent = places.get(e.backend)
+      const workspace = placesOfItsAgent?.workspaceOf(e) ?? e.workspace
       return e.records.map((r): UsageRow => {
-        titles[r.sessionId] ??= placeOf(e.backend, r.sessionId, e.host)?.title ?? ''
+        titles[r.sessionId] ??= placesOfItsAgent?.titleOf(r.sessionId, e.host) ?? ''
         return { ...r, backend: e.backend, workspace }
       })
     })
@@ -188,27 +125,14 @@ export class UsageCache {
   }
 }
 
-export interface UsageHome {
-  host?: string
-  codexHome: string
-  geminiDir: string
-}
-
-// CC§2 CODEX§13
-export async function listUsageFiles(
-  transcripts: { file: string; workspace: string }[],
-  homes: UsageHome[]
+export async function usageFilesOf(
+  agents: readonly AgentWithUsage[],
+  machines: readonly string[]
 ): Promise<UsageFile[]> {
-  const claude = await mapAtMost(transcripts, FILES_AT_ONCE, async ({ file, workspace }) => {
-    const subagents = path.join(file.slice(0, -'.jsonl'.length), 'subagents')
-    return [file, ...(await jsonlUnder(subagents, ''))].map((f) => ({
-      file: f,
-      backend: 'claude' as const,
-      workspace
-    }))
-  })
-  const others = await Promise.all(homes.flatMap((home) => [codexFiles(home), agyFiles(home)]))
-  return [...claude.flat(), ...others.flat()]
+  const found = await Promise.all(
+    [undefined, ...machines].flatMap((machine) => agents.map(({ usage }) => usage.filesIn(machine)))
+  )
+  return found.flat()
 }
 
 export async function statOf(file: string): Promise<FileStat | undefined> {

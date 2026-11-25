@@ -5,16 +5,16 @@ import os from 'os'
 import path from 'path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import {
-  UsageCache,
-  listUsageFiles,
-  statOf,
-  type ScannedFile,
-  type UsageFile
-} from '../../src/main/usageCache'
-import { machineUsageDirs } from '../../src/main/remote/usageMirror'
+import { UsageCache, usageFilesOf, statOf, type AgentWithUsage } from '../../src/main/usageCache'
+import type { ScannedFile, UsageFile } from '../../src/core/agent/usage'
+import { claudeUsage } from '../../src/agents/claude/main/claudeUsage'
+import { codexUsage as codexUsageOf } from '../../src/agents/codex/main/codexUsage'
+import { agyUsage } from '../../src/agents/agy/main/agyUsage'
+import { mirrorCodexHome } from '../../src/agents/codex/main/codexMirror'
+import { mirrorAgyGemini } from '../../src/agents/agy/main/agyMirror'
+import { placedByOwnRowThenFolder } from '../../src/agents/kit/main/storedUsage'
 import { grouped } from '../../src/renderer/src/usageModel'
-import { resolvePricing } from '../../src/shared/pricing'
+import { resolvePricing } from '../../src/core/agent/prices'
 import { MODEL_PRICING } from '../../src/agents/claude/shared/claudePrices'
 import { OPENAI_PRICING } from '../../src/agents/codex/shared/codexPrices'
 import { GEMINI_PRICING } from '../../src/agents/agy/shared/agyPrices'
@@ -341,7 +341,10 @@ function seed(): Homes {
   fs.mkdirSync(path.join(app, 'brain', 'g-empty'), { recursive: true })
 
   const userData = path.join(root, 'userData')
-  const remote = machineUsageDirs(userData, MACHINE)
+  const remote = {
+    codexHome: mirrorCodexHome(userData, MACHINE),
+    geminiDir: mirrorAgyGemini(userData, MACHINE)
+  }
   write(
     path.join(
       remote.codexHome,
@@ -405,33 +408,62 @@ const PLACES: Record<string, { workspace: string; title: string }> = {
   'g-remote': { workspace: 'ssh://box/home/me/agy', title: 'On the machine' }
 }
 
+const placeOf =
+  (backend: string) =>
+  (id: string, host?: string): { workspace: string; title: string } | undefined => {
+    const place = PLACES[id]
+    return (
+      place && {
+        ...place,
+        workspace: `${place.workspace} (${backend}${host ? ' on ' + host : ''})`
+      }
+    )
+  }
+
+const sessionsPlacingAs = (backend: string) => () => ({
+  usagePlaces: () =>
+    placedByOwnRowThenFolder(placeOf(backend), (folder) => `workspace of ${folder}`)
+})
+
+function everyAgentsUsage(homes: Homes): AgentWithUsage[] {
+  const claudePlaces = new Map(
+    Object.keys(PLACES).flatMap((id) => {
+      const place = placeOf('claude')(id)
+      return place ? [[id, place] as const] : []
+    })
+  )
+  const userData = () => homes.userData
+  return [
+    {
+      id: 'claude',
+      usage: claudeUsage(() => ({
+        transcriptFiles: () => homes.transcripts,
+        sessionPlaces: () => claudePlaces
+      }))
+    },
+    {
+      id: 'codex',
+      usage: codexUsageOf(sessionsPlacingAs('codex'), () => homes.codexHome, userData)
+    },
+    { id: 'agy', usage: agyUsage(sessionsPlacingAs('agy'), () => homes.geminiDir, userData) }
+  ]
+}
+
 async function readUsage(homes: Homes): Promise<{ listed: UsageFile[]; read: UsageRead }> {
   let listed: UsageFile[] = []
   let finished!: () => void
   const changed = new Promise<void>((resolve) => (finished = resolve))
+  const agents = everyAgentsUsage(homes)
   const usage = new UsageCache({
     cacheFile: () => path.join(root, 'usage-cache.json'),
-    listFiles: async () =>
-      (listed = await listUsageFiles(homes.transcripts, [
-        { codexHome: homes.codexHome, geminiDir: homes.geminiDir },
-        machineUsageDirs(homes.userData, MACHINE)
-      ])),
+    listFiles: async () => (listed = await usageFilesOf(agents, [MACHINE])),
     stat: statOf,
     scan: (files, scanned, ended) =>
       void scanInTheWorker(files).then((posts) => {
         for (const p of posts) scanned(p)
         ended()
       }),
-    codexWorkspaces: (cwds) => cwds.map((cwd) => `workspace of ${cwd}`),
-    sessionPlaces: () => (backend, id, host) => {
-      const place = PLACES[id]
-      return (
-        place && {
-          ...place,
-          workspace: `${place.workspace} (${backend}${host ? ' on ' + host : ''})`
-        }
-      )
-    },
+    agents: () => agents,
     changed: (read) => !read.reading && finished()
   })
   await usage.read()

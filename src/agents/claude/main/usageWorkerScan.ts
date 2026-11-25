@@ -1,7 +1,11 @@
-import { TOKEN_FIELDS, type TokenCounts } from '@shared/pricing'
+import { TOKEN_FIELDS, type PriceList, type TokenCounts } from '@shared/pricing'
 import type { UsageRecord } from '@shared/types'
 import { localDayKey } from '@shared/usageFormat'
-import { num, parsedLines, RecordsByDayAndModel } from '@agents/kit/main/usageLines'
+import type { PackedCalls as ClaudeCalls, UsageWorkerScan } from '@core/agent/usage'
+import { linesWithAny, num, parsedLines, RecordsByDayAndModel } from '@agents/kit/main/usageLines'
+import { claudePriceOf } from '../shared/claudePrices'
+
+export type { ClaudeCalls }
 
 export const CLAUDE_USAGE_WORDS = ['"usage"']
 
@@ -11,13 +15,6 @@ interface ClaudeCall {
   day: string
   model: string
   tokens: TokenCounts
-}
-
-export interface ClaudeCalls {
-  sessions: string[]
-  days: string[]
-  models: string[]
-  calls: string
 }
 
 const CALL_SEPARATOR = ';'
@@ -63,8 +60,12 @@ export function claudeCallKeys(c: ClaudeCalls): string[] {
   return packedEntries(c).map((e) => e.slice(0, e.indexOf(FIELD_SEPARATOR)))
 }
 
-export function recordsOfClaudeCalls(c: ClaudeCalls, skip?: Set<string>): UsageRecord[] {
-  const out = new RecordsByDayAndModel()
+export function recordsOfClaudeCalls(
+  c: ClaudeCalls,
+  priceOf: PriceList,
+  skip?: Set<string>
+): UsageRecord[] {
+  const out = new RecordsByDayAndModel(priceOf)
   for (const entry of packedEntries(c)) {
     const [key, session, day, model, ...counts] = entry.split(FIELD_SEPARATOR)
     if (key && skip?.has(key)) continue
@@ -107,4 +108,13 @@ export function scanClaudeCalls(text: string): ClaudeCalls {
     if (key) callByIds.set(key, call)
   }
   return packClaudeCalls(calls)
+}
+
+export const usageWorkerScan: UsageWorkerScan = {
+  id: 'claude',
+  priceOf: claudePriceOf,
+  async scan(f) {
+    const { text, bornAt } = await linesWithAny(f.file, CLAUDE_USAGE_WORDS, true)
+    return { records: [], claudeCalls: scanClaudeCalls(text), bornAt }
+  }
 }

@@ -4,6 +4,7 @@ import { isGitCheckoutAsync } from '../../../src/main/projectInfo'
 import { claudeCatalog } from '../../../src/agents/claude/main/claudeCatalog'
 import { codexCatalog } from '../../../src/agents/codex/main/codexCatalog'
 import { agyCatalog } from '../../../src/agents/agy/main/agyCatalog'
+import { NOTHING_TO_READ_OR_SEARCH } from './agentMainParts'
 
 export interface OwnersSettings {
   codexConfig: string
@@ -18,6 +19,6 @@ export function agentsWithTheirCatalogs(owners: OwnersSettings): AgentsMain {
   }
   const agents = new AgentsMain()
   for (const [id, catalog] of Object.entries(catalogs) as [AgentId, AgentCatalog][])
-    agents.register({ id, oneShotTarget: async () => null, catalog })
+    agents.register({ id, oneShotTarget: async () => null, catalog, ...NOTHING_TO_READ_OR_SEARCH })
   return agents
 }

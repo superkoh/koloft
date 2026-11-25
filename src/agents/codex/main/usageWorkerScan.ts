@@ -1,6 +1,9 @@
+import type { PriceList } from '@shared/pricing'
 import type { UsageRecord } from '@shared/types'
 import { localDayKey } from '@shared/usageFormat'
-import { num, parsedLines, RecordsByDayAndModel } from '@agents/kit/main/usageLines'
+import type { UsageWorkerScan } from '@core/agent/usage'
+import { linesWithAny, num, parsedLines, RecordsByDayAndModel } from '@agents/kit/main/usageLines'
+import { codexPriceOf } from '../shared/codexPrices'
 
 interface CodexScan {
   sessionId: string
@@ -11,11 +14,11 @@ interface CodexScan {
 export const CODEX_USAGE_WORDS = ['session_meta', 'turn_context', 'token_usage_record']
 
 // CODEX§13
-export function scanCodexLines(text: string): CodexScan | null {
+export function scanCodexLines(text: string, priceOf: PriceList): CodexScan | null {
   let meta: any
   const modelByTurn = new Map<string, string>()
   const booked = new Set<string>()
-  const out = new RecordsByDayAndModel()
+  const out = new RecordsByDayAndModel(priceOf)
   let sessionId = ''
   for (const obj of parsedLines(text)) {
     const p = obj?.payload
@@ -44,4 +47,13 @@ export function scanCodexLines(text: string): CodexScan | null {
   }
   if (!meta || !sessionId) return null
   return { sessionId, cwd: typeof meta.cwd === 'string' ? meta.cwd : '', records: out.list() }
+}
+
+export const usageWorkerScan: UsageWorkerScan = {
+  id: 'codex',
+  priceOf: codexPriceOf,
+  async scan(f, priceOf) {
+    const codex = scanCodexLines((await linesWithAny(f.file, CODEX_USAGE_WORDS)).text, priceOf)
+    return { records: codex?.records ?? [], cwd: codex?.cwd }
+  }
 }

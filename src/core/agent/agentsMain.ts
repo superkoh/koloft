@@ -1,6 +1,8 @@
 // ADR-0054
 import type { McpServer } from '@shared/types'
 import { AGENT_IDS, type AgentId } from './registry'
+import type { AgentUsage } from './usage'
+import type { AgentSearch } from './search'
 
 export interface OneShotTarget {
   binary: string
@@ -18,6 +20,8 @@ export interface AgentMain {
   id: AgentId
   oneShotTarget(): Promise<OneShotTarget | null>
   catalog: AgentCatalog
+  usage: AgentUsage
+  search: AgentSearch
 }
 
 export class AgentsMain {
@@ -27,7 +31,7 @@ export class AgentsMain {
     this.built.set(agent.id, agent)
   }
 
-  private inListOrder(): AgentMain[] {
+  inListOrder(): AgentMain[] {
     return AGENT_IDS.flatMap((id) => this.built.get(id) ?? [])
   }
 

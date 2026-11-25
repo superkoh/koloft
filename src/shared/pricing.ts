@@ -1,7 +1,3 @@
-import { DATE_STAMP, KEYS, MODEL_PRICING } from '@agents/claude/shared/claudePrices'
-import { OPENAI_PRICING } from '@agents/codex/shared/codexPrices'
-import { geminiPricing } from '@agents/agy/shared/agyPrices'
-
 export interface ModelPricing {
   inPerM: number
   outPerM: number
@@ -19,15 +15,17 @@ export interface LongContextTier {
   outPerM: number
 }
 
-export function resolvePricing(model: string): ModelPricing | undefined {
-  if (!model) return undefined
-  const exact = MODEL_PRICING[model] ?? OPENAI_PRICING[model] ?? geminiPricing(model)
-  if (exact) return exact
-  for (const k of KEYS) {
-    if (model.startsWith(k + '-') && DATE_STAMP.test(model.slice(k.length + 1)))
-      return MODEL_PRICING[k]
+export type PriceList = (model: string) => ModelPricing | undefined
+
+export function firstPriceOf(lists: readonly PriceList[]): PriceList {
+  return (model) => {
+    if (!model) return undefined
+    for (const priceOf of lists) {
+      const found = priceOf(model)
+      if (found) return found
+    }
+    return undefined
   }
-  return undefined
 }
 
 export interface TokenCounts {

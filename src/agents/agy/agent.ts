@@ -8,6 +8,7 @@ import {
 import { agyEffortsAModelTakes } from './shared/agyEfforts'
 import { AGY_INSTALLER_URL } from './shared/agyInstaller'
 import { agyInputBoxDraft } from './shared/inputBox'
+import { geminiPricing } from './shared/agyPrices'
 import { EMPTY_THE_BOX, ESC } from '@shared/lineEditKeys'
 import { SLOT_ADDITIONS, SLOT_FILLS } from './prompts/text'
 
@@ -118,7 +119,8 @@ export const agent = {
   },
   pureFunctions: {
     effortsAModelTakes: agyEffortsAModelTakes,
-    draftInItsInputBox: agyInputBoxDraft
+    draftInItsInputBox: agyInputBoxDraft,
+    priceOf: geminiPricing
   },
   // AGY§5 AGY§6
   accountKinds: [

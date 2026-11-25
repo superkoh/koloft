@@ -8,14 +8,29 @@ Code was the only agent, so they name no agent; the owner decided they stay Clau
 and are never handed to another agent.
 **Decision**: an agent is a folder `src/agents/<id>/`. Its `agent.ts` is its manifest,
 typed by `src/core/agent/manifest.ts`. Parts that several agents share go in
-`src/agents/kit/`, which names no agent. Outside an agent's own folder only three files
-may name an agent: `src/agents/list.ts` (the manifests), `src/agents/starts.ts` (each
-agent's main-process code) and `src/agents/uis.ts` (each agent's UI parts). `kit/`,
+`src/agents/kit/`, which names no agent. Outside an agent's own folder only the lists of
+agents may name an agent: `src/agents/list.ts` (the manifests), `src/agents/starts.ts` (each
+agent's main-process code), `src/agents/uis.ts` (each agent's UI parts) and the worker's
+list below. `kit/`,
 `starts.ts` and `uis.ts` each appear with the first thing put in them. Code written before
 this decision still names agents in many other files; issue #2410 removes those names step
 by step, and new code adds none. The rest of the app
 reads agents through `src/core/agent/registry.ts`, which imports the list, so the window
 has the manifests at build time and never asks the main process for them.
+
+A fourth list, `src/agents/usageWorkerScans.ts`, is for the usage worker thread alone: it
+imports each agent's `main/usageWorkerScan.ts` (how one usage file becomes records, and
+that agent's price list) and holds nothing else. The worker cannot take the agents'
+main-process side: measured on a build (2026-11-25), a worker that reached the agents
+through their main-process entry loaded 722 kB, with `electron` and `node-pty`, and took
+134 ms to its first result, against 40 kB and 19 ms with the small list. One worker per
+agent kept the size but doubled the time to the first result (35 ms, three threads at
+once); handing the worker what Antigravity's database holds would read that database on
+the main thread, and `node:sqlite` reads only synchronously.
+
+A value an agent's code saved on the owner's disk keeps its name, even where common code
+types it: the usage cache's `claudeCalls` field is read only by Claude Code's code, and
+renaming it would make every owner's usage files be read again.
 
 The agent id type is derived from the list. A manifest is written
 `as const satisfies AgentManifest` and never annotated with the type, which would widen

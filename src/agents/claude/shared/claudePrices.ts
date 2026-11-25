@@ -46,5 +46,15 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   'claude-haiku-4-5': tier(1, 5, K200)
 }
 
-export const KEYS = Object.keys(MODEL_PRICING).sort((a, b) => b.length - a.length)
-export const DATE_STAMP = /^\d{8}$/
+const KEYS = Object.keys(MODEL_PRICING).sort((a, b) => b.length - a.length)
+const DATE_STAMP = /^\d{8}$/
+
+export function claudePriceOf(model: string): ModelPricing | undefined {
+  const exact = MODEL_PRICING[model]
+  if (exact) return exact
+  for (const k of KEYS) {
+    if (model.startsWith(k + '-') && DATE_STAMP.test(model.slice(k.length + 1)))
+      return MODEL_PRICING[k]
+  }
+  return undefined
+}

@@ -1,9 +1,11 @@
 import fs from 'fs'
-import type { TokenCounts } from '@shared/pricing'
+import type { PriceList, TokenCounts } from '@shared/pricing'
 import type { UsageRecord } from '@shared/types'
 import { localDayKey } from '@shared/usageFormat'
-import { num, RecordsByDayAndModel } from '@agents/kit/main/usageLines'
+import type { UsageWorkerScan } from '@core/agent/usage'
+import { linesWithAny, num, RecordsByDayAndModel } from '@agents/kit/main/usageLines'
 import { stepOf } from './agyStore'
+import { geminiPricing } from '../shared/agyPrices'
 
 export const AGY_USAGE_WORDS = ['PLANNER_RESPONSE']
 
@@ -12,9 +14,10 @@ export function scanAgyLines(
   text: string,
   sessionId: string,
   modelOfCall: string[],
-  configuredModel: string
+  configuredModel: string,
+  priceOf: PriceList
 ): UsageRecord[] {
-  const out = new RecordsByDayAndModel()
+  const out = new RecordsByDayAndModel(priceOf)
   let call = 0
   for (const line of text.split('\n')) {
     const step = stepOf(line)
@@ -76,7 +79,7 @@ const AGY_CALL_MODEL = [1, 19]
 const AGY_CONFIGURED_MODEL = [10, 1, 28]
 
 // AGY§8
-export async function agyModels(db = ''): Promise<{ calls: string[]; configured: string }> {
+async function agyModels(db = ''): Promise<{ calls: string[]; configured: string }> {
   if (!fs.existsSync(db)) return { calls: [], configured: '' }
   const { DatabaseSync } = await import('node:sqlite')
   const sqlite = new DatabaseSync(db, { readOnly: true })
@@ -94,5 +97,16 @@ export async function agyModels(db = ''): Promise<{ calls: string[]; configured:
     }
   } finally {
     sqlite.close()
+  }
+}
+
+export const usageWorkerScan: UsageWorkerScan = {
+  id: 'agy',
+  priceOf: geminiPricing,
+  async scan(f, priceOf) {
+    const sessionId = f.sessionId ?? ''
+    const { calls, configured } = await agyModels(f.db)
+    const { text } = await linesWithAny(f.file, AGY_USAGE_WORDS)
+    return { records: scanAgyLines(text, sessionId, calls, configured, priceOf) }
   }
 }

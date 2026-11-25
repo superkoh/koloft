@@ -44,3 +44,5 @@ export const OPENAI_PRICING: Record<string, ModelPricing> = {
   'gpt-5.1': openAi(1.25, 0.125, 10),
   'gpt-5': openAi(1.25, 0.125, 10)
 }
+
+export const codexPriceOf = (model: string): ModelPricing | undefined => OPENAI_PRICING[model]

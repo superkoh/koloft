@@ -2,8 +2,8 @@ import fs from 'fs'
 import readline from 'readline'
 import {
   longContextSurchargeUsd,
-  resolvePricing,
   TOKEN_FIELDS,
+  type PriceList,
   type TokenCounts
 } from '@shared/pricing'
 import type { UsageRecord } from '@shared/types'
@@ -36,8 +36,10 @@ export function parsedLines(text: string): any[] {
 export class RecordsByDayAndModel {
   private byKey = new Map<string, UsageRecord>()
 
+  constructor(private readonly priceOf: PriceList) {}
+
   add(sessionId: string, day: string, model: string, call: TokenCounts): void {
-    const pricing = resolvePricing(model)
+    const pricing = this.priceOf(model)
     const surchargeUsd = pricing ? longContextSurchargeUsd(pricing, call) : 0
     const key = sessionId + '\n' + day + '\n' + model
     const rec = this.byKey.get(key)

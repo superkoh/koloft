@@ -5,12 +5,8 @@ import type { Turn } from '@core/agent/sessionRuntime'
 import { nonEmptyString, record } from '@core/unknownValue'
 import path from 'path'
 import { schemeOf } from '@shared/browserRoute'
-import {
-  costUsdOf,
-  longContextSurchargeUsd,
-  resolvePricing,
-  type TokenCounts
-} from '@shared/pricing'
+import { costUsdOf, longContextSurchargeUsd, type TokenCounts } from '@shared/pricing'
+import { resolvePricing } from '@core/agent/prices'
 import {
   capTouched,
   noteRead,
