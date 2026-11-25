@@ -1022,6 +1022,80 @@ describe('U-TAB-*: the tab script on the machine', () => {
     }
   )
 
+  const claudeTabWithOwnerTextAndProjectPrompt = (): TabSpec =>
+    spec({
+      program: claudeTabProgram(
+        { tabId: 'T', tmuxName: 'k-sess1', cwd: '/tmp' },
+        {
+          settings: { hooks: {} },
+          agentPlugin: true,
+          projectPrompt: 'PROJECT RULES',
+          ownerText: 'OWNER WORDS',
+          claudeArgs: ['--session-id', 'sess1']
+        }
+      )
+    })
+
+  const claudeReadingItsPromptTwice = (b: Box, meanwhile: string): void => {
+    fs.writeFileSync(path.join(b.home, '.local', 'bin', 'python3'), '#!/bin/sh\nexit 1\n', {
+      mode: 0o755
+    })
+    fs.writeFileSync(
+      path.join(b.home, '.local', 'bin', 'claude'),
+      `#!/bin/sh
+L=${JSON.stringify(b.logs)}
+ls -A "$HOME/.koloft/tabs" > "$L/while-running"
+p=""; o=""; prev=""
+for a in "$@"; do
+  [ "$prev" = --append-system-prompt-file ] && p="$a"
+  [ "$prev" = --append-system-prompt ] && o="$a"
+  prev="$a"
+done
+printf '%s' "$o" > "$L/owner"
+cat "$p" > "$L/prompt"
+${meanwhile}
+cat "$p" >> "$L/prompt"
+`,
+      { mode: 0o755 }
+    )
+  }
+
+  // CC§5 CC§23
+  it.each([
+    { how: 'exits on its own', hangsUp: false },
+    { how: 'is hung up on, as when Koloft ends its tmux session', hangsUp: true }
+  ])(
+    "a Claude Code tab's owner text is gone from the machine once claude has it, and its project prompt stays readable for as long as claude runs and is gone once it $how, while its settings stay for a session claude moves to the background",
+    ({ hangsUp }) => {
+      const b = box(claudeTabWithOwnerTextAndProjectPrompt())
+      claudeReadingItsPromptTwice(b, hangsUp ? 'kill -HUP $PPID\nsleep 1' : '')
+      b.run()
+      expect(fs.readFileSync(path.join(b.logs, 'owner'), 'utf8')).toBe('OWNER WORDS')
+      expect(fs.readFileSync(path.join(b.logs, 'prompt'), 'utf8')).toBe(
+        'PROJECT RULESPROJECT RULES'
+      )
+      const whileRunning = fs.readFileSync(path.join(b.logs, 'while-running'), 'utf8').split('\n')
+      expect(whileRunning).toContain('T.json')
+      expect(whileRunning).not.toContain('T.owner.md')
+      expect(fs.readdirSync(b.tabs).filter((n) => /prompt|owner/.test(n))).toEqual([])
+      expect(fs.existsSync(path.join(b.tabs, 'T.json'))).toBe(true)
+      expect(fs.existsSync(path.join(b.tabs, 'T.exit'))).toBe(!hangsUp)
+    }
+  )
+
+  it("when the same Claude Code tab starts again while its old claude still runs, the old one's end leaves the new launch's project prompt and owner text in place", () => {
+    const b = box(claudeTabWithOwnerTextAndProjectPrompt())
+    const tabs = JSON.stringify(path.join(b.home, '.koloft', 'tabs'))
+    claudeReadingItsPromptTwice(
+      b,
+      `printf 'NEW RULES' > ${tabs}/T.prompt.md\nprintf 'NEW WORDS' > ${tabs}/T.owner.md`
+    )
+    b.run()
+    expect(fs.readFileSync(path.join(b.logs, 'prompt'), 'utf8')).toBe('PROJECT RULESPROJECT RULES')
+    expect(fs.readFileSync(path.join(b.tabs, 'T.prompt.md'), 'utf8')).toBe('NEW RULES')
+    expect(fs.readFileSync(path.join(b.tabs, 'T.owner.md'), 'utf8')).toBe('NEW WORDS')
+  })
+
   it('the tab ends with the code the agent exited with inside tmux, though tmux itself always exits 0, and shows the screen the agent left when that code is not 0', () => {
     const failed = box(spec(), { claudeExit: 3 }).run()
     expect(failed.status).toBe(3)

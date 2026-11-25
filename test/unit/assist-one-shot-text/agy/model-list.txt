@@ -1,0 +1,9 @@
+runs: 1
+--- run 1
+argv:
+  "--gemini_dir=/fixture/one-shot"
+  "models"
+stdin: ""
+cwd: <home>
+env: {"PIN_ACCOUNT":"agy-work","PIN_KEPT":"handed over as it is"}
+answer: [{"id":"gemini-4-argon","efforts":["low","medium"]},{"id":"gemini-3.8-flash","efforts":["low"]}]

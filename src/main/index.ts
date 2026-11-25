@@ -27,8 +27,7 @@ import {
   agyAccountEnv,
   agyHomeAccounts,
   endAgyOneShots,
-  oneShotAgyHome,
-  readAgyModels
+  oneShotAgyHome
 } from '@agents/agy/main/agyAccounts'
 import { ownersGeminiDir } from '@agents/agy/main/agyStore'
 import { watchHistoryOf } from './historyWatch'
@@ -1378,7 +1377,7 @@ const codexAccounts = codexHomeAccounts({
   codexSharedConfig,
   codexSessions: () => codexSessions
 })
-const { codexPicker, pickCodexHome, codexUseReset, probeCodexAccounts } = codexAccounts
+const { pickCodexHome, codexUseReset, probeCodexAccounts } = codexAccounts
 const agyAccounts = agyHomeAccounts({
   ...homeAccountsDeps,
   keychainRead,
@@ -1548,8 +1547,8 @@ const oneShotTargets: Record<BackendId, AgentMain['oneShotTarget']> = {
 }
 const catalogs: Record<BackendId, AgentCatalog> = {
   claude: claudeCatalog,
-  codex: codexCatalog(codexSharedConfig),
-  agy: agyCatalog(ownersGemini, isGitCheckoutAsync)
+  codex: codexCatalog(codexSharedConfig, codexAccounts.listedModels),
+  agy: agyCatalog(ownersGemini, isGitCheckoutAsync, oneShotTargets.agy)
 }
 const tools: Record<BackendId, AgentTools> = {
   claude: claudeTools,
@@ -1608,6 +1607,7 @@ const assist = koloftAssist({
   picks: loadSettings,
   enabled: (backend) => !turnedOffNow(backend),
   target: (backend) => agentsMain.oneShotTarget(backend),
+  oneShot: (backend) => agentsMain.oneShot(backend),
   onThisAccount: assistJobPick
 })
 const assistRuns = new Map<number, AbortController>()
@@ -1742,20 +1742,10 @@ const sessionSyncDeps: PluginStartDeps['sessions']['sessionSync'] = {
 const A_MODEL_LIST_IS_READ_AGAIN_AFTER_MS = 3_600_000
 const modelLists = new Map<BackendId, { at: number; listed: Promise<ListedModel[] | undefined> }>()
 
-async function readModelList(backend: BackendId): Promise<ListedModel[] | undefined> {
-  if (backend === 'codex') {
-    const picked = codexPicker.peek(accountViews())
-    return codexSessions?.listedModels(picked && codexHomeOf(app.getPath('userData'), picked.name))
-  }
-  const target = await agentsMain.oneShotTarget(backend)
-  if (!target) return undefined
-  return readAgyModels(target.binary, target.env, target.args ?? []).finally(() => target.done())
-}
-
 function listedModels(backend: BackendId): Promise<ListedModel[] | undefined> {
   const kept = modelLists.get(backend)
   if (kept && Date.now() - kept.at < A_MODEL_LIST_IS_READ_AGAIN_AFTER_MS) return kept.listed
-  const listed = readModelList(backend).catch(() => undefined)
+  const listed = agentsMain.listedModels(backend).catch(() => undefined)
   modelLists.set(backend, { at: Date.now(), listed })
   void listed.then((models) => {
     if (models?.length) modelsLastRead.set(backend, models)

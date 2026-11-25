@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { agyListedModels, codexListedModels, newestOf } from '../../src/shared/sessionPicks'
+import { newestOf } from '../../src/shared/sessionPicks'
+import { codexListedModels } from '../../src/agents/codex/main/codexSessions'
+import { agyListedModels } from '../../src/agents/agy/main/agyAccounts'
 
 describe('the models an account lists', () => {
   it('reads Codex’s model/list answer, keeping only the efforts Koloft can pass', () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { BackendId } from '../../src/shared/types'
 import { DEFAULT_SETTINGS } from '../../src/shared/settingsOps'
 import { koloftAssist } from '../../src/main/assist'
+import { EVERY_AGENTS_ONE_SHOT } from './helpers/agentOneShots'
 import {
   parseRoute,
   routeJob,
@@ -108,6 +109,7 @@ for (const backend of ['claude', 'codex', 'agy'] as const) {
       accounts: []
     }),
     enabled: (b) => b === backend,
+    oneShot: (b) => EVERY_AGENTS_ONE_SHOT[b],
     target: async () => (binary ? { binary, env: process.env, done: () => {} } : null),
     onThisAccount: async (_backend, asked) => asked
   })

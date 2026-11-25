@@ -1,0 +1,19 @@
+runs: 1
+--- run 1
+argv:
+  "exec"
+  "--skip-git-repo-check"
+  "--ephemeral"
+  "--ignore-user-config"
+  "--ignore-rules"
+  "-s"
+  "read-only"
+  "-c"
+  "model_reasoning_effort=\"high\""
+  "-C"
+  "<tmp>"
+  "-"
+stdin: "You write short titles.\nOne line only.\n\nTask:\nfix the login crash\n\nand the logout one"
+cwd: <tmp>
+env: {"PIN_ACCOUNT":"codex-work","PIN_KEPT":"handed over as it is"}
+answer: "Fix Login Crash\n"
