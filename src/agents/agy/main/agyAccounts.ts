@@ -28,6 +28,7 @@ import {
 import type { AgyHomePick, AgySessions } from './agySessions'
 import { knownEfforts, type ListedModel } from '@shared/sessionPicks'
 import { record } from '@core/unknownValue'
+import { oneShotsEnded, untilKoloftQuits } from '../../../main/oneShotsAtQuit'
 import { readJson, writeWholeBeforeVisible } from '../../../main/jsonDrops'
 import { AGY_APP_DIR } from './agyStore'
 import { runsPlaywrightMcp } from '../../../main/browserControlEnv'
@@ -222,11 +223,12 @@ export function readAgyQuota(
   env: NodeJS.ProcessEnv,
   home: string
 ): Promise<QuotaBucket[] | undefined> {
+  if (oneShotsEnded()) return Promise.resolve(undefined)
   return new Promise((resolve) => {
     execFile(
       binary,
       [`--gemini_dir=${home}`, '-p', '/usage', '--output-format', 'json'],
-      { env, cwd: os.homedir(), timeout: AGY_USAGE_TIMEOUT_MS },
+      { env, cwd: os.homedir(), timeout: AGY_USAGE_TIMEOUT_MS, signal: untilKoloftQuits() },
       (error, stdout) => resolve(error ? undefined : agyQuotaFrom(stdout))
     ).stdin?.end()
   })
@@ -252,11 +254,12 @@ export function readAgyModels(
   env: NodeJS.ProcessEnv,
   signedInArgs: string[]
 ): Promise<ListedModel[] | undefined> {
+  if (oneShotsEnded()) return Promise.resolve(undefined)
   return new Promise((resolve) => {
     execFile(
       binary,
       [...signedInArgs, 'models'],
-      { env, cwd: os.homedir(), timeout: AGY_USAGE_TIMEOUT_MS },
+      { env, cwd: os.homedir(), timeout: AGY_USAGE_TIMEOUT_MS, signal: untilKoloftQuits() },
       (error, stdout) => resolve(error ? undefined : agyListedModels(stdout))
     ).stdin?.end()
   })
