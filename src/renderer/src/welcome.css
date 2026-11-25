@@ -59,16 +59,16 @@
 .wl-blob.on {
   opacity: 0.2;
 }
-.wl-blob.claude {
+.wl-blob:nth-child(1) {
   left: -18vmax;
   top: 6vmax;
 }
-.wl-blob.codex {
+.wl-blob:nth-child(2) {
   left: 10vmax;
   bottom: -34vmax;
   animation-duration: 19s;
 }
-.wl-blob.agy {
+.wl-blob:nth-child(3) {
   right: -22vmax;
   bottom: -20vmax;
   animation-duration: 28s;

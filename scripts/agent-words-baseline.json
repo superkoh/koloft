@@ -957,7 +957,6 @@
       "const codex = useStore((s) => hasUsableAccount(s.accounts ?? [], 'codex'))",
       "usable: { claude, codex, agy },"
     ],
-    "src/renderer/src/welcome.css": [".wl-blob.agy {", ".wl-blob.claude {", ".wl-blob.codex {"],
     "src/shared/accountUsage.ts": [
       "'Claude did not start: Koloft could not use an account for it. Check Settings ▸ Accounts, then try again.'",
       ": fableExhausted(u)",
