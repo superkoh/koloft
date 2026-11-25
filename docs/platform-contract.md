@@ -2449,17 +2449,21 @@ forwarded` and still **exits 0**, and the forward stays; the spec exactly as ask
   the client exits with it; `tmux capture-pane -p` run from that shell after the program
   ended still holds the program's last screen (2026-10-28, tmux 3.3a in the
   `koloft-e2e-sshd` Docker image: codes 3, 137 and 0 came through, the screen was captured).
-- **`display-message -p -t '=<name>:' '#{pane_start_command}'` gives the command the
-  session's pane was started with, the same after `rename-session`, so a client that
-  attaches later can read which tab script started it.** Its quoting differs by version:
-  2.6 prints it bare (`sh "$HOME/.koloft/tabs/OLD.sh" run`), 3.2a and 3.3a wrap it in `"`
-  with `\"` and `\$`, 3.4 with `\"` and `\\$`; the `/.koloft/tabs/<id>.sh` part is the same
-  in all. `=<name>:` matches the whole name only: `=k-:` found no session `k-a`, while a
-  bare `k-` did. A session that is gone, or a `=` prefix only, prints an empty line and
-  exits 0 on 3.2a, 3.3a and 3.4, and prints `can't find session` to stderr and exits 1 on
-  2.6; with no server running every version exits 1 (2026-11-25, Docker: Ubuntu 18.04's
-  2.6, 22.04's 3.2a, 24.04's 3.4 and the `koloft-e2e-sshd` image's 3.3a, a detached
-  session on a `-L` socket started as `sh "$HOME/.koloft/tabs/OLD.sh" run`, 1 run each).
+- **`list-panes -s -t '=<name>:' -F '#{pane_start_command}'` gives the command every pane
+  of the session was started with, one per line, the same after `rename-session`, so a
+  client that attaches later can read which tab script started the session.**
+  `display-message -p` with the same target gives only the active pane's: with a pane
+  split off and a second window opened, it gave that window's `sleep 31`, while
+  `list-panes -s` listed all three, the tab script's first. The quoting differs by
+  version: 2.6 prints the command bare (`sh "$HOME/.koloft/tabs/OLD.sh" run`), 3.2a and
+  3.3a wrap it in `"` with `\"` and `\$`, 3.4 with `\"` and `\\$`; the
+  `/.koloft/tabs/<id>.sh` part is the same in all. `=<name>:` matches the whole name only:
+  `=k-:` found no session `k-b`, while a bare `k-` did. A session that is gone, or a `=`
+  prefix only, prints `can't find session` to stderr and exits 1 on every version, and so
+  does no server running (2026-11-25, Docker: Ubuntu 18.04's 2.6, 22.04's 3.2a, 24.04's
+  3.4 and the `koloft-e2e-sshd` image's 3.3a, a detached session on a `-L` socket started
+  as `sh "$HOME/.koloft/tabs/OLD.sh" run`, then renamed, split and given a second window,
+  1 run each).
 - **On a machine whose `/bin/sh` is dash, a Ctrl-C reaching the pane kills the waiting
   shell** once its child exits, even when the child handled the signal, so nothing after the
   child runs. `trap : INT QUIT` in that shell keeps it alive and still hands the child the

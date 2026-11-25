@@ -594,6 +594,7 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
           .poll(() => terminalText(page2, tabId), { timeout: 30_000 })
           .toContain('stopped with exit code 137')
         await expect(row.locator('.ws-tab-sub')).toContainText('exited (code 137)')
+        expect(await remoteTabIds(page2)).toEqual([tabId])
       } finally {
         await quitAndClose(app2)
       }

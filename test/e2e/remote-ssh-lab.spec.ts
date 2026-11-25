@@ -598,6 +598,43 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     )
   })
 
+  // PLATFORM§35
+  test('E-SSH-57: a Claude Code tab a reopened Koloft attached to again, whose claude then dies, says claude’s own exit code and shows the screen claude left, as a tab Koloft never closed does', async ({
+    env
+  }) => {
+    const said = 'left on the screen before Koloft closed'
+    await withLab(env, async ({ page: firstWindow, lab, quitKoloft, openKoloftAgain }) => {
+      await addMachine(firstWindow, 'kt-key', 'kuser')
+      await startSessionIn(firstWindow, 'kt-key', { remote: true })
+      await expect(wsRows(firstWindow, 'kt-key')).toHaveClass(/\bst-waiting\b/, {
+        timeout: 60_000
+      })
+      const firstTab = (await wsRows(firstWindow, 'kt-key').getAttribute('data-tab-id'))!
+      await runIn(firstWindow, centerTerm(firstWindow), `/answer ${said}`)
+      await expect
+        .poll(() => terminalText(firstWindow, firstTab), { timeout: 60_000 })
+        .toContain(`Answer to: ${said}`)
+      await quitKoloft()
+      const page = await openKoloftAgain()
+      await expect
+        .poll(
+          () => tabScriptsRunningOn(lab, 'kuser').filter((l) => /\.sh attach\b/.test(l)).length,
+          { timeout: 90_000 }
+        )
+        .toBe(1)
+      const row = wsRows(page, 'kt-key')
+      await expect(row).toHaveClass(/\bst-(waiting|idle)\b/, { timeout: 60_000 })
+      const tabId = (await row.getAttribute('data-tab-id'))!
+
+      runOnTarget(lab, 'kuser', "pkill -KILL -u kuser -f '[/]usr/local/bin/claude'")
+
+      await expect
+        .poll(() => terminalText(page, tabId), { timeout: 60_000 })
+        .toContain('stopped with exit code 137')
+      expect(await terminalText(page, tabId)).toContain(`Answer to: ${said}`)
+    })
+  })
+
   test('E-SSH-56: Koloft closed while a Claude Code start is still installing Claude Code on the machine, before tmux, leaves the account’s key in no file there', async ({
     env
   }) => {

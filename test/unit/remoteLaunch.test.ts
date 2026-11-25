@@ -516,7 +516,7 @@ printf 'tmux %s\\n' "$*" >> ${JSON.stringify(path.join(logs, 'order'))}
 conf=""; prev=""; last=""
 for a in "$@"; do [ "$prev" = -f ] && conf="$a"; last="$a"; prev="$a"; done
 case " $* " in *" capture-pane "*) printf 'the last screen\\n\\n\\n'; exit 0;; esac
-case " $* " in *" display-message "*) cat ${JSON.stringify(path.join(logs, 'pane-start-command'))} 2>/dev/null; echo; exit 0;; esac
+case " $* " in *" list-panes "*) cat ${JSON.stringify(path.join(logs, 'pane-start-command'))} 2>/dev/null; exit $?;; esac
 case " $* " in *" source-file "*) cat "$last" >> ${JSON.stringify(path.join(logs, 'sourced'))}; exit 0;; esac
 case " $* " in *" show-environment "*) [ -f ${JSON.stringify(path.join(logs, 'keyed'))} ]; exit $?;; esac
 case " $* " in *" attach "*) ls -A "$HOME/.koloft/tabs" > ${JSON.stringify(path.join(logs, 'tab-files-while-attached'))}; exit 0;; esac
@@ -1109,18 +1109,56 @@ cat "$p" >> "$L/prompt"
     expect(clean.stdout).not.toContain('the last screen')
   })
 
+  const PANES_OF_A_SESSION_TAB_OLD_STARTED =
+    '"claude --agent-id teammate"\n"sh \\"\\$HOME/.koloft/tabs/OLD.sh\\" run"\n'
+  const startedByOld = (b: Box): void => {
+    fs.writeFileSync(path.join(b.logs, 'pane-start-command'), PANES_OF_A_SESSION_TAB_OLD_STARTED)
+    writeTabPackage(b.tabs, spec({ tabId: 'NEW' }))
+  }
+  const sessionGone = (b: Box): void => fs.rmSync(path.join(b.logs, 'pane-start-command'))
+
   // PLATFORM§35
-  it('a tab that attaches, under a new tab id after a Koloft restart, to a session another tab started ends with the code and shows the screen the agent left there, read from the tab that started it', () => {
+  it('a tab that attaches, under a new tab id after a Koloft restart, to a session another tab started ends with the code and shows the screen the agent left there, read from the tab that started it, and leaves neither on the machine', () => {
     const b = box(spec({ tabId: 'OLD' }), { claudeExit: 3 })
     expect(b.run().status).toBe(3)
-    writeTabPackage(b.tabs, spec({ tabId: 'NEW' }))
-    fs.writeFileSync(
-      path.join(b.logs, 'pane-start-command'),
-      '"sh \\"\\$HOME/.koloft/tabs/OLD.sh\\" run"'
-    )
+    startedByOld(b)
     const attached = b.runTab('NEW', 'attach')
     expect(attached.status).toBe(3)
     expect(attached.stdout).toMatch(/the last screen\n$/)
+    expect(fs.readdirSync(b.tabs).filter((n) => /\.(exit|screen|started-by)$/.test(n))).toEqual([])
+  })
+
+  // PLATFORM§35 PLATFORM§75
+  it('a tab taken back after a Koloft restart whose link drops while its agent ends still ends, once it reconnects, with that agent’s code and screen, though its tmux session is gone by then', () => {
+    const b = box(spec({ tabId: 'OLD' }), { claudeExit: 3 })
+    startedByOld(b)
+    expect(b.runTab('NEW', 'attach').status).toBe(0)
+    expect(b.run().status).toBe(3)
+    sessionGone(b)
+    const reconnected = b.runTab('NEW', 'attach')
+    expect(reconnected.status).toBe(3)
+    expect(reconnected.stdout).toMatch(/the last screen\n$/)
+  })
+
+  // PLATFORM§35
+  it('a start that lands on a session another tab started, still running there, ends with that agent’s code and screen', () => {
+    const b = box(spec({ tabId: 'OLD' }), { claudeExit: 3 })
+    expect(b.run().status).toBe(3)
+    startedByOld(b)
+    fs.writeFileSync(path.join(b.logs, 'running'), '')
+    const started = b.runTab('NEW')
+    expect(started.status).toBe(3)
+    expect(started.stdout).toMatch(/the last screen\n$/)
+  })
+
+  it('a start that found the session another tab started, which then ended before tmux ran this tab’s own agent, ends with its own agent’s code and no earlier screen', () => {
+    const b = box(spec({ tabId: 'OLD' }), { claudeExit: 3 })
+    expect(b.run().status).toBe(3)
+    startedByOld(b)
+    fs.writeFileSync(path.join(b.home, '.local', 'bin', 'claude'), '#!/bin/sh\nexit 0\n')
+    const started = b.runTab('NEW')
+    expect(started.status).toBe(0)
+    expect(started.stdout).not.toContain('the last screen')
   })
 
   it('an agent that exits 255 ends the tab with 254, since 255 from ssh means the link broke and the tab would reconnect', () => {
@@ -1133,7 +1171,7 @@ cat "$p" >> "$L/prompt"
     const res = b.run('attach')
     expect(res.status).toBe(0)
     expect(b.tmux()).toEqual([
-      ...['-L', 'koloft', 'display-message', '-p', '-t', '=k-sess1:', '#{pane_start_command}'],
+      ...['-L', 'koloft', 'list-panes', '-s', '-t', '=k-sess1:', '-F', '#{pane_start_command}'],
       ...['-L', 'koloft', 'show-environment', '-t', 'k-sess1', 'KOLOFT_TAB_PASS'],
       ...['-L', 'koloft', 'set', '-gq', 'set-titles', 'on', ';'],
       ...['set', '-gq', 'set-titles-string', '#{pane_title}', ';'],

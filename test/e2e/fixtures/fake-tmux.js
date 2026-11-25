@@ -177,6 +177,16 @@ if (verb === 'new-session') {
       } catch {}
   }
   process.exit(0)
+} else if (verb === 'list-panes' && rest.includes('#{pane_start_command}')) {
+  // PLATFORM§35
+  const name = flagVal('-t').replace(/^=(.*):$/, '$1')
+  const rec = recordOf(name)
+  if (!rec || !alive(rec.pid)) {
+    process.stderr.write(`can't find session: ${name}\n`)
+    process.exit(1)
+  }
+  process.stdout.write(`"${rec.cmd.replace(/["\\$]/g, '\\$&')}"\n`)
+  process.exit(0)
 } else if (verb === 'list-panes' && rest.includes('-a')) {
   for (const name of fs.readdirSync(aliveDir)) {
     const pid = pidOf(name)
@@ -187,15 +197,6 @@ if (verb === 'new-session') {
   const pid = pidOf(flagVal('-t').replace(/^=(.*):$/, '$1'))
   if (!alive(pid)) process.exit(1)
   process.stdout.write(pid + '\n')
-  process.exit(0)
-} else if (
-  (verb === 'display-message' || verb === 'display') &&
-  rest.includes('#{pane_start_command}')
-) {
-  // PLATFORM§35
-  const rec = recordOf(flagVal('-t').replace(/^=(.*):$/, '$1'))
-  const quoted = rec && alive(rec.pid) ? `"${rec.cmd.replace(/["\\$]/g, '\\$&')}"` : ''
-  process.stdout.write(quoted + '\n')
   process.exit(0)
 } else if (verb === 'display-message' || verb === 'display') {
   const io = process.env.KOLOFT_FAKE_TMUX_IO
