@@ -8,6 +8,9 @@ import { agyCatalog } from '../../../src/agents/agy/main/agyCatalog'
 import { EVERY_AGENTS_TOOLS } from './agentShims'
 import { NOTHING_TO_READ_OR_SEARCH } from './agentMainParts'
 
+const noModelList = async (): Promise<undefined> => undefined
+const noOneShotTarget = async (): Promise<null> => null
+
 export interface OwnersSettings {
   codexConfig: string
   ownersGemini: string
@@ -16,8 +19,8 @@ export interface OwnersSettings {
 export function agentsWithTheirCatalogs(owners: OwnersSettings): AgentsMain {
   const catalogs: Record<AgentId, AgentCatalog> = {
     claude: claudeCatalog,
-    codex: codexCatalog(() => owners.codexConfig),
-    agy: agyCatalog(() => owners.ownersGemini, isGitCheckoutAsync)
+    codex: codexCatalog(() => owners.codexConfig, noModelList),
+    agy: agyCatalog(() => owners.ownersGemini, isGitCheckoutAsync, noOneShotTarget)
   }
   const agents = new AgentsMain()
   for (const [id, catalog] of Object.entries(catalogs) as [AgentId, AgentCatalog][])

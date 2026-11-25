@@ -117,7 +117,9 @@ export const agent = {
     // CODEX§17
     typesASkillOnlyByTheNameInItsFile: false,
     // CODEX§17
-    refusesATypedSkillMarkedNotUserInvocable: false
+    refusesATypedSkillMarkedNotUserInvocable: false,
+    // CODEX§14
+    listsTheModelsAnAccountCanRun: true
   },
   pureFunctions: {
     effortsAModelTakes: () => CRON_EFFORTS,

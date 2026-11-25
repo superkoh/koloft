@@ -1,16 +1,16 @@
 import type { BackendId, OwnPick, SessionDefaults } from './types'
 import { SESSION_BACKENDS } from './sessionBackend'
 import { NAMED_MODELS, type NamedModel } from './cronModels'
-import { cleanOwnPick, familyNamesOf, ownPickOf } from './sessionPicks'
+import { cleanOwnPick, familyNamesOf, listsModels, ownPickOf } from './sessionPicks'
 import { isRecord } from './workbenchState'
 import { cleanVersions } from '@core/ownerInstructions'
 
 export const NO_DEFAULTS: SessionDefaults = { picks: {} }
 
-const capitalized = (name: string): string => name.charAt(0).toUpperCase() + name.slice(1)
+export const capitalized = (name: string): string => name.charAt(0).toUpperCase() + name.slice(1)
 
 export function ownPickModels(backend: BackendId): NamedModel[] {
-  if (backend === 'claude') return NAMED_MODELS.claude
+  if (!listsModels(backend)) return NAMED_MODELS[backend]
   return familyNamesOf(backend).map((family) => ({ id: family, label: capitalized(family) }))
 }
 
