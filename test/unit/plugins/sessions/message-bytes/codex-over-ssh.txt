@@ -140,4 +140,4 @@ if [ -z "$LC_ALL$LC_CTYPE" ]; then
   esac
 fi
 koloft_git="'include.path=$HOME/.koloft/git-accounts/config'"; case "$GIT_CONFIG_PARAMETERS" in *"$koloft_git"*) ;; *) GIT_CONFIG_PARAMETERS="${GIT_CONFIG_PARAMETERS:+$GIT_CONFIG_PARAMETERS }$koloft_git"; export GIT_CONFIG_PARAMETERS ;; esac; unset koloft_git
-mkdir -p "$HOME/.koloft/hook-sessions" && cat >> "$HOME/.koloft/hook-sessions/$1.discord-said"
+for t in "$@"; do set -- "$@" "$HOME/.koloft/hook-sessions/$t.discord-said"; shift; done; mkdir -p "$HOME/.koloft/hook-sessions" && tee -a "$@" >/dev/null
