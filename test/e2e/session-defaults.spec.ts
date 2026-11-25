@@ -291,7 +291,7 @@ test.describe("a workspace's session defaults: the model and thinking its own se
       const claude = await newClaudeCall(env, 0)
       expect(flagAfter(claude.argv, '--model')).toBe('opus')
       expect(flagAfter(claude.argv, '--effort')).toBe('high')
-      expect(flagAfter(claude.argv, '--append-system-prompt-file')).toMatch(/\.prompt\.md$/)
+      expect(flagAfter(claude.argv, '--append-system-prompt-file')).toMatch(/\.prompt\.\d+\.md$/)
       expect(promptOf(claude, machineHome(env))).toContain(
         'Any code change: "opus", high — not $HOME or `whoami`.'
       )

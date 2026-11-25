@@ -280,33 +280,43 @@ interface ClaudeTabPlace {
   tmuxName: string
   cwd: string
   ownerWords?: string
+  attaches?: boolean
 }
 
 const PROJECT_PROMPT_SUFFIX = '.prompt.md'
 const OWNER_TEXT_SUFFIX = '.owner.md'
+const OWNER_TEXT_VAR = 'koloft_owner_text'
 
+const projectPromptOfThisRun = (tabId: string): string => `"${remoteTabPath(tabId)}.prompt.$$.md"`
+
+const pushesProjectPrompt = (c: ClaudeTab): boolean => !!(c.agentPlugin && c.projectPrompt)
+
+// CC§5
 export const claudeTabProgram = (tab: ClaudeTabPlace, c: ClaudeTab): TabProgram => ({
   run: claudeRun(tab.tabId, c),
   beforeTmux: `${c.trustFolder ? trustOnTheMachine(tab.cwd) : ''}${c.pictureFolder ? trustOnTheMachine(c.pictureFolder) : ''}${claudeFirstRun(tab)}`,
-  whenItEnds: '',
+  whenItEnds: pushesProjectPrompt(c) ? `rm -f ${projectPromptOfThisRun(tab.tabId)}` : '',
   files: {
-    [`${tab.tabId}.json`]: JSON.stringify(c.settings),
     [`${tab.tabId}.tmux`]: tab.tmuxName,
-    ...(c.agentPlugin &&
-      c.projectPrompt && { [`${tab.tabId}${PROJECT_PROMPT_SUFFIX}`]: c.projectPrompt }),
-    ...(c.ownerText && { [`${tab.tabId}${OWNER_TEXT_SUFFIX}`]: c.ownerText })
+    ...(!tab.attaches && {
+      [`${tab.tabId}.json`]: JSON.stringify(c.settings),
+      ...(c.agentPlugin &&
+        c.projectPrompt && { [`${tab.tabId}${PROJECT_PROMPT_SUFFIX}`]: c.projectPrompt }),
+      ...(c.ownerText && { [`${tab.tabId}${OWNER_TEXT_SUFFIX}`]: c.ownerText })
+    })
   }
 })
 
 // CC§12 CC§13
 function claudeRun(tabId: string, c: ClaudeTab): string {
   const T = remoteTabPath(tabId)
-  const prompt = c.projectPrompt
-    ? `${T}${PROJECT_PROMPT_SUFFIX}`
-    : `$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}`
-  const ownerText = c.ownerText ? ` --append-system-prompt "$(cat "${T}${OWNER_TEXT_SUFFIX}")"` : ''
-  return `  PATH="$M/${CLAUDE_BIN_DIR}:$PATH"; export PATH
-  set -- claude --settings "${T}.json"${c.docsPlugin ? ` --plugin-dir "$M/${DOCS_PLUGIN_DIR}"` : ''}${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "${prompt}"` : ''}${ownerText} ${c.claudeArgs.map(shq).join(' ')}
+  const ownerFile = `"${T}${OWNER_TEXT_SUFFIX}"`
+  const prompt = pushesProjectPrompt(c)
+    ? projectPromptOfThisRun(tabId)
+    : `"$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"`
+  const ownerText = c.ownerText ? ` --append-system-prompt "$${OWNER_TEXT_VAR}"` : ''
+  return `${c.ownerText ? `  ${OWNER_TEXT_VAR}=$(cat ${ownerFile}); rm -f ${ownerFile}\n` : ''}${pushesProjectPrompt(c) ? `  mv -f "${T}${PROJECT_PROMPT_SUFFIX}" ${prompt}\n` : ''}  PATH="$M/${CLAUDE_BIN_DIR}:$PATH"; export PATH
+  set -- claude --settings "${T}.json"${c.docsPlugin ? ` --plugin-dir "$M/${DOCS_PLUGIN_DIR}"` : ''}${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file ${prompt}` : ''}${ownerText} ${c.claudeArgs.map(shq).join(' ')}
   ${EXEC_ARGS_THROUGH_THE_STATUS_RELAY.join('\n  ')}\n`
 }
 
@@ -379,7 +389,13 @@ export async function launchClaudeOnMachine(
         ownerWords: spec.ownerWords,
         loginPath,
         program: claudeTabProgram(
-          { tabId, tmuxName: opened.tmuxName, cwd, ownerWords: spec.ownerWords },
+          {
+            tabId,
+            tmuxName: opened.tmuxName,
+            cwd,
+            ownerWords: spec.ownerWords,
+            attaches: !starts
+          },
           {
             settings: d.hookSettings(tabId, machineDir, agentTools),
             agentPlugin: agentTools,

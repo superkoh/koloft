@@ -13,6 +13,8 @@ export interface AssistJob<Id extends AssistRowId = AssistRowId> {
   signal?: AbortSignal
 }
 
+export const withSystemFirst = (job: AssistJob): string => `${job.system}\n\n${job.prompt}`
+
 export type Assist<Id extends AssistRowId = AssistRowId> = (
   job: AssistJob<Id>
 ) => Promise<string | null>
