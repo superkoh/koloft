@@ -54,7 +54,10 @@ function run(command: string, input: string, env: Record<string, string> = {}): 
     env: { ...BASE_ENV, ...env },
     timeout: CHILD_TIMEOUT_MS
   })
-  if (res.error) throw new Error(`command did not finish in ${CHILD_TIMEOUT_MS} ms: ${command}`)
+  if (res.error)
+    throw new Error(
+      `command did not finish (${res.error.message}, limit ${CHILD_TIMEOUT_MS} ms): ${command}\n${res.stderr}`
+    )
   if (res.status !== 0) throw new Error(`exited ${res.status}: ${res.stderr}`)
   return res.stdout
 }
@@ -371,7 +374,8 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
     const repo = path.join(dir, 'repo')
     fs.mkdirSync(repo)
     const init = spawnSync('git', ['init', '-q'], { cwd: repo, timeout: CHILD_TIMEOUT_MS })
-    if (init.error) throw new Error(`git init did not finish in ${CHILD_TIMEOUT_MS} ms`)
+    if (init.error || init.status !== 0)
+      throw new Error(`git init failed (${init.error?.message ?? init.status}): ${init.stderr}`)
     const call = {
       conversationId: C1,
       workspacePaths: [repo],
