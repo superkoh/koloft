@@ -286,7 +286,7 @@ describe('ClaudeBackend: resuming a session on a remote machine into a worktree 
   const TREE = '/srv/repo/.claude/worktrees/w1'
 
   function planWith(other: { cwd: string; treeRoot: string; alive: boolean }) {
-    const backend = new ClaudeBackend({
+    const backend: ClaudeBackend = new ClaudeBackend({
       tracker: {
         list: () => [
           {
@@ -299,6 +299,7 @@ describe('ClaudeBackend: resuming a session on a remote machine into a worktree 
         ],
         remoteOf: () => undefined
       },
+      resumeProbes: { occupantOf: (dir: string) => backend.occupantOf(dir) },
       store: () => ({
         findRow: (id: string) =>
           id === SID
