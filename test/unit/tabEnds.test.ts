@@ -52,6 +52,7 @@ vi.mock('../../src/agents/codex/main/codexTransport', async (importOriginal) => 
 import type { SessionEvent } from '@shared/sessionEvent'
 import { PLACEHOLDER_SESSION_TITLE } from '@shared/types'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/agents/claude/main/backend'
+import { ClaudeSessionStore } from '../../src/agents/claude/main/claudeSessionStore'
 import { SessionTracker } from '../../src/agents/claude/main/sessionTracker'
 import { SessionRuntime } from '../../src/core/agent/sessionRuntime'
 import { TAB_TORN_DOWN, type Moment, type TabEnded } from '../../src/core/moment'
@@ -71,6 +72,7 @@ import {
 const CLAUDE_TAB = 'pty-claude'
 const CODEX_TAB = 'pty-codex'
 const AGY_TAB = 'pty-agy'
+const CLAUDE_TAB_STILL_STARTING = 'pty-claude-starting'
 const CLAUDE_SESSION = '3c4ac765-c402-4d6d-88ac-dca81e2a35f1'
 
 type Sent = [string, SessionEvent]
@@ -114,10 +116,28 @@ afterEach(async () => {
 async function aTabOfEveryAgent() {
   const claudeSent: Sent[] = []
   const tracker = new SessionTracker(new SessionRuntime())
+  const keptInLayout: string[] = []
+  let rowsReread = 0
+  const store = new ClaudeSessionStore({
+    projectsRoot: path.join(world.home, '.claude', 'projects'),
+    remoteProjectsRoot: (host) => path.join(world.home, 'mirror', host),
+    pinnedPaths: () => [world.repo],
+    remoteTargets: () => [],
+    kept: {
+      list: () => keptInLayout,
+      add: (ids) => void keptInLayout.push(...ids),
+      remove: (id) =>
+        void keptInLayout.splice(0, keptInLayout.length, ...without(keptInLayout, id)),
+      keepOnly: (ids) => void keptInLayout.splice(0, keptInLayout.length, ...ids)
+    },
+    rereadRows: () => void rowsReread++,
+    rereadGrownRows: () => {},
+    runningBindings: () => new Map()
+  })
   const claude = new ClaudeBackend({
     pty: terminalOf(CLAUDE_TAB).pty,
     tracker,
-    workspaces: () => null,
+    store: () => store,
     userData: () => world.userData,
     events: (tabId: string, event: SessionEvent) => claudeSent.push([tabId, event])
   } as unknown as ClaudeBackendDeps)
@@ -167,7 +187,7 @@ async function aTabOfEveryAgent() {
   })
   return {
     lifecycle,
-    claude: { tracker, sent: claudeSent },
+    claude: { tracker, store, sent: claudeSent, rowsReread: () => rowsReread },
     codex: { sessions: codex, sent: codexSent, killed: codexTerminal.killed },
     agy: { sessions: agy, sent: agySent, killed: agyTerminal.killed, ranOverSsh: ssh.ran },
     whenTornDown
@@ -188,8 +208,11 @@ const crashed = (tabId: string): TabEnded => ended(tabId, { exitCode: 1, crashed
 const claudeTabNow = (a: ThreeAgents): unknown => ({
   alive: a.claude.tracker.infoOf(CLAUDE_TAB)?.alive,
   session: a.claude.tracker.infoOf(CLAUDE_TAB)?.sessionId,
-  sent: [...a.claude.sent]
+  sent: [...a.claude.sent],
+  rowsReread: a.claude.rowsReread()
 })
+
+const without = (ids: string[], gone: string): string[] => ids.filter((id) => id !== gone)
 
 const storedTabNow = (a: ThreeAgents, agent: StoredAgent): unknown => ({
   open: a[agent].sessions.hasTab(TAB_OF[agent]),
@@ -230,7 +253,12 @@ describe('a session tab whose terminal ended, told to the three real backends th
   it('Claude Code: a tab on this Mac whose terminal ended without a crash and without an end report sends no event, and its row is no longer alive', async () => {
     const a = await aTabOfEveryAgent()
     a.lifecycle.emit('teardown', ended(CLAUDE_TAB))
-    expect(claudeTabNow(a)).toEqual({ alive: false, session: CLAUDE_SESSION, sent: [] })
+    expect(claudeTabNow(a)).toEqual({
+      alive: false,
+      session: CLAUDE_SESSION,
+      sent: [],
+      rowsReread: 0
+    })
   })
 
   it('Claude Code: a tab on this Mac whose claude wrote its end report and then exited with a failure is not reported as exited a second time, and its row is no longer alive', async () => {
@@ -245,7 +273,12 @@ describe('a session tab whose terminal ended, told to the three real backends th
       })
     )
     a.lifecycle.emit('teardown', crashed(CLAUDE_TAB))
-    expect(claudeTabNow(a)).toEqual({ alive: false, session: CLAUDE_SESSION, sent: [] })
+    expect(claudeTabNow(a)).toEqual({
+      alive: false,
+      session: CLAUDE_SESSION,
+      sent: [],
+      rowsReread: 0
+    })
   })
 
   it.each(STORED)(
@@ -286,6 +319,23 @@ describe('a session tab whose terminal ended, told to the three real backends th
   })
 })
 
+describe('a Claude Code tab that was still starting when its terminal ended', () => {
+  it('is no longer held as starting, so the rows are read again once, and the Codex tab and the Antigravity tab are untouched', async () => {
+    const a = await aTabOfEveryAgent()
+    a.claude.store.launchStarted(CLAUDE_TAB_STILL_STARTING, world.repo)
+    const rereadForTheStart = a.claude.rowsReread()
+    const codexBefore = storedTabNow(a, 'codex')
+    const agyBefore = storedTabNow(a, 'agy')
+    a.lifecycle.emit('teardown', ended(CLAUDE_TAB_STILL_STARTING))
+    expect(a.claude.rowsReread()).toBe(rereadForTheStart + 1)
+    a.lifecycle.emit('teardown', ended(CLAUDE_TAB_STILL_STARTING))
+    expect(a.claude.rowsReread()).toBe(rereadForTheStart + 1)
+    await pastAnyStopStartedByMistake()
+    expect(storedTabNow(a, 'codex')).toEqual(codexBefore)
+    expect(storedTabNow(a, 'agy')).toEqual(agyBefore)
+  })
+})
+
 describe('a tab of one agent that ends is nothing to the other two', () => {
   it("Claude Code's tab crashes: the Codex tab and the Antigravity tab stay open, still count on their accounts, send no event, and their terminals are not let go", async () => {
     const a = await aTabOfEveryAgent()
@@ -308,7 +358,12 @@ describe('a tab of one agent that ends is nothing to the other two', () => {
       a.lifecycle.emit('teardown', crashed(TAB_OF[agent]))
       await stoppedAndGone(a, agent)
       await pastAnyStopStartedByMistake()
-      expect(claudeTabNow(a)).toEqual({ alive: true, session: CLAUDE_SESSION, sent: [] })
+      expect(claudeTabNow(a)).toEqual({
+        alive: true,
+        session: CLAUDE_SESSION,
+        sent: [],
+        rowsReread: 0
+      })
       expect(storedTabNow(a, third)).toEqual(thirdBefore)
       expect(thirdBefore).toMatchObject(OPEN_AND_LEFT_ALONE)
     }
@@ -358,7 +413,12 @@ describe('what the plugins find when they hear that a tab was torn down', () => 
     a.whenTornDown.push(() => heard.push(claudeTabNow(a)))
     a.lifecycle.emit('teardown', crashed(CLAUDE_TAB))
     expect(heard).toEqual([
-      { alive: false, session: CLAUDE_SESSION, sent: [REPORTED_AS_EXITED_UNCLEANLY] }
+      {
+        alive: false,
+        session: CLAUDE_SESSION,
+        sent: [REPORTED_AS_EXITED_UNCLEANLY],
+        rowsReread: 0
+      }
     ])
   })
 })
