@@ -2134,7 +2134,7 @@ Stop records in Koloft's run-state logs cross-checked
 against their transcripts, `lsof`/`ps` on live sessions, and a headless probe
 (`printf <prompt> | claude -p --settings <stop-hook settings> --allowedTools Bash`;
 the prompt must ride stdin or `--allowedTools` swallows it). Koloft dependents: the
-`bgl` list in `src/plugins/sessions/main/hooks.ts`'s injected script, `src/main/taskProcs.ts`,
+`bgl` list in `src/plugins/sessions/main/hooks.ts`'s injected script, `src/agents/claude/main/taskProcs.ts`,
 `judgeReported` and the server test (`IDLE_SERVER_CPU_MS_PER_MINUTE`,
 `SERVER_QUIET_WINDOW_MS`) in `src/agents/claude/main/sessionTracker.ts`.
 

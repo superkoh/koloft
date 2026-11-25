@@ -9,6 +9,7 @@ import type {
   SkillSuggestion
 } from '@shared/types'
 import { basename } from '@shared/preview'
+import { SESSION_WORKTREES_FOLDER } from '@shared/worktreeName'
 import { cronBackend, slugOf } from '@shared/cronNames'
 import { agentManifest } from '@core/agent/registry'
 import {
@@ -403,7 +404,7 @@ export function CronJobsDialog({
     isGit ? (
       <p className="fnote">
         A new copy of the repo every time —{' '}
-        <span className="m">{`.claude/worktrees/${slug}-<date>-<time>`}</span>, branch{' '}
+        <span className="m">{`${SESSION_WORKTREES_FOLDER}/${slug}-<date>-<time>`}</span>, branch{' '}
         <span className="m">{`worktree-${slug}-…`}</span>. Your own files are never touched. When a
         run&apos;s tab closes, Koloft removes its folder and branch, unless they hold work not
         committed; its row in the sidebar still resumes it.

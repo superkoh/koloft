@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { AccountView, CodexLimits, QuotaBucket, SignInFolderKind } from '@shared/types'
 import { launchLine } from '@shared/accountUsage'
 import { BackgroundFile } from '../../src/main/backgroundFile'
-import { HomeAccountPicker } from '../../src/agents/codex/main/codexAccounts'
+import { HomeAccountPicker } from '../../src/agents/kit/main/homeAccountPicker'
 import { SavedUsage, SNAPSHOT_OLDER_THAN_THE_5H_WINDOW_MS } from '../../src/main/savedUsage'
 import { saveHomeUsage, type HomeUsage } from '../../src/main/savedHomeUsage'
 

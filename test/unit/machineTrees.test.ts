@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { parseTaggedTable, toolsOf, treesByTab, withDescendants } from '../../src/main/machineTrees'
+import {
+  AGENT_PROGRAM,
+  parseTaggedTable,
+  toolsOf,
+  treesByTab,
+  withDescendants
+} from '../../src/main/machineTrees'
 
 const AT = 'Thu Nov 12 00:51:03 2026    '
 const KOLOFT = 100
@@ -73,5 +79,14 @@ describe('which of a tab’s processes are tools that may give way', () => {
   it('never the process Koloft started for the tab, whatever its command line says', () => {
     expect(tools('pty-5')).toEqual([901])
     expect(tools('pty-6')).toEqual([951])
+  })
+})
+
+describe('the agents’ programs, built from the manifests', () => {
+  it('match exactly the command lines the hand-written pattern matched', () => {
+    const handWritten =
+      /^(?:\S*\/)?(?:node\s+\S*\/(?:claude|codex|agy)(?:\.js)?\s|node\s+\S*\/(?:claude-code|codex)\/\S*\s|(?:claude|codex|agy)(?:\s|$))/
+    expect(AGENT_PROGRAM.source).toBe(handWritten.source)
+    expect(AGENT_PROGRAM.flags).toBe(handWritten.flags)
   })
 })
