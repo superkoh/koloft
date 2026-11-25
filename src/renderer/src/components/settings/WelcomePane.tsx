@@ -11,13 +11,14 @@ import {
   type Icon
 } from '../../icons'
 import { BROWSER_CONTROL_PAGE_NAME } from '@plugins/browser-control/api'
+import { SESSION_BACKENDS, shortProductList } from '@shared/sessionBackend'
 import { useStore } from '../../store'
 import { useSettingsUpdate } from './useSettingsUpdate'
 
 const CARDS: { Icon: Icon; title: string; body: string; where: string }[] = [
   {
     Icon: IconFolder,
-    title: 'Claude Code, Codex and Antigravity sessions',
+    title: `${shortProductList(SESSION_BACKENDS, 'and')} sessions`,
     body: 'Pin a folder, start with your default agent or choose another, or restore a session from history. On this Mac or on a machine over SSH.',
     where: '⇧⌘O · sidebar'
   },
@@ -66,7 +67,7 @@ const CARDS: { Icon: Icon; title: string; body: string; where: string }[] = [
 ]
 
 const DIFFS: [string, string, string][] = [
-  ['Real Claude Code, Codex and Antigravity terminals', 'yes', 'yes'],
+  [`Real ${shortProductList(SESSION_BACKENDS, 'and')} terminals`, 'yes', 'yes'],
   ['Session list and history per folder', 'no', 'yes'],
   ['Working / needs your OK / done, at a glance', 'no', 'for sessions Koloft started'],
   ['Files changed, with diff, beside the chat', 'git diff by hand', 'yes'],

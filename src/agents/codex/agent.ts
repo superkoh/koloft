@@ -15,6 +15,7 @@ export const agent = {
   id: 'codex',
   name: 'Codex',
   productName: 'Codex',
+  shortProductName: 'Codex',
   maker: 'OpenAI',
   command: 'codex',
   // CODEX§15
@@ -137,7 +138,8 @@ export const agent = {
       signsInThroughABrowser: true,
       storesAPastedKeyItself: true,
       takesAnEndpoint: false,
-      asksItsFirstRunQuestionsForEachAccount: false
+      asksItsFirstRunQuestionsForEachAccount: false,
+      isATokenItsSignInPrints: false
     }
   ]
 } as const satisfies AgentManifest
