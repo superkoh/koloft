@@ -84,7 +84,8 @@ beforeEach(async () => {
   process.env.KOLOFT_KEYCHAIN_FILE = fixtureFile
 })
 
-afterAll(() => {
+afterAll(async () => {
+  await BackgroundFile.whenAllWritten()
   for (const k of ENV_KEYS) {
     if (savedEnv[k] === undefined) delete process.env[k]
     else process.env[k] = savedEnv[k]

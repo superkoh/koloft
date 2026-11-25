@@ -12,6 +12,7 @@ import {
   type PickDeps,
   type UsageSnapshots
 } from '../../src/agents/claude/main/claudeAccountPicker'
+import { BackgroundFile } from '../../src/main/backgroundFile'
 import { SavedUsage, SNAPSHOT_OLDER_THAN_THE_5H_WINDOW_MS } from '../../src/main/savedUsage'
 import type { ProbeResult } from '../../src/agents/claude/main/claudeAccountProbe'
 import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
@@ -587,7 +588,10 @@ describe('U4 · cache short-circuit and single-flight', () => {
 
   it('a snapshot the last run saved lets the first pick after a restart answer without waiting for the probe', async () => {
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-saved-usage-')), 'u.json')
-    onTestFinished(() => fs.rmSync(path.dirname(file), { recursive: true, force: true }))
+    onTestFinished(async () => {
+      await BackgroundFile.whenAllWritten()
+      fs.rmSync(path.dirname(file), { recursive: true, force: true })
+    })
     const lastRun = new SavedUsage(file, NOW_MS)
     const lastPicker = makeHarness([meta({ name: 'a' }), meta({ name: 'b' })], {
       cache: lastRun
@@ -608,7 +612,10 @@ describe('U4 · cache short-circuit and single-flight', () => {
 
   it('a snapshot saved longer ago than the 5-hour window is not read back, so that first pick waits for the probe as before', () => {
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-saved-usage-')), 'u.json')
-    onTestFinished(() => fs.rmSync(path.dirname(file), { recursive: true, force: true }))
+    onTestFinished(async () => {
+      await BackgroundFile.whenAllWritten()
+      fs.rmSync(path.dirname(file), { recursive: true, force: true })
+    })
     const saved = new SavedUsage(file, NOW_MS)
     saved.set('oauth:a', usage({ u5: 0.1 }))
     saved.flushSync()
@@ -619,7 +626,10 @@ describe('U4 · cache short-circuit and single-flight', () => {
 
   it('a probe that says the token expired drops that account’s snapshot, saved one included', async () => {
     const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-saved-usage-')), 'u.json')
-    onTestFinished(() => fs.rmSync(path.dirname(file), { recursive: true, force: true }))
+    onTestFinished(async () => {
+      await BackgroundFile.whenAllWritten()
+      fs.rmSync(path.dirname(file), { recursive: true, force: true })
+    })
     const saved = new SavedUsage(file, NOW_MS)
     const h = makeHarness([meta({ name: 'a' }), meta({ name: 'b' })], { cache: saved })
     h.picker.cacheUsage('oauth', 'a', usage({ u5: 0.1 }))
