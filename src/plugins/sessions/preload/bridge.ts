@@ -23,7 +23,7 @@ export interface SessionsBridge {
     installTool(backend: BackendId): Promise<{ tabId: string; cwd: string } | null>
     onToolsChanged(cb: () => void): () => void
     onUpdate(cb: (sessions: SessionInfo[]) => void): () => void
-    onRelocated(cb: (e: { tabId: string; dir: string }) => void): () => void
+    onRelocated(cb: (e: { tabId: string; dir: string; backendId: BackendId }) => void): () => void
     noteActivity(tabId: string): void
     list(): Promise<SessionInfo[]>
     resumePlan(sessionId: string): Promise<ResumePlan>
