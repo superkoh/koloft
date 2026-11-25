@@ -53,9 +53,6 @@ export const BACKEND_OF_SIGN_IN_FOLDER = Object.fromEntries(
   Object.entries(SIGN_IN_FOLDER_OF).map(([backend, kind]) => [kind, backend])
 ) as Record<SignInFolderKind, SignInBackend>
 
-export const isSignInFolderKind = (kind: unknown): kind is SignInFolderKind =>
-  SIGN_IN_FOLDER_KINDS.some((k) => k === kind)
-
 export type AccountStatus = 'ok' | 'expired' | 'unverified'
 
 // CC§7
@@ -311,17 +308,6 @@ export interface AccountView extends AccountMeta {
   quotaAt?: number
   probeError?: ProbeErrorKind
   apiKey?: true
-}
-
-export type SignInResult =
-  | { ok: true; tabId: string; cwd: string }
-  | { ok: false; error: 'invalid-name' | 'duplicate' | 'keychain' }
-
-export interface SignInFailure {
-  backend: SignInBackend
-  name: string
-  again: boolean
-  tail: string
 }
 
 export interface LoginProgress {
@@ -1237,20 +1223,8 @@ export interface CoreApi {
     remove(name: string, kind: AccountKind): Promise<boolean>
     toggle(name: string, kind: AccountKind, enabled: boolean): Promise<void>
     probe(): Promise<AccountView[]>
-    // CC§7
-    startLogin(
-      name: string,
-      reauth?: boolean
-    ): Promise<'ok' | 'invalid-name' | 'duplicate' | 'unknown'>
-    cancelLogin(): void
-    // CODEX§15
-    signIn(kind: SignInFolderKind, name: string, again?: boolean): Promise<SignInResult>
-    signInFailure(): Promise<SignInFailure | null>
-    dismissSignInFailure(): void
-    onSignInFailure(cb: (f: SignInFailure | null) => void): () => void
     // CODEX§15
     codexUseReset(name: string): Promise<CodexResetOutcome>
-    onLoginProgress(cb: (p: LoginProgress) => void): () => void
     beginSignIn(kind: AccountKind, name: string, again?: boolean): Promise<SignInStart>
     heldSignInFailure(): Promise<SignInProgress | null>
     onSignInProgress(cb: (news: SignInNews) => void): () => void

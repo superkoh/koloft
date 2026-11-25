@@ -8,7 +8,6 @@ import {
   type LoginProgress,
   type SignInProgress
 } from '@shared/types'
-import { CH, type Channel } from '@shared/ipcChannels'
 import { ACCOUNT_KINDS_OF, noAccountLine } from '@shared/accountUsage'
 import { stripTerminalCodes } from '@core/terminalCodes'
 import type { AgentAccounts, StartAsk } from '@core/agent/agentsMain'
@@ -81,7 +80,6 @@ export interface ClaudeAccountDeps {
   accountViews(): AccountView[]
   pushAccounts(): void
   notifyExpired(name: string): void
-  sendToRenderer(channel: Channel, ...args: unknown[]): boolean
   signInChanged(progress: SignInProgress): void
   savedUsage: UsageSnapshots
   tracker: {
@@ -111,7 +109,6 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
     accountViews,
     pushAccounts,
     notifyExpired,
-    sendToRenderer,
     signInChanged,
     savedUsage,
     tracker,
@@ -269,7 +266,6 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
   }
 
   function sendLoginProgress(p: LoginProgress, again: boolean): void {
-    sendToRenderer(CH.accounts.loginProgress, p)
     const { phase, name, url, tail, tabId, cwd } = p
     signInChanged({
       kind: 'oauth',
@@ -491,8 +487,6 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
     loginWatchers,
     loginPtys,
     feedLoginWatcher,
-    failLogin,
-    startLogin,
-    cancelLogins
+    failLogin
   }
 }
