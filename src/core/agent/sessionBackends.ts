@@ -66,6 +66,9 @@ export interface SessionBackend extends SessionRowsSource {
   beforeWorkspaceRemoved(workspace: string): Promise<void>
   showsPromptBeforeBind(tabId: string): boolean
   sessionGone(key: string): boolean
+  noticeRemoteExits(host: string, sessionIds: string[]): void
+  mirrorPulled(host: string): void
+  tmuxOfTab(tabId: string): string | undefined
 }
 
 export interface SessionLifecycle {
@@ -304,6 +307,22 @@ export class SessionBackends {
     if (!identity) return false
     const backend = this.adapters.get(identity.backendId)
     return !backend || !backend.sessionGone(key)
+  }
+
+  noticeRemoteExits(host: string, sessionIds: string[]): void {
+    for (const backend of this.builtInListOrder()) backend.noticeRemoteExits(host, sessionIds)
+  }
+
+  mirrorPulled(host: string): void {
+    for (const backend of this.builtInListOrder()) backend.mirrorPulled(host)
+  }
+
+  tmuxOfTab(tabId: string): string | undefined {
+    for (const backend of this.builtInListOrder()) {
+      const name = backend.tmuxOfTab(tabId)
+      if (name !== undefined) return name
+    }
+    return undefined
   }
 
   async historyRows(

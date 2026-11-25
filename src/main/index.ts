@@ -1847,7 +1847,7 @@ async function noteSentByKoloft(
 }
 
 async function deliverViaOwner(tabId: string, text: string): Promise<boolean> {
-  return (await storedOwnerOf(tabId)?.deliver?.(tabId, text)) ?? false
+  return (await storedOwnerOf(tabId)?.deliver(tabId, text)) ?? false
 }
 
 function noticeOf(tabId: string): NoticeFile | undefined {
@@ -3842,7 +3842,7 @@ app.whenReady().then(() => {
       await storedOwnerOf(tabId)?.answerable?.(tabId)
     },
     answerInPlace: async (tabId, reply) => {
-      return storedOwnerOf(tabId)?.answer?.(tabId, reply) ?? false
+      return storedOwnerOf(tabId)?.answer(tabId, reply) ?? false
     },
     showsDialogsClosing: (tabId) => claudeDialogs.showsDialogsClosing(tabId),
     regDir: hookPaths.regDir
@@ -4101,13 +4101,8 @@ app.whenReady().then(() => {
       tracker.fillMachineScratchpads(host)
       workspaceMgr?.onRemoteChanged()
     },
-    onLeft: (host, ids) => {
-      claudeBackend.noticeRemoteExits(host, ids)
-      for (const s of storedSessions()) s.noticeRemoteExits?.(host, ids)
-    },
-    onHooksPulled: (host) => {
-      for (const s of storedSessions()) s.followMirrors?.(host)
-    },
+    onLeft: (host, ids) => sessionBackends.noticeRemoteExits(host, ids),
+    onHooksPulled: (host) => sessionBackends.mirrorPulled(host),
     onShells: (host, shells) => {
       for (const s of shells) ptyMgr.shellOnMachineSaid(host, s.tabId, s.name, s.cwd)
     },
@@ -6050,8 +6045,7 @@ async function sessionPorts(tabId: string): Promise<ListeningPort[] | null> {
   ]
   const machine = machineOfTab(tabId)
   if (!machine) return parseSessionPorts(await scanPortsHere(tags))
-  const tmuxName =
-    tracker.remoteOf(tabId)?.tmuxName ?? storedOwnerOf(tabId)?.tmuxOfTab?.(tabId) ?? ''
+  const tmuxName = sessionBackends.tmuxOfTab(tabId) ?? ''
   await loginEnvReady()
   return parseSessionPorts(await scanPortsOnMachine(machine, tags, tmuxName, remoteControlDir))
 }
