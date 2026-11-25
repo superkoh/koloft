@@ -95,8 +95,10 @@ const mainOns = new Set([...channels(MAIN, String.raw`ipcMain\.on`), ...fromPlug
 const menuMapStart = MAIN.indexOf('const MENU_SHORTCUT_CHANNEL')
 const menuMap = MAIN.slice(menuMapStart, MAIN.indexOf('\n}\n', menuMapStart))
 const PLUGIN_MAINS = PLUGIN_PARTS.map((p) => p.main).join('\n')
+const AGENT_MAINS = filesUnder(path.join(SRC, 'agents')).join('\n')
 const mainSends = new Set([
   ...channels(MAIN, 'sendToRenderer'),
+  ...channels(AGENT_MAINS, 'sendToRenderer'),
   ...channels(PLUGIN_MAINS, String.raw`\bd\.(?:send|push)`),
   ...(MAIN.includes('sendToRenderer(MENU_SHORTCUT_CHANNEL[') ? tokens(menuMap) : []),
   ...fromPlugins('push')
