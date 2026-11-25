@@ -5,11 +5,6 @@ import type { CronEffort, LaunchPermission } from '@shared/types'
 import { shq } from '@shared/shellQuote'
 import { portOffset } from '@shared/worktreeName'
 import { pictureFolderIn } from '@shared/pastedPictures'
-import {
-  saidFile,
-  seedHandedOverOwnerWords,
-  writeConductorMarker
-} from '@plugins/sessions/main/hooks'
 import { aboveItsTools } from '../../../main/agentLift'
 import {
   AGENT_PROMPT_FILE,
@@ -30,8 +25,9 @@ import {
 import {
   mirrorHookDir,
   mirrorProjectsRoot,
-  REMOTE_TABS_DIR,
-  remoteMachineDir
+  REMOTE_HOOK_DIR,
+  remoteMachineDir,
+  remoteTabPath
 } from '../../../main/remote/paths'
 import { worktreeNameAround } from '../../../main/resumePlan'
 import { claudeArgv } from './claudeArgs'
@@ -102,15 +98,16 @@ export interface MachineAccount {
   banner: string
 }
 
-export interface LocalClaudeDeps {
-  hookRegDir(): string
+export interface ClaudeHereDeps {
+  writeConductorMarker(tabId: string, role: string): void
+  handOverOwnerWords(tabId: string, words: string): void
   agentPlugin(): string | undefined
   docsPlugin(): string | undefined
   assistOf(cwd: string, resumeKey?: string): LaunchIdentity | undefined
   pastedPicturesDir(): string
 }
 
-export interface MachineClaudeDeps {
+export interface ClaudeOnMachineDeps {
   realPath(machine: string, p: string): string
   settings(): { skipPermissions: boolean }
   agentTools(): boolean
@@ -121,7 +118,7 @@ export interface MachineClaudeDeps {
 }
 
 export async function launchClaudeHere(
-  d: LocalClaudeDeps,
+  d: ClaudeHereDeps,
   spec: ClaudeLaunch
 ): Promise<ClaudeLaunchPlan> {
   const args = claudeArgv(process.env.KOLOFT_CLAUDE_CMD || 'claude', {
@@ -168,9 +165,8 @@ export async function launchClaudeHere(
     cwd,
     conductor,
     launchCommand: (tabId) => {
-      const regDir = d.hookRegDir()
-      if (role) writeConductorMarker(regDir, tabId, role)
-      if (spec.ownerWords) seedHandedOverOwnerWords(saidFile(regDir, tabId), spec.ownerWords)
+      if (role) d.writeConductorMarker(tabId, role)
+      if (spec.ownerWords) d.handOverOwnerWords(tabId, spec.ownerWords)
       return launchCommand
     },
     extraEnv: {
@@ -280,7 +276,7 @@ export interface ClaudeTab {
   pictureFolder?: string
 }
 
-export interface ClaudeTabPlace {
+interface ClaudeTabPlace {
   tabId: string
   tmuxName: string
   cwd: string
@@ -289,8 +285,6 @@ export interface ClaudeTabPlace {
 
 const PROJECT_PROMPT_SUFFIX = '.prompt.md'
 const OWNER_TEXT_SUFFIX = '.owner.md'
-
-const tabPath = (tabId: string): string => `${REMOTE_TABS_DIR}/${tabId}`
 
 export const claudeTabProgram = (tab: ClaudeTabPlace, c: ClaudeTab): TabProgram => ({
   run: claudeRun(tab.tabId, c),
@@ -307,7 +301,7 @@ export const claudeTabProgram = (tab: ClaudeTabPlace, c: ClaudeTab): TabProgram 
 
 // CC§12 CC§13
 function claudeRun(tabId: string, c: ClaudeTab): string {
-  const T = tabPath(tabId)
+  const T = remoteTabPath(tabId)
   const prompt = c.projectPrompt
     ? `${T}${PROJECT_PROMPT_SUFFIX}`
     : `$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}`
@@ -322,8 +316,8 @@ const trustOnTheMachine = (folder: string): string =>
   `( cd ${shq(folder)} 2>/dev/null && node -e ${shq(TRUST_CWD_JS)} "$HOME/.claude.json" "$(pwd -P)" ) >/dev/null 2>&1\n`
 
 function claudeFirstRun(tab: ClaudeTabPlace): string {
-  const T = tabPath(tab.tabId)
-  return `${tab.ownerWords ? `mkdir -p "$HOME/.koloft/hook-sessions" && mv -f "${T}".said* "$HOME/.koloft/hook-sessions/"\n` : ''}# CC§10
+  const T = remoteTabPath(tab.tabId)
+  return `${tab.ownerWords ? `mkdir -p "${REMOTE_HOOK_DIR}" && mv -f "${T}".said* "${REMOTE_HOOK_DIR}/"\n` : ''}# CC§10
 CJ="$HOME/.claude.json"
 if [ -f "${T}.env" ]; then
   if [ ! -f "$CJ" ]; then printf '{"hasCompletedOnboarding":true}\\n' > "$CJ"
@@ -342,7 +336,7 @@ fi
 
 export async function launchClaudeOnMachine(
   machine: Machine,
-  d: MachineClaudeDeps,
+  d: ClaudeOnMachineDeps,
   userData: string,
   spec: ClaudeLaunch
 ): Promise<ClaudeLaunchPlan> {

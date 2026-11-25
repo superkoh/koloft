@@ -51,6 +51,11 @@ import { barePath } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import { koloftPrompt } from '@plugins/sessions/api'
 import { docsWritingOn } from '@plugins/docs-writing/api'
+import {
+  saidFile,
+  seedHandedOverOwnerWords,
+  writeConductorMarker
+} from '@plugins/sessions/main/hooks'
 import type { CreateTabOptions } from '@shared/types'
 import { portOffset } from '@shared/worktreeName'
 import { ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE } from '../../src/main/agentLift'
@@ -147,7 +152,10 @@ async function claudeTab(
         })
     ),
     launchHere: {
-      hookRegDir: () => regDir,
+      writeConductorMarker: (tabId: string, role: string) =>
+        writeConductorMarker(regDir, tabId, role),
+      handOverOwnerWords: (tabId: string, words: string) =>
+        seedHandedOverOwnerWords(saidFile(regDir, tabId), words),
       agentPlugin: () => (withPlugin ? '/koloft/agent-plugin' : undefined),
       docsPlugin: () => '/koloft/docs-plugin',
       assistOf: () => assist,

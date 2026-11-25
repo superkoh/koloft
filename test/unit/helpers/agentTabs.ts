@@ -5,6 +5,11 @@ import path from 'path'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { SessionEvent } from '@shared/sessionEvent'
 import { docsWritingOn } from '@plugins/docs-writing/api'
+import {
+  saidFile,
+  seedHandedOverOwnerWords,
+  writeConductorMarker
+} from '@plugins/sessions/main/hooks'
 import { AgySessions, type AgySessionDeps } from '../../../src/agents/agy/main/agySessions'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../../src/agents/claude/main/backend'
 import type { MachineAccount } from '../../../src/agents/claude/main/claudeLaunch'
@@ -103,7 +108,7 @@ function readableCommand(cmd: string, input?: Buffer): string {
 
 export function shellOnThisMacAsTheMachine(
   machineHome: () => string,
-  loginShell: () => string = () => '/bin/sh'
+  loginShell: () => string
 ): SshRun {
   return (cmd, opts) =>
     new Promise((resolve) => {
@@ -268,7 +273,10 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
       (machine) => machineIn(world, machine, c.machine)
     ),
     launchHere: {
-      hookRegDir: () => world.regDir,
+      writeConductorMarker: (tabId: string, role: string) =>
+        writeConductorMarker(world.regDir, tabId, role),
+      handOverOwnerWords: (tabId: string, words: string) =>
+        seedHandedOverOwnerWords(saidFile(world.regDir, tabId), words),
       agentPlugin: () =>
         c.withPlugin === false ? undefined : path.join(world.home, 'koloft', 'agent-plugin'),
       docsPlugin: () => path.join(world.home, 'koloft', 'docs-plugin'),

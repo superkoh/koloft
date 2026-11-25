@@ -1003,15 +1003,15 @@ exit ${CALLER_GONE_EXIT}`,
   }
 
   tabFiles(tabId: string): { dir: string; pushedLine(): string } {
-    const own = this.deps.tabs
-    const dir = tabPackageDir(own.userData, tabId)
+    const tabs = this.deps.tabs
+    const dir = tabPackageDir(tabs.userData, tabId)
     return {
       dir,
       pushedLine: () =>
         tabPushed({
           host: this.machine,
-          sshOptions: sshOptions(own.controlDir, false),
-          machine: own.machinePackage(),
+          sshOptions: sshOptions(tabs.controlDir, false),
+          machine: tabs.machinePackage(),
           tabId,
           tabDir: dir
         })
@@ -1080,8 +1080,8 @@ exit ${CALLER_GONE_EXIT}`,
       : `m-${named.tab}${NO_TAB_NAME_IS_ANOTHERS_PREFIX}`
     const mode = sessionKnownBeforeItStarts ? await this.attachOrStart(named.session) : 'start'
     const keyless = mode === 'attach' && (await this.startedBeforeTabPasses(tmuxName))
-    const own = this.deps.tabs
-    const pkg = own.machinePackage()
+    const tabs = this.deps.tabs
+    const pkg = tabs.machinePackage()
     return {
       mode,
       tmuxName,
@@ -1091,7 +1091,7 @@ exit ${CALLER_GONE_EXIT}`,
       shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
       resized: this.resized,
       launchCommand: (tabId, content) => {
-        const dir = tabPackageDir(own.userData, tabId)
+        const dir = tabPackageDir(tabs.userData, tabId)
         markStartedBeforeTabPasses(tabId, keyless)
         writeTabPackage(dir, { ...content, tabId, tmuxName, machineName: pkg.name })
         return this.tabLaunchLine(pkg, dir, tabId, mode)

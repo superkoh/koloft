@@ -15,7 +15,7 @@ import {
   TAB_PASS_FILE_SUFFIX,
   tmuxHoldsATabPass
 } from './install'
-import { remotePtsFile } from './paths'
+import { remotePtsFile, remoteTabPath } from './paths'
 import { passOf, TAB_PASS_ENV } from '../tabPass'
 import { OWNING_TAB_ENV } from '../owningTabEnv'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
@@ -155,8 +155,6 @@ const SETTINGS_ON_A_TMUX_ALREADY_RUNNING = `tmux -L koloft ${[
 
 export const POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE = '/bin/zsh'
 
-const tabPath = (tabId: string): string => `$HOME/.koloft/tabs/${tabId}`
-
 export const TAB_TMUX_NAME_SH = `cat "$HOME/.koloft/tabs/$1.tmux" 2>/dev/null
 exit 0`
 
@@ -173,7 +171,7 @@ export function tabScript(spec: TabSpec): string {
   const program = spec.program
   const pastedUnquoted = [spec.tabId, spec.tmuxName, spec.machineName, program.ensureTool]
   assertSafeNames(...pastedUnquoted.filter((name) => name !== undefined))
-  const T = tabPath(spec.tabId)
+  const T = remoteTabPath(spec.tabId)
   const H = `$HOME/.koloft/hook-sessions/${spec.tabId}`
   // PLATFORM§35
   const attachTo = `"$(cat "${T}.tmux" 2>/dev/null || echo '${spec.tmuxName}')"`
@@ -370,7 +368,7 @@ export function killSessionCmd(
   )
   if (tabWhoseNameFileToTryLast)
     tries.push(
-      `n="$(cat "${tabPath('$1')}.tmux" 2>/dev/null)"`,
+      `n="$(cat "${remoteTabPath('$1')}.tmux" 2>/dev/null)"`,
       `case "$n" in k-?*) tmux -L koloft kill-session -t "$n" 2>/dev/null && { printf %s "$n"; exit 0; } ;; esac`
     )
   return remoteAnswerCommand(
@@ -382,6 +380,6 @@ export function killSessionCmd(
 export function renameSessionCmd(tabId: string, from: string, to: string): string {
   assertSafeNames(tabId, from, to)
   return remoteShCommand(
-    `tmux -L koloft rename-session -t ${from} ${to} && printf %s ${to} > "${tabPath(tabId)}.tmux"`
+    `tmux -L koloft rename-session -t ${from} ${to} && printf %s ${to} > "${remoteTabPath(tabId)}.tmux"`
   )
 }

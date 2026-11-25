@@ -14,6 +14,7 @@ vi.mock('electron', async () => {
 
 afterAll(() => fs.rmSync(app.getPath('userData'), { recursive: true, force: true }))
 
+import { formatRemoteKey } from '@shared/remoteKey'
 import type { CreateTabOptions } from '@shared/types'
 import { machineClaudeArgs } from '../../src/agents/claude/main/claudeLaunch'
 import { AccountPicker, type LaunchedSession } from '../../src/main/accountPicker'
@@ -44,8 +45,6 @@ beforeEach(() => {
 })
 
 afterEach(() => world.gone())
-
-const onTheMachine = (p: string): string => `ssh://${MACHINE}${p}`
 
 const claudeOn = (
   machine: Partial<MachineSetup> = {},
@@ -94,7 +93,7 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       fs.symlinkSync(process.execPath, path.join(node, 'node'))
     }
     const trusts = (dir: string, run = asTheMachine): Promise<boolean> =>
-      claudeOn({ run }).trustsFolder(onTheMachine(dir))
+      claudeOn({ run }).trustsFolder(formatRemoteKey(MACHINE, dir))
     const trustedInClaudeJson = (dir: string): void =>
       fs.writeFileSync(
         path.join(world.home, '.claude.json'),
@@ -166,17 +165,17 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       expect(await trusts(submodule)).toBe(false)
       expect(await trusts(orphan)).toBe(false)
     })
-
-    it('does not call a folder untrusted when the machine cannot be reached', async () => {
-      const unreachable = async (): Promise<BytesResult> => ({
-        code: 255,
-        stdout: Buffer.alloc(0),
-        stderr: 'ssh: connect to host devbox port 22: Operation timed out'
-      })
-      expect(await trusts(repo, unreachable)).toBe(true)
-    })
   }
 )
+
+it('a folder on another machine is not called untrusted by Claude Code when that machine cannot be reached', async () => {
+  const unreachable = async (): Promise<BytesResult> => ({
+    code: 255,
+    stdout: Buffer.alloc(0),
+    stderr: 'ssh: connect to host devbox port 22: Operation timed out'
+  })
+  expect(await claudeOn({ run: unreachable }).trustsFolder(ON_THE_MACHINE)).toBe(true)
+})
 
 describe('what a remote launch hands claude', () => {
   const root = ON_THE_MACHINE

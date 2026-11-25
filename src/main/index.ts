@@ -5526,7 +5526,9 @@ const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
   pty: ptyMgr,
   hosts,
   launchHere: {
-    hookRegDir: () => hookRegDir ?? '',
+    writeConductorMarker: (tabId, role) => writeConductorMarker(hookRegDir ?? '', tabId, role),
+    handOverOwnerWords: (tabId, words) =>
+      seedHandedOverOwnerWords(saidFile(hookRegDir ?? '', tabId), words),
     agentPlugin: () => (agentToolsOn() ? claudeAgentPlugin : undefined),
     docsPlugin: docsPluginWhileOn,
     assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
@@ -6398,7 +6400,10 @@ const {
   noticeFile,
   pruneStale,
   quotedPrompt,
+  saidFile,
+  seedHandedOverOwnerWords,
   setupHooks,
+  writeConductorMarker,
   writeTabHookSettings,
   resolveWorkspace,
   closingTree,
