@@ -1,11 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  ageLabel,
-  fableLevel,
-  resetIn,
-  resetLabel
-} from '../../src/renderer/src/components/accountMeter'
-import { FABLE_STOP } from '@shared/accountUsage'
+import { ageLabel, resetIn, resetLabel } from '../../src/renderer/src/components/accountMeter'
 
 const MIN = 60_000
 const at = (y: number, mo: number, d: number, h: number, mi: number): number =>
@@ -68,18 +62,5 @@ describe('ageLabel', () => {
   it('labels the snapshot age from two minutes on', () => {
     expect(ageLabel(now - 2 * MIN, now)).toBe('cached 2m')
     expect(ageLabel(now - 17 * MIN, now)).toBe('cached 17m')
-  })
-})
-
-describe('fableLevel', () => {
-  it('paints a rejected fable bucket bad however low the number is', () => {
-    expect(fableLevel(0.12, 'rejected')).toBe('bad')
-  })
-
-  it('keeps the fable-only thresholds for a bucket still serving', () => {
-    expect(fableLevel(0.84, 'ok')).toBe('')
-    expect(fableLevel(0.85, 'ok')).toBe('warn')
-    expect(fableLevel(0.9, 'ok')).toBe('warn')
-    expect(fableLevel(FABLE_STOP, 'ok')).toBe('bad')
   })
 })

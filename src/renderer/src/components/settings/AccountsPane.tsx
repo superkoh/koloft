@@ -20,23 +20,8 @@ import {
 import { agentUi } from '@agents/uis'
 import { useStore } from '../../store'
 import { useInstalledBackends } from '../../useInstalledBackends'
-import {
-  ACCOUNT_KINDS_OF,
-  METERED_NOTE,
-  measuredAt,
-  needsSignInAgain,
-  windowLabel
-} from '@shared/accountUsage'
-import {
-  ApiKeyBadge,
-  Meter,
-  QuotaMeters,
-  ageLabel,
-  codexBalanceLabel,
-  noLimitsLabel,
-  probeErrorLabel,
-  resetLabel
-} from '../accountMeter'
+import { ACCOUNT_KINDS_OF, needsSignInAgain } from '@shared/accountUsage'
+import { ageLabel } from '../accountMeter'
 import { PaneBadges, PaneUsage, usageOf } from '../usageFromShape'
 import { GitAccountsSection } from './GitAccountsSection'
 import { Switch } from './Switch'
@@ -551,12 +536,9 @@ function AccountRow({
   onRemove(): void
   onRelogin?: () => void
 }): JSX.Element {
-  const u = a.usage
   const now = Date.now()
-  const shape = window.api.usageFromShape ? usageOf(a, now) : null
-  const at = shape ? (shape.ageShownFrom ?? undefined) : measuredAt(a)
-  const stale = at !== undefined ? ageLabel(at, now) : null
-  const codexBalance = a.status === 'ok' && a.limits ? codexBalanceLabel(a.limits, now) : ''
+  const shape = usageOf(a, now)
+  const stale = shape.ageShownFrom !== null ? ageLabel(shape.ageShownFrom, now) : null
   return (
     <div className={'acct-row' + (a.enabled ? '' : ' off') + (confirming ? ' confirming' : '')}>
       <div className="acct-main">
@@ -567,25 +549,7 @@ function AccountRow({
           title={a.enabled ? 'In the pool' : 'Out of the pool'}
         />
         <span className="acct-name">{a.name}</span>
-        {shape ? (
-          <PaneBadges u={shape} />
-        ) : (
-          <>
-            {(a.kind === 'apikey' || a.apiKey) && <ApiKeyBadge />}
-            {a.kind === 'custom' && <span className="acct-badge custom">ENDPOINT</span>}
-            {a.kind === 'oauth' && a.fable === 'yes' && (
-              <span
-                className="acct-badge good"
-                title="Plan includes a fable allowance — fable launches are routed here first"
-              >
-                FABLE
-              </span>
-            )}
-            {a.kind === 'oauth' && a.fable === 'no' && (
-              <span className="acct-badge nofable">FABLE</span>
-            )}
-          </>
-        )}
+        <PaneBadges u={shape} />
         {a.status === 'expired' && (
           <span className="acct-status expired">EXPIRED · out of pool</span>
         )}
@@ -631,63 +595,7 @@ function AccountRow({
           </button>
         </div>
       )}
-      {shape ? (
-        <PaneUsage u={shape} />
-      ) : a.kind === 'agy-home' && a.status === 'ok' && a.quota && a.quota.length > 0 ? (
-        <QuotaMeters quota={a.quota} now={now} />
-      ) : SIGN_IN_FOLDER_KINDS.includes(a.kind) ? (
-        <div className="acct-meters">
-          {a.status !== 'ok' ? (
-            <span className="acct-note">Not signed in — use Sign in again</span>
-          ) : a.apiKey && !a.probeError ? (
-            <span className="acct-note">{METERED_NOTE}</span>
-          ) : a.limits && a.limits.windows.length > 0 ? (
-            a.limits.windows.map((w) => (
-              <Meter
-                key={w.minutes}
-                label={windowLabel(w.minutes)}
-                v={w.used}
-                win={windowLabel(w.minutes)}
-              />
-            ))
-          ) : (
-            <span className="acct-note">{noLimitsLabel(a)}</span>
-          )}
-          {a.status === 'ok' && a.limits?.windows[0]?.resetsAt ? (
-            <span className="acct-note">
-              {windowLabel(a.limits.windows[0].minutes)} resets{' '}
-              {resetLabel(a.limits.windows[0].resetsAt, now)}
-            </span>
-          ) : null}
-          {codexBalance && <span className="acct-note">{codexBalance}</span>}
-        </div>
-      ) : a.kind === 'custom' ? (
-        <div className="acct-meters">
-          <span className="acct-note">
-            {a.baseUrl}
-            {a.model ? ` · ${a.model}` : ''} · used only when every subscription is rate-limited
-            (switches model)
-          </span>
-        </div>
-      ) : a.kind === 'apikey' ? (
-        <div className="acct-meters">
-          <span className="acct-note">{METERED_NOTE}</span>
-        </div>
-      ) : u ? (
-        <div className="acct-meters">
-          {u.has5h && <Meter label="5h" v={u.u5} win="5h" />}
-          <Meter label="7d" v={u.u7} win="7d" />
-          {u.hasOi && <Meter label="fable" v={u.uoi} win="oi" soi={u.soi} />}
-          {/* CC§7 */}
-          {u.r5 > 0 && <span className="acct-note">5h resets {resetLabel(u.r5, now)}</span>}
-        </div>
-      ) : (
-        <div className="acct-meters">
-          <span className="acct-note">
-            {a.probeError ? probeErrorLabel(a.probeError) : 'Not probed yet'}
-          </span>
-        </div>
-      )}
+      <PaneUsage u={shape} />
     </div>
   )
 }

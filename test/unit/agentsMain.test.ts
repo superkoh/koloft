@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   AgentsMain,
+  NO_SUCH_ACTION,
   type AgentAccounts,
   type AgentCatalog,
   type AgentTools,
@@ -53,6 +54,10 @@ const accountsThatSayWhoTheyAre = (id: AgentId, asked: string[]): AgentAccounts 
   },
   cancelSignIn: (kind, name) => {
     asked.push(`${id} cancels ${kind} ${name}`)
+  },
+  act: async (kind, name, action) => {
+    asked.push(`${id} does ${action} on ${kind} ${name}`)
+    return `${id}'s answer`
   }
 })
 
@@ -207,6 +212,28 @@ describe('the agents registered with their main-process side', () => {
     expect(() => agents.addSecret(kind, 'work', 'secret')).toThrow()
     agents.forgetAccount(kind, 'work')
     expect(agents.folderSaysItRunsOnAKey(kind, 'work')).toBe(false)
+    expect(asked).toEqual([])
+  })
+
+  it('hands an action on an account to the agent whose manifest lists that kind of account, and no other, and passes its answer back', async () => {
+    const asked: string[] = []
+    const agents = agentsWithAccounts(AGENT_IDS, asked)
+
+    for (const id of AGENT_IDS)
+      for (const kind of ACCOUNT_KINDS_OF[id]) {
+        asked.length = 0
+        expect(await agents.act(kind, 'work', 'anAction')).toBe(`${id}'s answer`)
+        expect(asked).toEqual([`${id} does anAction on ${kind} work`])
+      }
+  })
+
+  it('answers that there is no such action on a kind of account no built agent lists, without asking any agent', async () => {
+    const asked: string[] = []
+    const agents = agentsWithAccounts([AGENT_IDS[0]], asked)
+
+    expect(await agents.act(ACCOUNT_KINDS_OF[AGENT_IDS[1]][0], 'work', 'anAction')).toBe(
+      NO_SUCH_ACTION
+    )
     expect(asked).toEqual([])
   })
 

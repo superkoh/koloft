@@ -88,4 +88,5 @@ export interface UsageGroup {
 export interface AgentUsageUi {
   account(a: AccountView, nowMs: number): UsageAccount
   group(accounts: readonly AccountView[], nowMs: number): UsageGroup
+  costBadge: string | null
 }

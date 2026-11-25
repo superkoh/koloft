@@ -1,14 +1,9 @@
 import fs from 'fs'
 import path from 'path'
 import { AUTO_PROBE_MS, launchLine } from '@shared/accountUsage'
-import type {
-  AccountView,
-  CodexLimits,
-  CodexLimitWindow,
-  CodexResetOutcome,
-  SignInCommand
-} from '@shared/types'
-import type { AgentAccounts } from '@core/agent/agentsMain'
+import type { AccountView, CodexLimits, CodexLimitWindow, SignInCommand } from '@shared/types'
+import { NO_SUCH_ACTION, type AgentAccounts } from '@core/agent/agentsMain'
+import { USE_A_SAVED_RESET, type CodexResetOutcome } from '../shared/savedResets'
 import { HomeAccountPicker } from '../../kit/main/homeAccountPicker'
 import {
   addHomeKey,
@@ -294,9 +289,10 @@ export function codexHomeAccounts(deps: CodexHomeAccountsDeps) {
   return {
     pickCodexHome,
     listedModels,
-    codexUseReset,
     probeCodexAccounts,
     accounts: {
+      act: async (_kind, name, action) =>
+        action === USE_A_SAVED_RESET ? codexUseReset(name) : NO_SUCH_ACTION,
       signIn: (_kind, name, again) =>
         deps.signInInATab('codex-home', name, again, { homeLogin, probeHomeAccount }),
       cancelSignIn: () => {},

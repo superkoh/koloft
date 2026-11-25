@@ -210,10 +210,7 @@ export function setupE2EEnv(): E2EEnv {
     KOLOFT_FILE_DIALOG_FILE: fileDialogFile,
     KOLOFT_TEST_MACHINE_FILE: roomyMachineNotTheDevMacsOwnLoad,
     KOLOFT_TEST_BACKGROUND: '1',
-    KOLOFT_DOM_RENDERER: '1',
-    ...(process.env.KOLOFT_TEST_USAGE_FROM_SHAPE && {
-      KOLOFT_TEST_USAGE_FROM_SHAPE: process.env.KOLOFT_TEST_USAGE_FROM_SHAPE
-    })
+    KOLOFT_DOM_RENDERER: '1'
   }
 
   return {

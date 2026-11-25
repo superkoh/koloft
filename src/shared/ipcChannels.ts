@@ -93,7 +93,7 @@ export const CH = {
     remove: 'accounts:remove',
     toggle: 'accounts:toggle',
     probe: 'accounts:probe',
-    codexUseReset: 'accounts:codex-use-reset',
+    act: 'accounts:act',
     beginSignIn: 'accounts:begin-sign-in',
     signInProgress: 'accounts:sign-in-progress',
     endSignIn: 'accounts:end-sign-in',
