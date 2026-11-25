@@ -1557,7 +1557,7 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   `CLAUDE_CODE_CHILD_SESSION` and `CLAUDE_CODE_REMOTE_SESSION_ID` are set (`strings`
   only, inferred, not checked). Koloft sets neither; a terminal tab drops every
   inherited `CLAUDE_CODE_*` (§9), but Assist's one-shot passes on Koloft's own env with
-  only the auth names removed (`pickedAccountEnv` in `src/main/index.ts`), so it would
+  only the auth names removed (`pickedAccountEnv` in `src/agents/claude/main/claudeAccounts.ts`), so it would
   carry them only if Koloft itself were started inside such a runner session.
   2.1.302 is the
   first build that reads `CLAUDE_CODE_AUTO_MODE_MODEL` (2.1.301 only names it in the env
@@ -1778,9 +1778,9 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
 
 Evidence: probe edge shapes curl-verified 2026-08-17; latency measured 2026-08-19–20;
 classifier fallback seen 2026-08-20. Koloft dependents:
-`src/main/usageProbe.ts` (marked `CC§7`; its parse rules are this section),
-`src/main/accountPicker.ts`, `src/shared/accountUsage.ts`, the shim's inject section
-in `src/main/shim.ts` and `accountEnv` in `src/main/remote/launch.ts` (the remote
+`src/agents/claude/main/claudeAccountProbe.ts` (marked `CC§7`; its parse rules are this section),
+`src/agents/claude/main/claudeAccountPicker.ts`, `src/shared/accountUsage.ts`, the shim's inject section
+in `src/main/shim.ts` and `accountEnv` in `src/agents/claude/main/claudeAccountEnv.ts` (the remote
 launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.parse/score`, `accountPicker`,
 `accountUsage` unit suites and `test/e2e/multi-account.spec.ts`.
 
@@ -2537,7 +2537,7 @@ other bullets of §9 were not re-measured on this build.
   Desktop app or VS Code.
 
 Koloft dependents: the scheduled-jobs runner's launch line and the shim's new-session
-branch (`src/main/shim.ts`), `src/agents/claude/main/claudeArgs.ts`, `src/main/skillList.ts`,
+branch (`src/main/shim.ts`), `src/agents/claude/main/claudeArgs.ts`, the skill folders in `src/agents/claude/agent.ts`,
 `src/agents/claude/main/claudeTrust.ts`, the env scrubs in `src/main/ptyManager.ts` and
 `scripts/code-review.mjs`,
 `src/main/leftovers.ts`, the warm-up `claude -p ok --max-turns 1` in
@@ -2695,7 +2695,7 @@ never through `sudo`, and treats node as a separate, non-fatal step); `tabs/<tab
 onboarding flag and runs `claude -p ok --max-turns 1` once when
 `cachedGrowthBookFeatures` is missing. Locally, `src/main/toolInstall.ts` runs the script
 in a terminal tab and puts `~/.local/bin` at the end of Koloft's own PATH, the hidden
-Claude sign-in stops an install that prints nothing for 30 minutes (`src/main/index.ts`:
+Claude sign-in stops an install that prints nothing for 30 minutes (`src/agents/claude/main/claudeAccounts.ts`:
 while the installer runs, the timer starts over at every byte it prints, so it has to
 outlast only the longest silent download above — the script's own, at most 338.4 MB
 on 2.1.322 and 359.1 MB on 2.1.323 for darwin-x64 without `zstd` by the manifests, about
@@ -4750,7 +4750,7 @@ servers `globalprobe` (top-level `mcpServers` of `~/.claude.json`), `localprobe`
   approval` until the folder's trust was accepted and its name was in
   `enabledMcpjsonServers` (which claude moves into `<A>/.claude/settings.local.json`).
 
-Koloft dependents: `claudeServers` in `src/main/mcpServers.ts`, which `koloft todo` lists,
+Koloft dependents: `claudeServers` in `src/agents/claude/main/claudeCatalog.ts`, which `koloft todo` lists,
 and `claudeProjectKey` in `src/agents/claude/main/claudeTrust.ts`, which picks the `projects` key it reads.
 
 ## §23 A resumed conversation keeps its first system prompt, until its next compaction
@@ -4859,7 +4859,7 @@ listed in the result's `permission_denials`. One interactive claude in a pty (py
   the top-level `mcpServers`, and the folder's own `.mcp.json` over one in the folder
   above it.
 
-Koloft dependents: `ownersClaudePlaywrightMcp` in `src/main/mcpServers.ts` and
+Koloft dependents: `ownersClaudePlaywrightMcp` in `src/agents/claude/main/claudeCatalog.ts` and
 `writeTabHookSettings` in `src/plugins/sessions/main/hooks.ts`.
 
 ## §25 A Bash call's `description` is its title on screen

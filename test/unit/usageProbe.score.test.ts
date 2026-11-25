@@ -2,14 +2,13 @@ import { describe, it, expect } from 'vitest'
 import type { UsageSnapshot } from '../../src/shared/types'
 import {
   disc,
-  scoreSnapshot,
   leximaxFinalists,
   RESET_TIE_S,
   DW,
   GRACE,
-  type Score,
-  type ScoreRoute
+  type Score
 } from '../../src/main/usageProbe'
+import { scoreSnapshot, type ScoreRoute } from '../../src/agents/claude/main/claudeAccountProbe'
 
 const NOW_S = 1_700_000_000
 

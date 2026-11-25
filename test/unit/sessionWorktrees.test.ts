@@ -6,7 +6,11 @@ import { promisify } from 'util'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BackgroundFile } from '../../src/main/backgroundFile'
 import { SessionStore } from '../../src/agents/kit/main/sessionStore'
-import { SessionWorktrees } from '../../src/agents/kit/main/sessionWorktrees'
+import {
+  SessionWorktrees,
+  type WorktreesOfEveryAgent
+} from '../../src/agents/kit/main/sessionWorktrees'
+import { worktreesOfOneAgent } from './helpers/worktreesOfOneAgent'
 import type { TreeIo } from '../../src/main/sessionWorktrees'
 import { barePath, formatRemoteKey } from '../../src/shared/remoteKey'
 
@@ -27,11 +31,17 @@ const machineIo: TreeIo = {
   machine: { runScript: shOnMachine }
 }
 
+const alone = (): WorktreesOfEveryAgent => worktreesOfOneAgent(() => store)
+
 const SIDES = [
-  { where: 'on this Mac', make: () => new SessionWorktrees(store), at: (p: string) => p },
+  {
+    where: 'on this Mac',
+    make: (s = store, every = alone()) => new SessionWorktrees(s, every),
+    at: (p: string) => p
+  },
   {
     where: 'on another machine over ssh',
-    make: () => new SessionWorktrees(store, () => machineIo),
+    make: (s = store, every = alone()) => new SessionWorktrees(s, every, () => machineIo),
     at: (p: string) => formatRemoteKey(MACHINE, p)
   }
 ]
@@ -59,7 +69,7 @@ beforeEach(() => {
   git('add', 'file.txt')
   git('commit', '-m', 'Initial')
   store = new SessionStore(path.join(directory, 'sessions.json'))
-  worktrees = new SessionWorktrees(store)
+  worktrees = new SessionWorktrees(store, alone())
 })
 
 afterEach(async () => {
@@ -150,7 +160,6 @@ describe('SessionWorktrees', () => {
     const resource = await worktrees.create(repo, 'one')
     git('worktree', 'remove', resource.worktreePath)
     git('branch', '-D', 'worktree-one')
-    expect(worktrees.recorded(resource.worktreePath)).toBe(true)
     await expect(worktrees.create(repo, 'one')).rejects.toThrow('recovery record')
   })
 
@@ -180,6 +189,181 @@ describe('SessionWorktrees', () => {
     expect(fs.existsSync(path.join(resource.worktreePath, 'file.txt'))).toBe(true)
     expect(store.listResources()).toHaveLength(1)
   })
+})
+
+describe.each(SIDES)(
+  'two agents, each with its own records, and one worktree folder $where',
+  (side) => {
+    let otherStore: SessionStore
+    let everyAgent: WorktreesOfEveryAgent
+    let mine: SessionWorktrees
+    let other: SessionWorktrees
+    const files = (p: string): string => path.join(barePath(p), 'file.txt')
+    const states = (): string[] =>
+      [...store.listResources(), ...otherStore.listResources()].map((r) => r.state)
+
+    beforeEach(() => {
+      otherStore = new SessionStore(path.join(directory, 'other-sessions.json'))
+      everyAgent = {
+        recorded: (dir: string) =>
+          [store, otherStore].some((s) => s.listResources().some((r) => r.worktreePath === dir)),
+        preparing: new Map<string, Promise<unknown>>()
+      }
+      mine = side.make(store, everyAgent)
+      other = side.make(otherStore, everyAgent)
+    })
+
+    it('a name the other agent still has a recovery record of is refused, and nothing is made or recorded', async () => {
+      const theirs = await other.create(side.at(repo), 'foo')
+      git('worktree', 'remove', barePath(theirs.worktreePath))
+      git('branch', '-D', 'worktree-foo')
+      await expect(mine.create(side.at(repo), 'foo')).rejects.toThrow(
+        'This worktree name has a recovery record; recover it or choose a different name'
+      )
+      expect(store.listResources()).toEqual([])
+      expect(fs.existsSync(barePath(theirs.worktreePath))).toBe(false)
+      expect(git('branch', '--list', 'worktree-foo')).toBe('')
+      expect(otherStore.listResources()).toEqual([theirs])
+    })
+
+    it('when both agents rebuild the folder they both recorded at once, one builds it, the other waits for it and takes the folder, and no record is marked failed', async () => {
+      const theirs = await other.create(side.at(repo), 'foo')
+      const ours = await mine.adopt(side.at(repo), theirs.worktreePath)
+      fs.rmSync(barePath(theirs.worktreePath), { recursive: true })
+      const [a, b] = await Promise.all([mine.rebuild(ours.id), other.rebuild(theirs.id)])
+      expect([a.worktreePath, b.worktreePath]).toEqual([theirs.worktreePath, theirs.worktreePath])
+      expect(fs.existsSync(files(theirs.worktreePath))).toBe(true)
+      expect(states()).toEqual(['ready', 'ready'])
+    })
+  }
+)
+
+const LONG_ENOUGH_TO_ADOPT_A_FOLDER_MS = 1000
+
+describe('while one agent is still making a worktree folder over ssh, after its git worktree add', () => {
+  async function caughtAfterAdd(addThenFails = false) {
+    const otherStore = new SessionStore(path.join(directory, 'other-sessions.json'))
+    const everyAgent: WorktreesOfEveryAgent = { recorded: () => true, preparing: new Map() }
+    const at = formatRemoteKey(MACHINE, repo)
+    const theirs = await new SessionWorktrees(
+      otherStore,
+      worktreesOfOneAgent(() => otherStore),
+      () => machineIo
+    ).create(at, 'foo')
+    const ours = await new SessionWorktrees(store, alone(), () => machineIo).adopt(
+      at,
+      theirs.worktreePath
+    )
+    fs.rmSync(barePath(theirs.worktreePath), { recursive: true })
+    let added!: () => void
+    const addedNow = new Promise<void>((resolve) => (added = resolve))
+    let finish!: () => void
+    const finished = new Promise<void>((resolve) => (finish = resolve))
+    const slowIo: TreeIo = {
+      ...machineIo,
+      git: async (dir, args) => {
+        const out = await machineIo.git(dir, args)
+        if (args[0] === 'worktree' && args[1] === 'add') {
+          added()
+          await finished
+          if (addThenFails) throw new Error('Copying the included files failed')
+        }
+        return out
+      }
+    }
+    const order: string[] = []
+    const building = new SessionWorktrees(otherStore, everyAgent, () => slowIo)
+      .rebuild(theirs.id)
+      .finally(() => order.push('built'))
+    await addedNow
+    const mine = new SessionWorktrees(store, everyAgent, () => machineIo)
+    return { at, ours, mine, building, order, finish }
+  }
+
+  it('another agent rebuilding its record of the same folder waits until the folder is done, then takes it', async () => {
+    const { ours, mine, building, order, finish } = await caughtAfterAdd()
+    const waiting = mine.rebuild(ours.id).finally(() => order.push('waited'))
+    await new Promise((resolve) => setTimeout(resolve, LONG_ENOUGH_TO_ADOPT_A_FOLDER_MS))
+    finish()
+    await Promise.all([building, waiting])
+    expect(order).toEqual(['built', 'waited'])
+    expect(store.getResource(ours.id)?.state).toBe('ready')
+  })
+
+  it('when that making fails, the agent waiting on it fails too and does not take the half-made folder', async () => {
+    const { ours, mine, building, finish } = await caughtAfterAdd(true)
+    const waiting = mine.rebuild(ours.id)
+    finish()
+    await expect(building).rejects.toThrow('Copying the included files failed')
+    await expect(waiting).rejects.toThrow('Copying the included files failed')
+  })
+
+  it('another agent making a new worktree of that name is told the making is in progress', async () => {
+    const { at, mine, building, finish } = await caughtAfterAdd()
+    await expect(mine.create(at, 'foo')).rejects.toThrow(
+      'Worktree preparation is already in progress'
+    )
+    finish()
+    await building
+  })
+})
+
+it('one agent asked twice at once to rebuild the same record builds it once and refuses the second ask', async () => {
+  const resource = await worktrees.create(repo, 'one')
+  fs.rmSync(resource.worktreePath, { recursive: true })
+  const [first, second] = await Promise.allSettled([
+    worktrees.rebuild(resource.id),
+    worktrees.rebuild(resource.id)
+  ])
+  expect(first.status).toBe('fulfilled')
+  expect(String((second as PromiseRejectedResult).reason)).toContain(
+    'Worktree preparation is already in progress'
+  )
+  expect(store.getResource(resource.id)?.state).toBe('ready')
+})
+
+it('an agent that found the folder missing just before another agent finished rebuilding it takes the folder, and no record is marked failed', async () => {
+  const otherStore = new SessionStore(path.join(directory, 'other-sessions.json'))
+  const everyAgent: WorktreesOfEveryAgent = {
+    recorded: () => true,
+    preparing: new Map<string, Promise<unknown>>()
+  }
+  let otherDone!: () => void
+  const afterOther = new Promise<void>((resolve) => (otherDone = resolve))
+  let firstLook = true
+  const lateIo: TreeIo = {
+    ...machineIo,
+    exists: async (p) => {
+      const there = await machineIo.exists(p)
+      if (firstLook) {
+        firstLook = false
+        await afterOther
+      }
+      return there
+    }
+  }
+  const at = formatRemoteKey(MACHINE, repo)
+  const other = new SessionWorktrees(otherStore, everyAgent, () => machineIo)
+  const theirs = await new SessionWorktrees(
+    otherStore,
+    worktreesOfOneAgent(() => otherStore),
+    () => machineIo
+  ).create(at, 'foo')
+  const mine = new SessionWorktrees(store, everyAgent, () => lateIo)
+  const ours = await new SessionWorktrees(store, alone(), () => machineIo).adopt(
+    at,
+    theirs.worktreePath
+  )
+  fs.rmSync(barePath(theirs.worktreePath), { recursive: true })
+  const late = mine.rebuild(ours.id)
+  await other.rebuild(theirs.id)
+  otherDone()
+  await late
+  expect(fs.existsSync(path.join(barePath(theirs.worktreePath), 'file.txt'))).toBe(true)
+  expect([...store.listResources(), ...otherStore.listResources()].map((r) => r.state)).toEqual([
+    'ready',
+    'ready'
+  ])
 })
 
 describe.each(SIDES)('the files .worktreeinclude lists, in a workspace $where', (side) => {

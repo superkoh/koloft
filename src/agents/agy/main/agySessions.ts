@@ -98,7 +98,6 @@ import {
   readAgyConfig
 } from './agyMachine'
 import type { Machine } from '../../../main/host/machine'
-import { keepSkillsIn } from '../../../main/agentPlugin'
 import { seedAssistMemory } from '../../../main/assistMemory'
 import { NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from '@plugins/sessions/main/hooks'
 import { formatRemoteKey, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
@@ -143,6 +142,7 @@ export interface AgySessionDeps extends StoredSessionDeps {
   openShimRoot: string
   scriptsDir: string
   ownersGemini(): string
+  keepSkillsIn(skillsDir: string, koloftOn: boolean): void
   pickHome(resumeSessionId?: string, onlyAsking?: boolean): AgyHomePick | undefined
   apiKeyOf(account: string): Promise<string | undefined>
   playwrightBin: string
@@ -870,7 +870,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     // AGY§4
     prepareAgyHome(pick.home, gemini)
     // AGY§31
-    keepSkillsIn(path.join(pick.home, AGY_SKILLS), !!agent)
+    this.deps.keepSkillsIn(path.join(pick.home, AGY_SKILLS), !!agent)
     // ADR-0026 AGY§5
     const trust = [cwd, workspace].filter((d, i, all) => all.indexOf(d) === i)
     const koloftWorktreeOfTrustedWorkspace = (): boolean =>

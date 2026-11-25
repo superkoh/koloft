@@ -1,6 +1,8 @@
 import path from 'path'
 import type { BackendId, SkillSuggestion } from '@shared/types'
 import { SKILL_PREFIX } from '@shared/sessionBackend'
+import type { AgentFlags } from '@core/agent/manifest'
+import { agentManifest } from '@core/agent/registry'
 
 export interface SkillFs {
   readdir(p: string): string[]
@@ -87,41 +89,24 @@ type Source = SkillSuggestion['source']
 export interface SkillPlaces {
   workspace: string
   home: string
-  codexHome?: string
+  moreInTheHome?: readonly string[]
 }
 
-export interface SkillFolders {
+export interface SkillFolderPaths {
   skills: string[]
   commands?: string[]
 }
 
-// CC§9 CODEX§17 AGY§31
-export function skillFolders(backend: BackendId, p: SkillPlaces): Record<Source, SkillFolders> {
-  const ws = (...rel: string[]): string => path.join(p.workspace, ...rel)
-  const home = (...rel: string[]): string => path.join(p.home, ...rel)
-  switch (backend) {
-    case 'claude':
-      return {
-        project: { skills: [ws('.claude', 'skills')], commands: [ws('.claude', 'commands')] },
-        home: { skills: [home('.claude', 'skills')], commands: [home('.claude', 'commands')] }
-      }
-    case 'codex':
-      return {
-        project: { skills: [ws('.agents', 'skills'), ws('.codex', 'skills')] },
-        home: {
-          skills: [
-            ...(p.codexHome ? [path.join(p.codexHome, 'skills')] : []),
-            home('.agents', 'skills')
-          ]
-        }
-      }
-    case 'agy':
-      return {
-        project: {
-          skills: [ws('.agent', 'skills'), ws('.agents', 'skills'), ws('_agents', 'skills')]
-        },
-        home: { skills: [] }
-      }
+export function skillFolders(backend: BackendId, p: SkillPlaces): Record<Source, SkillFolderPaths> {
+  const { inTheWorkspace, inTheHome } = agentManifest(backend).skillFolders
+  const ws = (rel: string): string => path.join(p.workspace, rel)
+  const home = (rel: string): string => path.join(p.home, rel)
+  return {
+    project: { skills: inTheWorkspace.skills.map(ws), commands: inTheWorkspace.commands.map(ws) },
+    home: {
+      skills: [...(p.moreInTheHome ?? []), ...inTheHome.skills.map(home)],
+      commands: inTheHome.commands.map(home)
+    }
   }
 }
 
@@ -134,7 +119,7 @@ function skillsIn(
   roots: string[],
   prefix: string,
   source: Source,
-  asAgyReadsThem: boolean
+  reads: AgentFlags
 ): SkillSuggestion[] {
   const out: SkillSuggestion[] = []
   for (const root of roots) {
@@ -145,8 +130,9 @@ function skillsIn(
       if (!isFileSafe(fs, file)) continue
       const text = readFileSafe(fs, file)
       const fm = text === null ? {} : frontMatter(text)
-      // AGY§31
-      if (asAgyReadsThem ? fm.name === undefined : fm['user-invocable'] === 'false') continue
+      if (reads.typesASkillOnlyByTheNameInItsFile && fm.name === undefined) continue
+      if (reads.refusesATypedSkillMarkedNotUserInvocable && fm['user-invocable'] === 'false')
+        continue
       const name = fm.name ?? dir
       out.push({
         name: prefix + name,
@@ -187,7 +173,7 @@ export function listSkills(
   for (const source of ['project', 'home'] as const) {
     const { skills, commands = [] } = folders[source]
     for (const s of [
-      ...skillsIn(fs, skills, prefix, source, backend === 'agy'),
+      ...skillsIn(fs, skills, prefix, source, agentManifest(backend).flags),
       ...commandsIn(fs, commands, prefix, source)
     ]) {
       if (seen.has(s.name)) continue
