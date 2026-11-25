@@ -7,7 +7,10 @@ import {
   type LaunchResult,
   type RunnerDeps
 } from '../../../../src/plugins/scheduled-tasks/main/cronRunner'
-import { sanitizeCron } from '../../../../src/plugins/scheduled-tasks/main/cronStore'
+import {
+  AGENT_NO_LONGER_SUPPORTED_NOTE,
+  sanitizeCron
+} from '../../../../src/plugins/scheduled-tasks/main/cronStore'
 import type { TidyResult } from '../../../../src/core/worktree'
 import { lastRunOf } from '../../../../src/shared/cronHistory'
 import { slugOf } from '../../../../src/shared/cronNames'
@@ -1113,7 +1116,7 @@ describe('CronRunner — a Codex job', () => {
     })
   })
 
-  it('keeps the Codex choice through a save, and an unknown backend saves as Claude', () => {
+  it('keeps the Codex choice through a save, and refuses an agent not on the list with the no-longer-supported note instead of saving it as Claude', () => {
     const h = makeHarness([])
     const input = {
       workspacePath: '/ws/a',
@@ -1126,7 +1129,7 @@ describe('CronRunner — a Codex job', () => {
     const codex = h.runner.save({ ...input, backend: 'codex' })
     expect(codex.ok && codex.job.backend).toBe('codex')
     const odd = h.runner.save({ ...input, backend: 'gemini' as never })
-    expect(odd.ok && odd.job.backend).toBe('claude')
+    expect(odd).toEqual({ ok: false, errors: [AGENT_NO_LONGER_SUPPORTED_NOTE] })
   })
 })
 

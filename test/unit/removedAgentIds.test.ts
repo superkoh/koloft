@@ -264,3 +264,120 @@ describe('a Koloft that no longer has the owner of unnamed old data: a scheduled
     })
   })
 })
+
+describe.each(EVERY_AGENT)(
+  'a Koloft that no longer has %s: a scheduled task that names it',
+  (gone) => {
+    const other = EVERY_AGENT.find((agent) => agent !== gone)!
+    const named = (over: Partial<CronJob> = {}): CronJob =>
+      job({ backend: gone, model: 'its-model', effort: 'high', ...over })
+
+    function runnerOf(
+      jobs: CronJob[],
+      CronRunner: typeof import('../../src/plugins/scheduled-tasks/main/cronRunner').CronRunner
+    ) {
+      const launch = vi.fn()
+      const runner = new CronRunner({
+        now: () => A_RUN_AT,
+        bootTime: A_RUN_AT,
+        store: { load: () => ({ jobs, notes: {} }), save: () => {} },
+        isPinned: () => true,
+        dirExists: () => true,
+        gitDirExists: () => false,
+        launch,
+        toast: () => {},
+        push: () => {}
+      } as unknown as RunnerDeps)
+      return { runner, launch }
+    }
+
+    it('is read as nobody’s, paused with the note an agent that is no longer supported gets, and written back still naming that agent with its model and effort', async () => {
+      const { sanitizeCron, cronBackend, AGENT_NO_LONGER_SUPPORTED_NOTE } =
+        await koloftWithout(gone)
+      const read = sanitizeCron({ version: 1, jobs: [named()] }, [])
+      expect(cronBackend(read.jobs[0])).toBeUndefined()
+      expect(read.jobs[0].enabled).toBe(false)
+      expect(read.notes).toEqual({ j1: AGENT_NO_LONGER_SUPPORTED_NOTE })
+      const again = sanitizeCron(JSON.parse(JSON.stringify({ version: 1, jobs: read.jobs })), [])
+      expect(again.jobs[0]).toMatchObject({ backend: gone, model: 'its-model', effort: 'high' })
+    })
+
+    it('is shown with that note in place of a "Runs as" line', async () => {
+      const { formatShow, AGENT_NO_LONGER_SUPPORTED_NOTE } = await koloftWithout(gone)
+      const text = formatShow(named({ enabled: false }), 1, [], new Date(A_RUN_AT))
+      expect(text).not.toContain('Runs as:')
+      expect(text).toContain(AGENT_NO_LONGER_SUPPORTED_NOTE)
+    })
+
+    it('cannot be turned on, is not started when asked to run, and is not saved until an agent left is picked for it', async () => {
+      const { CronRunner, AGENT_NO_LONGER_SUPPORTED_NOTE } = await koloftWithout(gone)
+      const jobs = [named({ enabled: false })]
+      const { runner, launch } = runnerOf(jobs, CronRunner)
+      runner.setEnabled('j1', true)
+      expect(jobs[0].enabled).toBe(false)
+      await expect(runner.runNow('j1')).resolves.toMatchObject({
+        ok: false,
+        why: AGENT_NO_LONGER_SUPPORTED_NOTE
+      })
+      expect(launch).not.toHaveBeenCalled()
+      const edited = { ...jobs[0], backend: undefined, model: undefined, effort: undefined }
+      expect(runner.save({ ...edited, enabled: true })).toEqual({
+        ok: false,
+        errors: [AGENT_NO_LONGER_SUPPORTED_NOTE]
+      })
+      expect(jobs[0]).toMatchObject({ backend: gone, enabled: false })
+      expect(runner.save({ ...edited, backend: other, enabled: true })).toMatchObject({
+        ok: true,
+        job: { backend: other, enabled: true }
+      })
+    })
+
+    it('through koloft cron: is listed off, refuses on and an edit that picks no agent with that note, takes an edit to an agent left without the old model and effort, and can be removed', async () => {
+      const { CronRunner, cronVerb, AGENT_NO_LONGER_SUPPORTED_NOTE } = await koloftWithout(gone)
+      const jobs = [named({ enabled: false })]
+      const { runner } = runnerOf(jobs, CronRunner)
+      const verb = cronVerb({
+        runner: () => runner,
+        pinnedWorkspaceOf: () => '/ws/a',
+        resolveWorkspace: () => ({ ok: false, error: '' }),
+        toast: () => {},
+        now: () => new Date(A_RUN_AT)
+      })
+      const caller = {
+        tabId: 'tab-1',
+        cwd: '/ws/a',
+        session: { tabId: 'tab-1', backendId: other, host: 'local', title: 'Caller' }
+      } as unknown as Parameters<typeof verb>[1]
+      const run = (...args: string[]) => verb(args, caller)
+
+      expect((await run('list')).text).toContain('Old task · ')
+      expect((await run('list')).text).toContain(' · off · ')
+      expect(await run('on', '1')).toEqual({
+        text: `koloft cron: ${AGENT_NO_LONGER_SUPPORTED_NOTE}`,
+        exit: 1
+      })
+      expect(jobs[0].enabled).toBe(false)
+      expect(await run('edit', '1', '--name', 'Renamed')).toEqual({
+        text: `koloft cron: ${AGENT_NO_LONGER_SUPPORTED_NOTE}`,
+        exit: 1
+      })
+      expect(jobs[0]).toMatchObject({ name: 'Old task', backend: gone })
+      expect((await run('edit', '1', '--backend', other)).exit).toBe(0)
+      expect(jobs[0].backend).toBe(other)
+      expect(jobs[0].model).toBeUndefined()
+      expect(jobs[0].effort).toBeUndefined()
+
+      const left = [named({ id: 'j2' })]
+      const second = runnerOf(left, CronRunner).runner
+      const rm = cronVerb({
+        runner: () => second,
+        pinnedWorkspaceOf: () => '/ws/a',
+        resolveWorkspace: () => ({ ok: false, error: '' }),
+        toast: () => {},
+        now: () => new Date(A_RUN_AT)
+      })
+      expect((await rm(['rm', '1'], caller)).exit).toBe(0)
+      expect(second.jobsAndLive().jobs).toEqual([])
+    })
+  }
+)

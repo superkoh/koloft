@@ -214,14 +214,15 @@ export function CronJobsDialog({
   }
 
   const edit = (job: CronJob): void => {
+    const own: Partial<CronJob> = cronBackend(job) ? job : {}
     const f = emptyFields(cronBackend(job) ?? defaultBackend)
     setFields({
       ...f,
       ...scheduleToFields(job.schedule),
       name: job.name,
       task: job.task,
-      ...toModelFields(f.backend, job.model),
-      effort: job.effort ?? '',
+      ...toModelFields(f.backend, own.model),
+      effort: own.effort ?? '',
       permission: job.permission,
       autoClose: job.autoClose === true
     })
@@ -316,7 +317,7 @@ export function CronJobsDialog({
     >
       <Switch
         checked={job.enabled}
-        disabled={oncePassed(job, new Date())}
+        disabled={oncePassed(job, new Date()) || !cronBackend(job)}
         small
         ariaLabel={`${job.name} on`}
         onChange={(on) => void window.api.cron.setEnabled(job.id, on)}

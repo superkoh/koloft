@@ -14,7 +14,7 @@ import {
   worktreeBase,
   worktreeHomeOf
 } from '@shared/cronNames'
-import { BACKEND_LABEL, backendIdOf, SKILL_PREFIX } from '@shared/sessionBackend'
+import { BACKEND_LABEL, SKILL_PREFIX } from '@shared/sessionBackend'
 import {
   isStepKind,
   isValidSchedule,
@@ -219,7 +219,7 @@ interface Clean {
   autoClose?: true
 }
 
-function clean(input: CronSaveInput): Clean {
+function clean(input: CronSaveInput, savedBackend: string | undefined): Clean {
   const name = stripControl(String(input.name ?? '')).trim()
   const task = String(input.task ?? '')
     .replace(/\0/g, '')
@@ -228,7 +228,7 @@ function clean(input: CronSaveInput): Clean {
     ? input.permission
     : NEW_JOB_PERMISSION
   const model = typeof input.model === 'string' ? input.model.trim() : undefined
-  const backend = cronBackend({ backend: backendIdOf(input.backend) })
+  const backend = cronBackend({ backend: input.backend ?? savedBackend })
   const effort =
     backend && isCronEffort(input.effort) ? takenEffort(backend, model, input.effort) : undefined
   return {
@@ -1028,8 +1028,8 @@ export class CronRunner {
   }
 
   save(input: CronSaveInput): CronSaveResult {
-    const c = clean(input)
     const existing = input.id ? this.byId(input.id) : undefined
+    const c = clean(input, existing?.backend)
     const errors = saveErrors(
       c,
       input.schedule,
@@ -1078,7 +1078,7 @@ export class CronRunner {
 
   setEnabled(jobId: string, on: boolean): void {
     const job = this.byId(jobId)
-    if (!job || (on && oncePassed(job, new Date(this.d.now())))) return
+    if (!job || (on && (oncePassed(job, new Date(this.d.now())) || !cronBackend(job)))) return
     job.enabled = on
     if (on) this.restartWait(jobId)
     this.lastDue.delete(jobId)

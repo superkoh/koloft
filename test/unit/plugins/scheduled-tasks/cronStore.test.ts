@@ -7,6 +7,7 @@ import {
   saveCron,
   type CronStoreFs
 } from '../../../../src/plugins/scheduled-tasks/main/cronStore'
+import { cronBackend } from '../../../../src/shared/cronNames'
 
 const WS = '/pinned/ws-a'
 const PINNED = [WS]
@@ -55,9 +56,7 @@ describe('sanitizeCron (which method a job runs in)', () => {
       PINNED
     )
     expect(unknown.jobs[0].enabled).toBe(false)
-    expect(unknown.jobs[0].backend).toBeUndefined()
-    expect(unknown.jobs[0].model).toBeUndefined()
-    expect(unknown.jobs[0].effort).toBeUndefined()
+    expect(cronBackend(unknown.jobs[0])).toBeUndefined()
     expect(unknown.notes[unknown.jobs[0].id]).toContain('no longer supported')
   })
 })
@@ -269,6 +268,18 @@ describe('loadCron / saveCron (BB-E29: reading and writing the file)', () => {
       }
     }
   }
+
+  it('writes a job whose saved agent is no longer known back with that agent, its model and its effort, so the next read still pauses it', () => {
+    const saved = JSON.stringify(
+      file([job({ backend: 'gemini', model: 'old-model', effort: 'high' })])
+    )
+    const fs = fakeFs({ '/cron.json': saved })
+    saveCron(fs, '/cron.json', loadCron(fs, '/cron.json', PINNED).jobs)
+    const again = loadCron(fs, '/cron.json', PINNED)
+    expect(again.jobs[0]).toMatchObject({ backend: 'gemini', model: 'old-model', effort: 'high' })
+    expect(cronBackend(again.jobs[0])).toBeUndefined()
+    expect(again.notes[again.jobs[0].id]).toContain('no longer supported')
+  })
 
   it('names the file next to the other user data', () => {
     expect(cronFilePath('/u/data')).toBe('/u/data/cron.json')

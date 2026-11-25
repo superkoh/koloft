@@ -1317,7 +1317,7 @@ export interface CronJob {
   name: string
   task: string
   schedule: Schedule
-  backend?: BackendId
+  backend?: string
   model?: string
   effort?: CronEffort
   permission: CronPermission

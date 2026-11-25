@@ -53,6 +53,8 @@ interface EdSeedJob {
   schedule: unknown
   workspacePath?: string
   model?: string
+  backend?: string
+  effort?: string
   createdAt?: number
   enabled?: boolean
   history?: unknown[]
@@ -90,7 +92,9 @@ function edWriteStore(env: E2EEnv, jobs: EdSeedJob[]): void {
       enabled: j.enabled ?? true,
       createdAt: j.createdAt ?? 1000 + i,
       history: j.history ?? [],
-      ...(j.model === undefined ? {} : { model: j.model })
+      ...(j.model === undefined ? {} : { model: j.model }),
+      ...(j.backend === undefined ? {} : { backend: j.backend }),
+      ...(j.effort === undefined ? {} : { effort: j.effort })
     }))
   }
   fs.writeFileSync(edStoreFile(env), JSON.stringify(doc, null, 2))
@@ -695,6 +699,62 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
           { timeout: 20_000 }
         )
         .toEqual(['good-1', 'good-2'])
+    } finally {
+      await app.close().catch(() => {})
+    }
+  })
+
+  test('BB-E38: a job saved for an agent this Koloft no longer has shows no agent and the no-longer-supported note, cannot be switched on, and keeps its agent, model and effort on disk through a save', async ({
+    env
+  }) => {
+    test.setTimeout(180_000)
+    gitInit(env.workspaces.a)
+    edWriteStore(env, [
+      {
+        id: 'claude-job',
+        name: 'Alpha job',
+        schedule: { kind: 'daily', at: '21:00' },
+        createdAt: 1000
+      },
+      {
+        id: 'codex-job',
+        name: 'Codex job',
+        backend: 'codex',
+        schedule: { kind: 'daily', at: '21:00' },
+        createdAt: 2000
+      },
+      {
+        id: 'gone-job',
+        name: 'Gone agent job',
+        backend: 'muse',
+        model: 'muse-pro',
+        effort: 'high',
+        schedule: { kind: 'daily', at: '21:00' },
+        createdAt: 3000
+      }
+    ])
+
+    const { app, page } = await edLaunch(env)
+    try {
+      await edOpenDialog(page, 'ws-a')
+      const gone = edCard(page, 'Gone agent job')
+      await expect(gone.locator('.field-hint.bad')).toHaveText(
+        'The saved agent is no longer supported; this job was paused. Pick another agent to run it again.'
+      )
+      await expect(edCard(page, 'Codex job').locator('.job-task')).toHaveText(/^Codex · /)
+      await expect(gone.locator('.job-task')).toHaveText(`${TASK} · muse-pro · high`)
+      const onSwitch = page.locator('[aria-label="Gone agent job on"]')
+      await expect(onSwitch).toBeDisabled()
+      await expect(onSwitch).not.toBeChecked()
+
+      await page.locator('button[aria-label="Edit Alpha job"]').click()
+      await expect(page.locator('.modal.cronjobs .fgrid')).toBeVisible()
+      await edSaveBtn(page).click()
+      await expect(page.locator('.modal.cronjobs .fgrid')).toHaveCount(0, { timeout: 15_000 })
+
+      await expect
+        .poll(() => edStore(env).jobs.find((j) => j.id === 'gone-job'), { timeout: 20_000 })
+        .toMatchObject({ backend: 'muse', model: 'muse-pro', effort: 'high', enabled: false })
     } finally {
       await app.close().catch(() => {})
     }
