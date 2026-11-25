@@ -22,6 +22,8 @@ import { Hosts } from '../../../src/main/host/hosts'
 import { localHost } from '../../../src/main/host/localHost'
 import { SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST, SshHost } from '../../../src/main/host/sshHost'
 import { answerOf, type BytesResult } from '../../../src/main/remote/ssh'
+import { tabPushed } from '../../../src/main/remote/launch'
+import { standInMachine, type MachineSaid } from './standInMachine'
 
 export const MACHINE = 'devbox'
 export const MACHINE_PACKAGE = 'm-0000000000000000'
@@ -382,7 +384,7 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
 }
 
 export interface CodexSetup {
-  run(machine: string, readable: string): { code: number | null; stdout: string; stderr: string }
+  run(machine: string, readable: string): MachineSaid
   ranOnTheMachine: string[]
   agentTools?: boolean
   events?: (tabId: string, event: SessionEvent) => void
@@ -390,6 +392,13 @@ export interface CodexSetup {
 
 export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): CodexSessions {
   const tabDirs = path.join(world.userData, 'remote', 'tabs')
+  const sshArgs = (background: boolean): string[] =>
+    [
+      '-o',
+      `ControlPath=${world.controlDir}/%C`,
+      background ? '-o' : '',
+      background ? 'BatchMode=yes' : ''
+    ].filter(Boolean)
   return new CodexSessions(path.join(world.home, 'sessions.json'), {
     pty: pty as CodexSessionDeps['pty'],
     runtime: new SessionRuntime(),
@@ -400,26 +409,34 @@ export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): Code
     remoteDirExists: async () => true,
     machine: {
       instance: 'table-instance',
-      ready: async () => {},
-      run: async (machine, cmd) => {
-        const readable = readableCommand(cmd)
-        c.ranOnTheMachine.push(readable)
-        return c.run(machine, readable)
-      },
-      sshArgs: (_machine, background) =>
-        [
-          '-o',
-          `ControlPath=${world.controlDir}/%C`,
-          background ? '-o' : '',
-          background ? 'BatchMode=yes' : ''
-        ].filter(Boolean),
-      machinePackage: () => ({ dir: world.home, name: MACHINE_PACKAGE }),
-      tabDir: (tabId) => path.join(tabDirs, tabId),
-      fileExists: async () => false,
+      machine: (name) =>
+        standInMachine(name, {
+          run: (cmd) => {
+            const readable = readableCommand(cmd)
+            c.ranOnTheMachine.push(readable)
+            return c.run(name, readable)
+          },
+          sshArgs,
+          packageName: MACHINE_PACKAGE,
+          tabFiles: (tabId) => {
+            const dir = path.join(tabDirs, tabId)
+            return {
+              dir,
+              pushedLine: () =>
+                tabPushed({
+                  host: name,
+                  sshOptions: sshArgs(false),
+                  machine: { dir: world.home, name: MACHINE_PACKAGE },
+                  tabId,
+                  tabDir: dir
+                })
+            }
+          },
+          loginPath: async () => LOGIN_PATH_ON_THE_MACHINE
+        }),
       keyed: (machine, p) => `ssh://${machine}${p}`,
       mirrorDir: () => path.join(world.home, 'mirror-hooks'),
-      nextPull: async () => {},
-      loginPath: async () => LOGIN_PATH_ON_THE_MACHINE
+      nextPull: async () => {}
     },
     changed: () => {},
     events: (tabId, event) => c.events?.(tabId, event),

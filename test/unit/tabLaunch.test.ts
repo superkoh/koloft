@@ -69,6 +69,8 @@ import { Hosts } from '../../src/main/host/hosts'
 import { localHost } from '../../src/main/host/localHost'
 import type { LaunchIdentity } from '../../src/main/launchPrompt'
 import { SshHost } from '../../src/main/host/sshHost'
+import { tabPushed } from '../../src/main/remote/launch'
+import { standInMachine } from './helpers/standInMachine'
 import { SessionRuntime } from '../../src/core/agent/sessionRuntime'
 import type { TreeIo } from '../../src/main/sessionWorktrees'
 
@@ -223,16 +225,23 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
     remoteTreeIo: () => machineTreeIo,
     machine: {
       instance: 'table-instance',
-      ready: async () => {},
-      run: async () => ({ code: 1, stdout: '', stderr: '' }),
-      sshArgs: () => [],
-      machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
-      tabDir: (tabId) => path.join(tabDirs, tabId),
-      fileExists: async () => false,
+      machine: (name) =>
+        standInMachine(name, {
+          run: () => ({ code: 1 }),
+          tabFiles: (tabId) => {
+            const dir = path.join(tabDirs, tabId)
+            const machine = { dir: home, name: 'm-0000000000000000' }
+            return {
+              dir,
+              pushedLine: () =>
+                tabPushed({ host: name, sshOptions: [], machine, tabId, tabDir: dir })
+            }
+          },
+          loginPath: async () => MACHINE_LOGIN_PATH_FOLDERS
+        }),
       keyed: (machine, p) => `ssh://${machine}${p}`,
       mirrorDir: () => tabDirs,
-      nextPull: async () => {},
-      loginPath: async () => MACHINE_LOGIN_PATH_FOLDERS
+      nextPull: async () => {}
     },
     changed: () => {},
     events: () => {},

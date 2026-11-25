@@ -35,6 +35,7 @@ import { keyedOn } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import { koloftPrompt } from '@plugins/sessions/api'
 import { passOf } from '../../../../src/main/tabPass'
+import { standInMachine, type StandInSetup } from '../../helpers/standInMachine'
 
 const TOO_OLD = { binary: '/fixture/codex', env: {}, version: '0.150.0', verified: false }
 
@@ -160,20 +161,17 @@ const historyOrTrustedHooks = async (method: string) =>
 
 type MachineDeps = NonNullable<CodexSessionDeps['machine']>
 
-function fakeMachine(overrides: Partial<MachineDeps> = {}): MachineDeps {
+function fakeMachine(standIn: StandInSetup = {}): MachineDeps {
   return {
     instance: 'test',
-    ready: async () => {},
-    run: async () => ({ code: 0, stdout: '', stderr: '' }),
-    sshArgs: () => [],
-    machinePackage: () => ({}) as never,
-    tabDir: () => directory,
-    fileExists: async () => false,
+    machine: (name) =>
+      standInMachine(name, {
+        tabFiles: () => ({ dir: directory, pushedLine: () => '' }),
+        ...standIn
+      }),
     keyed: (machine, onMachineFile) => keyedOn(machine, onMachineFile)!,
     mirrorDir: () => directory,
-    nextPull: async () => {},
-    loginPath: async () => '',
-    ...overrides
+    nextPull: async () => {}
   }
 }
 
@@ -434,7 +432,7 @@ describe('CodexSessions', () => {
   it("a remembered session on a remote machine stays through a listing of this Mac alone and while the machine shows no Codex home, and leaves once that machine's own listing left it out", async () => {
     let homeThere = false
     deps.machine = fakeMachine({
-      run: async () => ({ code: homeThere ? 0 : 1, stdout: '', stderr: '' })
+      run: () => ({ code: homeThere ? 0 : 1 })
     })
     const remoteRepo = keyedOn('box', '/srv/repo')!
     const key = codexSessionKey(A, 'box')
@@ -503,9 +501,9 @@ describe('CodexSessions', () => {
     let homeChecks = 0
     let homeThere = true
     deps.machine = fakeMachine({
-      run: async (_machine, command) => {
+      run: (command) => {
         if (command === HAS_CODEX_HOME_CMD) homeChecks++
-        return { code: homeThere ? 0 : 1, stdout: '', stderr: '' }
+        return { code: homeThere ? 0 : 1 }
       }
     })
     const remoteRepo = keyedOn('box', '/srv/repo')!
@@ -542,7 +540,7 @@ describe('CodexSessions', () => {
     let linkUp = true
     let homeChecks = 0
     deps.machine = fakeMachine({
-      run: async (_machine, command) => {
+      run: (command) => {
         if (command === HAS_CODEX_HOME_CMD) homeChecks++
         return { code: linkUp ? 0 : 255, stdout: '', stderr: 'ssh: connect to host box: timed out' }
       }
@@ -848,16 +846,13 @@ describe('CodexSessions', () => {
     expect(await sessions.transcriptExists(codexSessionKey(B))).toBe(true)
 
     const onMachine = new Set<string>()
-    deps.machine = fakeMachine({
-      fileExists: async (file) => onMachine.has(file),
-      keyed: (machine, onMachineFile) => `${machine}:${onMachineFile}`
-    })
+    deps.machine = fakeMachine({ sh: (_script, [file]) => ({ code: onMachine.has(file) ? 0 : 1 }) })
     mocks.request.mockImplementation(async () => ({
       thread: { id: B, cwd: '/srv/repo', path: '/srv/rollout-b.jsonl' }
     }))
     const remote = codexSessionKey(B, 'box')
     expect(await sessions.transcriptExists(remote)).toBe(false)
-    onMachine.add(keyedOn('box', '/srv/rollout-b.jsonl.zst')!)
+    onMachine.add('/srv/rollout-b.jsonl.zst')
     expect(await sessions.transcriptExists(remote)).toBe(true)
   })
 
