@@ -43,6 +43,9 @@ export function stubBackend(
     beforeWorkspaceRemoved: async () => {},
     showsPromptBeforeBind: () => false,
     sessionGone: () => false,
+    noticeRemoteExits: () => {},
+    mirrorPulled: () => {},
+    tmuxOfTab: () => undefined,
     ...rowsKeptInMemory({
       rows: () => [],
       members: () => new Set<string>(),

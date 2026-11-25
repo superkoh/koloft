@@ -12,12 +12,16 @@ import {
   type LiveRun,
   type Schedule
 } from '@shared/types'
-import { BACKEND_LABEL, backendIdOf, SESSION_BACKENDS } from '@shared/sessionBackend'
+import {
+  agentSessionId,
+  BACKEND_LABEL,
+  backendIdOf,
+  SESSION_BACKENDS
+} from '@shared/sessionBackend'
 import { cronBackend, CRON_PERMISSIONS, NEW_JOB_PERMISSION } from '@shared/cronNames'
 import { effortNotTaken } from '@shared/cronModels'
 import { describeSchedule, DOW, localIso } from '@shared/schedule'
 import {
-  agentSessionId,
   histIso,
   histText,
   lastRunOf,
@@ -232,7 +236,8 @@ export function mergeEdit(job: CronJob, patch: CronPatch): CronSaveInput {
 }
 
 export function effortRefusal(input: CronSaveInput, patch: CronPatch): string | null {
-  return effortNotTaken(cronBackend(input), input.model, patch.effort)
+  const backend = cronBackend(input)
+  return backend ? effortNotTaken(backend, input.model, patch.effort) : null
 }
 
 export function findJob(jobs: CronJob[], ref: string): Parsed<CronJob> {
@@ -283,12 +288,13 @@ export function formatShow(job: CronJob, number: number, live: LiveRun[], now: D
     ...(run ? [runLine(localIso(run.dueAt), run.sessionId, liveWords(job, run))] : []),
     ...job.history.map((h) => runLine(histIso(h), h.sessionId, histText(h)))
   ]
+  const backend = cronBackend(job)
   return [
     `${number}. ${job.name}`,
     `Id: ${job.id}`,
     `When: ${describeSchedule(job.schedule)}`,
     `On: ${job.enabled ? 'yes' : 'no'} · ${nextText(job, live, now)}`,
-    `Runs as: ${BACKEND_LABEL[cronBackend(job)]}`,
+    ...(backend ? [`Runs as: ${BACKEND_LABEL[backend]}`] : []),
     `Model: ${job.model ?? 'default'}`,
     `Effort: ${job.effort ?? 'default'}`,
     `Permission: ${job.permission}`,

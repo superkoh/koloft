@@ -63,7 +63,7 @@ import {
 } from './helpers/codex'
 import { openPluginPage } from './helpers/extensions'
 import type { BackendId, DiscordSettings, SessionInfo } from '../../src/shared/types'
-import { identityOf, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
+import { agentSessionId, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import { ownerSays } from '../../src/shared/agentGuide'
 import { crossSessionLine, writeLine } from '../../src/agents/claude/main/crossSessionMessage'
 import { FROM_KOLOFT } from '../../src/plugins/sessions/main/messageOpenings'
@@ -322,7 +322,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     const fake = await startFakeDiscord(env)
     const { app } = await connected(env, fake)
     try {
-      const assistId = identityOf(butlerSessionOnDisk(env)!.sessionIds[0]).nativeSessionId
+      const assistId = agentSessionId(butlerSessionOnDisk(env)!.sessionIds[0])
       fake.say(OWNER, 'please look at the PR')
       await expect
         .poll(() => transcriptText(env, assistId), { timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS })
@@ -364,7 +364,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     const fake = await startFakeDiscord(env)
     const { app, page } = await connected(env, fake)
     try {
-      const assistId = identityOf(butlerSessionOnDisk(env)!.sessionIds[0]).nativeSessionId
+      const assistId = agentSessionId(butlerSessionOnDisk(env)!.sessionIds[0])
       await expect.poll(() => fs.existsSync(path.join(env.home, '.claude', 'sessions'))).toBe(true)
       const socket = messagingSocketOf(env, assistId)
       const turnDoneAt = async (): Promise<number> =>
@@ -450,7 +450,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
 
         const butlerKey = (): string => butlerSessionOnDisk(env)?.sessionIds[0] ?? ''
         const butlerGot = (): string => {
-          const butlerId = identityOf(butlerKey()).nativeSessionId
+          const butlerId = agentSessionId(butlerKey())
           if (conductor === 'agy') return butlerKey() ? agyPrompts(env, butlerId) : ''
           if (conductor === 'claude') return peerMessages(env).join('\n')
           return codexQueued(env)
@@ -467,7 +467,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         )
         if (conductor === 'claude')
           await expect
-            .poll(() => transcriptText(env, identityOf(butlerKey()).nativeSessionId), {
+            .poll(() => transcriptText(env, agentSessionId(butlerKey())), {
               timeout: CONDUCTOR_STARTS_AND_ANSWERS_MS
             })
             .toContain('Peer said:')
@@ -1511,7 +1511,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
         })
         await childRow.click()
         if (child === 'agy') await agyConversationOnceFirstTurnEnded(page)
-        const conductorId = identityOf(butlerSessionOnDisk(env)!.sessionIds[0]).nativeSessionId
+        const conductorId = agentSessionId(butlerSessionOnDisk(env)!.sessionIds[0])
         const handover = `koloft session send ${conductorId} "<your result>"`
         if (child === 'claude')
           expect(readAllCalls(env).find((c) => c.firstPrompt?.includes(handover))).toBeTruthy()

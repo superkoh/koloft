@@ -1,5 +1,5 @@
 import type { BackendId, CronJob, HistoryLine, LiveRun } from '@shared/types'
-import { identityOf } from '@shared/sessionBackend'
+import { agentSessionId, identityOf } from '@shared/sessionBackend'
 import { describeSchedule, describeWhen, localIso, nextRun, onceAt, stepMs } from '@shared/schedule'
 
 export function oncePassed(job: CronJob, now: Date): boolean {
@@ -69,12 +69,8 @@ export function histIso(h: HistoryLine): string {
   return histSpan(h, localIso)
 }
 
-export function agentSessionId(key: string): string {
-  return identityOf(key).nativeSessionId
-}
-
 export function lastRunLine(history: HistoryLine[], backend: BackendId): string | null {
-  const last = history.find((h) => h.sessionId && identityOf(h.sessionId).backendId === backend)
+  const last = history.find((h) => h.sessionId && identityOf(h.sessionId)?.backendId === backend)
   return last?.sessionId
     ? `Last run of this task: ${localIso(last.dueAt)}, session ${agentSessionId(last.sessionId)}.`
     : null

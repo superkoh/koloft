@@ -940,7 +940,7 @@ export const useStore = create<AppState>((set, get) => ({
         .finally(() => restarting.delete(oldId))
     }
     const begin = async (resumeId: string, cwd: string, live: boolean): Promise<void> => {
-      const backend = identityOf(resumeId).backendId
+      const backend = identityOf(resumeId)?.backendId
       restarting.add(oldId)
       // CC§2
       let hasTranscript = false
@@ -954,7 +954,7 @@ export const useStore = create<AppState>((set, get) => ({
         restarting.delete(oldId)
         return
       }
-      if (!hasTranscript) {
+      if (!hasTranscript || !backend) {
         restarting.delete(oldId)
         if (tab.ended && tab.launch) return relaunch(tab.launch)
         sayNoConversation(live)

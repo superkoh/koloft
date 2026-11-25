@@ -1847,7 +1847,7 @@ async function noteSentByKoloft(
 }
 
 async function deliverViaOwner(tabId: string, text: string): Promise<boolean> {
-  return (await storedOwnerOf(tabId)?.deliver?.(tabId, text)) ?? false
+  return (await storedOwnerOf(tabId)?.deliver(tabId, text)) ?? false
 }
 
 function noticeOf(tabId: string): NoticeFile | undefined {
@@ -2082,7 +2082,9 @@ function inboxSessionOfEndedTab(tabId: string): AskedSession | undefined {
   const ended = attention.list().find((m) => m.tabId === tabId && m.kind === 'exited')
   if (!ended?.sessionId || !sessionsEndedThisRun.has(ended.sessionId)) return undefined
   const ws = workspaceMgr?.workspaceOf(ended.sessionId)
-  const { backendId, sourceId } = identityOf(ended.sessionId)
+  const identity = identityOf(ended.sessionId)
+  if (!identity) return undefined
+  const { backendId, sourceId } = identity
   const machine = (ws && parseRemoteKey(ws)?.host) ?? (sourceId === 'local' ? undefined : sourceId)
   return askedSession(ended.sessionId, ended.title, backendId, ws, machine)
 }
@@ -3830,7 +3832,7 @@ app.whenReady().then(() => {
       await storedOwnerOf(tabId)?.answerable?.(tabId)
     },
     answerInPlace: async (tabId, reply) => {
-      return storedOwnerOf(tabId)?.answer?.(tabId, reply) ?? false
+      return storedOwnerOf(tabId)?.answer(tabId, reply) ?? false
     },
     showsDialogsClosing: (tabId) => claudeDialogs.showsDialogsClosing(tabId),
     regDir: hookPaths.regDir
@@ -4089,13 +4091,8 @@ app.whenReady().then(() => {
       tracker.fillMachineScratchpads(host)
       workspaceMgr?.onRemoteChanged()
     },
-    onLeft: (host, ids) => {
-      claudeBackend.noticeRemoteExits(host, ids)
-      for (const s of storedSessions()) s.noticeRemoteExits?.(host, ids)
-    },
-    onHooksPulled: (host) => {
-      for (const s of storedSessions()) s.followMirrors?.(host)
-    },
+    onLeft: (host, ids) => sessionBackends.noticeRemoteExits(host, ids),
+    onHooksPulled: (host) => sessionBackends.mirrorPulled(host),
     onShells: (host, shells) => {
       for (const s of shells) ptyMgr.shellOnMachineSaid(host, s.tabId, s.name, s.cwd)
     },
@@ -4718,7 +4715,7 @@ function stopTabProcess(tabId: string, restarting = false): Promise<boolean> {
 }
 
 function archiveSession(id: string): boolean {
-  const archived = sessionBackends.forSession(id).archive(id)
+  const archived = sessionBackends.archive(id)
   if (archived) {
     koloftInbox.sessionGone(id, 'Its session was deleted')
     attention.clearSession(id)
@@ -5080,8 +5077,7 @@ async function resumeRow(
   row: SessionRow,
   { rebuildGoneWorktree }: { rebuildGoneWorktree: boolean }
 ): Promise<{ ok: true; tabId: string } | { ok: false; error: string }> {
-  const backend = sessionBackends.forSession(row.id)
-  const plan = await backend.resumePlan(row.id)
+  const plan = await sessionBackends.resumePlan(row.id)
   if (plan.action === 'dialog' || (plan.action === 'rebuild' && !rebuildGoneWorktree)) {
     return {
       ok: false,
@@ -5097,7 +5093,7 @@ async function resumeRow(
           : `Could not start “${row.title}” — its folder is gone.`
     }
   }
-  const res = await backend.resume({
+  const res = await sessionBackends.resume({
     sessionId: row.id,
     cwd: plan.action === 'rebuild' ? plan.resumeCwd : plan.cwd,
     mode: plan.action
@@ -6039,8 +6035,7 @@ async function sessionPorts(tabId: string): Promise<ListeningPort[] | null> {
   ]
   const machine = machineOfTab(tabId)
   if (!machine) return parseSessionPorts(await scanPortsHere(tags))
-  const tmuxName =
-    tracker.remoteOf(tabId)?.tmuxName ?? storedOwnerOf(tabId)?.tmuxOfTab?.(tabId) ?? ''
+  const tmuxName = sessionBackends.tmuxOfTab(tabId) ?? ''
   await loginEnvReady()
   return parseSessionPorts(await scanPortsOnMachine(machine, tags, tmuxName, remoteControlDir))
 }

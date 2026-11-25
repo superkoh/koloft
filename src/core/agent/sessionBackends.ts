@@ -66,6 +66,9 @@ export interface SessionBackend extends SessionRowsSource {
   beforeWorkspaceRemoved(workspace: string): Promise<void>
   showsPromptBeforeBind(tabId: string): boolean
   sessionGone(key: string): boolean
+  noticeRemoteExits(host: string, sessionIds: string[]): void
+  mirrorPulled(host: string): void
+  tmuxOfTab(tabId: string): string | undefined
 }
 
 export interface SessionLifecycle {
@@ -150,8 +153,40 @@ export class SessionBackends {
     return backend
   }
 
-  forSession(key: string): SessionBackend {
-    return this.get(identityOf(key).backendId)
+  private ownerOfSession(key: string): SessionBackend | undefined {
+    const identity = identityOf(key)
+    return identity && this.get(identity.backendId)
+  }
+
+  aliveTabFor(key: string): string | undefined {
+    return this.ownerOfSession(key)?.aliveTabFor(key)
+  }
+
+  transcriptExists(key: string): boolean | Promise<boolean> {
+    return this.ownerOfSession(key)?.transcriptExists(key) ?? false
+  }
+
+  noAccountToResume(key: string): string | null {
+    const owner = this.ownerOfSession(key)
+    return owner ? this.noUsableAccount(owner.id) : null
+  }
+
+  resumePlan(key: string): Promise<ResumePlan> {
+    return (
+      this.ownerOfSession(key)?.resumePlan(key) ??
+      Promise.resolve({ action: 'unavailable', reason: 'not-found' })
+    )
+  }
+
+  resume(request: SessionResumeRequest): Promise<SessionResumeResult> {
+    return (
+      this.ownerOfSession(request.sessionId)?.resume(request) ??
+      Promise.resolve({ ok: false, code: 'invalid-args' })
+    )
+  }
+
+  archive(key: string): boolean {
+    return this.ownerOfSession(key)?.archive(key) ?? false
   }
 
   occupantOf(dir: string): string | null {
@@ -201,11 +236,11 @@ export class SessionBackends {
   }
 
   turns(key: string, n: number): Promise<Turn[]> {
-    return this.forSession(key).turns(key, n)
+    return this.ownerOfSession(key)?.turns(key, n) ?? Promise.resolve([])
   }
 
   transcriptPlaces(key: string): TranscriptPlaces | undefined {
-    return this.forSession(key).transcriptPlaces(key)
+    return this.ownerOfSession(key)?.transcriptPlaces(key)
   }
 
   permissionClass(tabId: string): ModeClass {
@@ -268,8 +303,26 @@ export class SessionBackends {
 
   sessionStillThere(key: string, foundOrRunning: ReadonlySet<string>): boolean {
     if (foundOrRunning.has(key)) return true
-    const backend = this.adapters.get(identityOf(key).backendId)
+    const identity = identityOf(key)
+    if (!identity) return false
+    const backend = this.adapters.get(identity.backendId)
     return !backend || !backend.sessionGone(key)
+  }
+
+  noticeRemoteExits(host: string, sessionIds: string[]): void {
+    for (const backend of this.builtInListOrder()) backend.noticeRemoteExits(host, sessionIds)
+  }
+
+  mirrorPulled(host: string): void {
+    for (const backend of this.builtInListOrder()) backend.mirrorPulled(host)
+  }
+
+  tmuxOfTab(tabId: string): string | undefined {
+    for (const backend of this.builtInListOrder()) {
+      const name = backend.tmuxOfTab(tabId)
+      if (name !== undefined) return name
+    }
+    return undefined
   }
 
   async historyRows(

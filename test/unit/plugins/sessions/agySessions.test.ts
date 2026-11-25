@@ -1024,7 +1024,7 @@ describe('AgySessions turns (AGY§8 AGY§10 AGY§12)', () => {
         JSON.stringify({ conversation_id: A, agent_state: 'working' })
       ].join('\n') + '\n'
     )
-    sessions.followMirrors('devbox')
+    sessions.mirrorPulled('devbox')
     expect(sessions.list()[0]?.nativeSessionId).toBe(A)
     await new Promise((resolve) => setTimeout(resolve, TITLE_LANDS_AFTER_THE_TURN_MS))
     const readsBeforeTitle = machine.titleReads
@@ -3399,7 +3399,7 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
       path.join(mirror, `${tabId}.agy.jsonl`),
       lines.map((l) => JSON.stringify(l) + '\n').join('')
     )
-    sessions.followMirrors('devbox')
+    sessions.mirrorPulled('devbox')
   }
   const remoteMember = (id: string): void => {
     sessions.store.upsertMember({
@@ -3664,7 +3664,7 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
       old,
       stop(true) + JSON.stringify({ event: 'PreInvocation', input: { conversationId: A } }) + '\n'
     )
-    sessions.followMirrors('devbox')
+    sessions.mirrorPulled('devbox')
     expect(runtime.statusOf(id)).toBe('working')
     expect(shown()).toEqual([{ type: 'stop' }, { type: 'prompt' }])
     expect(
@@ -3695,7 +3695,7 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     await vi.waitFor(() => expect(shown()).toEqual([{ type: 'stop' }]))
     expect(await runtime.stillWorking(id)).toBe(true)
     fs.appendFileSync(old, line('PostToolUse', { toolCall: STANDING_CRON, stepIdx: 6 }))
-    sessions.followMirrors('devbox')
+    sessions.mirrorPulled('devbox')
     expect(await runtime.stillWorking(id)).toBe(false)
   })
 
@@ -3793,7 +3793,7 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     const { id } = await sessions.resume({ sessionId: agySessionKey(A, 'devbox'), cwd: REMOTE_WS })
     await vi.waitFor(() => expect(shown()).toEqual([{ type: 'stop' }]))
     fs.appendFileSync(old, JSON.stringify({ conversation_id: B, agent_state: 'idle' }) + '\n')
-    sessions.followMirrors('devbox')
+    sessions.mirrorPulled('devbox')
     await vi.waitFor(() => expect(sessions.list()[0].nativeSessionId).toBe(B))
     expect(await runtime.stillWorking(id)).toBe(false)
   })
