@@ -1,0 +1,20 @@
+heartbeat arguments: set -- '0' '-home-me-api' '4' '.gemini/antigravity-cli/brain' '.koloft/codex-home/sessions' '.koloft/codex-home/archived_sessions' '.gemini/antigravity-cli/conversations' '0' '/home/me/api'
+copies, in the order they start:
+1. .claude/projects -> /ud/remote/box/projects
+   flags: --inplace -m --delete --include=/-home-me-api*/ --include=/-home-me-api*/*.jsonl --include=/-home-me-api*/*.title --include=/-home-me-api*/*/ --include=/-home-me-api*/*/** --exclude=*
+   a failed copy shows a sync problem: yes
+2. .gemini/antigravity-cli/brain -> /ud/remote/box/agy-gemini/antigravity-cli/brain
+   flags: --inplace -m --delete --include=/*/ --include=/*/*.md.metadata.json --include=/*/*.md --include=/*/.system_generated/ --include=/*/.system_generated/logs/ --include=/*/.system_generated/logs/transcript.jsonl --exclude=*
+   a failed copy shows a sync problem: yes
+3. .koloft/codex-home/sessions -> /ud/remote/box/codex-home/sessions
+   flags: --inplace -m --delete --include=*/ --include=rollout-*.jsonl --exclude=*
+   a failed copy shows a sync problem: no
+4. .koloft/hook-sessions -> /ud/remote/box/hook-sessions
+   flags: -I --inplace --delete
+   a failed copy shows a sync problem: yes
+5. .koloft/codex-home/archived_sessions -> /ud/remote/box/codex-home/archived_sessions
+   flags: --inplace -m --delete --include=*/ --include=rollout-*.jsonl --exclude=*
+   a failed copy shows a sync problem: no
+6. .gemini/antigravity-cli/conversations -> /ud/remote/box/agy-gemini/antigravity-cli/conversations
+   flags: --delete --include=*.db --exclude=*
+   a failed copy shows a sync problem: no
