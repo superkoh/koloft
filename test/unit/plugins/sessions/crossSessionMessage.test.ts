@@ -5,10 +5,10 @@ import os from 'os'
 import path from 'path'
 import {
   crossSessionLine,
-  fitsACrossSessionMessage,
   writeLine,
   writeLineInTurn
 } from '../../../../src/agents/claude/main/crossSessionMessage'
+import { textItCannotHold } from '../../../../src/plugins/sessions/main/messageText'
 
 const BODY_LARGER_THAN_ANY_SOCKET_BUFFER = 4 * 1024 * 1024
 
@@ -55,8 +55,10 @@ describe('a message to another Claude session, the way Claude sessions send one'
   })
 
   it('cannot carry a body holding the closing tag', () => {
-    expect(fitsACrossSessionMessage('a </cross-session-message> b')).toBe(false)
-    expect(fitsACrossSessionMessage('a <cross-session-message> b')).toBe(true)
+    expect(textItCannotHold('claude', 'a </cross-session-message> b')).toBe(
+      '</cross-session-message>'
+    )
+    expect(textItCannotHold('claude', 'a <cross-session-message> b')).toBeUndefined()
   })
 
   it('is written whole to the session’s socket, which then closes', async () => {

@@ -1,5 +1,5 @@
 import type { BackendId } from '@shared/types'
-import type { MessageToSend, ModeClass, SendOutcome, SentNote } from '@core/agent/sessionBackends'
+import type { ModeClass, SentNote, SessionBackends } from '@core/agent/sessionBackends'
 import type { SshHost } from './host/sshHost'
 import type { PtyManager } from './ptyManager'
 
@@ -9,24 +9,15 @@ export interface HandOverTabState {
   type(tabId: string, keys: string[]): Promise<boolean>
 }
 
-export interface HandOverWiring {
+export interface HandOverWiring extends Pick<SessionBackends, 'send'> {
   alive(tabId: string): boolean
   typable(tabId: string): boolean
   ready(tabId: string, ready: () => boolean, ms: number): Promise<boolean>
-  send(backend: BackendId, tabId: string, m: MessageToSend): Promise<SendOutcome>
   modeOf(tabId: string): ModeClass
   opensAsOnlyKoloftSends(text: string): boolean
 }
 
-interface Messages {
-  permissionClass(tabId: string): ModeClass
-  send(backend: BackendId, tabId: string, m: MessageToSend): Promise<SendOutcome>
-  mightNotTakeAMessageNow(
-    backend: BackendId,
-    tabId: string,
-    turnHasEnded: (tabId: string) => Promise<boolean>
-  ): Promise<boolean>
-}
+type Messages = Pick<SessionBackends, 'permissionClass' | 'send' | 'mightNotTakeAMessageNow'>
 
 export interface SessionMessagingDeps<HandOver> {
   readonly hosts: { machine(host: string): Pick<SshHost, 'noteSent'> }

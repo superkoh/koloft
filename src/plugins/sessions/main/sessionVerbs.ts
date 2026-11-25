@@ -59,7 +59,7 @@ import { composePrompt } from '@core/prompt'
 import type { Commands } from '@core/commands'
 import type { SessionStarted, SessionStarting } from '@core/moment'
 import { AGENT_SHIM_WAITS_MS } from '@core/command'
-import type { MessageToSend, ModeClass, SendOutcome } from '@core/agent/sessionBackends'
+import type { ModeClass, SessionBackends } from '@core/agent/sessionBackends'
 import {
   A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
   FROM_A_SESSION,
@@ -351,7 +351,7 @@ export async function findClosable(
   )
 }
 
-export interface SessionVerbDeps {
+export interface SessionVerbDeps extends Pick<SessionBackends, 'send' | 'mightNotTakeAMessageNow'> {
   workspaceOf(tabId: string): string | undefined
   allSessions(): SessionInfo[]
   tabOpen(tabId: string): boolean
@@ -380,12 +380,6 @@ export interface SessionVerbDeps {
   ready(tabId: string, ms: number, turnEnded: boolean): Promise<boolean>
   bound(tabId: string, ms: number): Promise<boolean>
   asking(tabId: string): boolean
-  send(backend: BackendId, tabId: string, m: MessageToSend): Promise<SendOutcome>
-  mightNotTakeAMessageNow(
-    backend: BackendId,
-    tabId: string,
-    turnHasEnded: (tabId: string) => Promise<boolean>
-  ): Promise<boolean>
   press(tabId: string, keys: string[]): Promise<void>
   modeOf(tabId: string): ModeClass
   opensAsOnlyKoloftSends(text: string): boolean

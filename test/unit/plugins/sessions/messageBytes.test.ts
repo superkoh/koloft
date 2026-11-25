@@ -111,7 +111,7 @@ import {
 import { FROM_KOLOFT } from '../../../../src/plugins/sessions/main/messageOpenings'
 import { writeLineInTurn } from '../../../../src/agents/claude/main/crossSessionMessage'
 import { whenMessagingSocket } from '../../../../src/agents/claude/main/claudeSessionRegistry'
-import { claudeMessages, messageSocket } from '../../../../src/agents/claude/main/messageSocket'
+import type { RemoteTab } from '../../../../src/main/host/host'
 import { codexBackend } from '../../../../src/agents/codex/main/backend'
 import { agyBackend } from '../../../../src/agents/agy/main/backend'
 import type { SentNote, SessionMessages } from '../../../../src/core/agent/sessionBackends'
@@ -548,11 +548,13 @@ async function stage(kind: Kind): Promise<Stage> {
     messaging.noteKoloftSent(tab, note)
   const NO_RESUME_IS_PLANNED_HERE = {} as ResumeProbes
   const agents: Record<BackendId, SessionMessages> = {
-    claude: claudeMessages({
-      sendPeerLine: messageSocket({
-        tracker: {
-          remoteOf: (tab) => (tab === TARGET_TAB && kind.remote ? { host: MACHINE } : undefined)
-        },
+    claude: claudeBackendIn(world, ptyMgr, {
+      machine: { run: recordingSsh().run },
+      tracker: {
+        remoteOf: (tab) =>
+          tab === TARGET_TAB && kind.remote ? ({ host: MACHINE } as RemoteTab) : undefined
+      },
+      messages: {
         writeLineInTurn: writeLineAndSeeItTaken,
         remoteControlDir: world.controlDir,
         sessionOfTab,
@@ -566,9 +568,9 @@ async function stage(kind: Kind): Promise<Stage> {
           const { whenMessagingSocketOnMachine } =
             await import('../../../../src/agents/claude/main/claudeSessionRegistry')
           return whenMessagingSocketOnMachine(sessionId, ms, readLiveRegistry)
-        }
-      }),
-      noteKoloftSent
+        },
+        noteKoloftSent
+      }
     }),
     codex:
       codex &&
