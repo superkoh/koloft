@@ -390,6 +390,7 @@ import {
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
 import { TreeRemovals } from './treeRemovals'
+import { removeUntouchedWorktreeWith } from './untouchedWorktreeRemoval'
 import {
   finishAfterKoloftQuits,
   WorktreeRemovalWatch
@@ -4528,24 +4529,24 @@ async function endAndRemove(
   return true
 }
 
-async function removeUntouchedWorktree(
+function removeUntouchedWorktree(
   owner: { readonly id: BackendId } | null | undefined,
   resource: WorktreeResource
 ): Promise<void> {
-  const tree = resource.worktreePath
-  if (sleeperTrees().includes(tree) || cronRunner?.tidiesFolder(tree)) return
-  if (sessionBackends.occupantOf(tree)) return
-  if (!owner || !(await sessionBackends.worktreeRecords.untouched(owner.id, resource))) return
-  if (treeRemovals.has(tree)) return
-  const problem = await treeRemovals.run(tree, () =>
-    removeTree(hostGitOut, {
-      root: resource.originalCwd,
-      treeRoot: tree,
-      worktreeName: resource.worktreeName,
-      branches: [`worktree-${resource.worktreeName}`]
-    })
+  return removeUntouchedWorktreeWith(
+    {
+      sleeperTrees,
+      cronRunner,
+      sessionBackends,
+      treeRemovals,
+      removeTree,
+      hostGitOut,
+      dirExists: (dir) => hosts.of(dir).dirExists(dir),
+      toast: (text) => sendToRenderer(CH.toast.show, text)
+    },
+    owner,
+    resource
   )
-  if (problem && (await hosts.of(tree).dirExists(tree))) sendToRenderer(CH.toast.show, problem)
 }
 
 function cronRunTree(root: string, worktree?: string): ProjectInfo {
