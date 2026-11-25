@@ -177,6 +177,7 @@ async function claudeTab(
     },
     store: () => null,
     remoteSync: () => null,
+    resumeProbes: { recorded: () => false },
     userData: () => userData,
     setupLine: () => undefined,
     hookSettings: (_tabId: string, allowsKoloft: boolean, isConductor: boolean) => {

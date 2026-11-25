@@ -23,7 +23,7 @@ import {
 } from '@shared/remoteKey'
 import { hasUsableAccount } from '@shared/accountUsage'
 import type { Turn } from '@shared/turns'
-import { isValidWorktreeName } from '@shared/worktreeName'
+import { isValidWorktreeName, SESSION_WORKTREES_FOLDER } from '@shared/worktreeName'
 import type {
   HandOverLaunch,
   MessageToSend,
@@ -42,7 +42,11 @@ import {
   type ClaudeMessageDeps,
   type MessageSocketDeps
 } from './messageSocket'
-import { KEEPS_NO_WORKTREE_RECORDS } from '@core/agent/worktreeRecords'
+import {
+  A_NAME_WITH_A_RECOVERY_RECORD,
+  KEEPS_NO_WORKTREE_RECORDS
+} from '@core/agent/worktreeRecords'
+import { projectInfoFor } from '../../../main/projectInfo'
 import {
   A_PASS_WITH_NO_ROWS,
   type RowsPass,
@@ -1035,6 +1039,7 @@ export class ClaudeBackend implements SessionBackend {
   async create(opts: CreateTabOptions): Promise<CreateTabResult> {
     const asked = typeof opts.cwd === 'string' ? opts.cwd : ''
     const root = hostOf(asked) === 'ssh' ? asked : (this.homeOf(opts.resumeSessionId) ?? asked)
+    if (opts.worktree) this.refuseANameAnotherAgentRecords(root, opts.worktree)
     return this.createTab({
       tabId: opts.tabId,
       root,
@@ -1084,6 +1089,7 @@ export class ClaudeBackend implements SessionBackend {
         return { ok: false, code: 'invalid-args' }
       }
       worktree = req.worktree
+      this.refuseANameAnotherAgentRecords(cwd, worktree)
     }
     const bound = this.d.store()?.findRow(sid)?.worktreeState
     const rebuildable = !home || !!bound
@@ -1139,6 +1145,13 @@ export class ClaudeBackend implements SessionBackend {
       effort: req.effort
     })
     return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
+  }
+
+  private refuseANameAnotherAgentRecords(where: string, name: string): void {
+    const home = `/${SESSION_WORKTREES_FOLDER}/`
+    const root = isRemoteKey(where) ? where.split(home)[0] : projectInfoFor(where).root
+    if (this.d.resumeProbes.recorded?.(`${root}${home}${name}`))
+      throw new Error(A_NAME_WITH_A_RECOVERY_RECORD)
   }
 
   resumePlan(key: string): Promise<ResumePlan> {

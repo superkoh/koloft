@@ -162,6 +162,7 @@ function sharedFolder(side: (typeof SIDES)[number]) {
     resumeProbes: {
       dirExists: dirExistsSync,
       occupantOf: () => null,
+      recorded: (dir: string) => records.recorded(dir),
       ...gitProbes(localGitOut)
     },
     worktreesBeingPrepared: preparing
@@ -172,9 +173,47 @@ function sharedFolder(side: (typeof SIDES)[number]) {
     tree,
     launched,
     claudeGit,
-    claudeResumes: () => claude.resume({ sessionId: SID, cwd: side.at(tree) })
+    claudeResumes: () => claude.resume({ sessionId: SID, cwd: side.at(tree) }),
+    claudeResumesRenamed: (worktree: string) =>
+      claude.resume({ sessionId: SID, cwd: side.at(tree), mode: 'renamed', worktree }),
+    claudeStartsIn: (worktree: string) =>
+      claude.create({ kind: 'claude', cwd: side.at(claudeRepo), worktree })
   }
 }
+
+describe.each(SIDES)(
+  'a new Claude Code session in a worktree name only another agent still records, $where',
+  (side) => {
+    it('is refused with the sentence the other agents use, and Claude Code is not started on that name', async () => {
+      const s = sharedFolder(side)
+      const made = await s.theirs.create(side.at(repo), 'foo')
+      git('worktree', 'remove', '--force', barePath(made.worktreePath))
+      git('branch', '-D', 'worktree-foo')
+      await expect(s.claudeStartsIn('foo')).rejects.toThrow(
+        'This worktree name has a recovery record; recover it or choose a different name'
+      )
+      expect(s.launched).toEqual([])
+      await expect(s.claudeStartsIn('bar')).resolves.toMatchObject({ ok: true })
+      expect(s.launched).toEqual([expect.objectContaining({ worktree: 'bar' })])
+    })
+
+    it('a Claude Code resume into a new worktree of that name is refused the same way', async () => {
+      const s = sharedFolder(side)
+      git('worktree', 'add', '-q', '-b', 'worktree-foo', s.tree)
+      const made = await s.theirs.create(side.at(repo), 'foo-2')
+      git('worktree', 'remove', '--force', barePath(made.worktreePath))
+      git('branch', '-D', 'worktree-foo-2')
+      await expect(s.claudeResumesRenamed('foo-2')).resolves.toEqual({
+        ok: false,
+        code: 'backend',
+        message: 'This worktree name has a recovery record; recover it or choose a different name'
+      })
+      expect(s.launched).toEqual([])
+      await expect(s.claudeResumesRenamed('foo-3')).resolves.toMatchObject({ ok: true })
+      expect(s.launched).toEqual([expect.objectContaining({ worktree: 'foo-3' })])
+    })
+  }
+)
 
 async function onTheListBefore(
   preparing: Map<string, Promise<unknown>>,

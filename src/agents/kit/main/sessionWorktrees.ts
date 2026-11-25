@@ -3,7 +3,11 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import { isValidWorktreeName, SESSION_WORKTREES_FOLDER } from '@shared/worktreeName'
 import { barePath, isRemoteKey } from '@shared/remoteKey'
-import type { WorktreeRecords, WorktreeResource } from '@core/agent/worktreeRecords'
+import {
+  A_NAME_WITH_A_RECOVERY_RECORD,
+  type WorktreeRecords,
+  type WorktreeResource
+} from '@core/agent/worktreeRecords'
 import {
   copyWorktreeIncludes,
   TREE_IO_ON_THIS_MAC,
@@ -274,11 +278,7 @@ export class SessionWorktrees {
     if (await io.exists(target)) throw new Error('Worktree directory already exists')
     const branch = `worktree-${name}`
     if (await branchExists(io, root, branch)) throw new Error('Worktree branch already exists')
-    if (this.everyAgent.recorded(target)) {
-      throw new Error(
-        'This worktree name has a recovery record; recover it or choose a different name'
-      )
-    }
+    if (this.everyAgent.recorded(target)) throw new Error(A_NAME_WITH_A_RECOVERY_RECORD)
     const resource: WorktreeResource = {
       id: randomUUID(),
       originalCwd: root,
