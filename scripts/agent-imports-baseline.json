@@ -27,7 +27,6 @@
     "agent-main-into-mixed-main": {
       "src/agents/agy/main/agySessions.ts": {
         "src/main/remote/launch.ts": "C10",
-        "src/main/rowActivity.ts": "C3",
         "src/main/toolShim.ts": "D1"
       },
       "src/agents/agy/main/agyTab.ts": {
@@ -45,16 +44,12 @@
         "src/main/usageCache.ts": "C6"
       },
       "src/agents/claude/main/claudeShim.ts": { "src/main/remote/launch.ts": "C10" },
-      "src/agents/claude/main/sessionTracker.ts": {
-        "src/main/remote/install.ts": "C10",
-        "src/main/rowActivity.ts": "C3"
-      },
+      "src/agents/claude/main/sessionTracker.ts": { "src/main/remote/install.ts": "C10" },
       "src/agents/codex/main/codexMachine.ts": {
         "src/main/remote/install.ts": "C10",
         "src/main/remote/launch.ts": "C10"
       },
       "src/agents/codex/main/codexMirror.ts": { "src/main/usageCache.ts": "C6" },
-      "src/agents/codex/main/codexObservation.ts": { "src/main/rowActivity.ts": "C3" },
       "src/agents/codex/main/codexSessions.ts": {
         "src/main/remote/launch.ts": "C10",
         "src/main/toolShim.ts": "D1"
@@ -108,7 +103,7 @@
         "src/agents/agy/main/agyMirror.ts": "C6",
         "src/agents/codex/main/codexMirror.ts": "C6"
       },
-      "src/main/rowActivity.ts": { "src/agents/claude/main/claudeTouchedFiles.ts": "C3" },
+      "src/main/rowActivity.ts": { "src/agents/claude/main/claudeTouchedFiles.ts": "C1" },
       "src/main/statusline.ts": { "src/agents/agy/main/agyHooks.ts": "C9" },
       "src/main/usageCache.ts": { "src/agents/agy/main/agyStore.ts": "C6" },
       "src/main/usageScan.ts": { "src/agents/agy/main/agyStore.ts": "C6" }
