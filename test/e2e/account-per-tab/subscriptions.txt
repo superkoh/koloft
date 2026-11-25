@@ -25,3 +25,8 @@
   --gemini_dir=<home>/fake-ssh/machine/.koloft/agy/made-up-gemini
   ANT_ACCOUNT=made-up-gemini
   GEMINI_API_KEY is set: no
+=== Assist’s one-shot claude -p (the title of a new session) ===
+  its account environment:
+    ANT_ACCOUNT=made-up-pro
+    CLAUDE_CODE_OAUTH_TOKEN=made-up-oauth-token-of-made-up-pro
+    KOLOFT_ACCOUNT_PICKED=1

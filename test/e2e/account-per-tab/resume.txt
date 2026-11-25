@@ -1,0 +1,9 @@
+=== Claude Code over SSH, restarted ===
+  started on made-up-left
+  resumed on made-up-left, its line resumes the session
+=== Codex on this Mac, restarted ===
+  started on made-up-left
+  resumed on made-up-left
+=== Antigravity on this Mac, after Koloft only asked once whether an account trusts a folder; restarted ===
+  started on made-up-left
+  resumed on made-up-left

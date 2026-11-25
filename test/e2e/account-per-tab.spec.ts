@@ -296,6 +296,7 @@ test.describe('which account each kind of tab starts on, with which environment 
     env
   }) => {
     withTheAgents(env, true)
+    env.launchEnv.ANTHROPIC_AUTH_TOKEN = 'made-up-token-koloft-itself-was-started-with'
     onlyTheseAccounts(
       env,
       [
