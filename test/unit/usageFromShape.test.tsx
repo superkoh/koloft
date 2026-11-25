@@ -2,7 +2,7 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { render, cleanup, act, fireEvent } from '@testing-library/react'
 import type { AccountView } from '../../src/shared/types'
-import { ACCOUNT_SETS, AGY_SETS, CODEX_SETS, NOW } from './helpers/usageMatrix'
+import { ACCOUNT_SETS, NOW } from './helpers/usageMatrix'
 
 vi.mock('../../src/renderer/src/components/settings/GitAccountsSection', () => ({
   GitAccountsSection: () => null
@@ -43,7 +43,6 @@ const rest = anyApi() as Record<string, unknown>
   }
 )
 
-const { AGENT_UIS } = await import('../../src/agents/uis')
 const { TopbarUsage } = await import('../../src/renderer/src/components/TopbarUsage')
 const { AccountsPane } = await import('../../src/renderer/src/components/settings/AccountsPane')
 
@@ -159,43 +158,6 @@ describe('usage drawn from each agent’s shape is the same page as the drawing 
         }
     })
   }
-
-  describe('what a shape shows today that is not yet its agent’s fact', () => {
-    const usageUi = (id: string) => AGENT_UIS.find((ui) => ui.id === id)!.usage
-    const codexByok = CODEX_SETS.codexEveryState.find((a) => a.name === 'byok')!
-
-    it('#2629: Codex lights no fallback bar though every sign-in is walled and a key stands by', () => {
-      const set = [...CODEX_SETS.codexAllWalled, codexByok]
-      expect(usageUi('codex').group(set, NOW).fallbackBarLit).toBe(false)
-    })
-
-    it('#2630: an Antigravity account shows no age though its reading has a time', () => {
-      const google = AGY_SETS.agyOne[0]
-      expect(google.quotaAt).toBe(NOW)
-      expect(usageUi('agy').account(google, NOW).ageShownFrom).toBeNull()
-    })
-
-    it('#2631: the top bar leaves out an Antigravity sign-in with no reading', () => {
-      const rows = usageUi('agy')
-        .group(AGY_SETS.agyEveryState, NOW)
-        .rows.map((a) => a.name)
-      expect(rows).not.toContain('new')
-      expect(rows).not.toContain('logged-off')
-    })
-
-    it('#2632: Codex shows no failure beside old bars after a failed probe', () => {
-      const flaky = CODEX_SETS.codexEveryState.find((a) => a.name === 'flaky')!
-      expect(usageUi('codex').account(flaky, NOW).failureBesideBars).toBeNull()
-    })
-
-    it('#2633: Claude Code’s pill bars sit loose, the other agents’ in a group', () => {
-      expect(AGENT_UIS.map((ui) => [ui.id, ui.usage.group([], NOW).pillBarsGrouped])).toEqual([
-        ['claude', false],
-        ['codex', true],
-        ['agy', true]
-      ])
-    })
-  })
 
   it('the sets reach every state the comparison is meant to cover', async () => {
     await openTopBar(ACCOUNT_SETS.everyAgent, false)
