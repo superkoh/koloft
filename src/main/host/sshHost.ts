@@ -1,3 +1,4 @@
+import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import {
@@ -1095,7 +1096,14 @@ exit ${CALLER_GONE_EXIT}`,
           this.killedSessions.delete(named.session)
         const dir = tabPackageDir(tabs.userData, tabId)
         markStartedBeforeTabPasses(tabId, keyless)
-        writeTabPackage(dir, { ...content, tabId, tmuxName, machineName: pkg.name })
+        try {
+          writeTabPackage(dir, { ...content, tabId, tmuxName, machineName: pkg.name })
+        } catch (error) {
+          try {
+            fs.rmSync(dir, { recursive: true, force: true })
+          } catch {}
+          throw error
+        }
         return this.tabLaunchLine(pkg, dir, tabId, mode)
       }
     }

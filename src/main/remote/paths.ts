@@ -13,8 +13,12 @@ export function machinePackageBase(userData: string): string {
   return path.join(userData, 'remote', 'pkg')
 }
 
+export function tabPackagesBase(userData: string): string {
+  return path.join(userData, 'remote', 'tabs')
+}
+
 export function tabPackageDir(userData: string, tabId: string): string {
-  return path.join(userData, 'remote', 'tabs', tabId)
+  return path.join(tabPackagesBase(userData), tabId)
 }
 
 export const REMOTE_HOME = '$HOME/.koloft'
