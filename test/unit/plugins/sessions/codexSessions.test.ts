@@ -21,6 +21,7 @@ import {
   type MachineLogin
 } from '../../../../src/agents/codex/main/codexMachine'
 import { CODEX_ASKS_AND_WAITS } from '../../../../src/agents/codex/main/codexLaunchConfig'
+import { trustCodexFolder } from '../../../../src/agents/codex/main/codexTrust'
 import { SessionRuntime } from '../../../../src/core/agent/sessionRuntime'
 import {
   CODEX_REPLY_LANGUAGE_HOOKS,
@@ -37,6 +38,8 @@ import { koloftPrompt } from '@plugins/sessions/api'
 import { passOf } from '../../../../src/main/tabPass'
 import { standInMachine, type StandInSetup } from '../../helpers/standInMachine'
 import { worktreesOfOneAgent } from '../../helpers/worktreesOfOneAgent'
+
+const A_RESUME_THAT_DID_NOT_WAIT_HAS_STARTED_MS = 200
 
 const TOO_OLD = { binary: '/fixture/codex', env: {}, version: '0.150.0', verified: false }
 
@@ -55,6 +58,10 @@ vi.mock('../../../../src/agents/codex/main/codexLeftovers', async (importOrigina
   endCodexAppServersLeftByACrash: async (marker: string) => {
     mocks.crashLeftoverMarkers.push(marker)
   }
+}))
+vi.mock('../../../../src/agents/codex/main/codexTrust', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../src/agents/codex/main/codexTrust')>()),
+  trustCodexFolder: vi.fn()
 }))
 vi.mock('../../../../src/agents/codex/main/codexRuntime', async (importOriginal) => ({
   resolveCodexRuntime: mocks.runtime,
@@ -234,7 +241,6 @@ beforeEach(() => {
     error: vi.fn(),
     noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],
     koloftPrompt,
-    trustFolder: vi.fn(),
     pickHome: vi.fn(() => ({ account: 'work', home: '/homes/work' })),
     homeOf: vi.fn(() => undefined),
     assistOf: () => undefined,
@@ -1017,6 +1023,42 @@ describe('CodexSessions', () => {
     expect(fs.existsSync(worktree)).toBe(true)
   })
 
+  it('a plain resume waits while another agent still builds or removes its worktree folder, and rebuilds the folder when that left it gone', async () => {
+    const worktree = path.join(repo, '.claude', 'worktrees', 'w1')
+    fs.mkdirSync(worktree, { recursive: true })
+    const resource: WorktreeResource = {
+      id: randomUUID(),
+      originalCwd: repo,
+      worktreePath: worktree,
+      worktreeName: 'w1',
+      worktreeBranch: 'worktree-w1',
+      originalHeadCommit: 'a'.repeat(40),
+      state: 'ready',
+      managed: true
+    }
+    sessions.store.putResource(resource)
+    vi.spyOn(sessions.worktrees, 'create').mockResolvedValue(resource)
+    const rebuild = vi.spyOn(sessions.worktrees, 'rebuild').mockImplementation(async () => {
+      fs.mkdirSync(worktree, { recursive: true })
+      return resource
+    })
+    const launched = await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1' })
+    bind(0, A, worktree)
+    await sessions.stop(launched.id, undefined, true)
+    let anotherAgentDone = (): void => {}
+    const { preparing } = deps.worktreesOfEveryAgent
+    preparing.set(worktree, new Promise<void>((r) => (anotherAgentDone = r)))
+
+    const resuming = sessions.resume({ sessionId: codexSessionKey(A), cwd: worktree })
+    await new Promise((r) => setTimeout(r, A_RESUME_THAT_DID_NOT_WAIT_HAS_STARTED_MS))
+    expect(deps.pty.create).toHaveBeenCalledTimes(1)
+    fs.rmSync(worktree, { recursive: true })
+    preparing.delete(worktree)
+    anotherAgentDone()
+    expect((await resuming).cwd).toBe(worktree)
+    expect(rebuild).toHaveBeenCalledWith(resource.id)
+  })
+
   it('a resume or a restart whose deleted worktree cannot be rebuilt answers rebuild-failed, and a plain resume of the deleted folder answers cwd-missing, as a Claude Code resume does', async () => {
     const worktree = path.join(repo, '.claude', 'worktrees', 'w2')
     fs.mkdirSync(worktree, { recursive: true })
@@ -1461,15 +1503,15 @@ describe('CodexSessions', () => {
     } as WorktreeResource)
     vi.mocked(deps.pickHome).mockReturnValue({ account: 'work', home: '/homes/work' })
     await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1', permission: 'bypass' })
-    expect(vi.mocked(deps.trustFolder).mock.calls.map(([dir]) => dir)).toEqual([repo, worktree])
-    for (const [, env] of vi.mocked(deps.trustFolder).mock.calls)
+    expect(vi.mocked(trustCodexFolder).mock.calls.map(([dir]) => dir)).toEqual([repo, worktree])
+    for (const [, env] of vi.mocked(trustCodexFolder).mock.calls)
       expect(env?.CODEX_HOME).toBeUndefined()
     expect(vi.mocked(deps.pty.create).mock.calls[0][0].processEnv?.CODEX_HOME).toBe('/homes/work')
     const argv = vi.mocked(deps.pty.create).mock.calls[0][0].argv!
     expect(argv.slice(-4)).toEqual(['-a', 'never', '-s', 'danger-full-access'])
 
     await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1', scheduled: true })
-    expect(deps.trustFolder).toHaveBeenCalledTimes(2)
+    expect(trustCodexFolder).toHaveBeenCalledTimes(2)
 
     fs.mkdirSync(path.join(directory, '.codex'))
     fs.writeFileSync(
@@ -1479,7 +1521,7 @@ describe('CodexSessions', () => {
     await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1', scheduled: true })
     expect(
       vi
-        .mocked(deps.trustFolder)
+        .mocked(trustCodexFolder)
         .mock.calls.slice(2)
         .map(([dir]) => dir)
     ).toEqual([worktree])

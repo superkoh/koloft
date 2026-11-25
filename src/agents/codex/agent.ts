@@ -93,6 +93,7 @@ export const agent = {
     makeEnterRunTheTypedText: [ESC],
     backToAnEmptyBox: [ESC, CLOSE_PAGER, EMPTY_THE_BOX]
   },
+  howToStopItsBackgroundTasks: 'Stop these tasks in the Codex session to free the resources.',
   flags: {
     // CODEX§9
     resumeCanWaitOnAQuestionBeforeAnySign: true,
@@ -106,6 +107,8 @@ export const agent = {
     runsCommandsInASandboxWhereSudoCannotStart: true,
     // CODEX§20
     questionToolTakesNoOptionDescriptions: false,
+    // CODEX§6
+    removesItsWorktreeAsItExits: false,
     turnEndCanComeBeforeItsReplyIsWritten: false,
     typesASkillOnlyByTheNameInItsFile: false,
     refusesATypedSkillMarkedNotUserInvocable: true

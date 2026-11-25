@@ -44,6 +44,7 @@ export interface AgentFlags {
   commandsItRunsCanHaveATerminalOfTheirOwn: boolean
   runsCommandsInASandboxWhereSudoCannotStart: boolean
   questionToolTakesNoOptionDescriptions: boolean
+  removesItsWorktreeAsItExits: boolean
   turnEndCanComeBeforeItsReplyIsWritten: boolean
   typesASkillOnlyByTheNameInItsFile: boolean
   refusesATypedSkillMarkedNotUserInvocable: boolean
@@ -109,6 +110,7 @@ export interface AgentManifest {
   slotAdditions: Readonly<Record<string, string>>
   inputBoxKeys: InputBoxKeys
   commandWithItsChoiceAfterIt?: string
+  howToStopItsBackgroundTasks: string
   flags: AgentFlags
   pureFunctions: AgentPureFunctions
   accountKinds: readonly AccountKindFacts[]

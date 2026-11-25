@@ -379,10 +379,8 @@ import {
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
 import { TreeRemovals } from './treeRemovals'
-import {
-  finishAfterKoloftQuits,
-  WorktreeRemovalWatch
-} from '@agents/claude/main/claudeWorktreeExit'
+import { removeUntouchedWorktreeWith } from './untouchedWorktreeRemoval'
+import { worktreeExitFollow } from './worktreeExitFollow'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import {
   checkSkillsAgain,
@@ -645,35 +643,15 @@ if (process.platform !== 'win32') {
 }
 let quitCommitted = false
 
-interface ClaudeTabExit {
-  watch: WorktreeRemovalWatch
-  leaving?: { sessionId?: string; claudePid?: number; treeRoot?: string }
-}
-const claudeTabExits = new Map<string, ClaudeTabExit>()
+const worktreeExits = worktreeExitFollow({
+  ptyMgr,
+  watchOf: (backend, tabId, host) => sessionBackends.get(backend).worktreeExitWatch(tabId, host),
+  hostOfTab,
+  sendToRenderer
+})
 const closedTabs = new Map<string, LeftTab | null>()
 const treeRemovals = new TreeRemovals()
-
-function watchForWorktreeRemoval(tabId: string, data: string): void {
-  let exit = claudeTabExits.get(tabId)
-  if (!exit) {
-    const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
-    if (!backend || capabilitiesFor(backend, hostOfTab(tabId)).worktreeRemovalFollowed !== true)
-      return
-    claudeTabExits.set(tabId, (exit = { watch: new WorktreeRemovalWatch() }))
-  }
-  if (!exit.watch.started(data)) return
-  const session = tracker.infoOf(tabId)
-  const removalOutlivesKoloftsQuit = hostOfTab(tabId) === 'ssh'
-  exit.leaving = {
-    sessionId: session?.sessionId,
-    ...(!removalOutlivesKoloftsQuit && {
-      claudePid: ptyMgr.pidOf(tabId),
-      treeRoot: session?.treeRoot
-    })
-  }
-  if (session?.sessionId) claudeStore?.leavingWorktree(session.sessionId, tabId)
-  sendToRenderer(CH.tab.killedByMain, tabId)
-}
+const worktreesBeingPrepared = new Map<string, Promise<unknown>>()
 
 const attentionDeps: PluginStartDeps['sessions']['attention'] = {
   onChange: (pending, event) => {
@@ -2828,7 +2806,7 @@ app.whenReady().then(() => {
     claudeDialogs.data(d.id, d.data)
     if (loginWatchers.size) feedLoginWatcher(d.id, d.data)
     if (signInPtys.size) signInPtys.get(d.id)?.output.feed(d.data)
-    watchForWorktreeRemoval(d.id, d.data)
+    worktreeExits.watchForWorktreeRemoval(d.id, d.data)
     terminalOutput.push(d.id, d.data)
   })
   ptyMgr.on('process-title', (t: { id: string; name: string }) => {
@@ -2898,15 +2876,7 @@ app.whenReady().then(() => {
           ? 'Installing Claude Code failed'
           : 'setup-token exited without printing a token'
       )
-    const claudeExit = claudeTabExits.get(e.id)
-    claudeTabExits.delete(e.id)
-    if (claudeExit?.leaving) {
-      const { sessionId } = claudeExit.leaving
-      const claudeSaid = claudeExit.watch.failure()
-      if (sessionId) claudeStore?.leftWorktree(sessionId, !claudeSaid)
-      if (claudeSaid)
-        sendToRenderer(CH.toast.show, `Claude Code did not remove the worktree: ${claudeSaid}`)
-    }
+    worktreeExits.tabExited(e)
     // PLATFORM§21
     terminalOutput.end(e.id, !sleepers.has(e.id) && !signInNobodyOpened)
     forgetClaudeAsk(e.id)
@@ -2926,7 +2896,7 @@ app.whenReady().then(() => {
     syncAnswerable
   })
   tracker.on('update', sessionsChanged)
-  tracker.on('relocated', (e: { tabId: string; dir: string }) => {
+  tracker.on('relocated', (e: { tabId: string; dir: string; backendId: BackendId }) => {
     pushToSessions.relocated(e)
   })
   runtime.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
@@ -2967,7 +2937,7 @@ app.whenReady().then(() => {
     remoteTreeIo: machineTreeIo,
     worktreesOfEveryAgent: {
       recorded: (dir: string) => sessionBackends.worktreeRecords.recorded(dir),
-      preparing: new Map<string, Promise<unknown>>()
+      preparing: worktreesBeingPrepared
     },
     realFilesOn,
     changed: sessionsChanged,
@@ -2992,7 +2962,6 @@ app.whenReady().then(() => {
         nextPull: (host) => remoteSync?.nextPullDone(host) ?? Promise.resolve()
       },
       leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),
-      trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
       homeOf: (sessionId) => {
         const name = sessionAccounts?.of('codex', sessionId)
@@ -3708,11 +3677,7 @@ app.on('before-quit', (e) => {
     e.preventDefault()
     return
   }
-  for (const { leaving } of claudeTabExits.values()) {
-    if (leaving?.claudePid && leaving.treeRoot)
-      finishAfterKoloftQuits(leaving.claudePid, leaving.treeRoot)
-  }
-  claudeTabExits.clear()
+  worktreeExits.koloftQuits()
   endAgyOneShots(path.join(app.getPath('userData'), 'agy-one-shots'))
   stopScheduledTasks()
   discordLink?.stop()
@@ -4273,24 +4238,25 @@ async function endAndRemove(
   return true
 }
 
-async function removeUntouchedWorktree(
+function removeUntouchedWorktree(
   owner: { readonly id: BackendId } | null | undefined,
   resource: WorktreeResource
 ): Promise<void> {
-  const tree = resource.worktreePath
-  if (sleeperTrees().includes(tree) || cronRunner?.tidiesFolder(tree)) return
-  if (sessionBackends.occupantOf(tree)) return
-  if (!owner || !(await sessionBackends.worktreeRecords.untouched(owner.id, resource))) return
-  if (treeRemovals.has(tree)) return
-  const problem = await treeRemovals.run(tree, () =>
-    removeTree(hostGitOut, {
-      root: resource.originalCwd,
-      treeRoot: tree,
-      worktreeName: resource.worktreeName,
-      branches: [`worktree-${resource.worktreeName}`]
-    })
+  return removeUntouchedWorktreeWith(
+    {
+      sleeperTrees,
+      cronRunner,
+      sessionBackends,
+      worktreesOfEveryAgent: { preparing: worktreesBeingPrepared },
+      treeRemovals,
+      removeTree,
+      hostGitOut,
+      dirExists: (dir) => hosts.of(dir).dirExists(dir),
+      toast: (text) => sendToRenderer(CH.toast.show, text)
+    },
+    owner,
+    resource
   )
-  if (problem && (await hosts.of(tree).dirExists(tree))) sendToRenderer(CH.toast.show, problem)
 }
 
 function cronRunTree(root: string, worktree?: string): ProjectInfo {
@@ -5767,7 +5733,6 @@ const {
   agyBackend,
   machineHookSettings,
   codexBackend,
-  trustCodexFolder,
   A_HELPER_HAS_IT,
   writeLineInTurn,
   claudeDialog,

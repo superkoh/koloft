@@ -7,6 +7,7 @@ import type {
   CreateTabOptions,
   CreateTabResult,
   DiscoveredFolder,
+  HostId,
   ResumePlan,
   SessionResumeRequest,
   SessionResumeResult,
@@ -24,9 +25,11 @@ import type {
   SendOutcome,
   SessionBackend,
   SessionMessages,
-  TabExit
+  TabExit,
+  WorktreeExitWatch
 } from '@core/agent/sessionBackends'
 import { withHandover } from '@core/handOver'
+import { claudeWorktreeExitWatch } from './claudeWorktreeExitWatch'
 import {
   claudeMessages,
   messageSocket,
@@ -357,6 +360,14 @@ export class ClaudeBackend implements SessionBackend {
 
   liveKey(): string {
     return this.d.store()?.liveKey() ?? ''
+  }
+
+  worktreeExitWatch(tabId: string, hostOfTab: () => HostId): WorktreeExitWatch {
+    return claudeWorktreeExitWatch(tabId, hostOfTab, {
+      pidOf: (id) => this.d.pty.pidOf(id),
+      infoOf: (id) => this.d.tracker.infoOf(id),
+      store: () => this.d.store()
+    })
   }
 
   tabExited({ tabId, crashed }: TabExit): void {

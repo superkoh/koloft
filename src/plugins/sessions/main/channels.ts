@@ -192,7 +192,8 @@ export function registerChannels(ipc: MainIpc, deps: ChannelDeps): void {
 export const pushes = (ipc: MainIpc) => ({
   sessions: (sessions: SessionInfo[]): boolean => ipc.push(CHANNELS.update, sessions),
   toolsChanged: (): boolean => ipc.push(CHANNELS.toolsChanged),
-  relocated: (e: { tabId: string; dir: string }): boolean => ipc.push(CHANNELS.relocated, e),
+  relocated: (e: { tabId: string; dir: string; backendId: BackendId }): boolean =>
+    ipc.push(CHANNELS.relocated, e),
   leftovers: (leftovers: Record<string, LeftoverProcess[]>): boolean =>
     ipc.push(CHANNELS.leftovers, leftovers),
   searchHits: (found: SessionSearchHits): boolean => ipc.push(CHANNELS.searchHits, found),

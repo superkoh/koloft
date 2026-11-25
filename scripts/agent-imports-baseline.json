@@ -26,7 +26,6 @@
     "agent-main-into-mixed-main": {
       "src/agents/agy/main/agySessions.ts": {
         "src/main/remote/launch.ts": "C10",
-        "src/main/rowActivity.ts": "C3",
         "src/main/toolShim.ts": "C8"
       },
       "src/agents/agy/main/agyTab.ts": {
@@ -44,20 +43,14 @@
         "src/main/sessionSearch.ts": "C6",
         "src/main/usageCache.ts": "C6"
       },
-      "src/agents/claude/main/sessionTracker.ts": {
-        "src/main/remote/install.ts": "C10",
-        "src/main/rowActivity.ts": "C3"
-      },
+      "src/agents/claude/main/sessionTracker.ts": { "src/main/remote/install.ts": "C10" },
       "src/agents/codex/main/codexLeftovers.ts": { "src/main/leftovers.ts": "C9" },
       "src/agents/codex/main/codexMachine.ts": {
         "src/main/remote/install.ts": "C10",
         "src/main/remote/launch.ts": "C10"
       },
       "src/agents/codex/main/codexMirror.ts": { "src/main/usageCache.ts": "C6" },
-      "src/agents/codex/main/codexObservation.ts": {
-        "src/main/openShimScript.ts": "C8",
-        "src/main/rowActivity.ts": "C3"
-      },
+      "src/agents/codex/main/codexObservation.ts": { "src/main/openShimScript.ts": "C8" },
       "src/agents/codex/main/codexSessions.ts": {
         "src/main/leftovers.ts": "C9",
         "src/main/openShimScript.ts": "C8",
@@ -87,7 +80,6 @@
         "src/agents/claude/main/claudeDialogWatch.ts": "D1",
         "src/agents/claude/main/claudeMirror.ts": "D1",
         "src/agents/claude/main/claudeSessionRegistry.ts": "D1",
-        "src/agents/claude/main/claudeWorktreeExit.ts": "D1",
         "src/agents/codex/main/codexAccounts.ts": "D1",
         "src/agents/codex/main/codexCatalog.ts": "D1",
         "src/agents/codex/main/codexMachine.ts": "D1",
@@ -109,7 +101,7 @@
         "src/agents/agy/main/agyMirror.ts": "C6",
         "src/agents/codex/main/codexMirror.ts": "C6"
       },
-      "src/main/rowActivity.ts": { "src/agents/claude/main/claudeTouchedFiles.ts": "C3" },
+      "src/main/rowActivity.ts": { "src/agents/claude/main/claudeTouchedFiles.ts": "C1" },
       "src/main/shim.ts": {
         "src/agents/agy/main/agyAccounts.ts": "C8",
         "src/agents/claude/main/advisorOnFable.ts": "C8",
