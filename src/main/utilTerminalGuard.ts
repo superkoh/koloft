@@ -10,7 +10,7 @@ IFS=:
 set -f
 for d in $PATH; do
   [ "$d" = "$self" ] && continue
-  [ -x "$d/${bin}" ] || continue
+  [ -f "$d/${bin}" ] && [ -x "$d/${bin}" ] || continue
   if head -n 2 "$d/${bin}" 2>/dev/null | grep -q -F -x -e '${GUARD_MARK_LINE}' -e '${LINE_2_OF_A_GUARD_WITHOUT_THE_MARK}'; then continue; fi
   exec "$d/${bin}" "$@"
 done

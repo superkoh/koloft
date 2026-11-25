@@ -327,6 +327,10 @@ beforeEach(() => {
       machine: () =>
         ({
           packageName: () => 'm-test',
+          tabFiles: (tabId: string) => ({
+            dir: path.join(home, 'remote', 'tabs', tabId),
+            pushedLine: () => ''
+          }),
           runScript: async (script: string) =>
             script === TAB_TMUX_NAME_SH ? machine.tmuxThere : null,
           tmux: {

@@ -407,6 +407,42 @@ describe('the order a launch on another machine keeps', () => {
   ): ReturnType<AgyTab['sessions']['launch']> =>
     tab.sessions.launch({ kind: 'agy', cwd: ON_THE_MACHINE, tabId: TAB, ...spec })
 
+  it("closing a tab of any agent there whose launch line never ran removes the folder of that tab's files on this Mac, account file and all", async () => {
+    const folder = tabPackageDir(world.userData, TAB)
+    const claude = claudeWith(
+      {},
+      {
+        remoteTab: {
+          host: MACHINE,
+          projectsRoot: path.join(world.userData, 'projects'),
+          tmuxName: `k-${RUNNING_THERE}`
+        }
+      }
+    )
+    await claudeTabOn(claude)
+    expect(fs.readdirSync(folder)).toContain(`${TAB}.env`)
+    claude.backend.stop(TAB)
+    expect(fs.existsSync(folder)).toBe(false)
+    const agy = agyWith()
+    await agyTabOn(agy)
+    expect(fs.readdirSync(folder)).toContain(`${TAB}.env`)
+    await agy.sessions.stop(TAB)
+    expect(fs.existsSync(folder)).toBe(false)
+    const codex = codexWith()
+    await codex.sessions.launch({ kind: 'codex', cwd: ON_THE_MACHINE, tabId: TAB })
+    expect(fs.existsSync(folder)).toBe(true)
+    await codex.sessions.stop(TAB)
+    expect(fs.existsSync(folder)).toBe(false)
+  })
+
+  it("a launch there that fails while writing the tab's files on this Mac, after the account file, leaves no folder of them behind", async () => {
+    const folder = tabPackageDir(world.userData, TAB)
+    const aFolderWhereThePassGoes = path.join(folder, `${TAB}.pass`)
+    fs.mkdirSync(aFolderWhereThePassGoes, { recursive: true })
+    await expect(agyTabOn(agyWith())).rejects.toThrow('EISDIR')
+    expect(fs.existsSync(folder)).toBe(false)
+  })
+
   // ADR-0030
   it('a Claude Code session with no usable account is refused in the words that say what is wrong, and opens no tab; attaching to one still running there asks for no account', async () => {
     const why = '"me" is not signed in — sign in again in Settings ▸ Accounts.'

@@ -6,6 +6,7 @@ import { claudeCatalog } from '../../../src/agents/claude/main/claudeCatalog'
 import { codexCatalog } from '../../../src/agents/codex/main/codexCatalog'
 import { agyCatalog } from '../../../src/agents/agy/main/agyCatalog'
 import { EVERY_AGENTS_TOOLS } from './agentShims'
+import { NOTHING_TO_READ_OR_SEARCH } from './agentMainParts'
 
 export interface OwnersSettings {
   codexConfig: string
@@ -25,7 +26,8 @@ export function agentsWithTheirCatalogs(owners: OwnersSettings): AgentsMain {
       oneShotTarget: async () => null,
       catalog,
       tools: EVERY_AGENTS_TOOLS[id],
-      accounts: accountsThatAreNeverAsked
+      accounts: accountsThatAreNeverAsked,
+      ...NOTHING_TO_READ_OR_SEARCH
     })
   return agents
 }
