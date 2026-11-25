@@ -13,7 +13,6 @@ import {
 import { AgySessions, type AgySessionDeps } from '../../../src/agents/agy/main/agySessions'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../../src/agents/claude/main/backend'
 import type { MachineAccount } from '../../../src/agents/claude/main/claudeLaunch'
-import { trustCodexFolder } from '../../../src/agents/codex/main/backend'
 import { CodexSessions, type CodexSessionDeps } from '../../../src/agents/codex/main/codexSessions'
 import { SessionRuntime } from '../../../src/core/agent/sessionRuntime'
 import { BackgroundFile } from '../../../src/main/backgroundFile'
@@ -467,7 +466,6 @@ export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): Code
     noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],
     koloftPrompt: standInForKoloftsPrompt,
     hookRegDir: world.regDir,
-    trustFolder: trustCodexFolder,
     pickHome: () => ({ account: 'work', home: path.join(world.home, 'codex-home') }),
     homeOf: () => undefined,
     assistOf: () => undefined,

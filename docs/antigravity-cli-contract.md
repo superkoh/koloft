@@ -2256,3 +2256,20 @@ Koloft dependents: `asksTheTerminal` in `src/main/flowControl.ts`.
 
 Koloft dependents: `TAB_PASS_ENV` in `src/main/tabPass.ts`, which reaches agy through its
 tab's environment (`src/main/ptyManager.ts`).
+
+## §35 Leaving a git worktree it runs in
+
+- **agy never removes the worktree it runs in.** Started inside a linked worktree
+  (`<repo>/.claude/worktrees/wt` on branch `worktree-wt`), `/exit` printed what §1 says
+  (or nothing, before the first message) and exited 0, and the folder, its registration
+  in `git worktree list` and the branch were all still there, in each of three runs: an
+  unchanged worktree with no message, one with an untracked file after one message (the
+  file kept), and an unchanged one after one message. It asked nothing and printed no line
+  about the worktree. `agy --help` names no worktree flag.
+- Measured 2026-11-25: agy 1.5.17, the Linux arm64 build from the manifest (sha512
+  checked), Docker `--network none` on the e2e SSH lab image, tmux 3.3a 120×40, keys by
+  `tmux send-keys`, the API-key route against `test/e2e/fixtures/fake-gemini.js`, the
+  folder trusted and onboarding seeded (§5). Not probed: the macOS build, Ctrl+C and
+  Ctrl+D.
+
+Koloft dependents: `removesItsWorktreeAsItExits` in `src/agents/agy/agent.ts`.

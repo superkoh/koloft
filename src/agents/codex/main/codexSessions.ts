@@ -89,6 +89,7 @@ import {
   codexTrustsFolder,
   configTrusts,
   koloftHooksIn,
+  trustCodexFolder,
   type ListedHook
 } from './codexTrust'
 import { CodexSideServers } from './codexSideServers'
@@ -292,7 +293,6 @@ function shellWritesFrom(file: string, pulled: () => Promise<void>): () => Promi
 
 export interface CodexSessionDeps extends StoredSessionDeps {
   machine?: CodexMachineDeps
-  trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
   pickHome(resumeSessionId?: string): { account: string; home: string; notice?: string } | undefined
   homeOf(sessionId: string): string | undefined
   assistOf(cwd: string, resumeKey?: string): LaunchIdentity | undefined
@@ -897,7 +897,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     const trustedOnMachine: string[] = []
     const trust = (dir: string, env: NodeJS.ProcessEnv | undefined): void => {
       if (machine) trustedOnMachine.push(barePath(dir))
-      else this.deps.trustFolder(dir, env)
+      else trustCodexFolder(dir, env)
     }
     // ADR-0026 CODEX§11
     const trustNow = freshWorktree

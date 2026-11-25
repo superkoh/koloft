@@ -293,7 +293,6 @@
       "claudeShowsAPanelOnMachine,",
       "claudeStore = buildClaudeStore({",
       "claudeStore.start()",
-      "claudeStore: () => claudeStore,",
       "claudeStore?.dispose()",
       "codex: () => terminalPickOf(pickCodexHome()),",
       "codex: async () => {",
@@ -532,15 +531,12 @@
       "textOrNull(path.join(ownersGemini(), 'config', 'mcp_config.json'))",
       "to: path.join(mirrorAgyGemini(userData, t.host), AGY_APP_DIR, 'brain'),",
       "trackerDeps.dialogJustClosed = (tabId) => claudeDialogs.justClosedADialog(tabId)",
-      "trustCodexFolder,",
-      "trustFolder: trustCodexFolder,",
       "type AgyHomePick = NonNullable<",
       "void agySessions",
       "void codexSessions",
       "void probeAgyAccounts()",
       "} from '@agents/agy/main/agyAccounts'",
       "} from '@agents/claude/main/claudeSessionRegistry'",
-      "} from '@agents/claude/main/claudeWorktreeExit'",
       "} from '@agents/codex/main/codexAccounts'"
     ],
     "src/main/inputBox.ts": [
@@ -1007,32 +1003,6 @@
       "scanClaudeCalls,",
       "scanCodexLines,"
     ],
-    "src/main/worktreeExitFollow.ts": [
-      "claudePid: ptyMgr.pidOf(tabId),",
-      "claudeStore(): ClaudeStoreLeaving | null",
-      "claudeTabExits.clear()",
-      "claudeTabExits.delete(e.id)",
-      "claudeTabExits.set(tabId, (exit = { watch: d.newWatch() }))",
-      "const claudeExit = claudeTabExits.get(e.id)",
-      "const claudeSaid = claudeExit.watch.failure()",
-      "const claudeStore = d.claudeStore()",
-      "const claudeStore = d.claudeStore()",
-      "const claudeTabExits = new Map<string, ClaudeTabExit>()",
-      "const { sessionId } = claudeExit.leaving",
-      "finishAfterKoloftQuits(claudePid: number, treeRoot: string): void",
-      "finishAfterKoloftQuits(leaving.claudePid, leaving.treeRoot)",
-      "for (const { leaving } of claudeTabExits.values()) {",
-      "if (claudeExit?.leaving) {",
-      "if (claudeSaid)",
-      "if (leaving?.claudePid && leaving.treeRoot)",
-      "if (session?.sessionId) claudeStore?.leavingWorktree(session.sessionId, tabId)",
-      "if (sessionId) claudeStore?.leftWorktree(sessionId, !claudeSaid)",
-      "interface ClaudeStoreLeaving {",
-      "interface ClaudeTabExit {",
-      "leaving?: { sessionId?: string; claudePid?: number; treeRoot?: string }",
-      "let exit = claudeTabExits.get(tabId)",
-      "sendToRenderer(CH.toast.show, `Claude Code did not remove the worktree: ${claudeSaid}`)"
-    ],
     "src/plugins/browser-control/renderer/BrowserControlSettings.tsx": [
       "you can see, signed in as you. Claude Code sessions on another machine (over SSH) can"
     ],
@@ -1101,7 +1071,7 @@
     "src/plugins/sessions/main/appHelpers.ts": [
       "export { agyBackend } from '@agents/agy/main/backend'",
       "export { claudeDialog, codexDialog, isAskedCall, questionsOf } from './dialog'",
-      "export { codexBackend, trustCodexFolder } from '@agents/codex/main/backend'",
+      "export { codexBackend } from '@agents/codex/main/backend'",
       "export { machineHookSettings, pickMachineAccount } from '@agents/claude/main/backend'",
       "export { writeLineInTurn } from '@agents/claude/main/crossSessionMessage'"
     ],

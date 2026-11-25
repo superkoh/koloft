@@ -46,6 +46,7 @@ export function stubBackend(
     noticeRemoteExits: () => {},
     mirrorPulled: () => {},
     tmuxOfTab: () => undefined,
+    worktreeExitWatch: () => undefined,
     ...rowsKeptInMemory({
       rows: () => [],
       members: () => new Set<string>(),

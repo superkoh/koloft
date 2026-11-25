@@ -7,6 +7,7 @@ import type {
   CreateTabOptions,
   CreateTabResult,
   DiscoveredFolder,
+  HostId,
   ResumePlan,
   SessionResumeRequest,
   SessionResumeResult,
@@ -17,7 +18,14 @@ import { formatRemoteKey, hostOf, isAbsoluteOnHost, parseRemoteKey } from '@shar
 import { hasUsableAccount } from '@shared/accountUsage'
 import type { Turn } from '@shared/turns'
 import { isValidWorktreeName } from '@shared/worktreeName'
-import type { ModeClass, SessionBackend, TabExit } from '@core/agent/sessionBackends'
+import type {
+  ModeClass,
+  SessionBackend,
+  TabExit,
+  WorktreeExitWatch
+} from '@core/agent/sessionBackends'
+import { finishAfterKoloftQuits } from './claudeWorktreeExit'
+import { claudeWorktreeExitWatch } from './claudeWorktreeExitWatch'
 import { KEEPS_NO_WORKTREE_RECORDS } from '@core/agent/worktreeRecords'
 import {
   A_PASS_WITH_NO_ROWS,
@@ -322,6 +330,15 @@ export class ClaudeBackend implements SessionBackend {
 
   liveKey(): string {
     return this.d.store()?.liveKey() ?? ''
+  }
+
+  worktreeExitWatch(tabId: string, hostOfTab: () => HostId): WorktreeExitWatch {
+    return claudeWorktreeExitWatch(tabId, hostOfTab, {
+      pidOf: (id) => this.d.pty.pidOf(id),
+      infoOf: (id) => this.d.tracker.infoOf(id),
+      store: () => this.d.store(),
+      finishAfterKoloftQuits
+    })
   }
 
   tabExited({ tabId, crashed }: TabExit): void {

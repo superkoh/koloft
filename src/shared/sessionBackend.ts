@@ -153,7 +153,6 @@ export interface Capabilities {
   browserControl: Capability
   askHookWaitsForDiscord: Capability
   panelSeen: Capability
-  worktreeRemovalFollowed: Capability
 }
 
 const PENDING = { pending: true } as const
@@ -161,14 +160,12 @@ const PENDING = { pending: true } as const
 const EVERYTHING: Capabilities = {
   browserControl: true,
   askHookWaitsForDiscord: true,
-  panelSeen: true,
-  worktreeRemovalFollowed: true
+  panelSeen: true
 }
 
 const OUTSIDE_LOCAL_CLAUDE: Capabilities = {
   ...EVERYTHING,
-  askHookWaitsForDiscord: PENDING,
-  worktreeRemovalFollowed: PENDING
+  askHookWaitsForDiscord: PENDING
 }
 
 const ON_A_MACHINE: Capabilities = {
@@ -177,11 +174,11 @@ const ON_A_MACHINE: Capabilities = {
 }
 
 const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
-  // CC§4 CC§11 CC§14
+  // CC§11 CC§14
   claude: {
     local: EVERYTHING,
     // PLATFORM§33
-    ssh: { ...ON_A_MACHINE, browserControl: true, worktreeRemovalFollowed: true }
+    ssh: { ...ON_A_MACHINE, browserControl: true }
   },
   codex: {
     local: OUTSIDE_LOCAL_CLAUDE,

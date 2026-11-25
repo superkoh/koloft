@@ -128,7 +128,6 @@
         "src/agents/claude/main/claudeDialogWatch.ts": "D1",
         "src/agents/claude/main/claudeSessionRegistry.ts": "D1",
         "src/agents/claude/main/claudeTrust.ts": "D1",
-        "src/agents/claude/main/claudeWorktreeExit.ts": "D1",
         "src/agents/codex/main/codexAccounts.ts": "D1",
         "src/agents/codex/main/codexMachine.ts": "D1",
         "src/agents/codex/main/codexTrust.ts": "D1"

@@ -86,7 +86,9 @@ export const agent = {
     // AGY§25
     runsCommandsInASandboxWhereSudoCannotStart: false,
     // AGY§14
-    questionToolTakesNoOptionDescriptions: true
+    questionToolTakesNoOptionDescriptions: true,
+    // AGY§35
+    removesItsWorktreeAsItExits: false
   },
   pureFunctions: { effortsAModelTakes: agyEffortsAModelTakes },
   // AGY§5 AGY§6

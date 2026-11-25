@@ -7,6 +7,7 @@ import type {
   CreateTabOptions,
   CreateTabResult,
   DocVerdict,
+  HostId,
   ResumePlan,
   SessionInfo,
   SessionResumeRequest,
@@ -30,6 +31,12 @@ import { rowsOfEveryAgent, type RowsOfEveryAgent, type SessionRowsSource } from 
 export type ModeClass = 'bypass' | 'prompting'
 
 export type TabExit = Pick<TabEnded, 'tabId' | 'exitCode' | 'signal' | 'crashed'>
+
+export interface WorktreeExitWatch {
+  startedRemoving(printed: string): boolean
+  failedSaying(): string | undefined
+  koloftQuits(): void
+}
 
 export interface SessionBackend extends SessionRowsSource {
   id: BackendId
@@ -59,6 +66,7 @@ export interface SessionBackend extends SessionRowsSource {
   runningElsewhere(key: string): boolean | Promise<boolean>
   workStillRunning(tabId: string): Promise<boolean>
   worktreeRecords: WorktreeRecords
+  worktreeExitWatch(tabId: string, hostOfTab: () => HostId): WorktreeExitWatch | undefined
   tabExited(exit: TabExit): void | Promise<void>
   quitWaitsForIt(): boolean
   endBeforeQuit(): Promise<void>

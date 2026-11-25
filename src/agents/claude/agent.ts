@@ -77,7 +77,9 @@ export const agent = {
     // PLATFORM§58
     runsCommandsInASandboxWhereSudoCannotStart: false,
     // CC§14
-    questionToolTakesNoOptionDescriptions: false
+    questionToolTakesNoOptionDescriptions: false,
+    // CC§4
+    removesItsWorktreeAsItExits: true
   },
   pureFunctions: { effortsAModelTakes: () => CRON_EFFORTS },
   // CC§7

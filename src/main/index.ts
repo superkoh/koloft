@@ -408,10 +408,6 @@ import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
 import { TreeRemovals } from './treeRemovals'
 import { worktreeExitFollow } from './worktreeExitFollow'
-import {
-  finishAfterKoloftQuits,
-  WorktreeRemovalWatch
-} from '@agents/claude/main/claudeWorktreeExit'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import { checkSkillsAgain, pluginSkills, writeAgentPlugin, writeDocsPlugin } from './agentPlugin'
 import { installThen, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
@@ -701,12 +697,9 @@ let quitCommitted = false
 
 const worktreeExits = worktreeExitFollow({
   ptyMgr,
-  tracker: { infoOf: (tabId) => tracker.infoOf(tabId) },
-  claudeStore: () => claudeStore,
+  watchOf: (backend, tabId, host) => sessionBackends.get(backend).worktreeExitWatch(tabId, host),
   hostOfTab,
-  sendToRenderer,
-  newWatch: () => new WorktreeRemovalWatch(),
-  finishAfterKoloftQuits
+  sendToRenderer
 })
 const closedTabs = new Map<string, LeftTab | null>()
 const treeRemovals = new TreeRemovals()
@@ -3437,7 +3430,6 @@ app.whenReady().then(() => {
         nextPull: (host) => remoteSync?.nextPullDone(host) ?? Promise.resolve()
       },
       leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),
-      trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
       homeOf: (sessionId) => {
         const name = sessionAccounts?.of('codex', sessionId)
@@ -6203,7 +6195,6 @@ const {
   machineHookSettings,
   pickMachineAccount,
   codexBackend,
-  trustCodexFolder,
   A_HELPER_HAS_IT,
   writeLineInTurn,
   claudeDialog,

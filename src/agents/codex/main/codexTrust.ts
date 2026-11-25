@@ -39,6 +39,14 @@ export function acceptCodexTrust(configFile: string, dir: string): void {
   joinProjectTables(configFile, `${projectHeader(fs.realpathSync(dir))}\ntrust_level = "trusted"\n`)
 }
 
+export function trustCodexFolder(root: string, env: NodeJS.ProcessEnv | undefined): void {
+  try {
+    acceptCodexTrust(codexConfigFile(env), root)
+  } catch (err) {
+    console.error('[koloft] could not record Codex trust for', root, err)
+  }
+}
+
 // CODEX§15 CODEX§27
 export function joinProjectTables(configFile: string, from: string): void {
   const before = readConfig(configFile)

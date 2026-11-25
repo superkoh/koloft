@@ -60,7 +60,6 @@ import type { CreateTabOptions } from '@shared/types'
 import { portOffset } from '@shared/worktreeName'
 import { ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE } from '../../src/main/agentLift'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/agents/claude/main/backend'
-import { trustCodexFolder } from '../../src/agents/codex/main/backend'
 import { BackgroundFile } from '../../src/main/backgroundFile'
 import { CodexSessions, type CodexSessionDeps } from '../../src/agents/codex/main/codexSessions'
 import { GithubRepos } from '../../src/main/githubRepos'
@@ -250,7 +249,6 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
     error: () => {},
     noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],
     koloftPrompt,
-    trustFolder: trustCodexFolder,
     pickHome: () => ({ account: 'work', home: path.join(home, 'codex-home') }),
     homeOf: () => undefined,
     assistOf: () => undefined,

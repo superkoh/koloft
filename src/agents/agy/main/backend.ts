@@ -18,7 +18,9 @@ export function agyBackend(
       trustsFolder: (dir) => sessions.trustsFolder(dir),
       turns: (key, n) => sessions.readTurns(key, n),
       peerNames: () => async () => null,
-      runningElsewhere: () => false
+      runningElsewhere: () => false,
+      // AGY§35
+      worktreeExitWatch: () => undefined
     },
     machineProbes
   )
