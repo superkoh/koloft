@@ -133,7 +133,7 @@ export class AgentsMain {
   }
 
   private heldFailure: SignInProgress | null = null
-  private signInsHandedToATab = new Set<string>()
+  private tabsSigningIn = new Map<string, number>()
   private signInListener: SignInListener = () => {}
 
   watchSignIns(listener: SignInListener): void {
@@ -149,9 +149,13 @@ export class AgentsMain {
 
   signInChanged(progress: SignInProgress): void {
     const key = `${progress.kind}:${progress.name}`
-    if (progress.phase === 'inATab') this.signInsHandedToATab.add(key)
-    const held = progress.phase === 'failed' && this.signInsHandedToATab.delete(key)
-    if (held) this.heldFailure = progress
+    const tabs = this.tabsSigningIn.get(key) ?? 0
+    if (progress.phase === 'inATab') this.tabsSigningIn.set(key, tabs + 1)
+    const held = progress.phase === 'failed' && tabs > 0
+    if (held) {
+      this.tabsSigningIn.set(key, tabs - 1)
+      this.heldFailure = progress
+    }
     this.signInListener({ progress, heldFailure: this.heldFailure }, held)
   }
 
@@ -165,7 +169,8 @@ export class AgentsMain {
   }
 
   endSignIn(kind: AccountKindId, name: string): void {
-    this.forgetHeldSignInFailure()
+    if (this.heldFailure?.kind === kind && this.heldFailure.name === name)
+      this.forgetHeldSignInFailure()
     this.ownerOf(kind)?.accounts.cancelSignIn(kind, name)
   }
 }

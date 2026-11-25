@@ -244,7 +244,21 @@ describe('the agents registered with their main-process side', () => {
     expect(seen.news.at(-1)).toEqual({ progress: second, heldFailure: second })
   })
 
-  it('ending a sign-in forgets the failure held first, then asks the agent that keeps that kind of account to cancel it', () => {
+  it('holds the failure of every terminal tab of one account, when two were open for it at once', () => {
+    const agents = agentsWithAccounts(AGENT_IDS)
+    const seen = watched(agents)
+    const first = { ...progressOf('codex-home', 'work', 'failed'), tail: 'the first tab' }
+    const second = { ...progressOf('codex-home', 'work', 'failed'), tail: 'the second tab' }
+
+    agents.signInChanged(progressOf('codex-home', 'work', 'inATab'))
+    agents.signInChanged(progressOf('codex-home', 'work', 'inATab'))
+    agents.signInChanged(first)
+    agents.signInChanged(second)
+
+    expect(seen.heldChanges).toEqual([first, second])
+  })
+
+  it('ending a sign-in forgets the failure held for that account first, then asks the agent that keeps that kind of account to cancel it', () => {
     const asked: string[] = []
     const agents = agentsWithAccounts(AGENT_IDS, asked)
     agents.watchSignIns((news, heldFailureChanged) => {
@@ -254,9 +268,24 @@ describe('the agents registered with their main-process side', () => {
     agents.signInChanged(progressOf('codex-home', 'work', 'failed'))
     asked.length = 0
 
-    agents.endSignIn('oauth', 'home')
+    agents.endSignIn('codex-home', 'work')
 
     expect(agents.heldSignInFailure()).toBeNull()
-    expect(asked).toEqual(['held is now nothing', 'claude cancels oauth home'])
+    expect(asked).toEqual(['held is now nothing', 'codex cancels codex-home work'])
+  })
+
+  it('ending the sign-in of another account leaves the failure held as it is', () => {
+    const asked: string[] = []
+    const agents = agentsWithAccounts(AGENT_IDS, asked)
+    const failed = progressOf('codex-home', 'work', 'failed')
+    agents.signInChanged(progressOf('codex-home', 'work', 'inATab'))
+    agents.signInChanged(failed)
+    const seen = watched(agents)
+
+    agents.endSignIn('oauth', 'home')
+
+    expect(agents.heldSignInFailure()).toBe(failed)
+    expect(seen.heldChanges).toEqual([])
+    expect(asked).toEqual(['claude cancels oauth home'])
   })
 })
