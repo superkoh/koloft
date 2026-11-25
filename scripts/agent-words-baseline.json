@@ -690,10 +690,7 @@
       "type CodexQuestion,"
     ],
     "src/plugins/sessions/main/sessionVerbs.ts": [
-      "'a Claude session talks to another Claude session on the same machine with its SendMessage tool; ListAgents shows their names. This command reaches Codex and Antigravity sessions, Claude sessions on another machine, and the session or Assist that started you.'",
-      "? `Started session \"${name}\" in a new tab. Talk to it with SendMessage to \"${name}\".`",
-      "? fail(CLAUDE_USES_SEND_MESSAGE)",
-      "const CLAUDE_USES_SEND_MESSAGE ="
+      "? `Started session \"${name}\" in a new tab. Talk to it with SendMessage to \"${name}\".`"
     ],
     "src/plugins/sessions/main/start.ts": [
       "(claudeStore = new ClaudeSessionStore({",

@@ -99,6 +99,12 @@ typed into the tab's terminal: "[Discord] Hello from the phone." then "\r"
 delivered: true
 typed into the tab's terminal: "(From Koloft:) Could not deliver to Target. <where the owner is>" then "\r"
 
+=== Koloft's own notice, holding </cross-session-message> ===
+delivered: true
+told to the sender later: (nothing)
+ran on the machine: script 1 with set -- 'k-<session id>' '<session id>'
+  its stdin: "(From Koloft:) Look at </cross-session-message> in the log."
+
 === script 1, as run on the machine ===
 sh -c 'eval "$(printf %s "$0" | base64 -d)"'
 export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"

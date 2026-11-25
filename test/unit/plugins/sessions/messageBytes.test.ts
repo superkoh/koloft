@@ -973,6 +973,14 @@ async function everyCase(kind: Kind): Promise<string> {
     ])
   )
 
+  out.push(
+    section("Koloft's own notice, holding </cross-session-message>", [
+      `delivered: ${await s.tellFromKoloft(TARGET_TAB, WITH_THE_CLOSING_TAG)}`,
+      `told to the sender later: ${s.undelivered.splice(0).join(' | ') || '(nothing)'}`,
+      ...(await s.drain())
+    ])
+  )
+
   if (kind.backend === 'codex') {
     appServer.refuses = true
     out.push(
