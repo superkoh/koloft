@@ -86,6 +86,7 @@ import {
   sshOptions
 } from './remote/ssh'
 import { sessionMessaging } from './sessionMessaging'
+import { carriedTabIds, tabIdList } from './tabIds'
 import { BrowserTunnels } from './remote/browserTunnel'
 import { anyFreeMacPort, macPortFree, PageForwards } from './remote/portForward'
 import { remoteAnswerCommand, remoteShCommand } from './remote/install'
@@ -711,19 +712,13 @@ let sessionAccounts: SessionAccounts | undefined
 let savedOpenTabs: OpenTabs = { tabs: [] }
 let openTabsRestored = false
 const RESUMED_TAB_READY_MS = 30_000
-const TAB_IDS_KEPT_PER_TAB = 8
 const earlierTabIds = new Map<string, string[]>()
 
 const tabIdsOf = (tabId: string): string[] =>
-  [tabId, ...(earlierTabIds.get(tabId) ?? sleepers.get(tabId)?.tabIds ?? [])].slice(
-    0,
-    TAB_IDS_KEPT_PER_TAB
-  )
+  tabIdList(tabId, earlierTabIds.get(tabId) ?? sleepers.get(tabId)?.tabIds ?? [])
 
 function carryTabIds(newId: string, ids: string[]): void {
-  const merged = new Set([...(earlierTabIds.get(newId) ?? []), ...ids])
-  merged.delete(newId)
-  earlierTabIds.set(newId, [...merged].slice(0, TAB_IDS_KEPT_PER_TAB - 1))
+  earlierTabIds.set(newId, carriedTabIds(newId, earlierTabIds.get(newId) ?? [], ids))
 }
 
 function openTabOf(s: SessionInfo): OpenTab {
@@ -1693,7 +1688,8 @@ const messaging = sessionMessaging({
     return buildHandOver
   },
   ptyMgr,
-  machineOfTab
+  machineOfTab,
+  tabIdsOf
 })
 
 const syncRepoKeys = new GitRepoKeys(undefined, (machine, paths) =>
