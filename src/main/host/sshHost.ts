@@ -86,7 +86,7 @@ export interface TabsOnMachineDeps {
   machinePackage(): MachinePackage
   alive(): ReadonlySet<string>
   firstHeartbeatDone(): Promise<void>
-  nextRoundThatReachesIt(): Promise<void>
+  aliveAsOf(): number
   loginPath(): Promise<string>
 }
 
@@ -527,7 +527,8 @@ export class SshHost implements Host, Machine {
     rename: (tabId, from, to) => this.renameTmux(tabId, from, to)
   }
   private git: GitOps
-  private killedSessions = new Map<string, Promise<unknown>>()
+  private killedSessions = new Set<string>()
+  private restartsTypedAt = new Map<string, number>()
   private kills = new Map<string, Promise<unknown>>()
   private renamesOnTheWire = new Map<string, string>()
   private resizes = new Map<string, ReturnType<typeof setTimeout>>()
@@ -901,14 +902,14 @@ export class SshHost implements Host, Machine {
       for (const name of namesItMayHave) if (this.kills.get(name) === kill) this.kills.delete(name)
       if (!sshLinkBroke(r)) {
         const killedOnTheMachine = sessionIdOfTmux(r.stdout.toString().trim())
-        if (killedOnTheMachine) this.killedSessions.set(killedOnTheMachine, kill)
+        if (killedOnTheMachine) this.killedSessions.add(killedOnTheMachine)
         return undefined
       }
       for (const id of killedIds) this.killedSessions.delete(id)
       return problemOf(r)
     })
     for (const name of namesItMayHave) this.kills.set(name, kill)
-    for (const id of killedIds) this.killedSessions.set(id, kill)
+    for (const id of killedIds) this.killedSessions.add(id)
     return kill
   }
 
@@ -1030,21 +1031,18 @@ exit ${CALLER_GONE_EXIT}`,
     await this.deps.tabs.firstHeartbeatDone()
     while (this.kills.size && this.deps.tabs.alive().has(sid))
       await Promise.all(this.kills.values())
-    const mode = launchMode({
-      alive: this.deps.tabs.alive(),
-      killed: this.killedSessions,
-      sessionId: sid
-    })
+    const restartTypedAt = this.restartsTypedAt.get(sid)
+    if (restartTypedAt !== undefined && this.deps.tabs.aliveAsOf() >= restartTypedAt)
+      this.restartsTypedAt.delete(sid)
+    const mode = this.restartsTypedAt.has(sid)
+      ? 'start'
+      : launchMode({
+          alive: this.deps.tabs.alive(),
+          killed: this.killedSessions,
+          sessionId: sid
+        })
     await this.kills.get(tmuxSessionName(sid))
     return mode
-  }
-
-  private forgetTheKillOnceARoundReachesTheMachine(sid: string): void {
-    const kill = this.killedSessions.get(sid)
-    if (!kill) return
-    void this.deps.tabs.nextRoundThatReachesIt().then(() => {
-      if (this.killedSessions.get(sid) === kill) this.killedSessions.delete(sid)
-    })
   }
 
   private tabLaunchLine(
@@ -1099,8 +1097,12 @@ exit ${CALLER_GONE_EXIT}`,
       shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
       resized: this.resized,
       launchCommand: (tabId, content) => {
-        if (sessionKnownBeforeItStarts && mode === 'start')
-          this.forgetTheKillOnceARoundReachesTheMachine(named.session)
+        if (
+          sessionKnownBeforeItStarts &&
+          mode === 'start' &&
+          this.killedSessions.delete(named.session)
+        )
+          this.restartsTypedAt.set(named.session, Date.now())
         const dir = tabPackageDir(tabs.userData, tabId)
         markStartedBeforeTabPasses(tabId, keyless)
         writeTabPackage(dir, { ...content, tabId, tmuxName, machineName: pkg.name })

@@ -220,7 +220,7 @@ export interface MachineSetup {
   run: SshRun
   alive?: () => ReadonlySet<string>
   firstHeartbeatDone?: () => Promise<void>
-  nextRoundThatReachesIt?: () => Promise<void>
+  aliveAsOf?: () => number
   pickAccount?: (launchKey: string, resumeSessionId?: string) => Promise<MachineAccount | undefined>
   noAccountMessage?: () => string
   loginPath?: () => Promise<string>
@@ -250,7 +250,7 @@ export function machineIn(world: World, name: string, m: MachineSetup): SshHost 
       }),
       alive: m.alive ?? (() => new Set()),
       firstHeartbeatDone: m.firstHeartbeatDone ?? (async () => {}),
-      nextRoundThatReachesIt: m.nextRoundThatReachesIt ?? (() => new Promise(() => {})),
+      aliveAsOf: m.aliveAsOf ?? (() => 0),
       loginPath: m.loginPath ?? (async () => '')
     }
   })

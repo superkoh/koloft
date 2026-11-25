@@ -4871,8 +4871,7 @@ const hosts = new Hosts(
         machinePackage,
         alive: () => remoteSync?.alive(machine) ?? new Set(),
         firstHeartbeatDone: () => remoteSync?.firstRoundDone(machine) ?? Promise.resolve(),
-        nextRoundThatReachesIt: () =>
-          remoteSync?.nextRoundThatReachesIt(machine) ?? new Promise(() => {}),
+        aliveAsOf: () => remoteSync?.aliveAsOf(machine) ?? 0,
         loginPath: () => gitAccounts?.machineLoginPath(machine) ?? Promise.resolve('')
       }
     })

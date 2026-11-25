@@ -691,18 +691,18 @@ it('a wait for the next pull ends only after a round that started after it, sinc
   expect(done).toBe(true)
 })
 
-it('a wait for the next round that reaches the machine is not ended by a round that could not reach it, as that round leaves the list of running sessions as it was', async () => {
+it('the list of running sessions is dated by when the round that read it began, and a round that could not reach the machine leaves both the list and its date as they were', async () => {
+  expect(sync.aliveAsOf('devbox')).toBe(0)
+  const firstBegan = Date.now()
+  answers.push(() => Promise.resolve(ok('k-aaa\n')))
   sync.start()
   await tick(1)
-  let done = false
-  void sync.nextRoundThatReachesIt('devbox').then(() => (done = true))
+  expect(sync.aliveAsOf('devbox')).toBe(firstBegan)
   answers.push(() => Promise.resolve({ code: 255, stdout: '', stderr: 'ssh: connect refused' }))
   await tick(2000)
   expect(sync.connected('devbox')).toBe(false)
-  expect(done).toBe(false)
-  await tick(60_000)
-  expect(sync.connected('devbox')).toBe(true)
-  expect(done).toBe(true)
+  expect([...sync.alive('devbox')]).toEqual(['aaa'])
+  expect(sync.aliveAsOf('devbox')).toBe(firstBegan)
 })
 
 it('a watched path is stamped on every heartbeat: the first stamp is only the baseline, a changed one fires once, and an unwatched path is no longer asked', async () => {

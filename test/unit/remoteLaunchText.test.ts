@@ -139,13 +139,12 @@ const typedIntoTheTab = (tab: TabStarted): string =>
     part('the line typed into the tab on this Mac', tab.typedLine)
   ].join('\n')
 
-function heartbeats(): { next(): Promise<void>; reachesTheMachine(): Promise<void> } {
-  const waiting: (() => void)[] = []
+function heartbeats(): { aliveAsOf(): number; reachesTheMachine(): void } {
+  let listedAt = 0
   return {
-    next: () => new Promise((done) => waiting.push(done)),
-    reachesTheMachine: async () => {
-      for (const done of waiting.splice(0)) done()
-      await new Promise((settled) => setImmediate(settled))
+    aliveAsOf: () => listedAt,
+    reachesTheMachine: () => {
+      listedAt = Date.now()
     }
   }
 }
@@ -444,7 +443,7 @@ describe('the order a launch on another machine keeps', () => {
         pickAccount,
         noAccountMessage: () => why,
         alive: () => new Set([RUNNING_THERE]),
-        nextRoundThatReachesIt: beat.next
+        aliveAsOf: beat.aliveAsOf
       },
       {
         remoteTab: {
@@ -465,7 +464,7 @@ describe('the order a launch on another machine keeps', () => {
     expect((await claudeTabOn(tab, { resumeSessionId: RUNNING_THERE })).ok).toBe(true)
     expect(pickAccount).toHaveBeenCalledTimes(4)
     expect(tab.started[1].typedLine).toContain('a=start')
-    await beat.reachesTheMachine()
+    beat.reachesTheMachine()
     expect((await claudeTabOn(tab, { resumeSessionId: RUNNING_THERE })).ok).toBe(true)
     expect(pickAccount).toHaveBeenCalledTimes(4)
     expect(tab.started[2].typedLine).toContain('a=attach')
@@ -474,7 +473,7 @@ describe('the order a launch on another machine keeps', () => {
   it('a Claude Code session started anew after Koloft ended it, and ended by Koloft once more before a heartbeat reached the machine, is started anew again by a resume after that heartbeat: the heartbeat clears only the note left before that start', async () => {
     const beat = heartbeats()
     const tab = claudeWith(
-      { alive: () => new Set([RUNNING_THERE]), nextRoundThatReachesIt: beat.next },
+      { alive: () => new Set([RUNNING_THERE]), aliveAsOf: beat.aliveAsOf },
       {
         remoteTab: {
           host: MACHINE,
@@ -487,7 +486,7 @@ describe('the order a launch on another machine keeps', () => {
     expect((await claudeTabOn(tab, { resumeSessionId: RUNNING_THERE })).ok).toBe(true)
     expect(tab.started[0].typedLine).toContain('a=start')
     tab.backend.stop(TAB)
-    await beat.reachesTheMachine()
+    beat.reachesTheMachine()
     expect((await claudeTabOn(tab, { resumeSessionId: RUNNING_THERE })).ok).toBe(true)
     expect(tab.started[1].typedLine).toContain('a=start')
   })

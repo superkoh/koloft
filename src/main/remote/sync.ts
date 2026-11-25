@@ -64,6 +64,7 @@ export interface RemoteSyncDeps {
 
 interface HostState {
   alive: Set<string>
+  aliveAsOf: number
   git: Map<string, RemoteGitInfo>
   tmp?: MachineTmp
   gitAt: number
@@ -126,6 +127,10 @@ export class RemoteSync {
 
   alive(host: string): Set<string> {
     return this.hosts.get(host)?.alive ?? new Set()
+  }
+
+  aliveAsOf(host: string): number {
+    return this.hosts.get(host)?.aliveAsOf ?? 0
   }
 
   gitInfo(host: string, path: string): RemoteGitInfo | undefined {
@@ -206,11 +211,6 @@ export class RemoteSync {
 
   nextPullDone(host: string): Promise<void> {
     return new Promise((done) => this.state(host).waitingForNextPull.push(done))
-  }
-
-  async nextRoundThatReachesIt(host: string): Promise<void> {
-    do await this.nextPullDone(host)
-    while (!this.state(host).connected)
   }
 
   firstRoundDone(host: string): Promise<void> {
@@ -299,6 +299,7 @@ export class RemoteSync {
         host,
         (st = {
           alive: new Set(),
+          aliveAsOf: 0,
           git: new Map(),
           gitAt: 0,
           connected: false,
@@ -349,6 +350,7 @@ export class RemoteSync {
     const target = this.deps.targets().find((t) => t.host === host)
     if (!target) return this.roundOver(st)
     st.running = true
+    const begunAt = Date.now()
     const waiting = st.waitingForNextPull.splice(0)
     try {
       const before = {
@@ -388,6 +390,7 @@ export class RemoteSync {
         st.alive = new Set(
           parsed.alive.map((n) => sessionIdOfTmux(n)).filter((id): id is string => !!id)
         )
+        st.aliveAsOf = begunAt
         const left = [...prevAlive].filter((id) => !st.alive.has(id))
         if (left.length) this.deps.onLeft?.(host, left)
         if (askGit) {
@@ -500,7 +503,7 @@ export class RemoteSync {
 // PLATFORM§35
 export function launchMode(opts: {
   alive: ReadonlySet<string>
-  killed: { has(sessionId: string): boolean }
+  killed: ReadonlySet<string>
   sessionId: string
 }): 'start' | 'attach' {
   return opts.alive.has(opts.sessionId) && !opts.killed.has(opts.sessionId) ? 'attach' : 'start'
