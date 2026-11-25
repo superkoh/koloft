@@ -1,4 +1,3 @@
-import crypto from 'crypto'
 import os from 'os'
 import path from 'path'
 import {
@@ -17,8 +16,6 @@ import {
 import { formatRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import { shq } from '@shared/shellQuote'
 import { EDIT_OPEN_MAX_BYTES, EDIT_WRITE_MAX_BYTES } from '@shared/editLimits'
-import { portOffset } from '@shared/worktreeName'
-import { pictureFolderIn } from '@shared/pastedPictures'
 import { contentHitsOf, gitGrepArgs, rankFiles, rgArgs, visibleEntries } from '../fileTree'
 import {
   MAX_READ_BYTES,
@@ -34,15 +31,12 @@ import { GithubRepos, type GithubReposOptions } from '../githubRepos'
 import { GIT_STEP_TIMEOUT_MS, type GitRunResult } from '../gitSteps'
 import { parseLeftRight, type FreshnessRunner, type GitSnapshot } from '../gitFreshness'
 import { FINGERPRINT, remoteAnswerCommand } from '../remote/install'
-import { TRUSTED_JS } from '@agents/claude/main/claudeTrustJs'
 import {
-  claudeTabSpec,
   killSessionCmd,
   renameSessionCmd,
   resizeStandInCmd,
   launchLine,
   MACHINE_PICTURES_DIR,
-  MACHINE_PICTURES_DIR_TAIL,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
   sessionIdOfTmux,
   holdsATabPassCmd,
@@ -52,15 +46,7 @@ import {
   type MachinePackage
 } from '../remote/launch'
 import { markStartedBeforeTabPasses } from '../tabPass'
-import { ownerTextOver } from '../launchPrompt'
-import { claudeProjectPrompt } from '../agentPlugin'
-import {
-  mirrorHookDir,
-  mirrorProjectsRoot,
-  REMOTE_HOOK_DIR,
-  remoteMachineDir,
-  tabPackageDir
-} from '../remote/paths'
+import { REMOTE_HOOK_DIR, tabPackageDir } from '../remote/paths'
 import { launchMode } from '../remote/sync'
 import {
   backgroundOptions,
@@ -83,11 +69,9 @@ import {
   type NoticeFile,
   type SentNote
 } from '@plugins/sessions/main/hooks'
-import { claudeArgv } from '@agents/claude/main/claudeArgs'
 import { listSkills, skillFolders, type SkillFs, type SkillPlaces } from '../skillList'
-import { worktreeNameAround } from '../resumePlan'
 import type { GitOut } from '@core/worktree'
-import type { ClaudeLaunch, ClaudeLaunchPlan, Host, ShellLaunch } from './host'
+import type { Host, ShellLaunch } from './host'
 import type {
   Machine,
   OpenedTmux,
@@ -95,25 +79,13 @@ import type {
   RunOnMachineOptions,
   TmuxSessionNamedFor
 } from './machine'
-import { docsWritingOn } from '@plugins/docs-writing/api'
 
-export interface MachineAccount {
-  env: Record<string, string>
-  banner: string
-}
-
-export interface MachineClaudeDeps {
+export interface TabsOnMachineDeps {
   userData: string
   controlDir: string
   machinePackage(): MachinePackage
   alive(): ReadonlySet<string>
   firstHeartbeatDone(): Promise<void>
-  realPath(p: string): string
-  settings(): { skipPermissions: boolean }
-  agentTools(): boolean
-  pickAccount(launchKey: string, resumeSessionId?: string): Promise<MachineAccount | undefined>
-  noAccountMessage(): string
-  hookSettings(tabId: string, machineDir: string, allowKoloft: boolean): Record<string, unknown>
   loginPath(): Promise<string>
 }
 
@@ -128,57 +100,8 @@ export interface SshHostDeps {
   ): void
   unwatch(path: string): void
   github: GithubReposOptions
-  claude: MachineClaudeDeps
+  tabs: TabsOnMachineDeps
 }
-
-function machinePermission(
-  spec: ClaudeLaunch,
-  skipPermissions: boolean
-): ClaudeLaunch['permission'] {
-  if (spec.permission && spec.permission !== 'default') return spec.permission
-  return skipPermissions ? 'bypass' : undefined
-}
-
-const picturesHandedTo = (spec: ClaudeLaunch): string | undefined =>
-  !spec.resumeSessionId && spec.firstPrompt
-    ? pictureFolderIn(spec.firstPrompt, (folder) => folder.endsWith(MACHINE_PICTURES_DIR_TAIL))
-    : undefined
-
-// CC§9
-export function machineClaudeArgs(
-  spec: ClaudeLaunch,
-  sessionId: string,
-  skipPermissions: boolean
-): { ok: true; args: string[]; pictures?: string } | { ok: false; code: 'invalid-args' } {
-  const argv = claudeArgv('claude', {
-    resumeSessionId: spec.resumeSessionId,
-    sessionId: spec.resumeSessionId ? undefined : sessionId,
-    worktree: spec.worktree,
-    model: spec.model,
-    effort: spec.effort,
-    permission: machinePermission(spec, skipPermissions)
-  })
-  if (!argv.ok) return argv
-  const fresh = !spec.resumeSessionId
-  const pictures = picturesHandedTo(spec)
-  return {
-    ok: true,
-    pictures,
-    args: [
-      ...argv.argv.slice(1),
-      ...(fresh && spec.name ? ['--name', spec.name] : []),
-      // CC§18
-      ...(pictures ? ['--add-dir', pictures] : []),
-      ...(fresh && spec.firstPrompt ? ['--', spec.firstPrompt] : [])
-    ]
-  }
-}
-
-const NOT_TRUSTED = 1
-
-const WITH_NODE_IN_REAL_DIR = `cd "$1" 2>/dev/null || exit ${NOT_TRUSTED}
-command -v node >/dev/null 2>&1 || exit ${NOT_TRUSTED}
-node -e "$2" "$HOME/.claude.json" "$(pwd -P)"`
 
 const NETWORK_GIT_TIMEOUT_MS = 20_000
 
@@ -706,10 +629,6 @@ export class SshHost implements Host, Machine {
     return this.machine
   }
 
-  private get own() {
-    return this.deps.claude
-  }
-
   bare(p: string): string {
     const key = parseRemoteKey(p)
     if (!key || key.host !== this.machine) throw new Error('KOLOFT_READ_FAILED')
@@ -1064,40 +983,35 @@ exit ${CALLER_GONE_EXIT}`,
     }
   }
 
-  // CC§9
-  async trustsFolder(dir: string): Promise<boolean> {
-    return (await this.sh(WITH_NODE_IN_REAL_DIR, [this.bare(dir), TRUSTED_JS])).code !== NOT_TRUSTED
-  }
-
   async ready(): Promise<void> {
     await this.deps.sshEnvReady?.()
-    ensureControlDir(this.deps.claude.controlDir)
+    ensureControlDir(this.deps.tabs.controlDir)
   }
 
   loginPath(): Promise<string> {
-    return this.deps.claude.loginPath().catch(() => '')
+    return this.deps.tabs.loginPath().catch(() => '')
   }
 
   sshArgs(background: boolean): string[] {
-    const { controlDir } = this.own
+    const { controlDir } = this.deps.tabs
     ensureControlDir(controlDir)
     return background ? backgroundOptions(this.machine, controlDir) : sshOptions(controlDir, false)
   }
 
   packageName(): string {
-    return this.own.machinePackage().name
+    return this.deps.tabs.machinePackage().name
   }
 
   tabFiles(tabId: string): { dir: string; pushedLine(): string } {
-    const own = this.own
-    const dir = tabPackageDir(own.userData, tabId)
+    const tabs = this.deps.tabs
+    const dir = tabPackageDir(tabs.userData, tabId)
     return {
       dir,
       pushedLine: () =>
         tabPushed({
           host: this.machine,
-          sshOptions: sshOptions(own.controlDir, false),
-          machine: own.machinePackage(),
+          sshOptions: sshOptions(tabs.controlDir, false),
+          machine: tabs.machinePackage(),
           tabId,
           tabDir: dir
         })
@@ -1112,11 +1026,11 @@ exit ${CALLER_GONE_EXIT}`,
 
   // PLATFORM§35 ADR-0044
   private async attachOrStart(sid: string): Promise<'start' | 'attach'> {
-    await this.deps.claude.firstHeartbeatDone()
-    while (this.kills.size && this.deps.claude.alive().has(sid))
+    await this.deps.tabs.firstHeartbeatDone()
+    while (this.kills.size && this.deps.tabs.alive().has(sid))
       await Promise.all(this.kills.values())
     const mode = launchMode({
-      alive: this.deps.claude.alive(),
+      alive: this.deps.tabs.alive(),
       killed: this.killedSessions,
       sessionId: sid
     })
@@ -1133,7 +1047,7 @@ exit ${CALLER_GONE_EXIT}`,
   ): string {
     return launchLine({
       host: this.machine,
-      sshOptions: sshOptions(this.deps.claude.controlDir, false),
+      sshOptions: sshOptions(this.deps.tabs.controlDir, false),
       machine,
       tabDir,
       tabId,
@@ -1166,8 +1080,8 @@ exit ${CALLER_GONE_EXIT}`,
       : `m-${named.tab}${NO_TAB_NAME_IS_ANOTHERS_PREFIX}`
     const mode = sessionKnownBeforeItStarts ? await this.attachOrStart(named.session) : 'start'
     const keyless = mode === 'attach' && (await this.startedBeforeTabPasses(tmuxName))
-    const own = this.own
-    const pkg = own.machinePackage()
+    const tabs = this.deps.tabs
+    const pkg = tabs.machinePackage()
     return {
       mode,
       tmuxName,
@@ -1177,94 +1091,10 @@ exit ${CALLER_GONE_EXIT}`,
       shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
       resized: this.resized,
       launchCommand: (tabId, content) => {
-        const dir = tabPackageDir(own.userData, tabId)
+        const dir = tabPackageDir(tabs.userData, tabId)
         markStartedBeforeTabPasses(tabId, keyless)
         writeTabPackage(dir, { ...content, tabId, tmuxName, machineName: pkg.name })
         return this.tabLaunchLine(pkg, dir, tabId, mode)
-      }
-    }
-  }
-
-  async launch(spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
-    const d = this.deps.claude
-    await this.ready()
-    await this.reachOrThrow()
-    const settings = d.settings()
-    const agentTools = d.agentTools()
-    const sid = spec.resumeSessionId ?? crypto.randomUUID()
-    const args = machineClaudeArgs(spec, sid, settings.skipPermissions)
-    if (!args.ok) return args
-    const tmuxName = tmuxSessionName(sid)
-    const asked = this.loginPath()
-    const mode = await this.attachOrStart(sid)
-    const keyless = mode === 'attach' && (await this.startedBeforeTabPasses(tmuxName))
-    // CC§2
-    const root = d.realPath(this.bare(spec.root))
-    const cwd = spec.cwd ? this.bare(spec.cwd) : root
-    const wsRoot = spec.fallbackCwd ? d.realPath(this.bare(spec.fallbackCwd)) : root
-    const worktree = spec.worktree ?? worktreeNameAround(cwd)
-    const pkg = d.machinePackage()
-    const machineDir = remoteMachineDir(pkg.name)
-    const pickKey = mode === 'start' ? `launch-${sid}` : undefined
-    const account = pickKey ? await d.pickAccount(pickKey, spec.resumeSessionId) : undefined
-    // ADR-0030
-    if (pickKey && !account) throw new Error(d.noAccountMessage())
-    const loginPath = mode === 'start' ? await asked : ''
-    // CC§9
-    const model = spec.model && account?.env.ANTHROPIC_MODEL ? args.args.indexOf('--model') : -1
-    const claudeArgs = args.args.filter((_, i) => model < 0 || (i !== model && i !== model + 1))
-    const projectPrompt = spec.projectRules && claudeProjectPrompt(spec.projectRules)
-    return {
-      ok: true,
-      spawnCwd: os.homedir(),
-      cwd: spec.root,
-      conductor: !!spec.conductor,
-      shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
-      launchCommand: (tabId) => {
-        const tabDir = tabPackageDir(d.userData, tabId)
-        markStartedBeforeTabPasses(tabId, keyless)
-        writeTabPackage(
-          tabDir,
-          claudeTabSpec(
-            {
-              tabId,
-              tmuxName,
-              machineName: pkg.name,
-              cwd,
-              fallbackCwd: wsRoot !== cwd ? wsRoot : undefined,
-              banner: account?.banner ?? '',
-              env: account?.env,
-              portOffset: worktree ? portOffset(worktree) : undefined,
-              ownerWords: spec.ownerWords,
-              loginPath
-            },
-            {
-              settings: d.hookSettings(tabId, machineDir, agentTools),
-              agentPlugin: agentTools,
-              docsPlugin: docsWritingOn(),
-              projectPrompt,
-              ownerText: ownerTextOver(spec.ownerText, !!spec.conductor, spec.workspaceParts),
-              claudeArgs,
-              trustFolder: spec.trustFolder,
-              pictureFolder: args.pictures
-            }
-          )
-        )
-        return this.tabLaunchLine(pkg, tabDir, tabId, mode)
-      },
-      resized: this.resized,
-      machine: {
-        tracking: {
-          host: this.machine,
-          projectsRoot: mirrorProjectsRoot(d.userData, this.machine),
-          tmuxName
-        },
-        cwd,
-        root,
-        hookMirror: mirrorHookDir(d.userData, this.machine),
-        attachTo: mode === 'attach' ? sid : undefined,
-        pickKey,
-        skipsPermissionChecks: machinePermission(spec, settings.skipPermissions) === 'bypass'
       }
     }
   }
