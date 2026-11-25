@@ -139,13 +139,24 @@ const typedIntoTheTab = (tab: TabStarted): string =>
     part('the line typed into the tab on this Mac', tab.typedLine)
   ].join('\n')
 
-function heartbeats(): { aliveAsOf(): number; reachesTheMachine(): void } {
+function heartbeats(): {
+  aliveAsOf(): number
+  begins(): { ends(): void }
+  reachesTheMachine(): void
+} {
   let listedAt = 0
+  const begins = (): { ends(): void } => {
+    const begunAt = performance.now()
+    return {
+      ends: () => {
+        listedAt = begunAt
+      }
+    }
+  }
   return {
     aliveAsOf: () => listedAt,
-    reachesTheMachine: () => {
-      listedAt = Date.now()
-    }
+    begins,
+    reachesTheMachine: () => begins().ends()
   }
 }
 
@@ -470,7 +481,7 @@ describe('the order a launch on another machine keeps', () => {
     expect(tab.started[2].typedLine).toContain('a=attach')
   })
 
-  it('a Claude Code session started anew after Koloft ended it, and ended by Koloft once more before a heartbeat reached the machine, is started anew again by a resume after that heartbeat: the heartbeat clears only the note left before that start', async () => {
+  it('a Claude Code session Koloft ended and started anew twice is attached to only after a heartbeat begun after the second start: one begun between the two starts says nothing about the second', async () => {
     const beat = heartbeats()
     const tab = claudeWith(
       { alive: () => new Set([RUNNING_THERE]), aliveAsOf: beat.aliveAsOf },
@@ -485,10 +496,15 @@ describe('the order a launch on another machine keeps', () => {
     tab.backend.stop(TAB)
     expect((await claudeTabOn(tab, { resumeSessionId: RUNNING_THERE })).ok).toBe(true)
     expect(tab.started[0].typedLine).toContain('a=start')
-    tab.backend.stop(TAB)
-    beat.reachesTheMachine()
+    const roundBegunBetween = beat.begins()
     expect((await claudeTabOn(tab, { resumeSessionId: RUNNING_THERE })).ok).toBe(true)
     expect(tab.started[1].typedLine).toContain('a=start')
+    roundBegunBetween.ends()
+    expect((await claudeTabOn(tab, { resumeSessionId: RUNNING_THERE })).ok).toBe(true)
+    expect(tab.started[2].typedLine).toContain('a=start')
+    beat.reachesTheMachine()
+    expect((await claudeTabOn(tab, { resumeSessionId: RUNNING_THERE })).ok).toBe(true)
+    expect(tab.started[3].typedLine).toContain('a=attach')
   })
 
   it('a Claude Code session the machine still runs, ended by Koloft while a resume of it is already deciding to attach, is started anew by the next resume: the attach does not use up the note that Koloft ended it', async () => {

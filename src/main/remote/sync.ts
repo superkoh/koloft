@@ -350,7 +350,7 @@ export class RemoteSync {
     const target = this.deps.targets().find((t) => t.host === host)
     if (!target) return this.roundOver(st)
     st.running = true
-    const begunAt = Date.now()
+    const begunAt = performance.now()
     const waiting = st.waitingForNextPull.splice(0)
     try {
       const before = {

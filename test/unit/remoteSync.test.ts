@@ -693,11 +693,12 @@ it('a wait for the next pull ends only after a round that started after it, sinc
 
 it('the list of running sessions is dated by when the round that read it began, and a round that could not reach the machine leaves both the list and its date as they were', async () => {
   expect(sync.aliveAsOf('devbox')).toBe(0)
-  const firstBegan = Date.now()
+  const beforeTheRound = performance.now()
   answers.push(() => Promise.resolve(ok('k-aaa\n')))
   sync.start()
   await tick(1)
-  expect(sync.aliveAsOf('devbox')).toBe(firstBegan)
+  const firstBegan = sync.aliveAsOf('devbox')
+  expect(firstBegan).toBeGreaterThanOrEqual(beforeTheRound)
   answers.push(() => Promise.resolve({ code: 255, stdout: '', stderr: 'ssh: connect refused' }))
   await tick(2000)
   expect(sync.connected('devbox')).toBe(false)

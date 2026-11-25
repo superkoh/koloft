@@ -1032,7 +1032,7 @@ exit ${CALLER_GONE_EXIT}`,
     while (this.kills.size && this.deps.tabs.alive().has(sid))
       await Promise.all(this.kills.values())
     const restartTypedAt = this.restartsTypedAt.get(sid)
-    if (restartTypedAt !== undefined && this.deps.tabs.aliveAsOf() >= restartTypedAt)
+    if (restartTypedAt !== undefined && this.deps.tabs.aliveAsOf() > restartTypedAt)
       this.restartsTypedAt.delete(sid)
     const mode = this.restartsTypedAt.has(sid)
       ? 'start'
@@ -1100,9 +1100,9 @@ exit ${CALLER_GONE_EXIT}`,
         if (
           sessionKnownBeforeItStarts &&
           mode === 'start' &&
-          this.killedSessions.delete(named.session)
+          (this.killedSessions.delete(named.session) || this.restartsTypedAt.has(named.session))
         )
-          this.restartsTypedAt.set(named.session, Date.now())
+          this.restartsTypedAt.set(named.session, performance.now())
         const dir = tabPackageDir(tabs.userData, tabId)
         markStartedBeforeTabPasses(tabId, keyless)
         writeTabPackage(dir, { ...content, tabId, tmuxName, machineName: pkg.name })
