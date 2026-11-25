@@ -7,14 +7,14 @@ import {
   normalizeSessionMethods
 } from '@shared/sessionBackend'
 import type { BackendId } from '@shared/types'
-import { AGENT_UIS } from '@agents/uis'
+import { agentUi } from '@agents/uis'
 import { useStore } from '../../store'
 import { AgentSelect } from '../SessionLaunchButtons'
 import { Switch } from './Switch'
 import { useSettingsUpdate } from './useSettingsUpdate'
 
 const methodNote = (backend: BackendId): string =>
-  `Runs on ${AGENT_UIS.find((ui) => ui.id === backend)!.settings.whatItRunsOn} from Settings ▸ Accounts`
+  `Runs on ${agentUi(backend).settings.whatItRunsOn} from Settings ▸ Accounts`
 
 type Detected = Awaited<ReturnType<typeof window.api.sessions.backends>>
 

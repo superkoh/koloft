@@ -2,11 +2,11 @@ import type { JSX } from 'react'
 import { Switch } from '@renderer/components/settings/Switch'
 import { useSettingsUpdate } from '@renderer/components/settings/useSettingsUpdate'
 import { useStore } from '@renderer/store'
-import { SESSION_BACKENDS, productList, whenAny } from '@shared/sessionBackend'
+import { SESSION_BACKENDS, shortProductList, whenAny } from '@shared/sessionBackend'
 import { reachesTheWorkbenchBrowserOverSsh } from '../skill/text'
 
 const OVER_SSH = whenAny(
-  productList(SESSION_BACKENDS.filter(reachesTheWorkbenchBrowserOverSsh), 'and'),
+  shortProductList(SESSION_BACKENDS.filter(reachesTheWorkbenchBrowserOverSsh), 'and'),
   (products) =>
     `${products} sessions on another machine (over SSH) can drive it too, but never open this Mac's files or its local web servers. `
 )

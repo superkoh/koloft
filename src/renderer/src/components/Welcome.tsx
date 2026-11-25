@@ -19,7 +19,7 @@ import {
 } from '@shared/sessionBackend'
 import { agentManifest } from '@core/agent/registry'
 import type { AgentWelcomeWords } from '@core/agent/agentUi'
-import { AGENT_UIS } from '@agents/uis'
+import { agentUi } from '@agents/uis'
 import { accountToSignInAgain, hasUsableAccount } from '@shared/accountUsage'
 import { basename } from '@shared/preview'
 import { foldersToPin } from '@shared/firstRun'
@@ -55,12 +55,11 @@ interface Folder {
   rows: SessionRow[]
 }
 
-const COUNT_WORDS = ['One', 'Two', 'Three', 'Four']
+const COUNT_WORDS: Record<number, string> = { 2: 'Two', 3: 'Three' }
 
-const HOW_MANY_AGENTS = `${COUNT_WORDS[SESSION_BACKENDS.length - 1] ?? SESSION_BACKENDS.length} ${SESSION_BACKENDS.length === 1 ? 'agent' : 'agents'}.`
+const HOW_MANY_AGENTS = `${COUNT_WORDS[SESSION_BACKENDS.length] ?? SESSION_BACKENDS.length} agents.`
 
-const welcomeWordsOf = (b: BackendId): AgentWelcomeWords =>
-  AGENT_UIS.find((ui) => ui.id === b)!.welcome
+const welcomeWordsOf = (b: BackendId): AgentWelcomeWords => agentUi(b).welcome
 
 const SIDEBAR_ROWS_PER_FOLDER = 4
 const AUTO_NEXT_MS = 900
@@ -325,29 +324,24 @@ export function Welcome({
     const failed =
       'Could not start the sign-in. Try again, or add the account in Settings ▸ Accounts.'
     const agentNow = pick
-    const inTheBackground = (): void => {
+    const inATab = signsInInATab(agentNow)
+    if (!inATab) {
       beginLogin(again)
       setLoginProgress({ phase: 'starting', name })
-      setSigningIn({ agent: agentNow, inATab: false })
+      setSigningIn({ agent: agentNow, inATab })
     }
-    const guessedTheBackground = !signsInInATab(agentNow)
-    if (guessedTheBackground) inTheBackground()
     const r = await window.api.accounts.beginSignIn(signInKindIdOf(agentNow), name, !!again)
     if (!r.ok) {
-      if (guessedTheBackground) {
+      if (!inATab) {
         clearLogin()
         setSigningIn(null)
       }
       setSignError(failed)
       return
     }
-    const tab = r.progress.phase === 'inATab' ? r.progress.tab : undefined
-    if (!tab) {
-      if (!guessedTheBackground) inTheBackground()
-      return
-    }
-    if (guessedTheBackground) clearLogin()
-    setSigningIn({ agent: agentNow, inATab: true })
+    const tab = r.progress.tab
+    if (!inATab || !tab) return
+    setSigningIn({ agent: agentNow, inATab })
     setPeek(false)
     openSignInTab(
       { tabId: tab.tabId, cwd: tab.cwd ?? '' },
