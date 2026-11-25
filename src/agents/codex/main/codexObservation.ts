@@ -1,5 +1,5 @@
 import { PLAN_READY, type BackgroundItem } from '@shared/types'
-import { codexEditTarget, codexItemDid, codexTaskName } from '../../../main/rowActivity'
+import { codexEditTarget, codexItemDid, codexTaskName } from './codexItemDid'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@core/agent/sessionRuntime'
 import { nonEmptyString, record } from '@core/unknownValue'

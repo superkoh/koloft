@@ -14,6 +14,8 @@ export function toolFilePath(input: unknown): string | null {
   return typeof p === 'string' && p.length ? p : null
 }
 
+export const withoutMcpServer = (tool: string): string => tool.replace(/^mcp__.+?__/, '')
+
 function countLines(s: unknown): number {
   if (typeof s !== 'string' || s.length === 0) return 0
   let n = 1

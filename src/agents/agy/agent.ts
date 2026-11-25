@@ -90,6 +90,9 @@ export const agent = {
     makeEnterRunTheTypedText: [],
     backToAnEmptyBox: [ESC, EMPTY_THE_BOX]
   },
+  // AGY§13
+  howToStopItsBackgroundTasks:
+    'Stop them in the Antigravity session (/tasks lists them) to free the resources.',
   flags: {
     // AGY§5
     resumeCanWaitOnAQuestionBeforeAnySign: false,
