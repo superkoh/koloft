@@ -24,7 +24,7 @@ export function installThen(
   testInstaller?: string
 ): string {
   const { command, installCommand } = agentManifest(backend)
-  const run = testInstaller ? `${shq(testInstaller)} ${backend}` : installCommand
+  const run = testInstaller ? `${shq(testInstaller)} ${command}` : installCommand
   const binary = `"$HOME/.local/bin/${command}"`
   return `${run}; [ -x ${binary} ] && ${then(binary)}`
 }

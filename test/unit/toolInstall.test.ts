@@ -16,7 +16,7 @@ describe('installThen', () => {
     )
   })
 
-  it('runs the test installer in its place, naming the agent', () => {
+  it('runs the test installer in its place, naming the program it then looks for', () => {
     expect(installThen('agy', () => 'exit', '/t/fake installer')).toBe(
       `'/t/fake installer' agy; [ -x "$HOME/.local/bin/agy" ] && exit`
     )
