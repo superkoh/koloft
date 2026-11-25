@@ -95,6 +95,10 @@ export const agent = {
     pasteKeepsItsLastLineFeeds: true,
     // CC§13
     passedOnMessageShowsAsFromAnotherSession: true,
+    // CC§13
+    sessionsOfItsKindOnOneMachineTalkWithTheirOwnTool: true,
+    // CC§13
+    mightNotTakeAMessageWhileItsTurnRuns: false,
     // PLATFORM§58
     commandsItRunsCanHaveATerminalOfTheirOwn: false,
     // PLATFORM§58

@@ -51,7 +51,7 @@ import {
   backendIdOf,
   capabilitiesFor,
   identityOf,
-  reachedBySendMessage,
+  talksWithItsOwnTool,
   effectiveBackend,
   turnedOffLine,
   SESSION_BACKENDS
@@ -3093,7 +3093,7 @@ app.whenReady().then(() => {
           permission: ownersPermission(),
           trustFolder: true,
           firstPrompt: l.firstPrompt,
-          name: reachedBySendMessage(l.backend) ? asPeerName(l.title) : l.title,
+          name: talksWithItsOwnTool(l.backend) ? asPeerName(l.title) : l.title,
           model: l.model,
           effort: l.effort
         },

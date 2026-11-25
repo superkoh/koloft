@@ -138,8 +138,5 @@
       "StoredSessionDeps.workspaceInstructions": "D1"
     }
   },
-  "messagingOf": {
-    "src/plugins/sessions/main/sessionVerbs.ts": 1,
-    "src/plugins/sessions/skill/text.ts": 1
-  }
+  "messagingOf": { "src/plugins/sessions/main/sessionVerbs.ts": 1 }
 }
