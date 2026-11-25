@@ -578,7 +578,8 @@ async function stage(kind: Kind): Promise<Stage> {
         codex,
         NO_RESUME_IS_PLANNED_HERE,
         () => NO_RESUME_IS_PLANNED_HERE,
-        noteKoloftSent
+        noteKoloftSent,
+        async () => undefined
       ),
     agy: agy && agyBackend(agy, NO_RESUME_IS_PLANNED_HERE, () => NO_RESUME_IS_PLANNED_HERE)
   } as Record<BackendId, SessionMessages>

@@ -20,8 +20,7 @@ import { anotherLiveInstanceOwns, PtyManager, type PtyHandle } from './ptyManage
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { TerminalOutput } from './flowControl'
-import type { CommandOutput } from '@agents/claude/main/claudeCommandOutput'
-import { codexShowsAPanel } from './inputBox'
+import type { CommandOutput } from '@core/agent/commandOutput'
 import type { TreeIo } from './sessionWorktrees'
 import { sharedProcessTable, type ProcessTable } from './processTable'
 import {
@@ -356,8 +355,6 @@ import {
 import type { McpServer } from '@shared/types'
 import {
   LIVE_REGISTRY_ON_A_MACHINE_SH,
-  claudeShowsAPanel,
-  claudeShowsAPanelOnMachine,
   whenMessagingSocket,
   whenMessagingSocketOnMachine
 } from '@agents/claude/main/claudeSessionRegistry'
@@ -577,43 +574,13 @@ function asksTheOwner(tabId: string): boolean {
   return runtime.statusOf(tabId) === 'approval' || !!sessionAsks?.dialogOpen(tabId)
 }
 
-type PanelOpen = (
-  tabId: string,
-  sessionId: string,
-  screen?: string[]
-) => Promise<boolean | undefined>
-
-function panelOnScreen(shows: (lines: string[]) => boolean | undefined): PanelOpen {
-  return async (tabId, _sessionId, screen) => {
-    const lines = screen ?? (await screenLines(tabId))
-    const somethingDrawn = lines?.some((line) => line.trim())
-    return lines && somethingDrawn ? shows(lines) : undefined
-  }
-}
-
-const panelOpenOn: Record<BackendId, PanelOpen> = {
-  claude: async (tabId, sessionId) => {
-    if (!sessionId) return undefined
-    const host = tracker.remoteOf(tabId)?.host
-    if (!host) return claudeShowsAPanel(sessionId)
-    const registry = await liveClaudeRegistryOn(host).catch(() => undefined)
-    return registry === undefined ? undefined : claudeShowsAPanelOnMachine(registry, sessionId)
-  },
-  codex: panelOnScreen(codexShowsAPanel),
-  agy: async () => undefined
-}
-
 const slashDeps: PluginStartDeps['sessions']['slash'] = {
   backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
   keyOf: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
   turnOver: (tabId) => runtime.turnOver(tabId),
   asking: asksTheOwner,
   takesTyping: (tabId) => !!sessionAsks?.takesCommand(tabId),
-  panelOpen: async (tabId, screen) => {
-    const s = sessionOfTab(tabId)
-    if (!s || capabilitiesFor(s.backendId, s.host).panelSeen !== true) return undefined
-    return panelOpenOn[s.backendId](tabId, s.sessionId, screen)
-  },
+  panelOpen: (tabId, screen) => sessionBackends.showsAPanel(tabId, screen),
   screen: screenLines,
   nextMirrorPull: (tabId) => {
     const host = remoteHostOfTab(tabId)
@@ -3370,7 +3337,13 @@ app.whenReady().then(() => {
   }
   if (codexSessions) {
     sessionBackends.register(
-      codexBackend(codexSessions, resumeProbes, machineProbes, messaging.noteKoloftSent)
+      codexBackend(
+        codexSessions,
+        resumeProbes,
+        machineProbes,
+        messaging.noteKoloftSent,
+        screenLines
+      )
     )
     void codexSessions
       .availability()
@@ -5228,6 +5201,7 @@ const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
     hookSettings: (tabId, dir, allowKoloft) =>
       machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)
   },
+  liveRegistryOn: liveClaudeRegistryOn,
   remoteTargets: () => workspaceMgr?.remoteTargets() ?? [],
   sessionRebound: (prevId, nextId, source) => workspaceMgr?.onSessionRebind(prevId, nextId, source),
   remoteSync: () => remoteSync,
