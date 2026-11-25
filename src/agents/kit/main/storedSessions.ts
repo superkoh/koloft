@@ -43,7 +43,13 @@ import { forgetAgentsInLoginShell } from '../../../main/loginShell'
 import type { LaunchedSession } from '../../../main/accountPicker'
 import { isNewer } from '../../../main/releaseNotes'
 import { pathWithDirFirst, pathWithDirLast } from '../../../main/toolInstall'
-import { turnOf, type SessionRuntime, type StatusEdge } from '@core/agent/sessionRuntime'
+import {
+  turnOf,
+  type SessionRuntime,
+  type StatusEdge,
+  type TurnOverEdge
+} from '@core/agent/sessionRuntime'
+import { rereadWhenRowsInMemoryChange } from './rowsInMemoryChanged'
 
 const AVAILABILITY_FAILURE_MS = 60_000
 const EMIT_THROTTLE_MS = 500
@@ -107,6 +113,8 @@ export interface StoredSessionDeps {
   projectRules?(workspace: string): Promise<string | undefined>
   workspaceInstructions?(workspace: string): Promise<string[]>
   changed(): void
+  pinnedWorkspaces(): string[]
+  rereadRows(): void
   replaced?(oldKey: string, newKey: string): void
   leftWorktree?(resource: WorktreeResource): Promise<void>
   events(tabId: string, event: SessionEvent): void
@@ -198,6 +206,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   protected shuttingDown = false
   private emitTimer?: ReturnType<typeof setTimeout>
   private lastEmitMs = 0
+  private rereadWhenItsRowsChanged: () => void
   readonly store: SessionStore
   readonly worktrees: SessionWorktrees
 
@@ -208,12 +217,21 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   ) {
     this.store = new SessionStore(file, keyOf)
     this.worktrees = new SessionWorktrees(this.store, deps.remoteTreeIo)
+    this.rereadWhenItsRowsChanged = rereadWhenRowsInMemoryChange({
+      pinned: () => deps.pinnedWorkspaces(),
+      rows: (workspace) => this.rows(workspace),
+      members: () => this.members(),
+      reread: () => deps.rereadRows()
+    })
     deps.runtime.on('status', ({ tabId, next }: StatusEdge) => {
       const run = this.runs.get(tabId)
       if (!run?.info || run.explicitStop || run.stopping) return
       run.info.status = next
       run.info.updatedAt = Date.now()
       this.changedSoon()
+    })
+    deps.runtime.on('turn-over', ({ tabId }: TurnOverEdge) => {
+      if (this.runs.has(tabId)) this.changedSoon()
     })
   }
 
@@ -325,6 +343,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     this.emitTimer = undefined
     this.lastEmitMs = Date.now()
     this.deps.changed()
+    this.rereadWhenItsRowsChanged()
   }
 
   protected changedSoon(): void {

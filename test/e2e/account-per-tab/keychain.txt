@@ -1,0 +1,14 @@
+=== the keychain before ===
+  koloft-dev-agy-home · made-up-signed-in = a-key-left-from-before
+  koloft-dev-anthropic-api · e2e-key = sk-ant-api03-e2e-fixture
+=== the keychain once each is added, Claude Code signed in, and Antigravity’s sign-in begun ===
+  koloft-dev-agy-home · made-up-gemini-key = made-up-gemini-key
+  koloft-dev-anthropic-api · e2e-key = sk-ant-api03-e2e-fixture
+  koloft-dev-anthropic-api · made-up-key = made-up-anthropic-key
+  koloft-dev-claude-oauth · made-up-pasted = made-up-pasted-oauth-token
+  koloft-dev-claude-oauth · made-up-signed-in-claude = sk-ant-oat01-made-up-setup-token-made-up-setup-token-made-up-setup-token-made-up-setup-token-made-up-setup-token-
+  koloft-dev-custom-endpoint · made-up-proxy = made-up-endpoint-token
+  codex-homes/made-up-codex-key/auth.json: {"auth_mode":"apikey","OPENAI_API_KEY":"made-up-openai-key"}
+=== the keychain once every account is removed ===
+  koloft-dev-anthropic-api · e2e-key = sk-ant-api03-e2e-fixture
+  codex-homes/made-up-codex-key/auth.json: {"auth_mode":"apikey","OPENAI_API_KEY":"made-up-openai-key"}

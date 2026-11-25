@@ -1,0 +1,14 @@
+=== Claude Code on this Mac, with no model of its own ===
+  skips permissions: yes
+  --model on its line: (none)
+  its account environment:
+    ANTHROPIC_AUTH_TOKEN=made-up-endpoint-token
+    ANTHROPIC_BASE_URL=https://llm-proxy.example.test/v1
+    ANT_ACCOUNT=made-up-proxy
+=== Claude Code over SSH, with no model of its own ===
+  skips permissions: yes
+  --model on its line: (none)
+  its account environment:
+    ANTHROPIC_AUTH_TOKEN=made-up-endpoint-token
+    ANTHROPIC_BASE_URL=https://llm-proxy.example.test/v1
+    ANT_ACCOUNT=made-up-proxy

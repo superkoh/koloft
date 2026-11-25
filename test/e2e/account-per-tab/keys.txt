@@ -1,0 +1,32 @@
+=== Claude Code on this Mac ===
+  skips permissions: yes
+  --model on its line: (none)
+  its account environment:
+    ANTHROPIC_API_KEY=made-up-anthropic-key
+    ANT_ACCOUNT=made-up-key
+=== Codex on this Mac ===
+  its server's CODEX_HOME=<home>/userData/codex-homes/made-up-codex-key
+=== Antigravity on this Mac ===
+  --gemini_dir=<home>/userData/agy-homes/made-up-gemini-key
+  ANT_ACCOUNT=made-up-gemini-key
+  GEMINI_API_KEY is set: yes
+=== Claude Code over SSH ===
+  skips permissions: yes
+  --model on its line: (none)
+  its account environment:
+    ANTHROPIC_API_KEY=made-up-anthropic-key
+    ANT_ACCOUNT=made-up-key
+=== Codex over SSH ===
+  the machine's server is signed in with:
+    accessToken=null
+    accountId=null
+    apiKey=made-up-openai-key-of-made-up-codex-key
+    type=apiKey
+=== Antigravity over SSH ===
+  --gemini_dir=<home>/fake-ssh/machine/.koloft/agy/made-up-gemini-key
+  ANT_ACCOUNT=made-up-gemini-key
+  GEMINI_API_KEY is set: yes
+=== agy -p typed in a session’s terminal on this Mac ===
+  --gemini_dir=<home>/userData/agy-homes/made-up-gemini-key
+  ANT_ACCOUNT=(none)
+  GEMINI_API_KEY is set: yes

@@ -14,6 +14,8 @@ import {
 } from '@shared/settingsOps'
 import { GLOBAL_SCOPE } from '@shared/scope'
 
+const EVERY_ACCOUNT_KIND_AS_SAVED_ON_DISK = ['oauth', 'apikey', 'custom', 'codex-home', 'agy-home']
+
 describe('buildResetPatch (FR-12)', () => {
   it('excludes the whole account domain: accounts, skipPermissions, fablePriority', () => {
     const patch = buildResetPatch()
@@ -624,6 +626,59 @@ describe('a settings file an older Koloft wrote', () => {
         "aKeyANewerKoloftWrote": {
           "kept": true,
         },
+        "accounts": [
+          {
+            "addedAt": 1700000000001,
+            "enabled": true,
+            "fable": "no",
+            "fableCheckedAt": 1700000500000,
+            "kind": "oauth",
+            "name": "made-up-pro",
+            "status": "ok",
+          },
+          {
+            "addedAt": 1700000000002,
+            "enabled": false,
+            "fable": "yes",
+            "kind": "oauth",
+            "name": "made-up-max",
+            "status": "expired",
+          },
+          {
+            "addedAt": 1700000000003,
+            "enabled": true,
+            "fable": "unknown",
+            "kind": "apikey",
+            "name": "made-up-key",
+            "status": "unverified",
+          },
+          {
+            "addedAt": 1700000000004,
+            "baseUrl": "https://llm-proxy.example.test/v1",
+            "enabled": true,
+            "fable": "unknown",
+            "kind": "custom",
+            "model": "made-up-model-7b",
+            "name": "made-up-proxy",
+            "status": "ok",
+          },
+          {
+            "addedAt": 1700000000005,
+            "enabled": true,
+            "fable": "unknown",
+            "kind": "codex-home",
+            "name": "made-up-codex",
+            "status": "ok",
+          },
+          {
+            "addedAt": 1700000000006,
+            "enabled": true,
+            "fable": "unknown",
+            "kind": "agy-home",
+            "name": "made-up-gemini",
+            "status": "expired",
+          },
+        ],
         "assist": {
           "backend": "claude",
         },
@@ -701,6 +756,12 @@ describe('a settings file an older Koloft wrote', () => {
         k !== 'hintsSeen'
       )
         expect(loaded[k], k).toEqual(v)
+  })
+
+  it('loads one account of each kind with every field it was saved with', () => {
+    const kinds = older.accounts.map((a: { kind: string }) => a.kind)
+    expect(new Set(kinds)).toEqual(new Set(EVERY_ACCOUNT_KIND_AS_SAVED_ON_DISK))
+    expect(sanitizeLoadedSettings(older).accounts).toStrictEqual(older.accounts)
   })
 
   it('loads the same again from what it writes back', () => {
