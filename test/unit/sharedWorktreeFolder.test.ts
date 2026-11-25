@@ -256,6 +256,8 @@ function sharedFolder(
       )
       await vi.waitFor(() => expect(trackedTabs.get(CLAUDE_TAB)).toMatchObject({ sessionId, cwd }))
     },
+    koloftStopsTheClaudeTab: () => claude.stop(CLAUDE_TAB),
+    claudeIsIn: (dir: string) => claude.occupantOf(dir),
     claudeTabEnds: () => {
       liveTabs.delete(CLAUDE_TAB)
       trackedTabs.delete(CLAUDE_TAB)
@@ -566,6 +568,15 @@ describe.each(SIDES)(
       s.claudeTabEnds()
       await s.theirCloseOf(made)
       expect(fs.existsSync(barePath(made.worktreePath))).toBe(false)
+    })
+
+    it('a starting Claude Code tab that Koloft stops, as a close for good does before it asks who is left, is not named as still in the folder', async () => {
+      const s = sharedFolder(side)
+      const made = await s.theirs.create(side.at(repo), 'foo')
+      await expect(s.claudeStartsInTheFolder()).resolves.toMatchObject({ ok: true })
+      expect(s.claudeIsIn(made.worktreePath)).toBe('a launching session')
+      s.koloftStopsTheClaudeTab()
+      expect(s.claudeIsIn(made.worktreePath)).toBeNull()
     })
 
     it('a Claude Code launch into the folder that fails leaves nobody in it, and the close removes it', async () => {

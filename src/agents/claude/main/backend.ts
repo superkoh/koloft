@@ -551,6 +551,7 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   stop(tabId: string): void {
+    this.letGoOfTab(tabId)
     const sessionId = this.sessionIdOf(tabId)
     const remote = this.d.tracker.remoteOf(tabId)
     if (sessionId && !remote) this.rememberClosedClaude(sessionId)
