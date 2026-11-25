@@ -235,6 +235,8 @@ const GUARDED_OUTSIDE_THE_CLAUDE_SHIM = (
   Object.keys(UTIL_TERMINAL_REFUSAL) as (keyof typeof UTIL_TERMINAL_REFUSAL)[]
 ).filter((tool): tool is GuardedTool => tool !== 'claude')
 
+const LINE_2_OF_EVERY_KOLOFT_GUARD = 'KOLOFT_UTIL'
+
 export function utilTerminalGuard(
   bin: keyof typeof UTIL_TERMINAL_REFUSAL,
   accountPick = ''
@@ -246,7 +248,9 @@ IFS=:
 set -f
 for d in $PATH; do
   [ "$d" = "$self" ] && continue
-  [ -x "$d/${bin}" ] && exec "$d/${bin}" "$@"
+  [ -x "$d/${bin}" ] || continue
+  if head -n 2 "$d/${bin}" 2>/dev/null | grep -q '${LINE_2_OF_EVERY_KOLOFT_GUARD}'; then continue; fi
+  exec "$d/${bin}" "$@"
 done
 echo "${bin}: not found" >&2
 exit 127

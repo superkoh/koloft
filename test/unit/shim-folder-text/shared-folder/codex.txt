@@ -82,7 +82,9 @@ IFS=:
 set -f
 for d in $PATH; do
   [ "$d" = "$self" ] && continue
-  [ -x "$d/codex" ] && exec "$d/codex" "$@"
+  [ -x "$d/codex" ] || continue
+  if head -n 2 "$d/codex" 2>/dev/null | grep -q 'KOLOFT_UTIL'; then continue; fi
+  exec "$d/codex" "$@"
 done
 echo "codex: not found" >&2
 exit 127

@@ -98,7 +98,9 @@ IFS=:
 set -f
 for d in $PATH; do
   [ "$d" = "$self" ] && continue
-  [ -x "$d/agy" ] && exec "$d/agy" "$@"
+  [ -x "$d/agy" ] || continue
+  if head -n 2 "$d/agy" 2>/dev/null | grep -q 'KOLOFT_UTIL'; then continue; fi
+  exec "$d/agy" "$@"
 done
 echo "agy: not found" >&2
 exit 127
