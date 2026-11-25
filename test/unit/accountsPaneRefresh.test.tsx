@@ -22,8 +22,8 @@ const accounts = {
   list: () => Promise.resolve([]),
   onUpdate: () => () => {},
   probe: () => new Promise<unknown[]>((resolve) => probes.push(resolve)),
-  signInFailure: () => Promise.resolve(null),
-  onSignInFailure: () => () => {}
+  heldSignInFailure: () => Promise.resolve(null),
+  onSignInProgress: () => () => {}
 }
 const rest = anyApi() as Record<string, unknown>
 ;(window as unknown as { api: unknown }).api = new Proxy(

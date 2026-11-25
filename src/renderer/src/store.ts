@@ -13,6 +13,7 @@ import {
   type BaseChoice,
   type BrowserJsDialog,
   type SessionWorkbenchState,
+  type AccountKind,
   type LoginProgress,
   type LeftoverProcess,
   type MachineState,
@@ -220,7 +221,7 @@ interface AppState {
   setAccounts: (accounts: AccountView[]) => void
   showSignInTab: (tabId: string) => void
   openSignInTab: (tab: { tabId: string; cwd: string }, title: string) => void
-  beginLogin: (reauthName?: string) => void
+  beginLogin: (kind: AccountKind, reauthName?: string) => void
   setLoginProgress: (p: LoginProgress) => void
   clearLogin: () => void
   setOpenFile: (f: OpenFile | null, tabId?: string) => void
@@ -1107,9 +1108,9 @@ export const useStore = create<AppState>((set, get) => ({
     get().showSignInTab(tabId)
     get().addTab({ id: tabId, kind: 'shell', title, cwd, alive: true })
   },
-  beginLogin: (reauthName) => set({ accountLogin: { reauthName, progress: null } }),
+  beginLogin: (kind, reauthName) => set({ accountLogin: { kind, reauthName, progress: null } }),
   setLoginProgress: (progress) =>
-    set((s) => ({ accountLogin: { ...(s.accountLogin ?? {}), progress } })),
+    set((s) => (s.accountLogin ? { accountLogin: { ...s.accountLogin, progress } } : {})),
   clearLogin: () => set({ accountLogin: null }),
   setOpenFile: (f, tabId) => {
     const s = get()

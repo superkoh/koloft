@@ -19,6 +19,8 @@ export const agent = {
   shortProductName: 'Antigravity',
   maker: 'Google',
   command: 'agy',
+  // AGY§5
+  signInCommand: 'agy',
   // AGY§3
   installCommand: `curl -fsSL ${AGY_INSTALLER_URL} | bash`,
   nodePackageFolderNames: [],
@@ -137,6 +139,7 @@ export const agent = {
       signsInThroughABrowser: true,
       storesAPastedKeyItself: false,
       takesAnEndpoint: false,
+      asksItsFirstRunQuestionsForEachAccount: true,
       isATokenItsSignInPrints: false
     }
   ]

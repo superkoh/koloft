@@ -1,0 +1,122 @@
+=== empty ===
+<div class="acct-add">
+<div class="acct-add-title">Add Gemini API key</div>
+<input placeholder="Account name (e.g. personal)" spellcheck="false" type="text" value="">
+<input placeholder="Gemini API key" type="password" value="">
+<div class="acct-add-actions">
+<button class="mini">Cancel</button>
+<button class="mini" disabled="">Save</button>
+</div>
+<span class="field-hint">The key goes into your Keychain and is handed to agy when a session starts. Saving opens agy in a terminal tab once: pick a colour scheme and answer Google’s Terms screen there, then type /exit, and the account is ready.</span>
+</div>
+
+=== filled ===
+<div class="acct-add">
+<div class="acct-add-title">Add Gemini API key</div>
+<input placeholder="Account name (e.g. personal)" spellcheck="false" type="text" value="acct">
+<input placeholder="Gemini API key" type="password" value="sekret-1234">
+<div class="acct-add-actions">
+<button class="mini">Cancel</button>
+<button class="mini">Save</button>
+</div>
+<span class="field-hint">The key goes into your Keychain and is handed to agy when a session starts. Saving opens agy in a terminal tab once: pick a colour scheme and answer Google’s Terms screen there, then type /exit, and the account is ready.</span>
+</div>
+
+=== busy ===
+<div class="acct-add">
+<div class="acct-add-title">Add Gemini API key</div>
+<input placeholder="Account name (e.g. personal)" spellcheck="false" type="text" value="acct">
+<input placeholder="Gemini API key" type="password" value="sekret-1234">
+<div class="acct-add-actions">
+<button class="mini" disabled="">Cancel</button>
+<button class="mini" disabled="">Saving…</button>
+</div>
+<span class="field-hint">The key goes into your Keychain and is handed to agy when a session starts. Saving opens agy in a terminal tab once: pick a colour scheme and answer Google’s Terms screen there, then type /exit, and the account is ready.</span>
+</div>
+added: agy-home "acct" with a secret of 11 characters
+
+=== refused: invalid-name ===
+<div class="acct-add">
+<div class="acct-add-title">Add Gemini API key</div>
+<input placeholder="Account name (e.g. personal)" spellcheck="false" type="text" value="acct">
+<input placeholder="Gemini API key" type="password" value="">
+<div class="acct-add-err">Invalid name: [A-Za-z0-9._-] only, 32 characters max</div>
+<div class="acct-add-actions">
+<button class="mini">Cancel</button>
+<button class="mini" disabled="">Save</button>
+</div>
+<span class="field-hint">The key goes into your Keychain and is handed to agy when a session starts. Saving opens agy in a terminal tab once: pick a colour scheme and answer Google’s Terms screen there, then type /exit, and the account is ready.</span>
+</div>
+
+=== refused: duplicate ===
+<div class="acct-add">
+<div class="acct-add-title">Add Gemini API key</div>
+<input placeholder="Account name (e.g. personal)" spellcheck="false" type="text" value="acct">
+<input placeholder="Gemini API key" type="password" value="">
+<div class="acct-add-err">An account of this kind already has that name</div>
+<div class="acct-add-actions">
+<button class="mini">Cancel</button>
+<button class="mini" disabled="">Save</button>
+</div>
+<span class="field-hint">The key goes into your Keychain and is handed to agy when a session starts. Saving opens agy in a terminal tab once: pick a colour scheme and answer Google’s Terms screen there, then type /exit, and the account is ready.</span>
+</div>
+added: agy-home "acct" with a secret of 11 characters
+
+=== refused: invalid-endpoint ===
+<div class="acct-add">
+<div class="acct-add-title">Add Gemini API key</div>
+<input placeholder="Account name (e.g. personal)" spellcheck="false" type="text" value="acct">
+<input placeholder="Gemini API key" type="password" value="">
+<div class="acct-add-err">Invalid base URL: must start with http(s)://</div>
+<div class="acct-add-actions">
+<button class="mini">Cancel</button>
+<button class="mini" disabled="">Save</button>
+</div>
+<span class="field-hint">The key goes into your Keychain and is handed to agy when a session starts. Saving opens agy in a terminal tab once: pick a colour scheme and answer Google’s Terms screen there, then type /exit, and the account is ready.</span>
+</div>
+added: agy-home "acct" with a secret of 11 characters
+
+=== refused: network ===
+<div class="acct-add">
+<div class="acct-add-title">Add Gemini API key</div>
+<input placeholder="Account name (e.g. personal)" spellcheck="false" type="text" value="acct">
+<input placeholder="Gemini API key" type="password" value="">
+<div class="acct-add-err">Could not save</div>
+<div class="acct-add-actions">
+<button class="mini">Cancel</button>
+<button class="mini" disabled="">Save</button>
+</div>
+<span class="field-hint">The key goes into your Keychain and is handed to agy when a session starts. Saving opens agy in a terminal tab once: pick a colour scheme and answer Google’s Terms screen there, then type /exit, and the account is ready.</span>
+</div>
+added: agy-home "acct" with a secret of 11 characters
+
+=== saved but not signed in, and its sign-in could not start ===
+<div class="acct-add">
+<div class="acct-add-title">Add Gemini API key</div>
+<input placeholder="Account name (e.g. personal)" spellcheck="false" type="text" value="acct">
+<input placeholder="Gemini API key" type="password" value="">
+<div class="acct-add-err">Saved, but agy could not be opened — use Sign in again on its row</div>
+<div class="acct-add-actions">
+<button class="mini">Cancel</button>
+<button class="mini" disabled="">Save</button>
+</div>
+<span class="field-hint">The key goes into your Keychain and is handed to agy when a session starts. Saving opens agy in a terminal tab once: pick a colour scheme and answer Google’s Terms screen there, then type /exit, and the account is ready.</span>
+</div>
+added: agy-home "acct" with a secret of 11 characters
+sign-in asked: agy-home "acct" again
+
+=== saved but not signed in, and its sign-in started ===
+<div class="acct-add">
+<div class="acct-add-title">Add Gemini API key</div>
+<input placeholder="Account name (e.g. personal)" spellcheck="false" type="text" value="acct">
+<input placeholder="Gemini API key" type="password" value="">
+<div class="acct-add-actions">
+<button class="mini">Cancel</button>
+<button class="mini" disabled="">Save</button>
+</div>
+<span class="field-hint">The key goes into your Keychain and is handed to agy when a session starts. Saving opens agy in a terminal tab once: pick a colour scheme and answer Google’s Terms screen there, then type /exit, and the account is ready.</span>
+</div>
+added: agy-home "acct" with a secret of 11 characters
+sign-in asked: agy-home "acct" again
+form closed
+tab opened: "Antigravity sign in: acct" sign-in-tab in /sign-in-home

@@ -28,8 +28,8 @@ const own: Record<string, unknown> = {
   workspace: { discover: () => Promise.resolve([]) },
   accounts: {
     beginSignIn,
-    signInFailure: () => Promise.resolve(null),
-    onSignInFailure: () => () => {}
+    heldSignInFailure: () => Promise.resolve(null),
+    onSignInProgress: () => () => {}
   },
   settings: { set: () => Promise.resolve() }
 }

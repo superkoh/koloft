@@ -85,6 +85,7 @@ export interface AccountKindFacts {
   signsInThroughABrowser: boolean
   storesAPastedKeyItself: boolean
   takesAnEndpoint: boolean
+  asksItsFirstRunQuestionsForEachAccount: boolean
   isATokenItsSignInPrints: boolean
 }
 
@@ -95,6 +96,7 @@ export interface AgentManifest {
   shortProductName: string
   maker: string
   command: string
+  signInCommand: string
   installCommand: string
   nodePackageFolderNames: readonly string[]
   wordsThatNameMe: AgentWords

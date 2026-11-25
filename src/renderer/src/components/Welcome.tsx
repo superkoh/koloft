@@ -326,7 +326,7 @@ export function Welcome({
     const agentNow = pick
     const inATab = signsInInATab(agentNow)
     if (!inATab) {
-      beginLogin(again)
+      beginLogin(signInKindIdOf(agentNow), again)
       setLoginProgress({ phase: 'starting', name })
       setSigningIn({ agent: agentNow, inATab })
     }

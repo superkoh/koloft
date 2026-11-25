@@ -7,4 +7,6 @@ import { ui as agy } from './agy/renderer/ui'
 
 export const AGENT_UIS: readonly AgentUi[] = [claude, codex, agy]
 
-export const agentUi = (id: AgentId): AgentUi => AGENT_UIS.find((ui) => ui.id === id)!
+export function agentUi(id: AgentId): AgentUi {
+  return AGENT_UIS.find((ui) => ui.id === id)!
+}

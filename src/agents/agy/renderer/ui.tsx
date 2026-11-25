@@ -1,5 +1,5 @@
 import { GenIcon, type IconType } from 'react-icons'
-import type { AgentUi } from '@core/agent/agentUi'
+import type { AgentAccountsUiOf, AgentUi } from '@core/agent/agentUi'
 import { agent } from '../agent'
 import './ui.css'
 
@@ -17,9 +17,30 @@ const AntigravityMark: IconType = GenIcon({
   ]
 })
 
+const accounts = {
+  emptyLine: `No ${agent.name} accounts yet — ${agent.name} sessions start only once there is one. Each account here is its own Google sign-in or Gemini API key. Every ${agent.name} session picks the least-used sign-in, and a Gemini API key only when every sign-in is at its limit.`,
+  ownSettingRows: [],
+  signIn: {
+    button: 'Sign in with Google',
+    buttonTitle: `Runs ${agent.signInCommand} in a terminal tab for a new ${agent.name} account`,
+    pasteButton: 'Paste Gemini API key',
+    inATab: true,
+    hintEnd: `Sign in, then pick a colour scheme and answer Google’s Terms and data-use screen yourself, then type /exit. Your ${agent.name} conversations, rules, plugins and MCP servers are shared by every account.`
+  },
+  pasteForms: {
+    'agy-home': {
+      title: 'Add Gemini API key',
+      placeholder: 'Gemini API key',
+      hint: `The key goes into your Keychain and is handed to ${agent.command} when a session starts. Saving opens ${agent.command} in a terminal tab once: pick a colour scheme and answer Google’s Terms screen there, then type /exit, and the account is ready.`
+    }
+  },
+  baseUrlPlaceholders: {}
+} as const satisfies AgentAccountsUiOf<typeof agent>
+
 export const ui: AgentUi = {
   id: agent.id,
   mark: AntigravityMark,
+  accounts,
   welcome: {
     howItSignsIn:
       'A terminal tab opens: sign in with Google, pick colours and accept Google’s terms, then type /exit.',

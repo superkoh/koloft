@@ -18,6 +18,8 @@ export const agent = {
   shortProductName: 'Codex',
   maker: 'OpenAI',
   command: 'codex',
+  // CODEX§15
+  signInCommand: 'codex login',
   // CODEX§22
   installCommand: 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh',
   nodePackageFolderNames: ['codex'],
@@ -136,6 +138,7 @@ export const agent = {
       signsInThroughABrowser: true,
       storesAPastedKeyItself: true,
       takesAnEndpoint: false,
+      asksItsFirstRunQuestionsForEachAccount: false,
       isATokenItsSignInPrints: false
     }
   ]

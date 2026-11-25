@@ -1,7 +1,7 @@
 import { useState, type JSX } from 'react'
-import type { AccountKind, BackendId, SignInBackend } from '@shared/types'
+import type { AccountKind, BackendId } from '@shared/types'
 import { agentManifest } from '@core/agent/registry'
-import { signsInInATab } from '../signInLook'
+import { signInKindIdOf, signsInInATab } from '../signInLook'
 import { accountToSignInAgain } from '@shared/accountUsage'
 import { assistRunsOn } from '@shared/assistPicks'
 import { settingsPaneName } from '@shared/settingsPanes'
@@ -79,16 +79,16 @@ export function AssistSetup({
   const backgroundLoginRunning = !!login && loginRunning(login.progress)
   const closeForms = (): void => {
     if (login && !backgroundLoginRunning) clearLogin()
-    if (failed) window.api.accounts.dismissSignInFailure()
+    if (failed) window.api.accounts.endSignIn(failed.kind, failed.name)
     setForm(null)
   }
   const openForm = (next: PaneForm): void => {
     closeForms()
     setForm(next)
   }
-  const openBackgroundSignIn = (again: string | undefined): void => {
+  const openBackgroundSignIn = (kind: AccountKind, again: string | undefined): void => {
     closeForms()
-    if (!backgroundLoginRunning) beginLogin(again)
+    if (!backgroundLoginRunning) beginLogin(kind, again)
   }
   const signIn = form && 'signIn' in form ? form : null
 
@@ -96,8 +96,8 @@ export function AssistSetup({
     if (setup.usable[b]) {
       closeForms()
       update({ assist: { ...assist, backend: b } })
-    } else if (!signsInInATab(b)) openBackgroundSignIn(again)
-    else openForm({ signIn: b as SignInBackend, again })
+    } else if (!signsInInATab(b)) openBackgroundSignIn(signInKindIdOf(b), again)
+    else openForm({ signIn: signInKindIdOf(b), again })
   }
 
   if (setup.noTool)
@@ -177,7 +177,7 @@ export function AssistSetup({
       ) : signIn ? (
         <SignInDialog
           key={`${signIn.signIn}:${signIn.again ?? ''}`}
-          backend={signIn.signIn}
+          kind={signIn.signIn}
           again={signIn.again}
           onClose={() => setForm((open) => (open === signIn ? null : open))}
         />
