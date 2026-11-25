@@ -1035,7 +1035,6 @@ exit ${CALLER_GONE_EXIT}`,
       killed: this.killedSessions,
       sessionId: sid
     })
-    this.killedSessions.delete(sid)
     await this.kills.get(tmuxSessionName(sid))
     return mode
   }
@@ -1092,6 +1091,8 @@ exit ${CALLER_GONE_EXIT}`,
       shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
       resized: this.resized,
       launchCommand: (tabId, content) => {
+        if (sessionKnownBeforeItStarts && mode === 'start')
+          this.killedSessions.delete(named.session)
         const dir = tabPackageDir(tabs.userData, tabId)
         markStartedBeforeTabPasses(tabId, keyless)
         try {
