@@ -793,7 +793,7 @@ describe('the skills a scheduled task is offered, read where its workspace is (B
       const scripts: string[] = []
       onMachine.sh = async (script) => {
         scripts.push(script)
-        return { code: 1, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) }
+        return { code: 1, stdout: Buffer.alloc(0), stderr: '' }
       }
       expect(await onMachine.listSkills(keyed(repo), backend)).toEqual([])
       expect(scripts).toHaveLength(1)
