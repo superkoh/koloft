@@ -19,8 +19,18 @@ import { removeUntouchedWorktreeWith } from '../../src/main/untouchedWorktreeRem
 import type { GitOut } from '../../src/core/worktree'
 import type { BackendId } from '../../src/shared/types'
 import { barePath, formatRemoteKey } from '../../src/shared/remoteKey'
+import { ClaudeBackend, type ClaudeBackendDeps } from '../../src/agents/claude/main/backend'
+import type { SessionInfo } from '../../src/shared/types'
 
 const MACHINE = 'lab'
+const ANOTHER_MACHINE = 'box'
+
+function claudeCodeWithTabs(tabs: Partial<SessionInfo>[]): ClaudeBackend {
+  return new ClaudeBackend({
+    tracker: { list: () => tabs },
+    store: () => undefined
+  } as unknown as ClaudeBackendDeps)
+}
 
 function shOnMachine(script: string, args: string[]): Promise<string | null> {
   return new Promise((resolve) =>
@@ -40,12 +50,33 @@ const machineIo: TreeIo = {
 const gitOnTheirHost: GitOut = (dir, args, timeoutMs, onFailure) =>
   localGitOut(barePath(dir), args, timeoutMs, onFailure)
 
+const tabAt = (p: string, machine?: string): Partial<SessionInfo> => ({
+  tabId: `tab-${machine ?? 'here'}`,
+  sessionId: `session-${machine ?? 'here'}`,
+  title: 'Claude Code at work',
+  alive: true,
+  cwd: p,
+  treeRoot: p,
+  ...(machine ? { remote: { host: machine } } : {})
+})
+
 const SIDES = [
-  { where: 'on this Mac', io: undefined, at: (p: string) => p },
+  {
+    where: 'on this Mac',
+    io: undefined,
+    at: (p: string) => p,
+    tabIn: (tree: string) => tabAt(tree),
+    samePathElsewhere: (tree: string) => [tabAt(tree, MACHINE)]
+  },
   {
     where: 'on another machine over ssh',
     io: () => machineIo,
-    at: (p: string) => formatRemoteKey(MACHINE, p)
+    at: (p: string) => formatRemoteKey(MACHINE, p),
+    tabIn: (tree: string) => tabAt(barePath(tree), MACHINE),
+    samePathElsewhere: (tree: string) => [
+      tabAt(barePath(tree)),
+      tabAt(barePath(tree), ANOTHER_MACHINE)
+    ]
   }
 ]
 
@@ -93,10 +124,12 @@ describe.each(SIDES)(
     ) => Promise<void>
     let removalHeld: Promise<void> | undefined
     let removalReached: () => void
+    let occupantOf: (dir: string) => string | null
 
     beforeEach(() => {
       removalHeld = undefined
       removalReached = () => {}
+      occupantOf = () => null
       const myStore = new SessionStore(path.join(directory, 'a-sessions.json'))
       const theirStore = new SessionStore(path.join(directory, 'b-sessions.json'))
       const records = worktreeRecordsOfEveryAgent(() => [
@@ -111,7 +144,7 @@ describe.each(SIDES)(
           {
             sleeperTrees: () => [],
             cronRunner: null,
-            sessionBackends: { occupantOf: () => null, worktreeRecords: records },
+            sessionBackends: { occupantOf: (dir) => occupantOf(dir), worktreeRecords: records },
             worktreesOfEveryAgent: everyAgent,
             treeRemovals: new TreeRemovals(),
             removeTree: async (...args) => {
@@ -146,6 +179,29 @@ describe.each(SIDES)(
       await theirs.adopt(side.at(repo), made.worktreePath)
       await close(A, made)
       expect(stillThere(made.worktreePath)).toBe(true)
+    })
+
+    it('keeps the folder and its branch while a Claude Code tab on the same machine works in it', async () => {
+      const made = await mine.create(side.at(repo), 'foo')
+      occupantOf = (dir) => claudeCodeWithTabs([side.tabIn(made.worktreePath)]).occupantOf(dir)
+      await close(A, made)
+      expect(stillThere(made.worktreePath)).toBe(true)
+    })
+
+    it('keeps the folder and its branch while a Claude Code tab started in it works in a subfolder of it', async () => {
+      const made = await mine.create(side.at(repo), 'foo')
+      const tab = side.tabIn(made.worktreePath)
+      occupantOf = (dir) => claudeCodeWithTabs([{ ...tab, cwd: `${tab.cwd}/src` }]).occupantOf(dir)
+      await close(A, made)
+      expect(stillThere(made.worktreePath)).toBe(true)
+    })
+
+    it('removes the folder when the only Claude Code tabs at the same path are on other machines', async () => {
+      const made = await mine.create(side.at(repo), 'foo')
+      occupantOf = (dir) =>
+        claudeCodeWithTabs(side.samePathElsewhere(made.worktreePath)).occupantOf(dir)
+      await close(A, made)
+      expect(fs.existsSync(barePath(made.worktreePath))).toBe(false)
     })
 
     it('keeps the folder and its branch while any agent, the closing one too, is still preparing it', async () => {
