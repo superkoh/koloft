@@ -91,9 +91,12 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
-  for (const stop of stops) await stop()
-  await BackgroundFile.whenAllWritten()
-  world.gone()
+  try {
+    for (const stop of stops) await stop()
+    await BackgroundFile.whenAllWritten()
+  } finally {
+    world.gone()
+  }
 })
 
 const withoutThisMachinesPaths = (text: string): string =>
@@ -217,11 +220,11 @@ async function codexOnThisMac(s: Switches): Promise<string> {
 
 async function codexOverSsh(s: Switches): Promise<string> {
   await codexServerConfig(ON_THE_MACHINE, s)
-  const script = readOrNothing(path.join(tabPackageDir(world.userData, TAB), `${TAB}.sh`)) ?? ''
+  const script = readOrNothing(path.join(tabPackageDir(world.userData, TAB), `${TAB}.sh`))
   return part(
     `the lines of file ${TAB}.sh that start its server on the machine`,
     script
-      .split('\n')
+      ?.split('\n')
       .filter((line) => line.includes('codex app-server'))
       .join('\n')
   )
@@ -263,9 +266,11 @@ async function agyOverSsh(s: Switches): Promise<string> {
   )
 }
 
-function statusLineIn(settingsFile: string): string {
-  const settings = JSON.parse(readOrNothing(settingsFile) ?? '{}')
-  return JSON.stringify(settings.statusLine ?? null, null, 2)
+function statusLineIn(settingsFile: string): string | undefined {
+  const text = readOrNothing(settingsFile)
+  return text === undefined
+    ? undefined
+    : JSON.stringify(JSON.parse(text).statusLine ?? null, null, 2)
 }
 
 describe("the hook settings and the status line each kind of tab is started with, written by each agent's real launch with the settings writers wired in as the entry file wires them, pinned so that moving the code that builds them changes no character", () => {
@@ -299,6 +304,8 @@ describe("the hook settings and the status line each kind of tab is started with
   describe('Codex over SSH', () => {
     it('status line and agent tools on', async () =>
       pinTab(await codexOverSsh(EVERYTHING_ON), 'codex-over-ssh/everything-on'))
+    it('status line on, agent tools off', async () =>
+      pinTab(await codexOverSsh(STATUS_LINE_ONLY), 'codex-over-ssh/status-line-only'))
     it('status line and agent tools off', async () =>
       pinTab(await codexOverSsh(EVERYTHING_OFF), 'codex-over-ssh/everything-off'))
   })
@@ -314,7 +321,7 @@ describe("the hook settings and the status line each kind of tab is started with
 
   describe('Antigravity over SSH', () => {
     it('status line on', async () =>
-      pinTab(await agyOverSsh(EVERYTHING_ON), 'agy-over-ssh/status-line-on'))
+      pinTab(await agyOverSsh(STATUS_LINE_ONLY), 'agy-over-ssh/status-line-on'))
     it('status line off', async () =>
       pinTab(await agyOverSsh(EVERYTHING_OFF), 'agy-over-ssh/status-line-off'))
   })

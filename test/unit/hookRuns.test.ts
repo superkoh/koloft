@@ -49,10 +49,12 @@ beforeEach(() => {
   repo = path.join(root, 'repo')
   tmp = path.join(root, 'tmp')
   for (const dir of [reg, home, repo, tmp]) fs.mkdirSync(dir)
-  const git = (...args: string[]): void => {
-    spawnSync('git', args, { cwd: repo, env: cleanEnv(), timeout: A_HOOK_RUN_ENDS_WITHIN_MS })
-  }
-  git('init', '-q')
+  const made = spawnSync('git', ['init', '-q'], {
+    cwd: repo,
+    env: cleanEnv(),
+    timeout: A_HOOK_RUN_ENDS_WITHIN_MS
+  })
+  if (made.status !== 0) throw new Error(`git init failed: ${made.stderr}`)
   fs.writeFileSync(path.join(repo, 'kept.txt'), 'kept\n')
 })
 
@@ -86,7 +88,15 @@ const folderNow = (): Folder =>
       .sort()
       .map((name) => {
         const file = path.join(reg, name)
-        return [name, fs.statSync(file).isFile() ? fs.readFileSync(file, 'utf8') : '(a named pipe)']
+        const kind = fs.statSync(file)
+        return [
+          name,
+          kind.isFIFO()
+            ? '(a named pipe)'
+            : kind.isDirectory()
+              ? '(a folder)'
+              : fs.readFileSync(file, 'utf8')
+        ]
       })
   )
 
@@ -168,7 +178,10 @@ describe("Claude Code's hook script on this Mac, run as Claude Code runs it for 
     try {
       let printed = ''
       child.stdout.on('data', (d: Buffer) => (printed += String(d)))
-      const ended = new Promise<void>((resolve) => child.on('close', () => resolve()))
+      const ended = new Promise<number | null>((resolve, reject) => {
+        child.on('error', reject)
+        child.on('close', (code) => resolve(code))
+      })
       child.stdin.end(
         JSON.stringify({
           session_id: SESSION,
@@ -188,7 +201,7 @@ describe("Claude Code's hook script on this Mac, run as Claude Code runs it for 
         '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}'
       )
       fs.renameSync(`${answer}.whole`, answer)
-      await vi.waitFor(() => ended, { timeout: A_HELD_ASK_IS_SEEN_WITHIN_MS })
+      expect(await vi.waitFor(() => ended, { timeout: A_HELD_ASK_IS_SEEN_WITHIN_MS })).toBe(0)
       r.note(
         'ask, in a tab Koloft can answer: it holds the dialog until Koloft writes the answer',
         printed,
@@ -515,7 +528,7 @@ describe('a message the butler passes on, which Koloft proves it sent, and the f
     expect(readOrNothing(saidFile)).toBe(`${OWNER_TYPED}\n`)
     noteSent(reg, TAB, { words: BUTLER_PASSES_ON })
     expect(prompt(BUTLER_PASSES_ON)).toContain('The user writes Chinese')
-    expect(readOrNothing(saidFile)).toBe(`${JSON.stringify(BUTLER_PASSES_ON).slice(1, -1)}\n`)
+    expect(readOrNothing(saidFile)).toBe(`${BUTLER_PASSES_ON}\n`)
   })
 
   it("in an Antigravity tab there is no such file: before each model call its hook quotes the newest message in the transcript, and takes the butler's message as the owner's words whether Koloft sent it or not", () => {
