@@ -48,11 +48,7 @@ export function sessionMessaging<HandOver>(d: SessionMessagingDeps<HandOver>): {
   // ADR-0028
   async function noteKoloftSent(tabId: string, note: SentNote): Promise<void> {
     const host = machineOfTab(tabId)
-    if (host) {
-      const machine = d.hosts.machine(host)
-      await Promise.all(d.tabIdsOf(tabId).map((id) => machine.noteSent(id, note)))
-      return
-    }
+    if (host) return d.hosts.machine(host).noteSent(d.tabIdsOf(tabId), note)
     if (d.hookRegDir) d.noteSent(d.hookRegDir, tabId, note)
   }
 

@@ -292,7 +292,7 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
   }) => {
     test.setTimeout(300_000)
     seedSettings(env, { hintsOff: true })
-    const claude = EVERY_AGENT_ON_THE_MACHINE[0]
+    const claude = EVERY_AGENT_ON_THE_MACHINE.find((a) => a.label === 'Claude')!
     let id = ''
     const { app, page } = await launchWithRemote(env)
     try {
@@ -312,9 +312,7 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
         timeout: IDLE_20S_HEARTBEAT_ROUND_TIMEOUT_MS
       })
       await startSessionIn(page2, 'ws-a')
-      const sender = (await page2.evaluate(() => window.api.sessions.list())).find(
-        (s) => s.alive && s.host !== 'ssh'
-      )!.tabId
+      const sender = (await wsRows(page2, 'ws-a').first().getAttribute('data-tab-id'))!
       await page2.evaluate(
         ([t, l]) => window.api.terminal.write(t, l + '\r'),
         [sender, `/koloft session send ${id} reached the tab taken back`]
