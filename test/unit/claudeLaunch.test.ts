@@ -12,10 +12,7 @@ vi.mock('electron', async () => {
   return { app: { getPath: () => base, getName: () => 'koloft-dev', isPackaged: false } }
 })
 
-afterAll(async () => {
-  await BackgroundFile.whenAllWritten()
-  fs.rmSync(app.getPath('userData'), { recursive: true, force: true })
-})
+afterAll(() => fs.rmSync(app.getPath('userData'), { recursive: true, force: true }))
 
 import { formatRemoteKey } from '@shared/remoteKey'
 import type { CreateTabOptions } from '@shared/types'
@@ -25,7 +22,6 @@ import { REMOTE_ENV_LINES } from '../../src/main/remote/install'
 import { mirrorHookDir, mirrorProjectsRoot, tabPackageDir } from '../../src/main/remote/paths'
 import type { BytesResult } from '../../src/main/remote/ssh'
 import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
-import { BackgroundFile } from '../../src/main/backgroundFile'
 import {
   claudeBackendIn,
   MACHINE,

@@ -12,10 +12,7 @@ vi.mock('electron', async () => {
   return { app: { getPath: () => base, getName: () => 'koloft-dev', isPackaged: false } }
 })
 
-afterAll(async () => {
-  await BackgroundFile.whenAllWritten()
-  fs.rmSync(app.getPath('userData'), { recursive: true, force: true })
-})
+afterAll(() => fs.rmSync(app.getPath('userData'), { recursive: true, force: true }))
 
 import { knowPluginStates } from '@core/switches'
 import { plugin as passwordsPlugin } from '@plugins/passwords/plugin'
@@ -26,7 +23,6 @@ import {
 } from '../../src/main/remote/launch'
 import { machinePackageFiles } from '../../src/main/remote/machinePackageFiles'
 import { makeWorld, type World } from './helpers/agentTabs'
-import { BackgroundFile } from '../../src/main/backgroundFile'
 
 const PINNED = './machine-package'
 const PROMPT_TEXT = path.join(__dirname, 'prompt-text')

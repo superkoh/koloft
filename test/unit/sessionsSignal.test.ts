@@ -13,10 +13,7 @@ vi.mock('electron', async () => {
   return { app: { getPath: () => base, getName: () => 'koloft-dev', isPackaged: false } }
 })
 
-afterAll(async () => {
-  await BackgroundFile.whenAllWritten()
-  fs.rmSync(app.getPath('userData'), { recursive: true, force: true })
-})
+afterAll(() => fs.rmSync(app.getPath('userData'), { recursive: true, force: true }))
 
 vi.mock('../../src/main/cliRuntime', () => ({
   resolveCliRuntime: async (spec: {
@@ -77,7 +74,6 @@ import { wireRunState } from '../../src/plugins/sessions/main/runState'
 import { sessionsChangedIn } from '../../src/plugins/sessions/main/sessionsChanged'
 import { WorkspaceManager } from '../../src/plugins/sessions/main/workspaces'
 import { agySessionsIn, codexSessionsIn, makeWorld, type World } from './helpers/agentTabs'
-import { BackgroundFile } from '../../src/main/backgroundFile'
 
 const CLAUDE_TAB = 'pty-claude'
 const CLAUDE_SESSION = '3c4ac765-c402-4d6d-88ac-dca81e2a35f1'
