@@ -13,7 +13,13 @@ import {
   type UsageFile
 } from '../../src/main/usageCache'
 import { machineUsageDirs } from '../../src/main/remote/usageMirror'
-import { costUsdOf, resolvePricing } from '../../src/shared/pricing'
+import { grouped } from '../../src/renderer/src/usageModel'
+import {
+  GEMINI_PRICING,
+  MODEL_PRICING,
+  OPENAI_PRICING,
+  resolvePricing
+} from '../../src/shared/pricing'
 import type { UsageRead } from '../../src/shared/types'
 
 const GOLDEN = path.join(__dirname, 'usage-records')
@@ -263,6 +269,14 @@ function seed(): Homes {
       at: '2026-10-15T20:00:05.000Z',
       model: 'claude-fable-5-2',
       tokens: [4, 9, 0, 3000]
+    }),
+    claudeCall({
+      session: 'c-fork',
+      id: 'msg_proxy',
+      req: 'req_proxy',
+      at: '2026-10-15T20:01:00.000Z',
+      model: 'gpt-6.1-sol',
+      tokens: [180000, 40, 0, 100000]
     })
   ])
   write(quiet, [claudeUser('c-quiet', '2026-10-15T21:00:00.000Z', 'hello')])
@@ -290,7 +304,9 @@ function seed(): Homes {
   write(path.join(day, 'rollout-2026-10-15T13-00-00-x-placed.jsonl'), [
     codexMeta('x-placed', '/elsewhere'),
     codexTurn('t1', 'gpt-5.5'),
-    codexUsage('2026-10-15T20:00:00.000Z', 't1', 'r1', 400, 100, 10)
+    codexUsage('2026-10-15T20:00:00.000Z', 't1', 'r1', 400, 100, 10),
+    codexTurn('t2', 'claude-sonnet-5-5'),
+    codexUsage('2026-10-15T20:05:00.000Z', 't2', 'r2', 900, 300, 25)
   ])
   write(path.join(day, 'notes.jsonl'), [codexMeta('x-notes', '/repo')])
   write(path.join(codexHome, 'archived_sessions', 'rollout-2026-09-01T10-00-00-x-old.jsonl'), [
@@ -309,11 +325,18 @@ function seed(): Homes {
     agyStep(2, 'GENERIC', '2026-10-15T19:00:06Z', [999, 999, 999]),
     agyStep(3, 'PLANNER_RESPONSE', '2026-10-15T19:00:07Z', [0, 0, 0]),
     agyStep(4, 'PLANNER_RESPONSE', '2026-10-15T19:00:09Z', [40, 8, 120]),
-    agyStep(5, 'PLANNER_RESPONSE', '2026-10-16T07:30:00Z', [10, 2, 0])
+    agyStep(5, 'PLANNER_RESPONSE', '2026-10-16T07:30:00Z', [10, 2, 0]),
+    agyStep(6, 'PLANNER_RESPONSE', '2026-10-16T07:31:00Z', [30, 3, 90])
   ])
   conversationDb(
     path.join(app, 'conversations', 'g-one.db'),
-    ['gemini-3.1-pro', 'gemini-3.1-flash-lite', 'gemini-3.6-flash-preview'],
+    [
+      'gemini-3.1-pro',
+      'gemini-3.1-flash-lite',
+      'gemini-3.6-flash-preview',
+      'claude-sonnet-5-5',
+      'claude-opus-5-5-high'
+    ],
     'gemini-3.1-pro'
   )
   write(transcript('g-nodb'), [agyStep(0, 'PLANNER_RESPONSE', '2026-10-15T22:00:00Z', [5, 5, 5])])
@@ -437,8 +460,10 @@ function listedText(listed: UsageFile[]): string {
 
 function rowsText(read: UsageRead): string {
   const rows = read.rows.map((r) => {
-    const pricing = resolvePricing(r.model)
-    const cost = pricing ? (costUsdOf(pricing, r) + r.surchargeUsd).toFixed(9) : 'unpriced'
+    const [asTheUsagePageCountsIt] = grouped([r], 'session')
+    const cost = asTheUsagePageCountsIt.priced
+      ? asTheUsagePageCountsIt.costUsd.toFixed(9)
+      : 'unpriced'
     return [
       r.backend,
       r.workspace,
@@ -469,5 +494,27 @@ describe("usage records read from every agent's own files, on this Mac and from 
 
   it('reads them into records per session, day and model, placed and priced', async () => {
     await expect(rowsText(got.read) + '\n').toMatchFileSnapshot(path.join(GOLDEN, 'rows.txt'))
+  })
+})
+
+const SPELLINGS = ['', '-20250514', '-2025051', '-preview', '-high', '-preview-high', '-mini', 'x']
+
+describe('the price row each model name gets, whichever agent recorded it', () => {
+  it('for every name the price lists hold, and its dated, variant and unknown spellings', async () => {
+    const names = [
+      ...Object.keys(MODEL_PRICING),
+      ...Object.keys(OPENAI_PRICING),
+      ...Object.keys(GEMINI_PRICING),
+      '',
+      '<synthetic>',
+      'gpt-oss-120b-medium'
+    ]
+    const lines = names.flatMap((name) =>
+      SPELLINGS.map((spelling) => {
+        const model = name + spelling
+        return `${model || '(empty)'}  ${JSON.stringify(resolvePricing(model) ?? null)}`
+      })
+    )
+    await expect(lines.join('\n') + '\n').toMatchFileSnapshot(path.join(GOLDEN, 'prices.txt'))
   })
 })
