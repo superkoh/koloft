@@ -83,7 +83,7 @@ export async function launchAgy(machine: Machine, spec: AgyMachineLaunch): Promi
       opened.launchCommand(spec.tabId, {
         cwd: machine.bare(spec.cwd),
         banner: '',
-        env: spec.env,
+        env: attach ? undefined : spec.env,
         portOffset: spec.portOffset,
         loginPath,
         program: attach ? { ...spec.program, files: {} } : spec.program

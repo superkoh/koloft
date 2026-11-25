@@ -79,6 +79,7 @@ import { AgyApi, agentStateUpdate, type AgyBackgroundTask, type PendingInteracti
 import {
   AGY_HOOK_FILE,
   AGY_KEY_FROM_KOLOFT,
+  AGY_SIGN_IN_FROM_KOLOFT,
   AGY_REMOTE_GEMINI,
   AGY_SKILLS,
   AGY_STATUSLINE_FILE,
@@ -1037,6 +1038,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       ownerTextFor(ctx, false)
     ).join('\n\n')
     const ownerTitle = titleCommandIn(config.ownersSettings)
+    const signIn = apiKey ? undefined : readText(agyTokenFile(pick.home))
     const plan = await launchAgy(machine, {
       tabId,
       cwd,
@@ -1044,6 +1046,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       env: {
         ANT_ACCOUNT: pick.account,
         ...(apiKey ? { [AGY_KEY_FROM_KOLOFT]: apiKey } : {}),
+        ...(signIn ? { [AGY_SIGN_IN_FROM_KOLOFT]: signIn } : {}),
         ...(ownerTitle ? { [AGY_OWNER_TITLE_ENV]: ownerTitle } : {})
       },
       program: agyTab({
@@ -1057,7 +1060,6 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         settings: agyJsonText(settings),
         hooks: agyJsonText(hooks),
         onboarding: readText(agyOnboardingFile(pick.home)),
-        token: apiKey ? undefined : readText(agyTokenFile(pick.home)),
         start: instructions ? sessionStartOutput(instructions) : undefined,
         koloftSkill: agentTools
       }),

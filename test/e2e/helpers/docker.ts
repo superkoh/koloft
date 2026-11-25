@@ -350,6 +350,17 @@ export function runOnBastion(lab: SshLab, user: string, script: string): string 
   return dk(asUserIn(lab.bastion, user, script))
 }
 
+export function runOnTargetAsRoot(lab: SshLab, script: string): string {
+  return dk(labExec(lab.target, ['sh', '-c', script]))
+}
+
+export function installCurlThatNeverAnswersOnTarget(lab: SshLab): void {
+  runOnTargetAsRoot(
+    lab,
+    `printf '#!/bin/sh\\nexec sleep 600\\n' > /usr/local/bin/curl && chmod 755 /usr/local/bin/curl`
+  )
+}
+
 export function installOnTarget(lab: SshLab, file: string, at: string): void {
   dk(['cp', file, `${lab.target}:${at}`])
   dk(labExec(lab.target, ['chmod', '755', at]))
