@@ -110,7 +110,6 @@
         "src/agents/agy/main/agyAccounts.ts": "D1",
         "src/agents/agy/main/agyStore.ts": "D1",
         "src/agents/agy/main/agyTab.ts": "D1",
-        "src/agents/claude/main/claudeCommandOutput.ts": "D1",
         "src/agents/claude/main/claudeDialogWatch.ts": "D1",
         "src/agents/claude/main/claudeSessionRegistry.ts": "D1",
         "src/agents/claude/main/claudeTrust.ts": "D1",
@@ -151,9 +150,6 @@
         "src/agents/codex/main/backend.ts": "D1"
       },
       "src/plugins/sessions/main/hooks.ts": { "src/agents/codex/main/codexLaunchConfig.ts": "C9" },
-      "src/plugins/sessions/main/slashCommands.ts": {
-        "src/agents/claude/main/claudeCommandOutput.ts": "C3"
-      },
       "src/plugins/sessions/main/start.ts": {
         "src/agents/agy/main/agySessions.ts": "D1",
         "src/agents/agy/main/backend.ts": "D1",

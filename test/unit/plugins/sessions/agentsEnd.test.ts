@@ -54,6 +54,7 @@ const ITS_OWN_ANSWERS: Parameters<typeof storedBackend>[2] = {
   peerNames: () => async () => null,
   runningElsewhere: () => false,
   worktreeExitWatch: () => undefined,
+  showsAPanel: async () => undefined,
   send: async () => 'taken',
   mightNotTakeAMessageNow: async () => false
 }

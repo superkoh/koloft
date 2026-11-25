@@ -6,6 +6,8 @@ import {
   AGY_UPLOADS_FOLDER
 } from './shared/agyBrain'
 import { agyEffortsAModelTakes } from './shared/agyEfforts'
+import { agyInputBoxDraft } from './shared/inputBox'
+import { EMPTY_THE_BOX, ESC } from '@shared/lineEditKeys'
 import { SLOT_ADDITIONS, SLOT_FILLS } from './prompts/text'
 
 export const agent = {
@@ -74,6 +76,12 @@ export const agent = {
   ownSettings: {},
   slotFills: SLOT_FILLS,
   slotAdditions: SLOT_ADDITIONS,
+  // AGY§23
+  inputBoxKeys: {
+    clearALeftoverCommand: [],
+    makeEnterRunTheTypedText: [],
+    backToAnEmptyBox: [ESC, EMPTY_THE_BOX]
+  },
   flags: {
     // AGY§5
     resumeCanWaitOnAQuestionBeforeAnySign: false,
@@ -90,9 +98,13 @@ export const agent = {
     // AGY§14
     questionToolTakesNoOptionDescriptions: true,
     // AGY§35
-    removesItsWorktreeAsItExits: false
+    removesItsWorktreeAsItExits: false,
+    turnEndCanComeBeforeItsReplyIsWritten: false
   },
-  pureFunctions: { effortsAModelTakes: agyEffortsAModelTakes },
+  pureFunctions: {
+    effortsAModelTakes: agyEffortsAModelTakes,
+    draftInItsInputBox: agyInputBoxDraft
+  },
   // AGY§5 AGY§6
   accountKinds: [
     {

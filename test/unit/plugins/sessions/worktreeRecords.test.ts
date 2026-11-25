@@ -167,7 +167,8 @@ describe('what each agent says about worktrees', () => {
         codex,
         probes,
         () => probes,
-        async () => {}
+        async () => {},
+        async () => undefined
       ),
       agyBackend(agy, probes, () => probes)
     ]

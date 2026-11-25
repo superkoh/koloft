@@ -22,6 +22,7 @@ export function agyBackend(
       runningElsewhere: () => false,
       // AGY§35
       worktreeExitWatch: () => undefined,
+      showsAPanel: async () => undefined,
       ...agyMessages((tabId, text) => sessions.deliver(tabId, text))
     },
     machineProbes

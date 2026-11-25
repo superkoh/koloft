@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { codexShowsAPanel } from '../../src/main/inputBox'
+import {
+  codexShowsAPanel,
+  codexShowsAPanelOnItsScreen
+} from '../../src/agents/codex/shared/inputBox'
 
 const FOOTER = ['', '  GPT-6.1-Sol default · ~/work', '  ? for shortcuts', '', '']
 const COMPOSER = ['› Ask Codex to do anything', ...FOOTER]
@@ -42,6 +45,19 @@ describe('Codex shows a panel: the closing key a menu, list or pager names under
         '  left/right group · enter edit shortcut · * custom · - unbound · esc close'
       ])
     ).toBe(true)
+  })
+
+  it('reads the tab’s screen only when it was not handed one, and cannot say when the screen cannot be read', async () => {
+    const PICKER = ['› 1. GPT-6.1-Sol (current)', '  enter select · esc back']
+    let shown: string[] | undefined = PICKER
+    const reads: string[] = []
+    const showsAPanel = codexShowsAPanelOnItsScreen(async (tabId) => (reads.push(tabId), shown))
+    expect(await showsAPanel('tab-1', COMPOSER)).toBeUndefined()
+    expect(reads).toEqual([])
+    expect(await showsAPanel('tab-1')).toBe(true)
+    expect(reads).toEqual(['tab-1'])
+    shown = undefined
+    expect(await showsAPanel('tab-1')).toBeUndefined()
   })
 
   it('sees the full-screen /resume list and the /diff pager, which only q closes', () => {

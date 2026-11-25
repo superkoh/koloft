@@ -4,13 +4,15 @@ import type { SessionBackend } from '@core/agent/sessionBackends'
 import type { CodexSessions } from './codexSessions'
 import type { ResumeProbes } from '../../../main/resumePlan'
 import { storedBackend } from '@agents/kit/main/stored'
+import { codexShowsAPanelOnItsScreen } from '../shared/inputBox'
 import { codexMessages, type CodexMessageDeps } from './codexMessages'
 
 export function codexBackend(
   sessions: CodexSessions,
   resumeProbes: ResumeProbes,
   machineProbes: (cwd: string) => ResumeProbes,
-  noteKoloftSent: CodexMessageDeps['noteKoloftSent']
+  noteKoloftSent: CodexMessageDeps['noteKoloftSent'],
+  screenLines: (tabId: string) => Promise<string[] | undefined>
 ): SessionBackend {
   return storedBackend(
     sessions,
@@ -23,6 +25,7 @@ export function codexBackend(
       runningElsewhere: () => false,
       // CODEX§6
       worktreeExitWatch: () => undefined,
+      showsAPanel: codexShowsAPanelOnItsScreen(screenLines),
       ...codexMessages({
         queue: (tabId, text, clientId) => sessions.queueMessage(tabId, text, clientId),
         noteKoloftSent
