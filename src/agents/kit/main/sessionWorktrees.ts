@@ -274,7 +274,7 @@ export class SessionWorktrees {
   private async createAt(root: string, name: string, base: string): Promise<WorktreeResource> {
     const io = this.io(root)
     const target = `${root}/${SESSION_WORKTREES_FOLDER}/${name}`
-    if (this.everyAgent.preparing.has(preparedKeyOf(target)) || this.everyAgent.occupantOf(target))
+    if (this.everyAgent.preparing.has(preparedKeyOf(target)))
       throw new Error(A_FOLDER_BEING_PREPARED)
     if (await io.exists(target)) throw new Error('Worktree directory already exists')
     const branch = `worktree-${name}`
@@ -307,6 +307,7 @@ export class SessionWorktrees {
       await running
       return this.materialize(resource, reuseBranch)
     }
+    if (!reuseBranch && this.everyAgent.occupantOf(at)) throw new Error(A_FOLDER_BEING_PREPARED)
     const pending: WorktreeResource = { ...resource, state: 'creating', error: undefined }
     const work = (async () => {
       this.store.putResource(pending)
