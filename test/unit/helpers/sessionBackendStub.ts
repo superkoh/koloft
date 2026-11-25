@@ -51,6 +51,9 @@ export function stubBackend(
     showsAPanel: async () => undefined,
     send: async () => 'taken' as const,
     mightNotTakeAMessageNow: async () => false,
+    handOverLaunch: (): never => {
+      throw new Error('a stub backend starts no session handed over')
+    },
     ...rowsKeptInMemory({
       rows: () => [],
       members: () => new Set<string>(),
