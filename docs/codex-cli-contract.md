@@ -2199,10 +2199,9 @@ did not change. A real refresh token on the machine was not probed.
 `account/login/start {type:"apiKey", apiKey}` answered `{type:"apiKey"}`, then
 `account/login/completed {success:true}` and `account/updated {authMode:"apikey"}`; the
 home then held `auth.json` (mode 600, keys `auth_mode` and `OPENAI_API_KEY`), the only file
-under `HOME` holding the key. So unlike `chatgptAuthTokens`, the key Koloft hands a
-remote app-server for an API-key account stays on the machine, in
-`~/.koloft/codex-home/auth.json`, after the server ends (read from `machineLogin` and
-`REMOTE_CODEX_HOME`, not probed on a machine; issue #2454).
+under `HOME` holding the key, and it stayed after the server was stopped. Unlike
+`chatgptAuthTokens`, such a login outlives the process (what that means for Koloft's
+remote API-key accounts: issue #2454).
 
 **Turns over ssh.** Same frames as section 12: `thread/started`, `turn/started`,
 `item/started`/`item/completed`, `item/agentMessage/delta`, `turn/diff/updated`,

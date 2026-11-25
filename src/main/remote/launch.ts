@@ -293,7 +293,6 @@ fi
 trap 'rm -f "${T}${TAB_PASS_FILE_SUFFIX}"' EXIT
 ${sourceTabPass(spec.tabId)}
 ${onATerminalEvenWhenSshGaveNone('$2', '$3', spec.tabId, `sh '${T}.sh' $1`)}
-unset ${ACCOUNT_ENV_HELD_IN_MEMORY}; ${ACCOUNT_ENV_HELD_IN_MEMORY}=$(cat "${T}.env" 2>/dev/null); rm -f "${T}.env"
 exited() {
   c=$?; [ -s "${T}.exit" ] && c=$(cat "${T}.exit")
   [ "$c" = ${SSH_LINK_BROKE_EXIT} ] && c=${AGENT_EXIT_255_PASSED_AS}
@@ -301,6 +300,7 @@ exited() {
   rm -f "${T}.env"; exit $c
 }
 [ "$1" = attach ] && { n=${attachTo}; ${passIntoATmuxThatHoldsOne(T, '$n', spec.tabId)}; unset ${TAB_PASS_ENV}; ${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u attach -d -t "$n"; exited; }
+unset ${ACCOUNT_ENV_HELD_IN_MEMORY}; ${ACCOUNT_ENV_HELD_IN_MEMORY}=$(cat "${T}.env" 2>/dev/null); rm -f "${T}.env"
 sh "$M/ensure.sh"${program.ensureTool ? ` ${program.ensureTool}` : ''} || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
 echo ${shq(spec.banner)}

@@ -4203,8 +4203,8 @@ not, ADR-0052.
 - **The files land readable by the user alone.** Sent with `tar xmf` under `umask 077`
   (GNU tar 1.34, as the user), `stat` read `~/.koloft/tabs` 700, `<tab>.env` and the other
   data files 600, `<tab>.sh` 700, all owned by the user; `~/.koloft` was 755.
-- **What each way out left, before the account was held in memory** (main at f41e17f, the
-  e2e fakes and made-up keys, `grep -rl <key> ~/.koloft` on the machine): a start that
+- **What each way out left while the tab script kept the account file on disk until tmux**
+  (the e2e fakes and made-up keys, `grep -rl <key> ~/.koloft` on the machine): a start that
   failed before tmux — Antigravity with no agy and no curl to install it, Claude Code with
   tmux moved away, both exit 4 — left `<tab>.env` with the key, also after the tab closed;
   Koloft quit while the start still waited on the installer (a `curl` that never answered)
@@ -4216,5 +4216,6 @@ not, ADR-0052.
 
 Koloft dependents: `tabScript` (`src/main/remote/launch.ts`) reads `<tab>.env` into a shell
 variable and deletes it as its first step after the stand-in terminal, and writes it back
-only just before it starts tmux, whose script reads and deletes it at once; sending a
+only just before it starts tmux, whose new session's script reads and deletes it at once
+(a start that lands on a session already running leaves it until its own end); sending a
 tab deletes such files left over an hour ago whose tab has no script running.

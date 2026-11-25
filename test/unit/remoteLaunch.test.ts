@@ -1069,12 +1069,12 @@ describe('U-TAB-*: the tab script on the machine', () => {
     }
   })
 
-  it('a reconnect leaves no account file on the machine while attached, since the agent there already has its key; a start that lands on a tmux session already running hands it the account all the same, and takes the file away when it ends', () => {
+  it('a reconnect leaves the account file of a start whose tmux script has not read it yet in place for that script; a start that lands on a tmux session already running leaves its account file there while attached, and takes it away when it ends', () => {
     const reconnect = box(withAccount())
     expect(reconnect.run('attach').status).toBe(0)
     expect(
       fs.readFileSync(path.join(reconnect.logs, 'tab-files-while-attached'), 'utf8')
-    ).not.toContain('T.env')
+    ).toContain('T.env')
     const landed = box(withAccount())
     fs.writeFileSync(path.join(landed.logs, 'running'), '')
     expect(landed.run().status).toBe(0)
