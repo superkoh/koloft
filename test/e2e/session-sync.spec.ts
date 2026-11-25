@@ -35,7 +35,6 @@ const LOCAL_SESSION_BINDS_WITHIN_MS = 30_000
 const REMOTE_SESSION_BINDS_WITHIN_MS = 90_000
 const BUSY_TURN_LASTS_MS = 30_000
 const SLOW_TURN_MS = 15_000
-const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
 const told =
   /\(From Koloft:\) origin\/main moved from \w{7} to \w{7}, with 1 new commit: "fix: login keeps the session"\./
 const toldSameFile =
@@ -693,12 +692,16 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
       seedSettings(env, { hintsOff: true })
       const author = checkoutWithOrigin(remoteDir(env), machineHome(env))
       const notices = path.join(machineHome(env), '.koloft', 'hook-sessions')
+      let startedTab = ''
       try {
         const { app, page } = await launchWithRemote(env)
         try {
           await addRemoteWorkspace(page, env)
           await agent.start(page)
-          await page.waitForTimeout(LAYOUT_SAVE_DEBOUNCE_SETTLE_MS)
+          startedTab = await tabOf(page, agent.backendId)
+          await expect
+            .poll(() => fs.readFileSync(path.join(env.userData, 'open-tabs.json'), 'utf8'))
+            .toContain(startedTab)
         } finally {
           await quitAndClose(app)
         }
@@ -715,11 +718,13 @@ test.describe('open sessions hear what changed around them, from Koloft, at thei
           await fetchNow(page2, remoteKey(env))
           pushUpstream(author, 'fix: login keeps the session')
           await fetchNow(page2, remoteKey(env))
-          await expect
-            .poll(() => fs.existsSync(path.join(notices, `${tab}.notice`)), {
-              timeout: REMOTE_NOTICE_ARRIVES_WITHIN_MS
-            })
-            .toBe(true)
+          for (const ranUnder of [startedTab, tab])
+            await expect
+              .poll(() => fs.existsSync(path.join(notices, `${ranUnder}.notice`)), {
+                message: ranUnder,
+                timeout: REMOTE_NOTICE_ARRIVES_WITHIN_MS
+              })
+              .toBe(true)
 
           await page2.evaluate((id) => window.api.terminal.write(id, 'look again\r'), tab)
           await expect

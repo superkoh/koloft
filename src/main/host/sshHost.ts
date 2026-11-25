@@ -496,17 +496,14 @@ const NOTE_SENT_ID = appendToTheFileOfEveryTab(remoteSentIdsFile)
 const NOTE_SENT_WORDS = appendToTheFileOfEveryTab(remoteSentWordsFile)
 const LEAVE_NOTICE_UNDER_EVERY_TAB_ID = `mkdir -p "${REMOTE_HOOK_DIR}" || exit 1
 IFS= read -r fresh; IFS= read -r merged
-t="$fresh"; k=fresh
-if [ -n "$merged" ]; then
-  t="$merged"; k=merged
-  for id in "$@"; do [ -f "${remoteNoticeFile('$id')}" ] || { t="$fresh"; k=fresh; }; done
-fi
+k=fresh; [ -n "$merged" ] && k=merged
 for id in "$@"; do
   f="${remoteNoticeFile('$id')}"
+  if [ -n "$merged" ] && [ -f "$f" ]; then t="$merged"; else t="$fresh"; k=fresh; fi
   printf '%s' "$t" > "$f.part" && mv -f "$f.part" "$f" || exit 1
 done
 printf '%s' "$k"`
-const DROP_NOTICE_UNDER_EVERY_TAB_ID = `for id in "$@"; do rm -f "${remoteNoticeFile('$id')}" "${remoteNoticeFile('$id')}${NOTICE_THIS_TURN}"; done`
+const DROP_NOTICE_UNDER_EVERY_TAB_ID = `for id in "$@"; do f="${remoteNoticeFile('$id')}"; rm -f "$f" "$f${NOTICE_THIS_TURN}"; done`
 
 const MARK_OWNER_ASLEEP = `mkdir -p "${REMOTE_HOOK_DIR}" || exit 1
 f="${REMOTE_HOOK_DIR}/${OWNER_ASLEEP_FILE}"
