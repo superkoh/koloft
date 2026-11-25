@@ -832,7 +832,7 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
   })
 
   // CODEX§16
-  test('E-RC-05:closing a remote Codex tab, restarting its session and closing it again all ask one app-server on the machine, which ends when Koloft quits', async ({
+  test('E-RC-05: closing a remote Codex tab, restarting its session and closing it again all ask one app-server on the machine, which ends when Koloft quits', async ({
     env
   }) => {
     installCodexOnFakeRemote(env)
