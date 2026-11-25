@@ -43,7 +43,7 @@ const CLAUDE_FLAGS_FOLLOWED_BY_A_VALUE = [
   '--system-prompt-snapshot'
 ].join('|')
 
-export const UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE = `if [ "$KOLOFT_UTIL" = "1" ]; then
+export const CLAUDE_UTIL_TERMINAL_REFUSAL = `if [ "$KOLOFT_UTIL" = "1" ]; then
   utilok=0
   valflag=0
   for a in "$@"; do
@@ -106,7 +106,7 @@ case "$1" in ""|-*) ;; *) skip=1 ;; esac
 # CC§9
 [ -n "$CLAUDECODE" ] && skip=1
 
-${UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE}
+${CLAUDE_UTIL_TERMINAL_REFUSAL}
 
 # CC§16
 ${ENSURE_CLAUDE_MINIMUM_FN}

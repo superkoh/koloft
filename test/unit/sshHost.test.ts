@@ -10,7 +10,7 @@ import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { localHost } from '../../src/main/host/localHost'
 import { GithubRepos } from '../../src/main/githubRepos'
 import { utilTerminalGuard } from '../../src/main/utilTerminalGuard'
-import { UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE } from '../../src/agents/claude/main/claudeShim'
+import { CLAUDE_UTIL_TERMINAL_REFUSAL } from '../../src/agents/claude/main/claudeShim'
 import type { BytesResult } from '../../src/main/remote/ssh'
 import { shellOnThisMacAsTheMachine } from './helpers/agentTabs'
 import { agentsWithTheirCatalogs } from './helpers/agentCatalogs'
@@ -742,7 +742,7 @@ describe('the utility terminal on the machine', () => {
     fs.mkdirSync(realDir)
     fs.writeFileSync(
       path.join(guardDir, 'claude'),
-      utilTerminalGuard('claude', UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE),
+      utilTerminalGuard('claude', CLAUDE_UTIL_TERMINAL_REFUSAL),
       { mode: 0o755 }
     )
     const realLog = path.join(home, 'real.log')

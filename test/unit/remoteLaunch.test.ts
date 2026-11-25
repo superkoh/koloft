@@ -25,7 +25,7 @@ import { claudeTabProgram, type ClaudeTab } from '../../src/agents/claude/main/c
 import { TMUX_CONF, heartbeatCmd } from '../../src/main/remote/install'
 import { MACHINE_CLAUDE } from '../../src/agents/claude/main/advisorOnFable'
 import { utilTerminalGuard } from '../../src/main/utilTerminalGuard'
-import { UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE } from '../../src/agents/claude/main/claudeShim'
+import { CLAUDE_UTIL_TERMINAL_REFUSAL } from '../../src/agents/claude/main/claudeShim'
 import { passOf } from '../../src/main/tabPass'
 import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from '../../src/main/remote/statusRelay'
 import {
@@ -853,7 +853,7 @@ describe('U-TAB-*: the tab script on the machine', () => {
       return path.join(root, n)
     }
     const [util, fresh, old, real] = [
-      dir('util', utilTerminalGuard('claude', UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE)),
+      dir('util', utilTerminalGuard('claude', CLAUDE_UTIL_TERMINAL_REFUSAL)),
       dir('new', MACHINE_CLAUDE),
       dir('old', MACHINE_CLAUDE),
       dir('real', '#!/bin/sh\necho "real $*"\n')

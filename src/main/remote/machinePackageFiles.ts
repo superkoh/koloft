@@ -27,7 +27,7 @@ import { CODEX_REPLY_LANGUAGE_SCRIPT, HOOK_SCRIPT } from '@plugins/sessions/main
 import { passwordsOn } from '@plugins/passwords/api'
 import { SUDO_SHIM_FILES } from '@plugins/passwords/main/sudoShim'
 import { MACHINE_CLAUDE } from '@agents/claude/main/advisorOnFable'
-import { UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE } from '@agents/claude/main/claudeShim'
+import { CLAUDE_UTIL_TERMINAL_REFUSAL } from '@agents/claude/main/claudeShim'
 import { CODEX_UTIL_TERMINAL_REFUSAL } from '@agents/codex/main/codexShim'
 import { AGY_UTIL_TERMINAL_REFUSAL } from '@agents/agy/main/agyShim'
 import { ENSURE_CODEX_FILE, replyLanguageFiles } from '@agents/codex/main/codexMachine'
@@ -50,10 +50,7 @@ export function machinePackageFiles(): Record<string, string | Buffer> {
     'tmux.conf': TMUX_CONF,
     'util.sh': UTIL_SH,
     [UTIL_BASH_LOGIN_FILE]: UTIL_BASH_LOGIN,
-    [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard(
-      'claude',
-      UTIL_TERMINAL_REFUSES_INTERACTIVE_CLAUDE
-    ),
+    [`${UTIL_BIN_DIR}claude`]: utilTerminalGuard('claude', CLAUDE_UTIL_TERMINAL_REFUSAL),
     [`${UTIL_BIN_DIR}codex`]: utilTerminalGuard('codex', CODEX_UTIL_TERMINAL_REFUSAL),
     [`${UTIL_BIN_DIR}agy`]: utilTerminalGuard('agy', AGY_UTIL_TERMINAL_REFUSAL),
     [`${SESSION_BIN_DIR}koloft`]: REMOTE_AGENT_SHIM,

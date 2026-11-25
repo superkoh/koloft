@@ -1,4 +1,5 @@
 import type { AgentTools } from '@core/agent/agentsMain'
+import { agent } from '../agent'
 import {
   utilTerminalAccountPick,
   utilTerminalRefusesInteractive,
@@ -81,7 +82,7 @@ const CODEX_UTIL_TERMINAL_ACCOUNT: ToolTerminalAccount = {
 export const codexTools: AgentTools = {
   shimScript: () =>
     utilTerminalGuard(
-      'codex',
+      agent.command,
       CODEX_UTIL_TERMINAL_REFUSAL,
       utilTerminalAccountPick('codex', CODEX_UTIL_TERMINAL_ACCOUNT)
     )

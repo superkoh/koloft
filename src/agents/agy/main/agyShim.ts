@@ -1,5 +1,6 @@
 import { keychainServiceSuffix } from '@shared/types'
 import type { AgentTools } from '@core/agent/agentsMain'
+import { agent } from '../agent'
 import {
   utilTerminalAccountPick,
   utilTerminalRefusesInteractive,
@@ -83,7 +84,7 @@ const AGY_UTIL_TERMINAL_ACCOUNT: ToolTerminalAccount = {
 export const agyTools: AgentTools = {
   shimScript: () =>
     utilTerminalGuard(
-      'agy',
+      agent.command,
       AGY_UTIL_TERMINAL_REFUSAL,
       utilTerminalAccountPick('agy', AGY_UTIL_TERMINAL_ACCOUNT)
     )
