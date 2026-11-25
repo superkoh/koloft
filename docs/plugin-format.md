@@ -1020,8 +1020,9 @@ export const start: PluginStart<
   with the five functions its deps hand in set on it right after; the app sets a sixth,
   `turnTakenElsewhere`, once Electron is ready, from Discord's `turnTakenOnDiscord`), which
   the app's own code tells of each turn, ask and tab and reads the marks from, and `buildAsks`, `buildInstructionAsks`, `buildHandOver`,
-  `buildWorkspaces`, `buildCodexSessions` and `buildAgySessions`, which build its
-  `SessionAsks`, `InstructionAsks`, `HandOver`, `WorkspaceManager`, `CodexSessions` and
+  `buildWorkspaces`, `buildClaudeStore`, `buildCodexSessions` and `buildAgySessions`,
+  which build its `SessionAsks`, `InstructionAsks`, `HandOver`, `WorkspaceManager`, Claude
+  Code's `ClaudeSessionStore`, `CodexSessions` and
   `AgySessions` once Electron is ready (the last two take the file their sessions are saved
   in as `file`, beside their deps). It builds the `koloft session` command's part from the
   `session` deps, which its own command and turn listener use, and gives it back as
@@ -1082,7 +1083,10 @@ export const start: PluginStart<
   `buildCodexSessions` and `buildAgySessions` build a `HandOver`, a `WorkspaceManager`, a
   `CodexSessions` and an `AgySessions` and only hand them back, as nothing in the start
   reads them; the app starts the `WorkspaceManager` itself, later in its ready code, and
-  registers the Antigravity and Codex backends itself once both are built), Passwords and sign-in's `buildAsks` its `SecretAsks`, and the
+  registers the Antigravity and Codex backends itself once both are built; its
+  `buildClaudeStore` builds Claude Code's `ClaudeSessionStore`, which the start's
+  Claude Code backend reads through such a getter, and the app starts it just before the
+  `WorkspaceManager`), Passwords and sign-in's `buildAsks` its `SecretAsks`, and the
   Butler's `buildButler` and `buildDigest` its `Butler` and `AwayDigest`, and Discord's ten
   its `DiscordBinding`, `DiscordLink`, `Rooms`, `OldThreads`, `ButlerTyping`, `AskButtons`,
   `SecretCards`, `InstructionCards`, `Interactions` and `DiscordRelay`, each called on a
@@ -1123,7 +1127,7 @@ no deps), the Inbox's `Inbox` and
 `KoloftInbox`, the Butler's
 `OwnerAsleep` and Discord's tab channels and phone copier do, or through the `BuildLater`
 it gives back, as Scheduled tasks' `CronRunner`, Sessions core's `SessionAsks`,
-`InstructionAsks`, `HandOver`, `WorkspaceManager`, `CodexSessions` and `AgySessions`, Passwords and sign-in's `SecretAsks`, the
+`InstructionAsks`, `HandOver`, `WorkspaceManager`, `ClaudeSessionStore`, `CodexSessions` and `AgySessions`, Passwords and sign-in's `SecretAsks`, the
 Butler's `Butler` and `AwayDigest` and Discord's ten parts built once Electron is ready
 do. `src/main/index.ts` imports no plugin's `main/` file: the parts and helpers its own
 code still calls, it reads from what each start gives back ([Starting](#starting)), and
