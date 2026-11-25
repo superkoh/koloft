@@ -438,7 +438,8 @@ import { docsWritingOn } from '@plugins/docs-writing/api'
 import { koloftPrompt, type SessionsWithStore } from '@plugins/sessions/api'
 import { localFile } from './realFiles'
 import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
-import { koloftAssist, type AssistTarget } from './assist'
+import { koloftAssist } from './assist'
+import { AgentsMain, type AgentMain, type OneShotTarget } from '@core/agent/agentsMain'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
 import { TreeRemovals } from './treeRemovals'
@@ -1676,25 +1677,30 @@ const workbenchCommands: PluginStartDeps['workbench']['commands'] = {
   }
 }
 
-const assistTargets: Record<BackendId, () => Promise<AssistTarget | null>> = {
+const leavesNothingToCleanUp = (): void => {}
+const oneShotTargets: Record<BackendId, AgentMain['oneShotTarget']> = {
   claude: async () => {
     const env = await pickedAccountEnv()
     if (!env) return null
-    return { binary: ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude', env }
+    const binary = ptyMgr.shimDir ? path.join(ptyMgr.shimDir, 'claude') : 'claude'
+    return { binary, env, done: leavesNothingToCleanUp }
   },
   codex: async () => {
     const picked = pickCodexHome()
     if (!picked || !codexSessions || !(await codexSessions.availability()).available) return null
     const binary = codexSessions.cliBinary
     if (!binary) return null
-    return { binary, env: { ...codexSessions.defaultEnv, CODEX_HOME: picked.home } }
+    const env = { ...codexSessions.defaultEnv, CODEX_HOME: picked.home }
+    return { binary, env, done: leavesNothingToCleanUp }
   },
   agy: () => agyOneShotTarget()
 }
+const agentsMain = new AgentsMain()
+for (const id of SESSION_BACKENDS) agentsMain.register({ id, oneShotTarget: oneShotTargets[id] })
 const assist = koloftAssist({
   picks: loadSettings,
   enabled: (backend) => !turnedOffNow(backend),
-  target: (backend) => assistTargets[backend](),
+  target: (backend) => agentsMain.oneShotTarget(backend),
   onThisAccount: assistJobPick
 })
 const assistRuns = new Map<number, AbortController>()
@@ -1824,7 +1830,7 @@ async function noteSentByKoloft(
 }
 
 async function deliverViaOwner(tabId: string, text: string): Promise<boolean> {
-  return (await storedOwnerOf(tabId)?.deliver?.(tabId, text)) ?? false
+  return (await storedOwnerOf(tabId)?.deliver(tabId, text)) ?? false
 }
 
 function noticeOf(tabId: string): NoticeFile | undefined {
@@ -1847,9 +1853,9 @@ async function readModelList(backend: BackendId): Promise<ListedModel[] | undefi
     const picked = codexPicker.peek(accountViews())
     return codexSessions?.listedModels(picked && codexHomeOf(app.getPath('userData'), picked.name))
   }
-  const target = await agyOneShotTarget()
+  const target = await agentsMain.oneShotTarget(backend)
   if (!target) return undefined
-  return readAgyModels(target.binary, target.env, target.args ?? []).finally(() => target.done?.())
+  return readAgyModels(target.binary, target.env, target.args ?? []).finally(() => target.done())
 }
 
 function listedModels(backend: BackendId): Promise<ListedModel[] | undefined> {
@@ -2959,7 +2965,7 @@ async function addHomeKey(
 }
 
 // AGY§6 AGY§20
-async function agyOneShotTarget(): Promise<AssistTarget | null> {
+async function agyOneShotTarget(): Promise<OneShotTarget | null> {
   const picked = agyPicker.pick(accountViews())
   const binary = await agyBinary()
   if (!picked || !binary) return null
@@ -3818,7 +3824,7 @@ app.whenReady().then(() => {
       await storedOwnerOf(tabId)?.answerable?.(tabId)
     },
     answerInPlace: async (tabId, reply) => {
-      return storedOwnerOf(tabId)?.answer?.(tabId, reply) ?? false
+      return storedOwnerOf(tabId)?.answer(tabId, reply) ?? false
     },
     showsDialogsClosing: (tabId) => claudeDialogs.showsDialogsClosing(tabId),
     regDir: hookPaths.regDir
@@ -4073,13 +4079,8 @@ app.whenReady().then(() => {
       tracker.fillMachineScratchpads(host)
       workspaceMgr?.onRemoteChanged()
     },
-    onLeft: (host, ids) => {
-      claudeBackend.noticeRemoteExits(host, ids)
-      for (const s of storedSessions()) s.noticeRemoteExits?.(host, ids)
-    },
-    onHooksPulled: (host) => {
-      for (const s of storedSessions()) s.followMirrors?.(host)
-    },
+    onLeft: (host, ids) => sessionBackends.noticeRemoteExits(host, ids),
+    onHooksPulled: (host) => sessionBackends.mirrorPulled(host),
     onShells: (host, shells) => {
       for (const s of shells) ptyMgr.shellOnMachineSaid(host, s.tabId, s.name, s.cwd)
     },
@@ -6022,8 +6023,7 @@ async function sessionPorts(tabId: string): Promise<ListeningPort[] | null> {
   ]
   const machine = machineOfTab(tabId)
   if (!machine) return parseSessionPorts(await scanPortsHere(tags))
-  const tmuxName =
-    tracker.remoteOf(tabId)?.tmuxName ?? storedOwnerOf(tabId)?.tmuxOfTab?.(tabId) ?? ''
+  const tmuxName = sessionBackends.tmuxOfTab(tabId) ?? ''
   await loginEnvReady()
   return parseSessionPorts(await scanPortsOnMachine(machine, tags, tmuxName, remoteControlDir))
 }

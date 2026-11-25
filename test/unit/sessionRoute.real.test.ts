@@ -108,7 +108,7 @@ for (const backend of ['claude', 'codex', 'agy'] as const) {
       accounts: []
     }),
     enabled: (b) => b === backend,
-    target: async () => (binary ? { binary, env: process.env } : null),
+    target: async () => (binary ? { binary, env: process.env, done: () => {} } : null),
     onThisAccount: async (_backend, asked) => asked
   })
 
