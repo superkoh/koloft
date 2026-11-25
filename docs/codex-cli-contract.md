@@ -412,7 +412,9 @@ Koloft's own stop, ownership and retry rules are product rules, covered by
 **Measured without a model call.** In a temporary repository with a committed baseline,
 Git created a linked worktree. The real TUI and app-server ran in that checkout using
 `-C`. The returned thread cwd matched it. After native `/exit`, the checkout directory,
-branch and HEAD were still present and unchanged.
+branch and HEAD were still present and unchanged. Koloft dependents:
+`removesItsWorktreeAsItExits` in `src/agents/codex/agent.ts` and `worktreeExitWatch` in
+`src/agents/codex/main/backend.ts`.
 
 **Codex 0.162.0 makes worktrees of its own ("managed worktrees"), on by default.**
 Read 2026-10-11 from Codex CLI 0.162.1: `codex features list` prints `worktrees stable
