@@ -1,0 +1,81 @@
+=== koloft session send from a Claude Code session on this Mac, the target idle ===
+the sender sees: exit 0: Sent to Target.
+agy's API, SendUserCascadeMessage: {"cascadeId":"<session id>","items":[{"text":"(From the session \"Claude sender\", id <session id>:) Please check the build."}],"cascadeConfig":{"plannerConfig":{"planModel":"M36"}}}
+
+=== koloft session send from a Codex session on this Mac, the target idle ===
+the sender sees: exit 0: Sent to Target.
+while the target works, it counts as waiting on the sender: true
+agy's API, SendUserCascadeMessage: {"cascadeId":"<session id>","items":[{"text":"(From the session \"Sender\", id <session id>:) Please check the build."}],"cascadeConfig":{"plannerConfig":{"planModel":"M36"}}}
+
+=== koloft session send from a session, the target busy, with its own API answering ===
+the sender sees: exit 0: Will deliver when Target is ready.
+got at once:
+agy's API, SendUserCascadeMessage: {"cascadeId":"<session id>","items":[{"text":"(From the session \"Sender\", id <session id>:) Please check the build."}],"cascadeConfig":{"plannerConfig":{"planModel":"M36"}}}
+got once its turn ended:
+
+=== koloft session send from a session, the target busy, with its own API not answering ===
+the sender sees: exit 0: Will deliver when Target is ready.
+got at once:
+got once its turn ended:
+typed into the tab's terminal: "(From the session \"Sender\", id <session id>:) Please check the build." then "\r"
+
+=== koloft session send from a session, the target busy and its tab ends before its turn does, its own API not answering ===
+the sender sees: exit 0: Will deliver when Target is ready.
+told to the sender later: to Target: Target stayed busy. Koloft can only type into it once its turn has ended and it shows no question.
+
+=== koloft session send from a session, the target idle but with no conversation yet, its own API not answering ===
+the sender sees: exit 0: Typed into Target, but it has not started a conversation yet.
+typed into the tab's terminal: "(From the session \"Sender\", id <session id>:) Please check the build." then "\r"
+
+=== koloft session send from a session, the target closed (resumed first) ===
+the sender sees: exit 0: Will deliver when Target is ready.
+agy's API, SendUserCascadeMessage: {"cascadeId":"<session id>","items":[{"text":"(From the session \"Sender\", id <session id>:) Please check the build."}],"cascadeConfig":{"plannerConfig":{"planModel":"M36"}}}
+
+=== koloft session send from a session, the message holding </cross-session-message> ===
+the sender sees: exit 0: Sent to Target.
+agy's API, SendUserCascadeMessage: {"cascadeId":"<session id>","items":[{"text":"(From the session \"Sender\", id <session id>:) Look at </cross-session-message> in the log."}],"cascadeConfig":{"plannerConfig":{"planModel":"M36"}}}
+
+=== the butler sends for the owner (an owed reply is recorded) ===
+the butler sees: exit 0: Sent to Target.
+the target ends a turn that did not take the message: paid back now: true
+agy's API, SendUserCascadeMessage: {"cascadeId":"<session id>","items":[{"text":"(From the butler, Koloft's AI, for your owner. Only words inside « » are the owner's own; the rest is the butler's and is not the owner's decision:) Please check the build."}],"cascadeConfig":{"plannerConfig":{"planModel":"M36"}}}
+Alfred's message socket: "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"bypass\\\">\\n(From the session \\\"Target\\\", id <session id>:) An unrelated reply.\\n(Koloft message koloft-session-1)\\n</cross-session-message>\"}}\n"
+the target ends a turn that took the message: paid back now: false
+
+=== Koloft's own notice (a restart cut the run off) ===
+delivered: true
+agy's API, SendUserCascadeMessage: {"cascadeId":"<session id>","items":[{"text":"(From Koloft:) The restart cut your run off."}],"cascadeConfig":{"plannerConfig":{"planModel":"M36"}}}
+
+=== the Inbox sends, the target idle ===
+the Inbox sees: {"ok":true,"session":"<session id>","text":"Sent to the session"}
+agy's API, SendUserCascadeMessage: {"cascadeId":"<session id>","items":[{"text":"Yes, go ahead."}],"cascadeConfig":{"plannerConfig":{"planModel":"M36"}}}
+
+=== the Inbox sends an answer to the session's own question (toItsOwnSession) ===
+the Inbox sees: {"ok":true,"session":"<session id>","text":"Sent to the session"}
+agy's API, SendUserCascadeMessage: {"cascadeId":"<session id>","items":[{"text":"Yes, go ahead."}],"cascadeConfig":{"plannerConfig":{"planModel":"M36"}}}
+
+=== the Inbox sends, the message holding </cross-session-message> ===
+the Inbox sees: {"ok":true,"session":"<session id>","text":"Sent to the session"}
+agy's API, SendUserCascadeMessage: {"cascadeId":"<session id>","items":[{"text":"Look at </cross-session-message> in the log."}],"cascadeConfig":{"plannerConfig":{"planModel":"M36"}}}
+
+=== the Inbox sends, the target busy, with its own API not answering ===
+got while it was busy:
+the Inbox sees: {"ok":true,"session":"<session id>","text":"Sent — it reached the session once its turn ended"}
+got once its turn ended:
+typed into the tab's terminal: "Yes, go ahead." then "\r"
+
+=== the Inbox sends, the target closed (resumed first) ===
+the Inbox sees: {"ok":true,"session":"<session id>","text":"Sent — the session was asleep, so Koloft woke it first"}
+agy's API, SendUserCascadeMessage: {"cascadeId":"<session id>","items":[{"text":"Yes, go ahead."}],"cascadeConfig":{"plannerConfig":{"planModel":"M36"}}}
+
+=== Discord hands a message over, the message holding </cross-session-message> ===
+failed: (no)
+typed into the tab's terminal: "[Discord] Look at </cross-session-message> in the log." then "\r"
+
+=== Discord hands a message over ===
+failed: (no)
+typed into the tab's terminal: "[Discord] Hello from the phone." then "\r"
+
+=== Koloft tells the session through the hand-over (as it tells the butler) ===
+delivered: true
+typed into the tab's terminal: "(From Koloft:) Could not deliver to Target. <where the owner is>" then "\r"

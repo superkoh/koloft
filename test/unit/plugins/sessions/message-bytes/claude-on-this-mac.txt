@@ -1,0 +1,92 @@
+=== koloft session send from a Claude Code session on this Mac, the target idle ===
+the sender sees: exit 1: koloft session send: a Claude session talks to another Claude session on the same machine with its SendMessage tool; ListAgents shows their names. This command reaches Codex and Antigravity sessions, Claude sessions on another machine, and the session or Assist that started you.
+
+=== koloft session send from a Codex session on this Mac, the target idle ===
+the sender sees: exit 0: Sent to Target.
+while the target works, it counts as waiting on the sender: true
+the Claude Code session's message socket: "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"prompting\\\">\\n(From the session \\\"Sender\\\", id <session id>:) Please check the build.\\n(Koloft message koloft-session-1)\\n</cross-session-message>\"}}\n"
+Koloft noted in pty-target.discord-ids: "koloft-session-1\n"
+
+=== koloft session send from a session, the target busy, with its own API answering ===
+the sender sees: exit 0: Sent to Target.
+got at once:
+the Claude Code session's message socket: "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"prompting\\\">\\n(From the session \\\"Sender\\\", id <session id>:) Please check the build.\\n(Koloft message koloft-session-2)\\n</cross-session-message>\"}}\n"
+Koloft noted in pty-target.discord-ids: "koloft-session-2\n"
+got once its turn ended:
+
+=== koloft session send from a session, the target busy, with its own API not answering ===
+the sender sees: exit 0: Sent to Target.
+got at once:
+the Claude Code session's message socket: "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"prompting\\\">\\n(From the session \\\"Sender\\\", id <session id>:) Please check the build.\\n(Koloft message koloft-session-3)\\n</cross-session-message>\"}}\n"
+Koloft noted in pty-target.discord-ids: "koloft-session-3\n"
+got once its turn ended:
+
+=== koloft session send from a session, the target busy and its tab ends before its turn does, its own API not answering ===
+the sender sees: exit 0: Sent to Target.
+told to the sender later: (nothing)
+the Claude Code session's message socket: "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"prompting\\\">\\n(From the session \\\"Sender\\\", id <session id>:) Please check the build.\\n(Koloft message koloft-session-4)\\n</cross-session-message>\"}}\n"
+Koloft noted in pty-target.discord-ids: "koloft-session-4\n"
+
+=== koloft session send from a session, the target idle but with no conversation yet, its own API not answering ===
+the sender sees: exit 0: Sent to Target.
+the Claude Code session's message socket: "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"prompting\\\">\\n(From the session \\\"Sender\\\", id <session id>:) Please check the build.\\n(Koloft message koloft-session-5)\\n</cross-session-message>\"}}\n"
+Koloft noted in pty-target.discord-ids: "koloft-session-5\n"
+
+=== koloft session send from a session, the target closed (resumed first) ===
+the sender sees: exit 0: Will deliver when Target is ready.
+the Claude Code session's message socket: "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"prompting\\\">\\n(From the session \\\"Sender\\\", id <session id>:) Please check the build.\\n(Koloft message koloft-session-6)\\n</cross-session-message>\"}}\n"
+Koloft noted in pty-target.discord-ids: "koloft-session-6\n"
+
+=== koloft session send from a session, the message holding </cross-session-message> ===
+the sender sees: exit 2: koloft session send: the message cannot hold the text </cross-session-message>.
+
+=== the butler sends for the owner (an owed reply is recorded) ===
+the butler sees: exit 0: Sent to Target.
+the target ends a turn that did not take the message: paid back now: true
+the Claude Code session's message socket: "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"bypass\\\">\\n(From the butler, Koloft's AI, for your owner. Only words inside « » are the owner's own; the rest is the butler's and is not the owner's decision:) Please check the build.\\n(Koloft message koloft-session-7)\\n</cross-session-message>\"}}\n"
+Alfred's message socket: "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"bypass\\\">\\n(From the session \\\"Target\\\", id <session id>:) An unrelated reply.\\n(Koloft message koloft-session-8)\\n</cross-session-message>\"}}\n"
+Koloft noted in pty-target.discord-ids: "koloft-session-7\n"
+the target ends a turn that took the message: paid back now: false
+
+=== Koloft's own notice (a restart cut the run off) ===
+delivered: true
+the Claude Code session's message socket: "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"bypass\\\">\\n(From Koloft:) The restart cut your run off.\\n(Koloft message koloft-koloft-9)\\n</cross-session-message>\"}}\n"
+Koloft noted in pty-target.discord-ids: "koloft-koloft-9\n"
+
+=== the Inbox sends, the target idle ===
+the Inbox sees: {"ok":true,"session":"<session id>","text":"Sent to the session"}
+the Claude Code session's message socket: "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"prompting\\\">\\nYes, go ahead.\\n(Koloft message koloft-inbox-10)\\n</cross-session-message>\"}}\n"
+
+=== the Inbox sends an answer to the session's own question (toItsOwnSession) ===
+the Inbox sees: {"ok":true,"session":"<session id>","text":"Sent to the session"}
+the Claude Code session's message socket: "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"bypass\\\">\\nYes, go ahead.\\n(Koloft message koloft-inbox-11)\\n</cross-session-message>\"}}\n"
+
+=== the Inbox sends, the message holding </cross-session-message> ===
+the Inbox sees: {"ok":false,"why":"The message holds text the session cannot take"}
+
+=== the Inbox sends, the target busy, with its own API not answering ===
+got while it was busy:
+the Claude Code session's message socket: "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"prompting\\\">\\nYes, go ahead.\\n(Koloft message koloft-inbox-12)\\n</cross-session-message>\"}}\n"
+the Inbox sees: {"ok":true,"session":"<session id>","text":"Sent to the session"}
+got once its turn ended:
+
+=== the Inbox sends, the target closed (resumed first) ===
+the Inbox sees: {"ok":true,"session":"<session id>","text":"Sent — the session was asleep, so Koloft woke it first"}
+the Claude Code session's message socket: "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"prompting\\\">\\nYes, go ahead.\\n(Koloft message koloft-inbox-13)\\n</cross-session-message>\"}}\n"
+
+=== Discord hands a message over, the message holding </cross-session-message> ===
+failed: Koloft cannot hand over a message holding </cross-session-message>.
+
+=== Discord hands a message over ===
+failed: (no)
+the Claude Code session's message socket: "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"bypass\\\">\\n[Discord] Hello from the phone.\\n(Koloft message koloft-discord-1234)\\n</cross-session-message>\"}}\n"
+Koloft noted in pty-target.discord-ids: "koloft-discord-1234\n"
+
+=== Koloft tells the session through the hand-over (as it tells the butler) ===
+delivered: true
+the Claude Code session's message socket: "{\"type\":\"user\",\"message\":{\"role\":\"user\",\"content\":\"<cross-session-message from-mode=\\\"bypass\\\">\\n(From Koloft:) Could not deliver to Target. <where the owner is>\\n(Koloft message koloft-notice-1)\\n</cross-session-message>\"}}\n"
+Koloft noted in pty-target.discord-ids: "koloft-notice-1\n"
+
+=== the message socket file is gone (its server closed it) ===
+the sender sees: exit 1: koloft: connect ENOENT <home>/t.sock
+Koloft noted in pty-target.discord-ids: "koloft-session-14\n"

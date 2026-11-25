@@ -254,7 +254,8 @@ export interface ClaudeSetup {
   projectRules?: string
   remoteTab?: RemoteTab
   workspaceOfEverySession?: string
-  tracker?: Partial<Pick<ClaudeBackendDeps['tracker'], 'track' | 'movePick' | 'bindSession'>>
+  tracker?: Partial<ClaudeBackendDeps['tracker']>
+  events?: ClaudeBackendDeps['events']
   hookSettings?: ClaudeBackendDeps['hookSettings']
 }
 
@@ -303,7 +304,7 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
     hookSettings: c.hookSettings ?? (() => undefined),
     playwrightMcp: async () => [],
     ptysChanged: () => {},
-    events: () => {},
+    events: c.events ?? (() => {}),
     error: () => {},
     projectRules: async () => c.projectRules
   } as unknown as ClaudeBackendDeps)
@@ -324,6 +325,7 @@ export interface AgySetup extends WiredIntoTheApp {
   signedInOnTheWeb?: boolean
   builtInStatusLine?: string
   events?: (tabId: string, event: SessionEvent) => void
+  runtime?: SessionRuntime
 }
 
 export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessions {
@@ -401,6 +403,7 @@ export interface CodexSetup extends WiredIntoTheApp {
   agentTools?: boolean
   builtInStatusLine?: boolean
   events?: (tabId: string, event: SessionEvent) => void
+  runtime?: SessionRuntime
 }
 
 export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): CodexSessions {
