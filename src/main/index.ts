@@ -3277,7 +3277,7 @@ app.whenReady().then(() => {
     remoteTreeIo: machineTreeIo,
     worktreesOfEveryAgent: {
       recorded: (dir: string) => sessionBackends.worktreeRecords.recorded(dir),
-      preparing: new Set<string>()
+      preparing: new Map<string, Promise<unknown>>()
     },
     realFilesOn,
     changed: sessionsChanged,

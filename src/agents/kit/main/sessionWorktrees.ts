@@ -102,7 +102,7 @@ async function ignoredFilesSameAsRoot(io: TreeIo, root: string, tree: string): P
 
 export interface WorktreesOfEveryAgent {
   recorded(worktreePath: string): boolean
-  readonly preparing: Set<string>
+  readonly preparing: Map<string, Promise<unknown>>
 }
 
 export class SessionWorktrees {
@@ -267,15 +267,20 @@ export class SessionWorktrees {
     reuseBranch = true
   ): Promise<WorktreeResource> {
     const { preparing } = this.everyAgent
-    if (preparing.has(resource.worktreePath))
-      throw new Error('Worktree preparation is already in progress')
-    preparing.add(resource.worktreePath)
+    const running = preparing.get(resource.worktreePath)
+    if (running) {
+      if (!reuseBranch) throw new Error('Worktree preparation is already in progress')
+      await running.catch(() => {})
+      return this.materialize(resource, reuseBranch)
+    }
     const pending: WorktreeResource = { ...resource, state: 'creating', error: undefined }
-    try {
-      if (reuseBranch && (await this.io(resource.worktreePath).exists(resource.worktreePath)))
-        return await this.adopt(resource.originalCwd, resource.worktreePath)
+    const work = (async () => {
       this.store.putResource(pending)
-      return await this.materializeRecorded(pending, reuseBranch)
+      return this.materializeRecorded(pending, reuseBranch)
+    })()
+    preparing.set(resource.worktreePath, work)
+    try {
+      return await work
     } finally {
       preparing.delete(resource.worktreePath)
     }
@@ -290,8 +295,10 @@ export class SessionWorktrees {
     try {
       const root = await rootOf(io, resource.originalCwd)
       if (root !== resource.originalCwd) throw new Error('The recorded repository has changed')
-      if (await io.exists(resource.worktreePath))
-        throw new Error('Worktree directory already exists')
+      if (await io.exists(resource.worktreePath)) {
+        if (!reuseBranch) throw new Error('Worktree directory already exists')
+        return await this.adopt(root, resource.worktreePath)
+      }
       const stale = (await checkouts(io, root)).find((c) => c.path === resource.worktreePath)
       if (stale) {
         if (stale.locked)

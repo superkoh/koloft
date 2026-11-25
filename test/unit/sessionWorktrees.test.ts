@@ -207,7 +207,7 @@ describe.each(SIDES)(
       everyAgent = {
         recorded: (dir: string) =>
           [store, otherStore].some((s) => s.listResources().some((r) => r.worktreePath === dir)),
-        preparing: new Set<string>()
+        preparing: new Map<string, Promise<unknown>>()
       }
       mine = side.make(store, everyAgent)
       other = side.make(otherStore, everyAgent)
@@ -226,18 +226,13 @@ describe.each(SIDES)(
       expect(otherStore.listResources()).toEqual([theirs])
     })
 
-    it('when both agents rebuild the folder they both recorded at once, one builds it, the other is told it is in progress, no record is marked failed, and the other’s next try takes the folder', async () => {
+    it('when both agents rebuild the folder they both recorded at once, one builds it, the other waits for it and takes the folder, and no record is marked failed', async () => {
       const theirs = await other.create(side.at(repo), 'foo')
       const ours = await mine.adopt(side.at(repo), theirs.worktreePath)
       fs.rmSync(barePath(theirs.worktreePath), { recursive: true })
-      const [a, b] = await Promise.allSettled([mine.rebuild(ours.id), other.rebuild(theirs.id)])
-      expect([a.status, b.status].sort()).toEqual(['fulfilled', 'rejected'])
-      const lost = [a, b].find((r) => r.status === 'rejected') as PromiseRejectedResult
-      expect(String(lost.reason)).toContain('Worktree preparation is already in progress')
+      const [a, b] = await Promise.all([mine.rebuild(ours.id), other.rebuild(theirs.id)])
+      expect([a.worktreePath, b.worktreePath]).toEqual([theirs.worktreePath, theirs.worktreePath])
       expect(fs.existsSync(files(theirs.worktreePath))).toBe(true)
-      expect(states()).not.toContain('failed')
-      await mine.rebuild(ours.id)
-      await other.rebuild(theirs.id)
       expect(states()).toEqual(['ready', 'ready'])
     })
   }
@@ -247,7 +242,7 @@ it('an agent that found the folder missing just before another agent finished re
   const otherStore = new SessionStore(path.join(directory, 'other-sessions.json'))
   const everyAgent: WorktreesOfEveryAgent = {
     recorded: () => true,
-    preparing: new Set<string>()
+    preparing: new Map<string, Promise<unknown>>()
   }
   let otherDone!: () => void
   const afterOther = new Promise<void>((resolve) => (otherDone = resolve))
@@ -265,7 +260,11 @@ it('an agent that found the folder missing just before another agent finished re
   }
   const at = formatRemoteKey(MACHINE, repo)
   const other = new SessionWorktrees(otherStore, everyAgent, () => machineIo)
-  const theirs = await new SessionWorktrees(otherStore, alone(), () => machineIo).create(at, 'foo')
+  const theirs = await new SessionWorktrees(
+    otherStore,
+    worktreesOfOneAgent(() => otherStore),
+    () => machineIo
+  ).create(at, 'foo')
   const mine = new SessionWorktrees(store, everyAgent, () => lateIo)
   const ours = await new SessionWorktrees(store, alone(), () => machineIo).adopt(
     at,

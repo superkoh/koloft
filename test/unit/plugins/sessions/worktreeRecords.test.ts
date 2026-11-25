@@ -74,7 +74,7 @@ function everyAgent(built: readonly BackendId[] = SESSION_BACKENDS): EveryAgent 
   const registry = new SessionBackends(lifecycle())
   const worktreesOfEveryAgent = {
     recorded: (dir: string) => registry.worktreeRecords.recorded(dir),
-    preparing: new Set<string>()
+    preparing: new Map<string, Promise<unknown>>()
   }
   for (const id of KEEPERS.filter((keeper) => built.includes(keeper))) {
     const store = new SessionStore(path.join(directory, `${id}-sessions.json`))
