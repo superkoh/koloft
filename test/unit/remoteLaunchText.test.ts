@@ -55,6 +55,11 @@ import { BackgroundFile } from '../../src/main/backgroundFile'
 import type { MachineAccount } from '../../src/main/host/sshHost'
 import { tabPackageDir } from '../../src/main/remote/paths'
 import {
+  isStartedBeforeTabPasses,
+  markStartedBeforeTabPasses,
+  TAB_PASS_ENV
+} from '../../src/main/tabPass'
+import {
   agySessionsIn,
   claudeBackendIn,
   codexSessionsIn,
@@ -520,6 +525,47 @@ describe('the order a launch on another machine keeps', () => {
       resumeSessionId: agySessionKey(RUNNING_THERE, MACHINE)
     })
     expect(filesOfTheTab()).toEqual([`${TAB}.env`, `${TAB}.pass`, `${TAB}.sh`])
+  })
+
+  // ADR-0052
+  it('a Claude Code or Antigravity tab that attaches to a session started there before tabs had passes is known as such once its line is typed, and one that attaches to a session holding a pass is not', async () => {
+    const stillRunning = { alive: () => new Set([RUNNING_THERE]) }
+    let holdsAPass = false
+    const ssh = recordingSsh((cmd) =>
+      cmd.includes(`show-environment -t "$1" ${TAB_PASS_ENV}`) && !holdsAPass ? { code: 1 } : {}
+    )
+    const attached = async (): Promise<boolean[]> => {
+      const marked: boolean[] = []
+      await claudeTabOn(claudeWith(stillRunning, {}, ssh), { resumeSessionId: RUNNING_THERE })
+      marked.push(isStartedBeforeTabPasses(TAB))
+      markStartedBeforeTabPasses(TAB, !marked[0])
+      await agyTabOn(agyWith(stillRunning, {}, ssh), {
+        resumeSessionId: agySessionKey(RUNNING_THERE, MACHINE)
+      })
+      marked.push(isStartedBeforeTabPasses(TAB))
+      return marked
+    }
+    expect(await attached()).toEqual([true, true])
+    holdsAPass = true
+    expect(await attached()).toEqual([false, false])
+  })
+
+  // ADR-0044 AGY§9
+  it("an Antigravity session Koloft just ended on the machine, resumed while the machine's last heartbeat still lists it, is first checked for another agy holding its conversation and only then decided start or attach: held, the resume is refused and opens no tab; free again, it starts the session anew instead of attaching to the one that was ended", async () => {
+    let heldElsewhere = true
+    const ssh = recordingSsh((cmd) =>
+      cmd.includes('/presence/$1.lock') && heldElsewhere ? { code: 1 } : {}
+    )
+    const tab = agyWith({ alive: () => new Set([RUNNING_THERE]) }, {}, ssh)
+    const resume = { resumeSessionId: agySessionKey(RUNNING_THERE, MACHINE) }
+    await agyTabOn(tab, resume)
+    expect(tab.started[0].typedLine).toContain('a=attach')
+    await tab.sessions.stop(TAB)
+    await expect(agyTabOn(tab, resume)).rejects.toThrow('open in another agy window')
+    expect(tab.started).toHaveLength(1)
+    heldElsewhere = false
+    await agyTabOn(tab, resume)
+    expect(tab.started[1].typedLine).toContain('a=start')
   })
 
   it("one Claude Code launch names one machine package everywhere — its script, its hook settings and the line that pushes it — though Koloft's package is rebuilt under a new name while it launches", async () => {
