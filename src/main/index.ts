@@ -339,19 +339,9 @@ import { within } from '@core/within'
 import { clicksTheMouse, pressesAKey, typeKeys } from '@core/typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import { sleep } from '@core/sleep'
-import { claudeJsonPath, claudeProjectKey } from '@agents/claude/main/claudeTrust'
-import {
-  AGY_PROJECT_MCP_FILE,
-  PROJECT_MCP_FILE,
-  claudeServers,
-  codexServers,
-  foldersUpToRepoTop,
-  foldersUpToRoot,
-  jsonServers,
-  ownersClaudePlaywrightMcp,
-  textOrNull,
-  type ConfigText
-} from './mcpServers'
+import { claudeCatalog, ownersClaudePlaywrightMcp } from '@agents/claude/main/claudeCatalog'
+import { codexCatalog } from '@agents/codex/main/codexCatalog'
+import { agyCatalog } from '@agents/agy/main/agyCatalog'
 import type { McpServer } from '@shared/types'
 import {
   LIVE_REGISTRY_ON_A_MACHINE_SH,
@@ -391,13 +381,26 @@ import { koloftPrompt, type SessionsWithStore } from '@plugins/sessions/api'
 import { localFile } from './realFiles'
 import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
 import { koloftAssist } from './assist'
-import { AgentsMain, type AgentMain, type OneShotTarget } from '@core/agent/agentsMain'
+import {
+  AgentsMain,
+  type AgentCatalog,
+  type AgentMain,
+  type OneShotTarget
+} from '@core/agent/agentsMain'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
 import { TreeRemovals } from './treeRemovals'
 import { worktreeExitFollow } from './worktreeExitFollow'
 import { discordTokenRead, discordTokenWrite } from './accounts'
-import { checkSkillsAgain, pluginSkills, writeAgentPlugin, writeDocsPlugin } from './agentPlugin'
+import {
+  checkSkillsAgain,
+  claudeProjectPrompt,
+  keepSkillsIn,
+  pluginSkills,
+  projectPromptFile,
+  writeAgentPlugin,
+  writeDocsPlugin
+} from './agentPlugin'
 import { installThen, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
 
 type SessionsStarted = PluginsStarted['sessions']
@@ -1462,38 +1465,7 @@ async function mcpServersNow(): Promise<McpServer[]> {
     ...(workspaceMgr?.pinnedPathList() ?? []).filter((p) => !isRemoteKey(p)),
     conductorFolder(app.getPath('userData'))
   ]
-  const walks = await Promise.all(
-    folders.map(async (onlyIn) => ({
-      onlyIn,
-      toRoot: foldersUpToRoot(onlyIn),
-      toRepoTop: await foldersUpToRepoTop(onlyIn, isGitCheckoutAsync)
-    }))
-  )
-  const inFolders = (file: string, walk: 'toRoot' | 'toRepoTop'): Promise<ConfigText[]> =>
-    Promise.all(
-      walks.flatMap((w) =>
-        w[walk].map(async (folder) => ({
-          onlyIn: w.onlyIn,
-          text: await textOrNull(path.join(folder, file))
-        }))
-      )
-    )
-  const [claudeJson, projectFiles, agyProjectFiles, codexToml, agy] = await Promise.all([
-    textOrNull(claudeJsonPath()),
-    inFolders(PROJECT_MCP_FILE, 'toRoot'),
-    inFolders(AGY_PROJECT_MCP_FILE, 'toRepoTop'),
-    textOrNull(codexSharedConfig()),
-    textOrNull(path.join(ownersGemini(), 'config', 'mcp_config.json'))
-  ])
-  const claudeFolders = folders.map((folder) => ({
-    folder,
-    projectKey: claudeProjectKey(folder)
-  }))
-  return [
-    ...claudeServers(claudeJson, projectFiles, claudeFolders),
-    ...codexServers(codexToml),
-    ...jsonServers('agy', [{ text: agy }, ...agyProjectFiles])
-  ]
+  return agentsMain.mcpServersOn(folders)
 }
 
 function pinnedWorkspaceOfTab(tabId: string): string | undefined {
@@ -1545,8 +1517,14 @@ const oneShotTargets: Record<BackendId, AgentMain['oneShotTarget']> = {
   },
   agy: () => agyOneShotTarget()
 }
+const catalogs: Record<BackendId, AgentCatalog> = {
+  claude: claudeCatalog,
+  codex: codexCatalog(codexSharedConfig),
+  agy: agyCatalog(ownersGemini, isGitCheckoutAsync)
+}
 const agentsMain = new AgentsMain()
-for (const id of SESSION_BACKENDS) agentsMain.register({ id, oneShotTarget: oneShotTargets[id] })
+for (const id of SESSION_BACKENDS)
+  agentsMain.register({ id, oneShotTarget: oneShotTargets[id], catalog: catalogs[id] })
 const assist = koloftAssist({
   picks: loadSettings,
   enabled: (backend) => !turnedOffNow(backend),
@@ -3194,6 +3172,10 @@ app.whenReady().then(() => {
     workspaceInstructions: instructionsOf,
     remoteDirExists: (dir: string) => hosts.machineOf(dir)!.sessionDirThere(dir),
     remoteTreeIo: machineTreeIo,
+    worktreesOfEveryAgent: {
+      recorded: (dir: string) => sessionBackends.worktreeRecords.recorded(dir),
+      preparing: new Map<string, Promise<unknown>>()
+    },
     realFilesOn,
     changed: sessionsChanged,
     pinnedWorkspaces: () => workspaceMgr?.pinnedPathList() ?? [],
@@ -3270,6 +3252,7 @@ app.whenReady().then(() => {
       openShimRoot: path.join(userData, 'agy-open'),
       scriptsDir: path.join(userData, 'agy-scripts'),
       ownersGemini,
+      keepSkillsIn,
       pickHome: pickAgyHome,
       apiKeyOf: agyApiKeyOf,
       builtInStatusLine: () => (loadSettings().statuslineBuiltin ? agyStatusline : undefined),
@@ -5092,9 +5075,8 @@ const githubOptions: GithubReposOptions = {
 
 const hosts = new Hosts(
   localHost(new GithubRepos(githubOptions), {
-    agentHomes: () => ({
-      codexHome: path.dirname(codexSharedConfig())
-    })
+    moreSkillFoldersEveryAccountReads: (backend) =>
+      agentsMain.moreSkillFoldersEveryAccountReadsOnThisMac(backend)
   }),
   (machine) =>
     new SshHost(machine, {
@@ -5145,6 +5127,7 @@ const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
     handOverOwnerWords: (tabId, words) =>
       seedHandedOverOwnerWords(saidFile(hookRegDir ?? '', tabId), words),
     agentPlugin: () => (agentToolsOn() ? claudeAgentPlugin : undefined),
+    projectPromptFile,
     docsPlugin: docsPluginWhileOn,
     assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
     pastedPicturesDir
@@ -5156,6 +5139,7 @@ const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
       pickMachineAccount(() => pickForLaunch(launchKey, resumeSessionId)),
     noAccountMessage: () => noAccountNow('claude'),
     agentTools: agentToolsOn,
+    projectPrompt: claudeProjectPrompt,
     docsWritingOn,
     hookSettings: (tabId, dir, allowKoloft) =>
       machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)

@@ -37,6 +37,7 @@ import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import { koloftPrompt } from '@plugins/sessions/api'
 import { passOf } from '../../../../src/main/tabPass'
 import { standInMachine, type StandInSetup } from '../../helpers/standInMachine'
+import { worktreesOfOneAgent } from '../../helpers/worktreesOfOneAgent'
 
 const TOO_OLD = { binary: '/fixture/codex', env: {}, version: '0.150.0', verified: false }
 
@@ -230,6 +231,7 @@ beforeEach(() => {
     } as unknown as CodexSessionDeps['pty'],
     runtime: new SessionRuntime(),
     projectInfo: (p) => ({ root: p.startsWith(repo) ? repo : other, treeRoot: p }),
+    worktreesOfEveryAgent: worktreesOfOneAgent(() => sessions.store),
     changed: vi.fn(),
     pinnedWorkspaces: () => [],
     rereadRows: () => {},

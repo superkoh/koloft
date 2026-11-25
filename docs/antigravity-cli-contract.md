@@ -2056,7 +2056,7 @@ fake Gemini server with MCP servers that logged their start.
   `GEMINI_API_KEY` among them, with nothing in the entry's `env`; the same after
   `/clear`, in `--dangerously-skip-permissions`, and on the macOS build in the tart VM.
 
-Koloft dependents: `koloft todo`'s list of MCP servers (`src/main/mcpServers.ts`); the
+Koloft dependents: `koloft todo`'s list of MCP servers (`src/agents/agy/main/agyCatalog.ts`); the
 Workbench browser's address in agy's environment (`src/agents/agy/main/agySessions.ts`); the allow
 rule for the owner's Playwright entries (`src/agents/agy/main/agyAccounts.ts`).
 

@@ -2541,7 +2541,7 @@ other bullets of §9 were not re-measured on this build.
   Desktop app or VS Code.
 
 Koloft dependents: the scheduled-jobs runner's launch line and the shim's new-session
-branch (`src/main/shim.ts`), `src/agents/claude/main/claudeArgs.ts`, `src/main/skillList.ts`,
+branch (`src/main/shim.ts`), `src/agents/claude/main/claudeArgs.ts`, the skill folders in `src/agents/claude/agent.ts`,
 `src/agents/claude/main/claudeTrust.ts`, the env scrubs in `src/main/ptyManager.ts` and
 `scripts/code-review.mjs`,
 `src/main/leftovers.ts`, the warm-up `claude -p ok --max-turns 1` in
@@ -4754,7 +4754,7 @@ servers `globalprobe` (top-level `mcpServers` of `~/.claude.json`), `localprobe`
   approval` until the folder's trust was accepted and its name was in
   `enabledMcpjsonServers` (which claude moves into `<A>/.claude/settings.local.json`).
 
-Koloft dependents: `claudeServers` in `src/main/mcpServers.ts`, which `koloft todo` lists,
+Koloft dependents: `claudeServers` in `src/agents/claude/main/claudeCatalog.ts`, which `koloft todo` lists,
 and `claudeProjectKey` in `src/agents/claude/main/claudeTrust.ts`, which picks the `projects` key it reads.
 
 ## §23 A resumed conversation keeps its first system prompt, until its next compaction
@@ -4863,7 +4863,7 @@ listed in the result's `permission_denials`. One interactive claude in a pty (py
   the top-level `mcpServers`, and the folder's own `.mcp.json` over one in the folder
   above it.
 
-Koloft dependents: `ownersClaudePlaywrightMcp` in `src/main/mcpServers.ts` and
+Koloft dependents: `ownersClaudePlaywrightMcp` in `src/agents/claude/main/claudeCatalog.ts` and
 `writeTabHookSettings` in `src/plugins/sessions/main/hooks.ts`.
 
 ## §25 A Bash call's `description` is its title on screen
