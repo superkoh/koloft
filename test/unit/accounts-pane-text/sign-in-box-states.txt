@@ -1,0 +1,55 @@
+=== browser step, no link yet ===
+<div class="acct-add">
+<div class="acct-add-title">Sign in</div>
+<div class="acct-login-state">
+<div>Finish the authorization in your browser — the token is collected automatically.</div>
+</div>
+<div class="acct-add-actions">
+<button class="mini">Cancel sign-in</button>
+</div>
+<span class="field-hint">Koloft runs the official <code>claude setup-token</code> in the <b>background</b> — no terminal tab. Once you authorize in the browser, the token goes straight into your Keychain and the account joins the pool: no copy-paste, and you never leave this panel.</span>
+</div>
+
+=== failed, no terminal, no output ===
+<div class="acct-add">
+<div class="acct-add-title">Sign in</div>
+<input placeholder="Name this account (e.g. work)" spellcheck="false" type="text" value="">
+<div class="acct-login-state bad">
+<div>Sign-in did not complete.</div>
+<div class="acct-add-actions" style="justify-content: flex-start;">
+<button class="mini" disabled="">Show terminal</button>
+<button class="mini">Try again</button>
+</div>
+</div>
+<span class="field-hint">Koloft runs the official <code>claude setup-token</code> in the <b>background</b> — no terminal tab. Once you authorize in the browser, the token goes straight into your Keychain and the account joins the pool: no copy-paste, and you never leave this panel.</span>
+</div>
+
+=== failed, with a terminal ===
+<div class="acct-add">
+<div class="acct-add-title">Sign in</div>
+<input placeholder="Name this account (e.g. work)" spellcheck="false" type="text" value="">
+<div class="acct-login-state bad">
+<div>Sign-in did not complete.</div>
+<pre class="acct-login-tail">last line</pre>
+<div class="acct-add-actions" style="justify-content: flex-start;">
+<button class="mini">Show terminal</button>
+<button class="mini">Try again</button>
+</div>
+</div>
+<span class="field-hint">Koloft runs the official <code>claude setup-token</code> in the <b>background</b> — no terminal tab. Once you authorize in the browser, the token goes straight into your Keychain and the account joins the pool: no copy-paste, and you never leave this panel.</span>
+</div>
+
+=== terminal shown ===
+(no form)
+tab opened: "Sign in: night" login-tab in /home
+
+=== try again after a failed sign-in again ===
+<div class="acct-add">
+<div class="acct-add-title">Sign in again night</div>
+<input placeholder="Name this account (e.g. work)" spellcheck="false" readonly="" type="text" value="night">
+<div class="acct-add-actions">
+<button class="mini">Cancel</button>
+<button class="mini">Sign in</button>
+</div>
+<span class="field-hint">Koloft runs the official <code>claude setup-token</code> in the <b>background</b> — no terminal tab. Once you authorize in the browser, the token goes straight into your Keychain and the account joins the pool: no copy-paste, and you never leave this panel. The new token replaces the existing entry; this row keeps its place and its enabled state.</span>
+</div>

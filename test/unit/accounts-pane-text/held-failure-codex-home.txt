@@ -1,0 +1,67 @@
+=== held failure, new, no output ===
+<div class="acct-add">
+<div class="acct-add-title">Sign in to Codex</div>
+<input placeholder="Name this account (e.g. work)" spellcheck="false" type="text" value="kept">
+<div class="acct-login-state bad">
+<div>Sign-in did not complete.</div>
+</div>
+<div class="acct-add-actions">
+<button class="mini">Cancel</button>
+<button class="mini">Try again</button>
+</div>
+<span class="field-hint">Koloft opens a terminal tab that runs <code>codex login</code> for this account only. Finish the sign-in there; the tab closes itself when <code>codex login</code> ends. Signed in, the account joins the pool; if not, this page says so. Your Codex settings and trusted folders are shared by every account.</span>
+</div>
+
+=== held failure, new, with output ===
+<div class="acct-add">
+<div class="acct-add-title">Sign in to Codex</div>
+<input placeholder="Name this account (e.g. work)" spellcheck="false" type="text" value="kept">
+<div class="acct-login-state bad">
+<div>Sign-in did not complete.</div>
+<pre class="acct-login-tail">the last lines</pre>
+</div>
+<div class="acct-add-actions">
+<button class="mini">Cancel</button>
+<button class="mini">Try again</button>
+</div>
+<span class="field-hint">Koloft opens a terminal tab that runs <code>codex login</code> for this account only. Finish the sign-in there; the tab closes itself when <code>codex login</code> ends. Signed in, the account joins the pool; if not, this page says so. Your Codex settings and trusted folders are shared by every account.</span>
+</div>
+
+=== held failure, again, no output ===
+<div class="acct-add">
+<div class="acct-add-title">Sign in again kept</div>
+<input placeholder="Name this account (e.g. work)" spellcheck="false" readonly="" type="text" value="kept">
+<div class="acct-login-state bad">
+<div>Sign-in did not complete.</div>
+</div>
+<div class="acct-add-actions">
+<button class="mini">Cancel</button>
+<button class="mini">Try again</button>
+</div>
+<span class="field-hint">Koloft opens a terminal tab that runs <code>codex login</code> for this account only. Finish the sign-in there; the tab closes itself when <code>codex login</code> ends. Signed in, the account joins the pool; if not, this page says so. Your Codex settings and trusted folders are shared by every account.</span>
+</div>
+
+=== held failure, again, with output ===
+<div class="acct-add">
+<div class="acct-add-title">Sign in again kept</div>
+<input placeholder="Name this account (e.g. work)" spellcheck="false" readonly="" type="text" value="kept">
+<div class="acct-login-state bad">
+<div>Sign-in did not complete.</div>
+<pre class="acct-login-tail">the last lines</pre>
+</div>
+<div class="acct-add-actions">
+<button class="mini">Cancel</button>
+<button class="mini">Try again</button>
+</div>
+<span class="field-hint">Koloft opens a terminal tab that runs <code>codex login</code> for this account only. Finish the sign-in there; the tab closes itself when <code>codex login</code> ends. Signed in, the account joins the pool; if not, this page says so. Your Codex settings and trusted folders are shared by every account.</span>
+</div>
+
+=== dismissed ===
+(no form)
+held failure dismissed
+
+=== tried again ===
+(no form)
+sign-in asked: codex-home "kept"
+held failure dismissed
+tab opened: "Codex sign in: kept" sign-in-tab in /sign-in-home
