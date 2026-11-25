@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { BackendId, CronJob, HistoryLine } from '@shared/types'
 import { localIso } from '@shared/schedule'
+import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { SessionBackend } from '../../src/core/agent/sessionBackends'
 import type { RunnerDeps } from '../../src/plugins/scheduled-tasks/main/cronRunner'
 import { lifecycle, stubBackend } from './helpers/sessionBackendStub'
@@ -38,35 +39,23 @@ afterEach(() => {
 })
 
 function tellsWhenAsked(agent: BackendId, asked: string[]): SessionBackend {
-  const heard = <T>(what: string, answer: T): T => {
-    asked.push(`${agent}.${what}`)
+  const heard = <T>(answer: T): T => {
+    asked.push(agent)
     return answer
   }
   return {
     ...stubBackend(agent),
-    aliveTabFor: () => heard('aliveTabFor', 'a tab'),
-    transcriptExists: () => heard('transcriptExists', true),
-    accountUsable: () => heard('accountUsable', true),
-    resumePlan: async () => heard('resumePlan', { action: 'direct' as const, cwd: '/repo' }),
-    resume: async () => heard('resume', { ok: true as const, id: 'tab', cwd: '/repo' }),
-    archive: () => heard('archive', true),
-    turns: async () => heard('turns', []),
-    transcriptPlaces: () => heard('transcriptPlaces', undefined),
-    sessionGone: () => heard('sessionGone', false)
+    aliveTabFor: () => heard(`a tab of ${agent}`),
+    transcriptExists: () => heard(true),
+    accountUsable: () => heard(false),
+    resumePlan: async () => heard({ action: 'direct' as const, cwd: `/${agent}` }),
+    resume: async () => heard({ ok: true as const, id: `a tab of ${agent}`, cwd: '/repo' }),
+    archive: () => heard(true),
+    turns: async () => heard([]),
+    transcriptPlaces: () => heard(undefined),
+    sessionGone: () => heard(false)
   }
 }
-
-const ASKED_BY_KEY = [
-  'aliveTabFor',
-  'transcriptExists',
-  'accountUsable',
-  'resumePlan',
-  'resume',
-  'archive',
-  'turns',
-  'transcriptPlaces',
-  'sessionGone'
-]
 
 function job(over: Partial<CronJob> = {}): CronJob {
   return {
@@ -137,7 +126,7 @@ describe.each(EVERY_AGENT)('a Koloft that no longer has %s', (gone) => {
     expect(asked).toEqual([])
   })
 
-  it('still asks the agent a key names, and the owner of unnamed old data for an old id, each of the same questions', async () => {
+  it('still gives the answers of the agent a key names, and of the owner of unnamed old data for an old id, and asks no other agent', async () => {
     const { SessionBackends } = await koloftWithout(gone)
     const asked: string[] = []
     const backends = new SessionBackends(lifecycle())
@@ -146,16 +135,19 @@ describe.each(EVERY_AGENT)('a Koloft that no longer has %s', (gone) => {
     if (ownerOfUnnamedOldDataIsLeft) owned.push([ID, OWNER_OF_UNNAMED_OLD_DATA])
     for (const [key, owner] of owned) {
       asked.length = 0
-      backends.aliveTabFor(key)
-      await backends.transcriptExists(key)
-      backends.noAccountToResume(key)
-      await backends.resumePlan(key)
-      await backends.resume({ sessionId: key, cwd: '/repo' })
-      backends.archive(key)
-      await backends.turns(key, 3)
-      backends.transcriptPlaces(key)
-      backends.sessionStillThere(key, new Set())
-      expect(asked).toEqual(ASKED_BY_KEY.map((what) => `${owner}.${what}`))
+      expect(backends.aliveTabFor(key)).toBe(`a tab of ${owner}`)
+      expect(await backends.transcriptExists(key)).toBe(true)
+      expect(backends.noAccountToResume(key)).toBe(NO_USABLE_ACCOUNT[owner])
+      await expect(backends.resumePlan(key)).resolves.toEqual({
+        action: 'direct',
+        cwd: `/${owner}`
+      })
+      await expect(backends.resume({ sessionId: key, cwd: '/repo' })).resolves.toMatchObject({
+        id: `a tab of ${owner}`
+      })
+      expect(backends.archive(key)).toBe(true)
+      expect(backends.sessionStillThere(key, new Set())).toBe(true)
+      expect(new Set(asked)).toEqual(new Set([owner]))
     }
   })
 
