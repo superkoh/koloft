@@ -1128,9 +1128,15 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     this.stopTitleChase(run)
     if (run.compacting?.timer) clearTimeout(run.compacting.timer)
     this.clearForeignTimers(run)
-    if (!run.remote || this.shuttingDown) return
+    if (!run.remote) return
     const { host, tmuxName } = run.remote
     const machine = this.deps.remote.machine(host)
+    try {
+      fs.rmSync(machine.tabFiles(run.tabId).dir, { recursive: true, force: true })
+    } catch (error) {
+      this.deps.error(`Could not remove the files of an Antigravity tab on ${host}: ${error}`)
+    }
+    if (this.shuttingDown) return
     // ADR-0044
     const named = await machine.runScript(TAB_TMUX_NAME_SH, [run.tabId])
     const problem = await machine.tmux.end(named?.trim() || tmuxName, run.tabId)
