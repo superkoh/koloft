@@ -16,6 +16,7 @@ import type { MachineAccount } from '../../../src/agents/claude/main/claudeLaunc
 import { trustCodexFolder } from '../../../src/agents/codex/main/backend'
 import { CodexSessions, type CodexSessionDeps } from '../../../src/agents/codex/main/codexSessions'
 import { SessionRuntime } from '../../../src/core/agent/sessionRuntime'
+import { BackgroundFile } from '../../../src/main/backgroundFile'
 import { GithubRepos } from '../../../src/main/githubRepos'
 import type { RemoteTab } from '../../../src/main/host/host'
 import { Hosts } from '../../../src/main/host/hosts'
@@ -37,7 +38,7 @@ export interface World {
   regDir: string
   userData: string
   controlDir: string
-  gone(): void
+  gone(): Promise<void>
 }
 
 export function makeWorld(): World {
@@ -54,9 +55,13 @@ export function makeWorld(): World {
   for (const dir of [world.repo, world.regDir, world.userData]) fs.mkdirSync(dir)
   return {
     ...world,
-    gone: () => {
-      process.env.HOME = homeBefore
-      fs.rmSync(home, { recursive: true, force: true })
+    gone: async () => {
+      try {
+        await BackgroundFile.whenAllWritten()
+      } finally {
+        process.env.HOME = homeBefore
+        fs.rmSync(home, { recursive: true, force: true })
+      }
     }
   }
 }

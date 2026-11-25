@@ -5,7 +5,6 @@ import http from 'http'
 import path from 'path'
 import { codexWires } from './codexWires'
 import type { BackendId } from '@shared/types'
-import { BackgroundFile } from '../../../src/main/backgroundFile'
 import {
   agySessionsIn,
   claudeBackendIn,
@@ -542,8 +541,7 @@ export function useAskTable(): void {
 
   afterEach(async () => {
     for (const stop of stops.splice(0)) await stop()
-    await BackgroundFile.whenAllWritten()
-    world.gone()
+    await world.gone()
   })
 
   beforeAll(async () => {
@@ -827,8 +825,7 @@ const agyState = (s: string): string => `${ESC}]7501;state=${s}:app=antigravity$
 
 async function freshWorld(): Promise<void> {
   for (const stop of stops.splice(0)) await stop()
-  await BackgroundFile.whenAllWritten()
-  world.gone()
+  await world.gone()
   world = makeWorld()
 }
 

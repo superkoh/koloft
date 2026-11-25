@@ -52,7 +52,6 @@ vi.mock('../../src/agents/codex/main/codexTransport', async (importOriginal) => 
   }
 })
 
-import { BackgroundFile } from '../../src/main/backgroundFile'
 import { tabPackageDir } from '../../src/main/remote/paths'
 import {
   perInstallHash,
@@ -93,9 +92,8 @@ beforeEach(() => {
 afterEach(async () => {
   try {
     for (const stop of stops) await stop()
-    await BackgroundFile.whenAllWritten()
   } finally {
-    world.gone()
+    await world.gone()
   }
 })
 
