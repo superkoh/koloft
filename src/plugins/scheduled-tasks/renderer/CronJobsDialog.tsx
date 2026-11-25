@@ -415,7 +415,7 @@ export function CronJobsDialog({
 
   const renderForm = (): JSX.Element => (
     <div className="fgrid">
-      {backends.length > 1 && (
+      {(backends.length > 1 || (editing && !cronBackend(editing))) && (
         <>
           <span className="flabel">Runs in</span>
           <div className="fcol">
@@ -437,6 +437,9 @@ export function CronJobsDialog({
                 </button>
               ))}
             </div>
+            {editing && !cronBackend(editing) && cron.notes[editing.id] && (
+              <p className="field-hint bad">{cron.notes[editing.id]}</p>
+            )}
           </div>
         </>
       )}

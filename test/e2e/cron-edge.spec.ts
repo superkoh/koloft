@@ -709,6 +709,12 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
   }) => {
     test.setTimeout(180_000)
     gitInit(env.workspaces.a)
+    seedSettings(env, {
+      sessionMethods: {
+        defaultBackend: 'claude',
+        enabled: { claude: true, codex: false, agy: false }
+      }
+    })
     edWriteStore(env, [
       {
         id: 'claude-job',
@@ -747,8 +753,21 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
       await expect(onSwitch).toBeDisabled()
       await expect(onSwitch).not.toBeChecked()
 
+      await page.locator('button[aria-label="Edit Gone agent job"]').click()
+      const runsIn = edFormRow(page, 'Runs in')
+      await expect(runsIn.locator('.chip')).toHaveText(['Claude'])
+      await expect(runsIn.locator('.chip.on')).toHaveText('Claude')
+      await expect(runsIn.locator('.field-hint.bad')).toHaveText(
+        'The saved agent is no longer supported; this job was paused. Pick another agent to run it again.'
+      )
+      await page.keyboard.press('Escape')
+      await expect(page.locator('.modal.cronjobs .fgrid')).toHaveCount(0)
+
       await page.locator('button[aria-label="Edit Alpha job"]').click()
       await expect(page.locator('.modal.cronjobs .fgrid')).toBeVisible()
+      await expect(
+        page.locator('.modal.cronjobs .fgrid .flabel', { hasText: 'Runs in' })
+      ).toHaveCount(0)
       await edSaveBtn(page).click()
       await expect(page.locator('.modal.cronjobs .fgrid')).toHaveCount(0, { timeout: 15_000 })
 
