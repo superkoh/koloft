@@ -11,19 +11,6 @@
   font-display: block;
 }
 
-.wl-blob.claude,
-.wl-agent.claude {
-  --c: #ff7a3d;
-}
-.wl-blob.codex,
-.wl-agent.codex {
-  --c: #2fc4b2;
-}
-.wl-blob.agy,
-.wl-agent.agy {
-  --c: #f0609e;
-}
-
 .wl {
   --wl-sans: 'Geist', var(--font);
   --wl-serif: 'Instrument Serif', Georgia, serif;
