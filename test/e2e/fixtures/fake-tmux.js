@@ -26,6 +26,7 @@ const flagVal = (f) => {
   const i = rest.indexOf(f)
   return i >= 0 ? rest[i + 1] : undefined
 }
+const sessionNamedExactly = () => flagVal('-t').replace(/^=(.*):$/, '$1')
 
 const openFifoNeverSeeingEof = (fifo) => fs.openSync(fifo, fs.constants.O_RDWR)
 
@@ -179,7 +180,7 @@ if (verb === 'new-session') {
   process.exit(0)
 } else if (verb === 'list-panes' && rest.includes('#{pane_start_command}')) {
   // PLATFORM§35
-  const name = flagVal('-t').replace(/^=(.*):$/, '$1')
+  const name = sessionNamedExactly()
   const rec = recordOf(name)
   if (!rec || !alive(rec.pid)) {
     process.stderr.write(`can't find session: ${name}\n`)
@@ -194,7 +195,7 @@ if (verb === 'new-session') {
   }
   process.exit(0)
 } else if (verb === 'list-panes') {
-  const pid = pidOf(flagVal('-t').replace(/^=(.*):$/, '$1'))
+  const pid = pidOf(sessionNamedExactly())
   if (!alive(pid)) process.exit(1)
   process.stdout.write(pid + '\n')
   process.exit(0)
