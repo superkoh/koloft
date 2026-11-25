@@ -263,6 +263,7 @@ export interface ClaudeSetup {
   tracker?: Partial<ClaudeBackendDeps['tracker']>
   events?: ClaudeBackendDeps['events']
   hookSettings?: ClaudeBackendDeps['hookSettings']
+  messages?: ClaudeBackendDeps['messages']
 }
 
 export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): ClaudeBackend {
@@ -312,7 +313,8 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
     ptysChanged: () => {},
     events: c.events ?? (() => {}),
     error: () => {},
-    projectRules: async () => c.projectRules
+    projectRules: async () => c.projectRules,
+    messages: c.messages
   } as unknown as ClaudeBackendDeps)
 }
 

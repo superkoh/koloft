@@ -32,10 +32,11 @@ import {
   CODEX_SAID_ENV,
   CODEX_SENT_WORDS_ENV,
   NOT_FROM_THE_RELAY,
-  noteOfWhatKoloftSends,
   noteSent,
+  opensAsOnlyKoloftSends,
   sentWordsFile
 } from '../../../../src/plugins/sessions/main/hooks'
+import { everyAgentsMessages, type WhatEachAgentSendsThrough } from '../../helpers/agentMessages'
 
 const OWNER = '555'
 const CHANNEL = '222'
@@ -55,7 +56,7 @@ function message(id: string, authorId = OWNER, content = `said ${id}`): DiscordM
 function setup(
   bound: { lastMessageId?: string } = {},
   history: DiscordMessage[] = [],
-  more: Partial<RelayDeps & SessionAskDeps & HandOverDeps> = {},
+  more: Partial<RelayDeps & SessionAskDeps & HandOverDeps & WhatEachAgentSendsThrough> = {},
   dest: Partial<Destination> = {}
 ) {
   const posts: { text: string; replyTo?: string }[] = []
@@ -107,10 +108,7 @@ function setup(
     replyChannelOf: (t) => (t === TAB ? CHANNEL : undefined),
     askChannelOf: (t) => (t === TAB ? CHANNEL : undefined),
     lobbyLink: () => `<#${CHANNEL}>`,
-    noteSent: async (tab, text, id) => {
-      const note = noteOfWhatKoloftSends(deps.backendOf(tab), text, id)
-      if (note) noteSent(dir, tab, note)
-    },
+    opensAsOnlyKoloftSends,
     inRoom: () => false,
     helperTitle: () => undefined,
     withButtons: (_t, view, card) => ({
@@ -142,9 +140,14 @@ function setup(
     touchedSinceAsked: () => false,
     ownerTouchedSince: () => false,
     queueDrained: () => true,
-    queue: async () => undefined,
-    sendLine: async (tab, line) =>
-      void sent.push({ tab, content: JSON.parse(line).message.content }),
+    send: everyAgentsMessages({
+      sendLine: async (tab, line) =>
+        void sent.push({ tab, content: JSON.parse(line).message.content }),
+      queue: async () => undefined,
+      throughItsApi: async () => false,
+      noteKoloftSent: async (tab, note) => noteSent(dir, tab, note),
+      ...more
+    }).send,
     modeOf: () => 'bypass',
     pendingApproval: () => undefined,
     pendingQuestion: () => undefined,
