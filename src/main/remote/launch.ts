@@ -293,7 +293,7 @@ fi
 trap 'rm -f "${T}${TAB_PASS_FILE_SUFFIX}"' EXIT
 ${sourceTabPass(spec.tabId)}
 ${onATerminalEvenWhenSshGaveNone('$2', '$3', spec.tabId, `sh '${T}.sh' $1`)}
-${ACCOUNT_ENV_HELD_IN_MEMORY}=$(cat "${T}.env" 2>/dev/null); rm -f "${T}.env"
+unset ${ACCOUNT_ENV_HELD_IN_MEMORY}; ${ACCOUNT_ENV_HELD_IN_MEMORY}=$(cat "${T}.env" 2>/dev/null); rm -f "${T}.env"
 exited() {
   c=$?; [ -s "${T}.exit" ] && c=$(cat "${T}.exit")
   [ "$c" = ${SSH_LINK_BROKE_EXIT} ] && c=${AGENT_EXIT_255_PASSED_AS}
@@ -307,7 +307,7 @@ echo ${shq(spec.banner)}
 rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}" "${T}.exit" "${T}.screen" "${T}.tmux"
 ${program.beforeTmux}${passIntoATmuxThatHoldsOne(T, spec.tmuxName, spec.tabId)}
 [ -n "$${TAB_PASS_ENV}" ] && ( umask 077; printf '${TAB_PASS_ENV}=%s\\n' "$${TAB_PASS_ENV}" > "${T}${TAB_PASS_FILE_SUFFIX}" ); unset ${TAB_PASS_ENV}
-[ -n "$${ACCOUNT_ENV_HELD_IN_MEMORY}" ] && ! tmux -L koloft has-session -t '=${spec.tmuxName}' 2>/dev/null && ( umask 077; printf '%s\\n' "$${ACCOUNT_ENV_HELD_IN_MEMORY}" > "${T}.env" ); unset ${ACCOUNT_ENV_HELD_IN_MEMORY}
+[ -n "$${ACCOUNT_ENV_HELD_IN_MEMORY}" ] && ( umask 077; printf '%s\\n' "$${ACCOUNT_ENV_HELD_IN_MEMORY}" > "${T}.env" ); unset ${ACCOUNT_ENV_HELD_IN_MEMORY}
 ${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
 exited
 `
@@ -391,10 +391,12 @@ const SECRET_FILES_NO_TAB_READS_AFTER_MIN = 60
 // PLATFORM§75
 const SWEEP_SECRET_FILES_NO_RUNNING_TAB_READS = remoteShCommand(
   `cd "${REMOTE_TABS_DIR}" 2>/dev/null || exit 0
-running=$(ps -A -o args= 2>/dev/null) || exit 0
+running=$(ps -A -o args= 2>/dev/null) || running=$(cat /proc/[0-9]*/cmdline 2>/dev/null | tr '\\000' ' ')
+[ -n "$running" ] || exit 0
 for f in *.env *.auth.json; do
   [ -f "$f" ] && [ -n "$(find "$f" -mmin +${SECRET_FILES_NO_TAB_READS_AFTER_MIN} 2>/dev/null)" ] || continue
-  case "$running" in *"/.koloft/tabs/\${f%%.*}.sh"*) continue ;; esac
+  case "$f" in *.env) tab=\${f%.env} ;; *) tab=\${f%.auth.json} ;; esac
+  case "$running" in *"/.koloft/tabs/$tab.sh"*) continue ;; esac
   rm -f "$f"
 done
 exit 0`

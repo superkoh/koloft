@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll } from 'vitest'
+import { describe, it, expect, afterAll, vi } from 'vitest'
 import { knowPluginStates } from '../../src/core/switches'
 import crypto from 'crypto'
 import fs from 'fs'
@@ -403,7 +403,7 @@ describe('the Workbench shell of a remote session', () => {
     expect(fs.existsSync(fresh)).toBe(true)
   })
 
-  it('sending a tab removes the account files an older Koloft left on the machine over an hour ago, but not one a tab script of that tab still running there may read, nor one just sent', () => {
+  it('sending a tab removes the account files an older Koloft left on the machine over an hour ago, but not one a tab script of that tab still running there may read, nor one just sent', async () => {
     const r = remote()
     typeLine(r, shellLine(r))
     const tabs = path.join(r.machineHome, '.koloft', 'tabs')
@@ -416,12 +416,14 @@ describe('the Workbench shell of a remote session', () => {
     }
     const gone = [left('pty-a-1.env', 120), left('pty-a-2.auth.json', 120)]
     const kept = [left('pty-a-3.env', 120), left('pty-a-4.env', 5)]
-    fs.writeFileSync(path.join(tabs, 'pty-a-3.sh'), 'sleep 30\n')
+    const runs = path.join(r.dir, 'pty-a-3-runs')
+    fs.writeFileSync(path.join(tabs, 'pty-a-3.sh'), `: > ${JSON.stringify(runs)}\nsleep 30\n`)
     const stillRunning = spawn('/bin/sh', [path.join(tabs, 'pty-a-3.sh')], {
       detached: true,
       stdio: 'ignore'
     })
     try {
+      await vi.waitFor(() => expect(fs.existsSync(runs)).toBe(true))
       typeLine(r, shellLine(r))
     } finally {
       process.kill(-stillRunning.pid!)
@@ -511,7 +513,6 @@ for a in "$@"; do [ "$prev" = -f ] && conf="$a"; last="$a"; prev="$a"; done
 case " $* " in *" capture-pane "*) printf 'the last screen\\n\\n\\n'; exit 0;; esac
 case " $* " in *" source-file "*) cat "$last" >> ${JSON.stringify(path.join(logs, 'sourced'))}; exit 0;; esac
 case " $* " in *" show-environment "*) [ -f ${JSON.stringify(path.join(logs, 'keyed'))} ]; exit $?;; esac
-case " $* " in *" has-session "*) [ -f ${JSON.stringify(path.join(logs, 'running'))} ]; exit $?;; esac
 case " $* " in *" attach "*) ls -A "$HOME/.koloft/tabs" > ${JSON.stringify(path.join(logs, 'tab-files-while-attached'))}; exit 0;; esac
 case " $* " in *" new-session "*) ;; *) exit 0;; esac
 [ -f ${JSON.stringify(path.join(logs, 'running'))} ] && { ls -A "$HOME/.koloft/tabs" > ${JSON.stringify(path.join(logs, 'tab-files-while-attached'))}; exit 0; }
@@ -1068,15 +1069,19 @@ describe('U-TAB-*: the tab script on the machine', () => {
     }
   })
 
-  it('a reconnect, and a start that lands on a tmux session already running, leave no account file on the machine while attached, since the agent there already has its key', () => {
-    for (const mode of ['attach', 'start']) {
-      const b = box(withAccount())
-      fs.writeFileSync(path.join(b.logs, 'running'), '')
-      expect(b.run(mode).status).toBe(0)
-      expect(fs.readFileSync(path.join(b.logs, 'tab-files-while-attached'), 'utf8')).not.toContain(
-        'T.env'
-      )
-    }
+  it('a reconnect leaves no account file on the machine while attached, since the agent there already has its key; a start that lands on a tmux session already running hands it the account all the same, and takes the file away when it ends', () => {
+    const reconnect = box(withAccount())
+    expect(reconnect.run('attach').status).toBe(0)
+    expect(
+      fs.readFileSync(path.join(reconnect.logs, 'tab-files-while-attached'), 'utf8')
+    ).not.toContain('T.env')
+    const landed = box(withAccount())
+    fs.writeFileSync(path.join(landed.logs, 'running'), '')
+    expect(landed.run().status).toBe(0)
+    expect(fs.readFileSync(path.join(landed.logs, 'tab-files-while-attached'), 'utf8')).toContain(
+      'T.env'
+    )
+    expect(accountFileLeft(landed)).toBe(false)
   })
 
   it("on a machine whose ssh gives the command no terminal, a start and a reconnect each run inside a stand-in terminal of the tab's size, where tmux can open", () => {

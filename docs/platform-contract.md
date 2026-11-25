@@ -4216,5 +4216,5 @@ not, ADR-0052.
 
 Koloft dependents: `tabScript` (`src/main/remote/launch.ts`) reads `<tab>.env` into a shell
 variable and deletes it as its first step after the stand-in terminal, and writes it back
-only just before a new tmux session, whose script reads and deletes it at once; sending a
+only just before it starts tmux, whose script reads and deletes it at once; sending a
 tab deletes such files left over an hour ago whose tab has no script running.
