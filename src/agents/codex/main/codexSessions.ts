@@ -568,6 +568,24 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     return false
   }
 
+  // ADR-0039 CODEX§16
+  noticeRemoteExits(): void {}
+
+  mirrorPulled(): void {}
+
+  // ADR-0039 CODEX§16
+  tmuxOfTab(): undefined {
+    return undefined
+  }
+
+  async answer(): Promise<false> {
+    return false
+  }
+
+  async deliver(): Promise<false> {
+    return false
+  }
+
   async stopAll(deadlineMs?: number): Promise<void> {
     await Promise.all([
       super.stopAll(deadlineMs),
