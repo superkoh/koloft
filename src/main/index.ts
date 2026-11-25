@@ -230,7 +230,7 @@ import { parseSessionPorts, scanPortsHere, scanPortsOnMachine } from './sessionP
 import { reachesThisMacsServer } from '@core/thisMacsServers'
 import { mapAtMost } from '@core/mapAtMost'
 import { SessionSearch } from './sessionSearch'
-import createTranscriptSearchWorker from './transcriptSearchWorker?nodeWorker'
+import createTranscriptSearchWorker from '@agents/claude/main/transcriptSearchWorker?nodeWorker'
 import createUsageScanWorker from './usageScanWorker?nodeWorker'
 import { UsageCache, listUsageFiles, statOf, type ScannedFile } from './usageCache'
 import { applyWindowCommand } from '@shared/shortcutDispatch'

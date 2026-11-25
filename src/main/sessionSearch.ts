@@ -1,5 +1,6 @@
 import type { SearchSnippet, SessionRow, SessionSearchHit, SessionSearchHits } from '@shared/types'
-import { snippetAround, type TranscriptFile } from './transcriptSearch'
+import { snippetAround } from '@core/snippetAround'
+import type { TranscriptFile } from '@agents/claude/main/transcriptSearch'
 
 export interface SearchCandidate {
   row: SessionRow
