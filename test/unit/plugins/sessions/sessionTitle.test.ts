@@ -16,6 +16,8 @@ function fakeClaude(body: string): string {
   return bin
 }
 
+const nothingToCleanUp = (): void => {}
+
 function claudeAssist(bin: string, env: NodeJS.ProcessEnv = {}) {
   return koloftAssist({
     picks: () => ({
@@ -24,7 +26,8 @@ function claudeAssist(bin: string, env: NodeJS.ProcessEnv = {}) {
       accounts: []
     }),
     enabled: () => true,
-    target: async (backend) => (backend === 'claude' ? { binary: bin, env } : null),
+    target: async (backend) =>
+      backend === 'claude' ? { binary: bin, env, done: nothingToCleanUp } : null,
     onThisAccount: async (_backend, asked) => asked
   })
 }

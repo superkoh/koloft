@@ -10,6 +10,7 @@ import {
 } from '@core/assistModels'
 import { takenEffort } from '@shared/cronModels'
 import { envMs } from '@core/agent/sessionRuntime'
+import type { OneShotTarget } from '@core/agent/agentsMain'
 
 const ASSIST_TIMEOUT_MS = envMs('KOLOFT_ASSIST_TIMEOUT_MS', 15_000)
 export const ASSIST_ANSWERS_WITHIN_MS = 2 * ASSIST_TIMEOUT_MS
@@ -105,24 +106,17 @@ const ONE_SHOT: Record<
   }
 }
 
-export interface AssistTarget {
-  binary: string
-  env: NodeJS.ProcessEnv
-  args?: string[]
-  done?(): void
-}
-
 export interface AssistDeps {
   picks(): Parameters<typeof assistBackendsFor>[1]
   enabled(backend: BackendId): boolean
-  target(backend: BackendId): Promise<AssistTarget | null>
+  target(backend: BackendId): Promise<OneShotTarget | null>
   onThisAccount(backend: BackendId, asked: ModelAndEffort): Promise<ModelAndEffort>
 }
 
 type OneRun = (signal: AbortSignal | undefined, timeoutMs: number) => Promise<string | null>
 
 function runOnce(
-  target: AssistTarget,
+  target: OneShotTarget,
   argv: string[],
   input: string,
   signal: AbortSignal | undefined,
@@ -225,7 +219,7 @@ export function koloftAssist(deps: AssistDeps): Assist {
           : takenEffort(backend, safe.model, launch.effort)
         return runWith({ ...safe, ...(effort && { effort }) })(job.signal, leftMs)
       }
-      const out = await answered().finally(() => target.done?.())
+      const out = await answered().finally(() => target.done())
       return out === null ? null : shot.answer(out)
     }
     return null
