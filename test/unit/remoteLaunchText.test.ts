@@ -11,7 +11,10 @@ vi.mock('electron', async () => {
   return { app: { getPath: () => base, getName: () => 'koloft-dev', isPackaged: false } }
 })
 
-afterAll(() => fs.rmSync(app.getPath('userData'), { recursive: true, force: true }))
+afterAll(async () => {
+  await BackgroundFile.whenAllWritten()
+  fs.rmSync(app.getPath('userData'), { recursive: true, force: true })
+})
 
 vi.mock('../../src/main/cliRuntime', () => ({
   resolveCliRuntime: async (spec: {
@@ -53,6 +56,7 @@ import type { CreateTabOptions } from '@shared/types'
 import { agySessionKey } from '../../src/agents/kit/main/sessionStore'
 import type { MachineAccount } from '../../src/agents/claude/main/claudeLaunch'
 import { tabPackageDir } from '../../src/main/remote/paths'
+import { BackgroundFile } from '../../src/main/backgroundFile'
 import {
   isStartedBeforeTabPasses,
   markStartedBeforeTabPasses,

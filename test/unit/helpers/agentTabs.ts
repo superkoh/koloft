@@ -56,8 +56,8 @@ export function makeWorld(): World {
   return {
     ...world,
     gone: async () => {
-      process.env.HOME = homeBefore
       await BackgroundFile.whenAllWritten()
+      process.env.HOME = homeBefore
       fs.rmSync(home, { recursive: true, force: true })
     }
   }

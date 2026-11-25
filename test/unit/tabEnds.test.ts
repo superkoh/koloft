@@ -11,7 +11,10 @@ vi.mock('electron', async () => {
   return { app: { getPath: () => base, getName: () => 'koloft-dev', isPackaged: false } }
 })
 
-afterAll(() => fs.rmSync(app.getPath('userData'), { recursive: true, force: true }))
+afterAll(async () => {
+  await BackgroundFile.whenAllWritten()
+  fs.rmSync(app.getPath('userData'), { recursive: true, force: true })
+})
 
 vi.mock('../../src/main/cliRuntime', () => ({
   resolveCliRuntime: async (spec: {
@@ -75,6 +78,7 @@ import {
   type World
 } from './helpers/agentTabs'
 import { lifecycle as nothingListensToTheSessions } from './helpers/sessionBackendStub'
+import { BackgroundFile } from '../../src/main/backgroundFile'
 
 const CLAUDE_TAB = 'pty-claude'
 const CODEX_TAB = 'pty-codex'

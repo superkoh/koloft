@@ -11,7 +11,10 @@ vi.mock('electron', async () => {
   return { app: { getPath: () => base, getName: () => 'koloft-dev', isPackaged: false } }
 })
 
-afterAll(() => fs.rmSync(app.getPath('userData'), { recursive: true, force: true }))
+afterAll(async () => {
+  await BackgroundFile.whenAllWritten()
+  fs.rmSync(app.getPath('userData'), { recursive: true, force: true })
+})
 
 vi.mock('../../src/main/cliRuntime', () => ({
   resolveCliRuntime: async (spec: {
@@ -62,6 +65,7 @@ import {
 import { setupHooks, writeTabHookSettings } from '../../src/plugins/sessions/main/hooks'
 import { writeAgyScripts } from '../../src/agents/agy/main/agyHooks'
 import { machineHookSettings } from '../../src/agents/claude/main/backend'
+import { BackgroundFile } from '../../src/main/backgroundFile'
 import {
   agySessionsIn,
   claudeBackendIn,
