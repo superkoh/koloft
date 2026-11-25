@@ -264,14 +264,11 @@ function startableWorkspace(ref: string, pinned: PinnedWorkspace[]): Parsed<stri
   return { ok: true, value: found.value.path }
 }
 
-const KINDS_WITHOUT_A_MESSAGE_TOOL_OF_THEIR_OWN = kindsOf(
-  SESSION_BACKENDS.filter((b) => !talksWithItsOwnTool(b)),
-  'and'
-)
-const KINDS_WITH_ONE = kindsOf(SESSION_BACKENDS.filter(talksWithItsOwnTool), 'and')
-
 const leftToItsOwnTool = (caller: BackendId): string =>
-  `${fillSlots('{{session-send-left-to-its-own-tool}}', { agent: caller })} This command reaches ${KINDS_WITHOUT_A_MESSAGE_TOOL_OF_THEIR_OWN} sessions, ${KINDS_WITH_ONE} sessions on another machine, and the session or Assist that started you.`
+  `${fillSlots('{{session-send-left-to-its-own-tool}}', { agent: caller })} This command reaches ${kindsOf(
+    SESSION_BACKENDS.filter((b) => b !== caller),
+    'and'
+  )} sessions, ${BACKEND_LABEL[caller]} sessions on another machine, and the session or Assist that started you.`
 
 function matchRef<T>(
   items: T[],
