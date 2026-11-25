@@ -21,7 +21,7 @@ import type {
 } from '@core/agent/usageShape'
 import { API_KEY_BADGE, lineUnder, pillSpoken } from '@agents/kit/shared/usage'
 import { agent } from '../agent'
-import { USE_A_SAVED_RESET } from '../shared/savedResets'
+import { USE_A_SAVED_RESET, type CodexResetOutcome } from '../shared/savedResets'
 
 // CODEX§15
 function balanceLabel(l: CodexLimits, nowMs: number): string {
@@ -50,13 +50,13 @@ function sublineOf(w: CodexLimitWindow): Subline {
     : { kind: 'time', epoch: w.resetsAt, tone: 'faint' }
 }
 
-const RESET_OUTCOMES: UsageAction['outcomes'] = {
+const RESET_OUTCOMES = {
   reset: null,
   nothingToReset: 'Codex says there is nothing to reset right now.',
   noCredit: 'No saved reset is left on this account.',
   alreadyRedeemed: 'That reset was already used.',
   failed: 'Could not reach Codex. Try again.'
-}
+} satisfies Record<CodexResetOutcome, string | null>
 
 function resetAction(a: AccountView): UsageAction {
   return {

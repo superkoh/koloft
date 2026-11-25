@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import type { BackendId, UsageRead } from '@shared/types'
 import { BACKEND_PRODUCT, SESSION_BACKENDS, shortProductList } from '@shared/sessionBackend'
 import { isRemoteKey } from '@shared/remoteKey'
-import { agentUi } from '@agents/uis'
+import { AGENT_UIS } from '@agents/uis'
 import { basename } from '@shared/preview'
 import { formatCost, formatTokens, localDayKey } from '@shared/usageFormat'
 import {
@@ -53,7 +53,7 @@ function Badges({ backends, ssh }: { backends: BackendId[]; ssh: boolean }): JSX
   return (
     <>
       {backends.map((b) => {
-        const badge = agentUi(b).usage.costBadge
+        const badge = AGENT_UIS.find((ui) => ui.id === b)?.usage.costBadge
         return (
           badge && (
             <span key={b} className={`acct-badge ${b}`}>
