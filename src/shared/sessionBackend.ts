@@ -211,13 +211,14 @@ export function sessionKey(ref: SessionIdentity): string {
 export function identityOf(key: string): SessionIdentity | undefined {
   const parts = key.split(':')
   const named = backendIdOf(parts[0])
-  if (parts.length > 1 && (!named || parts.length !== 3)) return undefined
-  if (named && parts.length === 3) {
-    return {
-      backendId: named,
-      sourceId: decodeURIComponent(parts[1]),
-      nativeSessionId: decodeURIComponent(parts[2])
-    }
+  if (parts.length > 1) {
+    return named && parts.length === 3
+      ? {
+          backendId: named,
+          sourceId: decodeURIComponent(parts[1]),
+          nativeSessionId: decodeURIComponent(parts[2])
+        }
+      : undefined
   }
   return (
     AGENT_OF_UNNAMED_OLD_DATA && {
