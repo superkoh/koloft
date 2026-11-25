@@ -38,14 +38,7 @@ vi.mock('../../src/agents/codex/main/codexTransport', async (importOriginal) => 
   }
 })
 
-import {
-  A_SITUATION_TAKES_UP_TO_MS,
-  pinSituation,
-  pinWhenACardIsPosted,
-  pinWhenAMessageAnswers,
-  titleOf,
-  useAskTable
-} from './helpers/askTable'
+import { A_SITUATION_TAKES_UP_TO_MS, pinSituation, titleOf, useAskTable } from './helpers/askTable'
 
 useAskTable()
 
@@ -54,8 +47,10 @@ describe('the words each place shows for a question or a plan, from each agentâ€
     'one-question-own-words',
     'one-question-no-own-words',
     'several-questions',
+    'several-questions-no-own-words',
     'one-question-several-picks',
-    'approve-a-plan'
+    'approve-a-plan',
+    'approve-a-plan-koloft-cannot-read'
   ])
     it(titleOf(file), () => pinSituation(file), A_SITUATION_TAKES_UP_TO_MS)
 })

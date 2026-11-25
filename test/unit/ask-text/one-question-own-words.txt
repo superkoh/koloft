@@ -42,7 +42,7 @@ what reached the agent: the hook printed to Claude Code: {"hookSpecificOutput":{
 Koloft said: (taken, no refusal)
 what reached the agent: the hook printed to Claude Code: {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedInput":{"questions":[{"question":"Which colour do you prefer?","header":"Colour","options":[{"label":"Red","description":"Choose red."},{"label":"Green","description":"Choose green."}],"multiSelect":false}],"answers":{"Which colour do you prefer?":"Blue, please"}}}}}
 
-## Claude Code, its ask not held (a tab on this Mac nobody answers from elsewhere, or any tab on another machine, whose hook only records): Koloft answers by keys
+## Claude Code, its ask not held (a tab on this Mac nobody answers from elsewhere; a tab on another machine, whose hook only records, takes this path too: inferred, not checked): Koloft answers by keys
 the raw ask: PermissionRequest hook input: {"hook_event_name":"PermissionRequest","session_id":"11111111-1111-4111-8111-111111111111","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Which colour do you prefer?","header":"Colour","options":[{"label":"Red","description":"Choose red."},{"label":"Green","description":"Choose green."}],"multiSelect":false}]}}
 the session row's small line: Asks: Which colour do you prefer?
 Discord card: body:
@@ -84,7 +84,7 @@ what reached the agent: keys pressed: "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B
 Koloft said: (taken, no refusal)
 what reached the agent: keys pressed: "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[B" "\u001b[A" "\u0015" "Blue, please" "\r"
 
-## Codex (its app-server's request, read on the TUI's connection)
+## Codex (its app-server's request, read on the TUI's connection; the tab runs on the stand-in machine of agentTabs)
 the raw ask: app-server frame: {"id":7,"method":"item/tool/requestUserInput","params":{"threadId":"22222222-2222-4222-8222-222222222222","turnId":"t1","itemId":"call_1","questions":[{"id":"colour","header":"colour","question":"Which colour do you prefer?","isOther":true,"isSecret":false,"options":[{"label":"Red","description":"Choose red."},{"label":"Green","description":"Choose green."}]}],"isBlocking":true,"autoResolutionMs":null}}
 the session row's small line: Asks: Which colour do you prefer?
 Discord card: body:
@@ -148,30 +148,30 @@ this ask's id: the ids it had, in turn: hook:<when it was read> → t9:2
 --- pressed the Discord card's first button, "1. Red" ---
 the card now says: -# ✅ 1. Red
 Discord said: (nothing)
-what reached the agent: through its API: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which colour do you prefer?","selectedOptionIds":["a"]}]}}}
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which colour do you prefer?","selectedOptionIds":["a"]}]}}}
 --- replied "1" in the session's Discord room ---
 Discord said: reacted ⏳
 handed to the session as a message: [Discord] 1
 what reached the agent: (nothing)
 --- answered "1" with koloft session answer ---
 Koloft said: (taken, no refusal)
-what reached the agent: through its API: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which colour do you prefer?","selectedOptionIds":["a"]}]}}}
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which colour do you prefer?","selectedOptionIds":["a"]}]}}}
 --- replied "Green" in the session's Discord room ---
 Discord said: reacted ⏳
 handed to the session as a message: [Discord] Green
 what reached the agent: (nothing)
 --- answered "Green" with koloft session answer ---
 Koloft said: (taken, no refusal)
-what reached the agent: through its API: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which colour do you prefer?","selectedOptionIds":["b"]}]}}}
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which colour do you prefer?","selectedOptionIds":["b"]}]}}}
 --- replied "Blue, please" in the session's Discord room ---
 Discord said: reacted ⏳
 handed to the session as a message: [Discord] Blue, please
 what reached the agent: (nothing)
 --- answered "Blue, please" with koloft session answer ---
 Koloft said: (taken, no refusal)
-what reached the agent: through its API: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which colour do you prefer?","writeInResponse":"Blue, please"}]}}}
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which colour do you prefer?","writeInResponse":"Blue, please"}]}}}
 
-## Antigravity, read from its tool call and 7501 status only (its API not answering, as on another machine): Koloft answers by keys
+## Antigravity, read from its tool call and 7501 status only, its API not answering (a tab on another machine has no API client and reads this way: inferred, not checked): Koloft answers by keys
 the raw ask:
     PreToolUse hook input: {"conversationId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","workspacePaths":["<home>/repo"],"toolCall":{"name":"ask_question","args":{"questions":[{"question":"Which colour do you prefer?","options":["Red","Green"]}]}}}
     7501 status: state=blocked, kind=question, msg="Which colour do you prefer?"

@@ -44,7 +44,7 @@ what reached the agent: the hook printed to Claude Code: {"hookSpecificOutput":{
 Koloft said: (taken, no refusal)
 what reached the agent: the hook printed to Claude Code: {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"Add a step for the tests"}}}
 
-## Claude Code, its ask not held (a tab on this Mac nobody answers from elsewhere, or any tab on another machine, whose hook only records): Koloft answers by keys
+## Claude Code, its ask not held (a tab on this Mac nobody answers from elsewhere; a tab on another machine, whose hook only records, takes this path too: inferred, not checked): Koloft answers by keys
 the raw ask: PermissionRequest hook input: {"hook_event_name":"PermissionRequest","session_id":"11111111-1111-4111-8111-111111111111","tool_name":"ExitPlanMode","tool_input":{"plan":"# Plan\n1. Read the docs\n2. Fix the links"}}
 the session row's small line: Asks: Approve this plan?
 Discord card: body:
@@ -91,7 +91,7 @@ what reached the agent: (nothing)
 Koloft said: Koloft answers this dialog by its keys, so it can only answer yes or no.
 what reached the agent: (nothing)
 
-## Codex (its app-server's request, read on the TUI's connection)
+## Codex (its app-server's request, read on the TUI's connection; the tab runs on the stand-in machine of agentTabs)
 never asks this: Codex never asks this through its app-server: “Implement this plan?” is a menu of its own screen (CODEX§19)
 
 ## Antigravity, read through its API (a tab on this Mac)
@@ -121,21 +121,21 @@ this ask's id: the ids it had, in turn: plan:3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0
 --- pressed the Discord card's first button, "Approve" ---
 the card now says: -# ✅ Approve
 Discord said: (nothing)
-what reached the agent: (nothing)
+what reached the agent: through its API, SendUserCascadeMessage: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","items":[{"text":"[Approved] plan.md"}],"cascadeConfig":{"plannerConfig":{"planModel":"M36"}}}
 --- replied "yes" in the session's Discord room ---
 Discord said: reacted ✅
 handed to the session as a message: (nothing)
-what reached the agent: (nothing)
+what reached the agent: through its API, SendUserCascadeMessage: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","items":[{"text":"[Approved] plan.md"}],"cascadeConfig":{"plannerConfig":{"planModel":"M36"}}}
 --- answered "yes" with koloft session answer ---
-Koloft said: Koloft sees no question or approval in it right now.
-what reached the agent: (nothing)
+Koloft said: (taken, no refusal)
+what reached the agent: through its API, SendUserCascadeMessage: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","items":[{"text":"[Approved] plan.md"}],"cascadeConfig":{"plannerConfig":{"planModel":"M36"}}}
 --- replied "no" in the session's Discord room ---
 Discord said: reacted ✅
 handed to the session as a message: (nothing)
-what reached the agent: (nothing)
+what reached the agent: through its API, SendUserCascadeMessage: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","items":[{"text":"[Rejected] plan.md"}],"cascadeConfig":{"plannerConfig":{"planModel":"M36"}}}
 --- answered "no" with koloft session answer ---
-Koloft said: Koloft sees no question or approval in it right now.
-what reached the agent: (nothing)
+Koloft said: (taken, no refusal)
+what reached the agent: through its API, SendUserCascadeMessage: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","items":[{"text":"[Rejected] plan.md"}],"cascadeConfig":{"plannerConfig":{"planModel":"M36"}}}
 --- replied "Add a step for the tests" in the session's Discord room ---
 Discord said: under the message: an Antigravity approval takes yes or no.
 handed to the session as a message: (nothing)
@@ -144,7 +144,7 @@ what reached the agent: (nothing)
 Koloft said: an Antigravity approval takes yes or no.
 what reached the agent: (nothing)
 
-## Antigravity, read from its tool call and 7501 status only (its API not answering, as on another machine): Koloft answers by keys
+## Antigravity, read from its tool call and 7501 status only, its API not answering (a tab on another machine has no API client and reads this way: inferred, not checked): Koloft answers by keys
 the raw ask:
     brain/<conversation>/plan.md, waiting for review: "# Plan\n1. Read the docs\n2. Fix the links"
     7501 status: state=blocked, kind=permission, msg="Approve plan"

@@ -1,0 +1,49 @@
+# Wants to run a command, its request arriving after its state already says it waits
+
+## Claude Code, its ask held by its hook (a tab on this Mac that Discord or the owner-asleep butler answers)
+never asks this: Claude Code's ask is its hook's input itself; no state of it comes first (CC§14)
+
+## Claude Code, its ask not held (a tab on this Mac nobody answers from elsewhere; a tab on another machine, whose hook only records, takes this path too: inferred, not checked): Koloft answers by keys
+never asks this: Claude Code's ask is its hook's input itself; no state of it comes first (CC§14)
+
+## Codex (its app-server's request, read on the TUI's connection; the tab runs on the stand-in machine of agentTabs)
+the sample: `thread/status/changed` with `activeFlags: ["waitingOnApproval"]` first, the request 600 ms later, inside the 8 × 250 ms Koloft waits for it (CODEX§3); the gap is constructed
+the raw ask:
+    app-server frame: {"method":"thread/status/changed","params":{"threadId":"22222222-2222-4222-8222-222222222222","status":{"type":"active","activeFlags":["waitingOnApproval"]}}}
+    600 ms later:
+    app-server frame: {"id":7,"method":"item/commandExecution/requestApproval","params":{"threadId":"22222222-2222-4222-8222-222222222222","turnId":"t1","itemId":"call_2","command":"npm test","cwd":"/home/me/proj"}}
+the session row's small line: Wants to run: npm test
+Discord card: body: Codex asks to run: npm test
+Discord card: footnote: -# Reply yes or no.
+Discord card: buttons: Yes | No
+Inbox card: title: “Fix the docs” wants to run a command
+Inbox card: quote: Command: npm test
+Inbox card: questions: (nothing)
+Inbox card: text: (nothing)
+Inbox card: buttons: Allow | Deny
+the butler's owner-asleep report, the part that says what was asked: asked to be allowed: "npm test"
+this ask's id: the app-server's request id: 7
+--- pressed the Discord card's first button, "Yes" ---
+the card now says: -# ✅ Yes
+Discord said: (nothing)
+what reached the agent: keys pressed: "y"
+--- replied "yes" in the session's Discord room ---
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: keys pressed: "y"
+--- answered "yes" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: keys pressed: "y"
+--- replied "maybe" in the session's Discord room ---
+Discord said: under the message: Reply yes or no.
+handed to the session as a message: (nothing)
+what reached the agent: (nothing)
+--- answered "maybe" with koloft session answer ---
+Koloft said: a Codex approval takes yes or no.
+what reached the agent: (nothing)
+
+## Antigravity, read through its API (a tab on this Mac)
+never asks this: Antigravity has no request to trail its state: Koloft reads the ask when its 7501 status arrives (AGY§8); its later API read is pinned in the other files
+
+## Antigravity, read from its tool call and 7501 status only, its API not answering (a tab on another machine has no API client and reads this way: inferred, not checked): Koloft answers by keys
+never asks this: Antigravity has no request to trail its state: Koloft reads the ask when its 7501 status arrives (AGY§8); its later API read is pinned in the other files

@@ -41,7 +41,7 @@ what reached the agent: the hook printed to Claude Code: {"hookSpecificOutput":{
 Koloft said: (taken, no refusal)
 what reached the agent: the hook printed to Claude Code: {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"maybe"}}}
 
-## Claude Code, its ask not held (a tab on this Mac nobody answers from elsewhere, or any tab on another machine, whose hook only records): Koloft answers by keys
+## Claude Code, its ask not held (a tab on this Mac nobody answers from elsewhere; a tab on another machine, whose hook only records, takes this path too: inferred, not checked): Koloft answers by keys
 the raw ask: PermissionRequest hook input: {"hook_event_name":"PermissionRequest","session_id":"11111111-1111-4111-8111-111111111111","tool_name":"Bash","tool_input":{"command":"npm test"}}
 the session row's small line: Wants to run: npm test
 Discord card: body:
@@ -82,7 +82,7 @@ what reached the agent: (nothing)
 Koloft said: Koloft answers this dialog by its keys, so it can only answer yes or no.
 what reached the agent: (nothing)
 
-## Codex (its app-server's request, read on the TUI's connection)
+## Codex (its app-server's request, read on the TUI's connection; the tab runs on the stand-in machine of agentTabs)
 the raw ask: app-server frame: {"id":7,"method":"item/commandExecution/requestApproval","params":{"threadId":"22222222-2222-4222-8222-222222222222","turnId":"t1","itemId":"call_2","command":"npm test","cwd":"/home/me/proj"}}
 the session row's small line: Wants to run: npm test
 Discord card: body: Codex asks to run: npm test
@@ -140,21 +140,21 @@ this ask's id: the ids it had, in turn: hook:<when it was read> → t9:2
 --- pressed the Discord card's first button, "Yes" ---
 the card now says: -# ✅ Yes
 Discord said: (nothing)
-what reached the agent: through its API: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"permission":{"allow":true}}}
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"permission":{"allow":true}}}
 --- replied "yes" in the session's Discord room ---
 Discord said: reacted ⏳
 handed to the session as a message: [Discord] yes
 what reached the agent: (nothing)
 --- answered "yes" with koloft session answer ---
 Koloft said: (taken, no refusal)
-what reached the agent: through its API: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"permission":{"allow":true}}}
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"permission":{"allow":true}}}
 --- replied "no" in the session's Discord room ---
 Discord said: reacted ⏳
 handed to the session as a message: [Discord] no
 what reached the agent: (nothing)
 --- answered "no" with koloft session answer ---
 Koloft said: (taken, no refusal)
-what reached the agent: through its API: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"permission":{"allow":false}}}
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"permission":{"allow":false}}}
 --- replied "maybe" in the session's Discord room ---
 Discord said: reacted ⏳
 handed to the session as a message: [Discord] maybe
@@ -163,7 +163,7 @@ what reached the agent: (nothing)
 Koloft said: an Antigravity approval takes yes or no.
 what reached the agent: (nothing)
 
-## Antigravity, read from its tool call and 7501 status only (its API not answering, as on another machine): Koloft answers by keys
+## Antigravity, read from its tool call and 7501 status only, its API not answering (a tab on another machine has no API client and reads this way: inferred, not checked): Koloft answers by keys
 the raw ask:
     PreToolUse hook input: {"conversationId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","workspacePaths":["<home>/repo"],"toolCall":{"name":"run_command","args":{"CommandLine":"npm test"}}}
     7501 status: state=blocked, kind=permission, msg="Approve RunCommand: npm test"

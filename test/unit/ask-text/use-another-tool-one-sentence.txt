@@ -3,10 +3,10 @@
 ## Claude Code, its ask held by its hook (a tab on this Mac that Discord or the owner-asleep butler answers)
 never asks this: Claude Code's PermissionRequest hook always names its tool (tool_name) and hands its input (CC§14)
 
-## Claude Code, its ask not held (a tab on this Mac nobody answers from elsewhere, or any tab on another machine, whose hook only records): Koloft answers by keys
+## Claude Code, its ask not held (a tab on this Mac nobody answers from elsewhere; a tab on another machine, whose hook only records, takes this path too: inferred, not checked): Koloft answers by keys
 never asks this: Claude Code's PermissionRequest hook always names its tool (tool_name) and hands its input (CC§14)
 
-## Codex (its app-server's request, read on the TUI's connection)
+## Codex (its app-server's request, read on the TUI's connection; the tab runs on the stand-in machine of agentTabs)
 the sample: a file change approval whose item Koloft never saw start (`item/fileChange/requestApproval` carrying only `reason`), the one way a Codex approval reaches Koloft with a sentence only; not seen from a real Codex
 the raw ask: app-server frame: {"id":7,"method":"item/fileChange/requestApproval","params":{"threadId":"22222222-2222-4222-8222-222222222222","turnId":"t1","itemId":"call_unseen","reason":"Codex wants to write outside the workspace"}}
 the session row's small line: Asks: Codex wants to write outside the workspace
@@ -86,7 +86,7 @@ what reached the agent: (nothing)
 Koloft said: an Antigravity approval takes yes or no.
 what reached the agent: (nothing)
 
-## Antigravity, read from its tool call and 7501 status only (its API not answering, as on another machine): Koloft answers by keys
+## Antigravity, read from its tool call and 7501 status only, its API not answering (a tab on another machine has no API client and reads this way: inferred, not checked): Koloft answers by keys
 the sample: the 7501 msg with `AGY_CLI_OSC7501_MESSAGES=brief`, "Approve RunCommand" (AGY§8), with no tool call before it
 the raw ask: 7501 status: state=blocked, kind=permission, msg="Approve RunCommand"
 the session row's small line: Wants to run: Approve RunCommand

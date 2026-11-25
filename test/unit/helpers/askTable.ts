@@ -14,14 +14,7 @@ import {
   ON_THE_MACHINE,
   type World
 } from './agentTabs'
-import {
-  AskSurfaces,
-  CHANNEL,
-  holdAsksOf,
-  runAskHook,
-  SESSION_TITLE,
-  writeHookScript
-} from './askSurfaces'
+import { AskSurfaces, holdAsksOf, runAskHook, SESSION_TITLE, writeHookScript } from './askSurfaces'
 
 const PINNED = './ask-text'
 const SID = '11111111-1111-4111-8111-111111111111'
@@ -48,11 +41,12 @@ const SECTION_TITLE: Record<Kind, string> = {
   'claude-held':
     'Claude Code, its ask held by its hook (a tab on this Mac that Discord or the owner-asleep butler answers)',
   'claude-keys':
-    'Claude Code, its ask not held (a tab on this Mac nobody answers from elsewhere, or any tab on another machine, whose hook only records): Koloft answers by keys',
-  codex: "Codex (its app-server's request, read on the TUI's connection)",
+    'Claude Code, its ask not held (a tab on this Mac nobody answers from elsewhere; a tab on another machine, whose hook only records, takes this path too: inferred, not checked): Koloft answers by keys',
+  codex:
+    "Codex (its app-server's request, read on the TUI's connection; the tab runs on the stand-in machine of agentTabs)",
   'agy-api': 'Antigravity, read through its API (a tab on this Mac)',
   'agy-keys':
-    'Antigravity, read from its tool call and 7501 status only (its API not answering, as on another machine): Koloft answers by keys'
+    'Antigravity, read from its tool call and 7501 status only, its API not answering (a tab on another machine has no API client and reads this way: inferred, not checked): Koloft answers by keys'
 }
 
 const BACKEND_OF: Record<Kind, BackendId> = {
@@ -72,6 +66,7 @@ interface CodexAsk {
   before?: { method: string; params: Record<string, unknown> }[]
   method: string
   params: Record<string, unknown>
+  requestAfterItsStateMs?: number | 'never'
 }
 
 interface AgyAsk {
@@ -249,6 +244,31 @@ const SITUATIONS: Situation[] = [
     replies: ['1\n2', '1', 'Blue\nLarge']
   },
   {
+    file: 'several-questions-no-own-words',
+    title: 'Asks two questions at once, each taking one pick, and neither takes own words',
+    claude: {
+      never:
+        'every Claude Code question has its own row for own words (its dialog draws “Type something.”, CC§14)'
+    },
+    codex: {
+      method: 'item/tool/requestUserInput',
+      params: {
+        itemId: 'call_1',
+        questions: [
+          codexQuestion('colour', 'Which colour do you prefer?', COLOURS, false),
+          codexQuestion('size', 'Which size?', SIZES, false)
+        ],
+        isBlocking: true,
+        autoResolutionMs: null
+      }
+    },
+    agy: {
+      never:
+        'Koloft reads every Antigravity question that has options as one that takes own words (agyQuestion, AGY§14)'
+    },
+    replies: ['1\n2', '1', 'Blue\nLarge']
+  },
+  {
     file: 'one-question-several-picks',
     title: 'Asks one question that takes several picks',
     claude: {
@@ -308,6 +328,27 @@ const SITUATIONS: Situation[] = [
     replies: ['yes', 'no', 'Add a step for the tests']
   },
   {
+    file: 'approve-a-plan-koloft-cannot-read',
+    title: 'Asks to approve a plan whose text Koloft cannot read',
+    claude: { tool_name: 'ExitPlanMode', tool_input: {} },
+    codex: {
+      never:
+        'Codex never asks this through its app-server: “Implement this plan?” is a menu of its own screen (CODEX§19)'
+    },
+    agy: {
+      status: { kind: 'permission', msg: 'Approve plan' },
+      plan: '',
+      api: {
+        trajectoryId: 't9',
+        steps: [
+          { userInput: { userConfig: { plannerConfig: { planModel: 'M36' } } } },
+          { status: 'CORTEX_STEP_STATUS_DONE' }
+        ]
+      }
+    },
+    replies: ['yes', 'Add a step for the tests']
+  },
+  {
     file: 'run-a-command-with-reason',
     title: 'Wants to run a command, and gives a reason',
     claude: {
@@ -340,6 +381,40 @@ const SITUATIONS: Situation[] = [
       api: waitingStep({ permission: { resource: { action: 'command', target: 'npm test' } } })
     },
     replies: ['yes', 'no', 'maybe']
+  },
+  {
+    file: 'run-a-command-request-after-its-state',
+    title: 'Wants to run a command, its request arriving after its state already says it waits',
+    claude: {
+      never: "Claude Code's ask is its hook's input itself; no state of it comes first (CC§14)"
+    },
+    codex: {
+      method: 'item/commandExecution/requestApproval',
+      params: { itemId: 'call_2', command: 'npm test', cwd: '/home/me/proj' },
+      requestAfterItsStateMs: 600
+    },
+    agy: {
+      never:
+        'Antigravity has no request to trail its state: Koloft reads the ask when its 7501 status arrives (AGY§8); its later API read is pinned in the other files'
+    },
+    replies: ['yes', 'maybe']
+  },
+  {
+    file: 'run-a-command-request-never-comes',
+    title: 'Waits for an approval whose request never arrives',
+    claude: {
+      never: "Claude Code's ask is its hook's input itself; no state of it comes first (CC§14)"
+    },
+    codex: {
+      method: 'item/commandExecution/requestApproval',
+      params: {},
+      requestAfterItsStateMs: 'never'
+    },
+    agy: {
+      never:
+        'Antigravity has no request to trail its state: Koloft reads the ask when its 7501 status arrives (AGY§8)'
+    },
+    replies: ['yes']
   },
   {
     file: 'edit-a-file',
@@ -426,6 +501,16 @@ const SITUATIONS: Situation[] = [
 ]
 
 const SAMPLES_NOT_MEASURED: Record<string, string> = {
+  'approve-a-plan-koloft-cannot-read/claude':
+    'an `ExitPlanMode` hook input with no `plan` in it; constructed, not seen from a real Claude Code',
+  'approve-a-plan-koloft-cannot-read/agy':
+    'a plan waiting for review whose `plan.md` is empty, so Koloft reads no text (AGY§19); constructed, not measured',
+  'run-a-command-request-after-its-state/codex':
+    '`thread/status/changed` with `activeFlags: ["waitingOnApproval"]` first, the request 600 ms later, inside the 8 × 250 ms Koloft waits for it (CODEX§3); the gap is constructed',
+  'run-a-command-request-never-comes/codex':
+    '`thread/status/changed` with `activeFlags: ["waitingOnApproval"]` and no request after it; constructed',
+  'several-questions-no-own-words/codex':
+    'the `item/tool/requestUserInput` shape of CODEX§20 with two questions, both `isOther: false`',
   'use-another-tool-one-sentence/codex':
     'a file change approval whose item Koloft never saw start (`item/fileChange/requestApproval` carrying only `reason`), the one way a Codex approval reaches Koloft with a sentence only; not seen from a real Codex',
   'use-another-tool-one-sentence/agy':
@@ -531,7 +616,10 @@ async function raiseClaude(kind: Kind, ask: ClaudeAsk): Promise<Raised> {
   )
   surfaces.runtime.recordTurn(tab, 'approval')
   let printed: string | undefined
-  void hook.printed.then((out) => (printed = out))
+  void hook.printed.then((out) => {
+    printed = out
+    if (kind === 'claude-held' && out) surfaces.runtime.recordTurn(tab, 'working')
+  })
   return {
     tab,
     raw: `PermissionRequest hook input: ${JSON.stringify({ hook_event_name: 'PermissionRequest', ...payload })}`,
@@ -589,11 +677,32 @@ async function raiseCodex(ask: CodexAsk): Promise<Raised> {
       params: { threadId: THREAD, turnId: 't1', ...ask.params }
     }
   ]
-  for (const frame of frames) send('server', frame)
+  const later = ask.requestAfterItsStateMs
+  const stateFirst = {
+    method: 'thread/status/changed',
+    params: { threadId: THREAD, status: { type: 'active', activeFlags: ['waitingOnApproval'] } }
+  }
+  if (later !== undefined) send('server', stateFirst)
+  const sendTheRequest = (): void => {
+    for (const frame of frames) send('server', frame)
+  }
+  if (later === undefined) sendTheRequest()
+  else if (later !== 'never') {
+    const timer = setTimeout(sendTheRequest, later)
+    stops.push(() => clearTimeout(timer))
+  }
   surfaces.terminals.takes = () => send('client', { id: CODEX_REQUEST_ID, result: {} })
+  const rawFrames = frames.map((f) => `app-server frame: ${JSON.stringify(f)}`)
   return {
     tab,
-    raw: frames.map((f) => `app-server frame: ${JSON.stringify(f)}`).join('\n'),
+    raw: [
+      ...(later === undefined ? [] : [`app-server frame: ${JSON.stringify(stateFirst)}`]),
+      ...(later === 'never'
+        ? ['(no request follows)']
+        : later === undefined
+          ? rawFrames
+          : [`${later} ms later:`, ...rawFrames])
+    ].join('\n'),
     ids: () => {
       const open = sessions.openApproval(tab) ?? sessions.openQuestion(tab)
       return open
@@ -703,11 +812,13 @@ async function raiseAgy(kind: Kind, ask: AgyAsk): Promise<Raised> {
     reached: async () => [
       ...surfaces.terminals.reached,
       ...apiCalls
-        .filter((c) => c.method === 'HandleCascadeUserInteraction')
-        .map((c) => `through its API: ${JSON.stringify(c.body)}`)
+        .filter((c) => ANSWERED_THROUGH_THE_API.includes(c.method))
+        .map((c) => `through its API, ${c.method}: ${JSON.stringify(c.body)}`)
     ]
   }
 }
+
+const ANSWERED_THROUGH_THE_API = ['HandleCascadeUserInteraction', 'SendUserCascadeMessage']
 
 const b64 = (text: string): string => Buffer.from(text, 'utf8').toString('base64')
 const blocked = (kind: string, msg?: string): string =>
@@ -754,11 +865,9 @@ const OWNER_ASLEEP_LINE = new RegExp(
 )
 
 async function settledDiscordCard(): Promise<void> {
-  await vi
-    .waitFor(() => expect(surfaces.cards.length).toBeGreaterThan(0), {
-      timeout: A_REPLY_IS_SEEN_WITHIN_MS
-    })
-    .catch(() => undefined)
+  await vi.waitFor(() => expect(surfaces.cards.length).toBeGreaterThan(0), {
+    timeout: A_REPLY_IS_SEEN_WITHIN_MS
+  })
   await sleep(SETTLES_MS)
 }
 
@@ -812,16 +921,17 @@ async function pressFirstButton(
 ): Promise<string> {
   const reachedBefore = (await raised.reached()).length
   const saidBefore = surfaces.said.length
+  const editsBefore = surfaces.edits.length
   await surfaces.pressButton(card, 0)
-  await vi
-    .waitFor(
-      () => expect(surfaces.edits.length + surfaces.said.length - saidBefore).toBeGreaterThan(0),
-      {
-        timeout: A_REPLY_IS_SEEN_WITHIN_MS
-      }
-    )
-    .catch(() => undefined)
-  await sleep(SETTLES_MS)
+  await vi.waitFor(
+    async () => {
+      const settledWithAnAnswer =
+        surfaces.edits.length > editsBefore && (await raised.reached()).length > reachedBefore
+      const refusedPrivately = surfaces.said.length > saidBefore
+      expect(settledWithAnAnswer || refusedPrivately).toBe(true)
+    },
+    { timeout: A_REPLY_IS_SEEN_WITHIN_MS }
+  )
   const reached = (await raised.reached()).slice(reachedBefore)
   return [
     `--- pressed the Discord card's first button, ${JSON.stringify(card.buttons![0].label)} ---`,
@@ -839,16 +949,18 @@ async function byDiscordMessage(
   const saidBefore = surfaces.said.length
   const handedBefore = surfaces.handedOver.length
   surfaces.message(reply)
-  await vi
-    .waitFor(
-      () =>
-        expect(
-          surfaces.said.length - saidBefore + surfaces.handedOver.length - handedBefore
-        ).toBeGreaterThan(0),
-      { timeout: A_REPLY_IS_SEEN_WITHIN_MS }
-    )
-    .catch(() => undefined)
-  await sleep(SETTLES_MS)
+  await vi.waitFor(
+    async () => {
+      const said = surfaces.said.slice(saidBefore)
+      const handedOver = surfaces.handedOver.length > handedBefore
+      const refused = said.some((line) => line.startsWith(UNDER_THE_MESSAGE))
+      const taken =
+        said.some((line) => line.includes(DELIVERED)) &&
+        (await raised.reached()).length > reachedBefore
+      expect(handedOver || refused || taken).toBe(true)
+    },
+    { timeout: A_REPLY_IS_SEEN_WITHIN_MS }
+  )
   const reached = (await raised.reached()).slice(reachedBefore)
   const said = surfaces.said.slice(saidBefore)
   const handed = surfaces.handedOver.slice(handedBefore)
@@ -862,6 +974,9 @@ async function byDiscordMessage(
     ].join('\n')
   }
 }
+
+const UNDER_THE_MESSAGE = 'under the message:'
+const DELIVERED = 'reacted ✅'
 
 async function bySessionAnswer(raised: Raised, reply: string): Promise<string> {
   const reachedBefore = (await raised.reached()).length
@@ -912,7 +1027,6 @@ async function raiseWithoutACard(kind: Kind): Promise<Raised> {
     return raised
   } finally {
     noCardChannel = false
-    surfaces.askChannel = CHANNEL
   }
 }
 
@@ -959,12 +1073,14 @@ const ONE_QUESTION = SITUATIONS.find((s) => s.file === 'one-question-own-words')
 const SOMEONE_ELSE = 'someone-else'
 
 async function answeredTwiceBeforeItTookTheFirst(kind: Kind, s: Situation): Promise<string> {
-  const { tab } = await raise(kind, s)
+  const raised = await raise(kind, s)
+  const { tab } = raised
   await settledDiscordCard()
   surfaces.terminals.takes = undefined
   const reply = s === SEVERAL_PICKS ? '1, 3' : 'yes'
   const first = surfaces.asks.answerSession(tab, reply)
   await sleep(SETTLES_MS)
+  if (kind === 'claude-held') await raised.reached()
   const second = await surfaces.asks.answerSession(tab, reply)
   const firstSaid = await first
   const lines = [
@@ -989,7 +1105,8 @@ async function refusalsOf(kind: Kind): Promise<string> {
   if (kind === 'claude-keys' || kind === 'agy-keys')
     lines.push(await answeredTwiceBeforeItTookTheFirst(kind, SEVERAL_PICKS))
 
-  const { tab } = await raise(kind, RUN_A_COMMAND)
+  const raised = await raise(kind, RUN_A_COMMAND)
+  const { tab } = raised
   await settledDiscordCard()
   const card = surfaces.cards.at(-1)!
   const saidBefore = surfaces.said.length
@@ -1000,6 +1117,7 @@ async function refusalsOf(kind: Kind): Promise<string> {
   lines.push(
     field('answered "yes" elsewhere', (await surfaces.asks.answerSession(tab, 'yes')) ?? '(taken)')
   )
+  await raised.reached()
   await sleep(SETTLES_MS)
   const saidAfter = surfaces.said.length
   await surfaces.pressButton(card, 1)
@@ -1016,13 +1134,13 @@ async function refusalsOf(kind: Kind): Promise<string> {
   )
 
   const touched = kind === 'codex' ? ONE_QUESTION : SEVERAL_PICKS
-  const raised = await raise(kind, touched)
+  const touchedTab = (await raise(kind, touched)).tab
   await settledDiscordCard()
   surfaces.ownerTouchedTheTerminal = true
   lines.push(
     field(
       `"${touched === ONE_QUESTION ? '1' : '1, 3'}" to ${touched.title.toLowerCase()}, after the owner pressed keys in its terminal`,
-      (await surfaces.asks.answerSession(raised.tab, touched === ONE_QUESTION ? '1' : '1, 3')) ??
+      (await surfaces.asks.answerSession(touchedTab, touched === ONE_QUESTION ? '1' : '1, 3')) ??
         '(taken)'
     )
   )

@@ -5,13 +5,13 @@ Koloft's list of open asks took it
 a Discord card was posted
 its state went nowhere → approval
 
-## Claude Code, its ask not held (a tab on this Mac nobody answers from elsewhere, or any tab on another machine, whose hook only records): Koloft answers by keys
+## Claude Code, its ask not held (a tab on this Mac nobody answers from elsewhere; a tab on another machine, whose hook only records, takes this path too: inferred, not checked): Koloft answers by keys
 Claude Code's hook reported an ask (id 1)
 Koloft's list of open asks took it
 a Discord card was posted
 its state went nowhere → approval
 
-## Codex (its app-server's request, read on the TUI's connection)
+## Codex (its app-server's request, read on the TUI's connection; the tab runs on the stand-in machine of agentTabs)
 its state went nowhere → waiting
 its state went waiting → working
 its state went working → approval
@@ -23,7 +23,7 @@ its state went waiting → working
 its state went working → approval
 a Discord card was posted
 
-## Antigravity, read from its tool call and 7501 status only (its API not answering, as on another machine): Koloft answers by keys
+## Antigravity, read from its tool call and 7501 status only, its API not answering (a tab on another machine has no API client and reads this way: inferred, not checked): Koloft answers by keys
 its state went nowhere → waiting
 its state went waiting → working
 its state went working → approval

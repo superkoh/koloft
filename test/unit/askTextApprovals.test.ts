@@ -38,14 +38,7 @@ vi.mock('../../src/agents/codex/main/codexTransport', async (importOriginal) => 
   }
 })
 
-import {
-  A_SITUATION_TAKES_UP_TO_MS,
-  pinSituation,
-  pinWhenACardIsPosted,
-  pinWhenAMessageAnswers,
-  titleOf,
-  useAskTable
-} from './helpers/askTable'
+import { A_SITUATION_TAKES_UP_TO_MS, pinSituation, titleOf, useAskTable } from './helpers/askTable'
 
 useAskTable()
 
@@ -53,6 +46,8 @@ describe('the words each place shows for an approval of a command or a file, fro
   for (const file of [
     'run-a-command-with-reason',
     'run-a-command-no-reason',
+    'run-a-command-request-after-its-state',
+    'run-a-command-request-never-comes',
     'edit-a-file',
     'read-a-file'
   ])

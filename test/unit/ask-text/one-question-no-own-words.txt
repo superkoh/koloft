@@ -3,10 +3,10 @@
 ## Claude Code, its ask held by its hook (a tab on this Mac that Discord or the owner-asleep butler answers)
 never asks this: every Claude Code question has its own row for own words (its dialog draws “Type something.”, CC§14), so Koloft takes own words for all of them
 
-## Claude Code, its ask not held (a tab on this Mac nobody answers from elsewhere, or any tab on another machine, whose hook only records): Koloft answers by keys
+## Claude Code, its ask not held (a tab on this Mac nobody answers from elsewhere; a tab on another machine, whose hook only records, takes this path too: inferred, not checked): Koloft answers by keys
 never asks this: every Claude Code question has its own row for own words (its dialog draws “Type something.”, CC§14), so Koloft takes own words for all of them
 
-## Codex (its app-server's request, read on the TUI's connection)
+## Codex (its app-server's request, read on the TUI's connection; the tab runs on the stand-in machine of agentTabs)
 the raw ask: app-server frame: {"id":7,"method":"item/tool/requestUserInput","params":{"threadId":"22222222-2222-4222-8222-222222222222","turnId":"t1","itemId":"call_1","questions":[{"id":"colour","header":"colour","question":"Which colour do you prefer?","isOther":false,"isSecret":false,"options":[{"label":"Red","description":"Choose red."},{"label":"Green","description":"Choose green."}]}],"isBlocking":true,"autoResolutionMs":null}}
 the session row's small line: Asks: Which colour do you prefer?
 Discord card: body:
@@ -44,5 +44,5 @@ what reached the agent: (nothing)
 ## Antigravity, read through its API (a tab on this Mac)
 never asks this: Koloft reads every Antigravity question that has options as one that takes own words (agyQuestion, AGY§14)
 
-## Antigravity, read from its tool call and 7501 status only (its API not answering, as on another machine): Koloft answers by keys
+## Antigravity, read from its tool call and 7501 status only, its API not answering (a tab on another machine has no API client and reads this way: inferred, not checked): Koloft answers by keys
 never asks this: Koloft reads every Antigravity question that has options as one that takes own words (agyQuestion, AGY§14)
