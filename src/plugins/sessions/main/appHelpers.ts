@@ -22,7 +22,10 @@ export {
   noticeFile,
   pruneStale,
   quotedPrompt,
+  saidFile,
+  seedHandedOverOwnerWords,
   setupHooks,
+  writeConductorMarker,
   writeTabHookSettings
 } from './hooks'
 export { resolveWorkspace } from './placedRows'

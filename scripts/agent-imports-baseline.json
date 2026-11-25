@@ -1,11 +1,5 @@
 {
   "imports": {
-    "agent-into-agent": {
-      "src/agents/kit/main/stored.ts": {
-        "src/agents/agy/main/agySessions.ts": "B3",
-        "src/agents/codex/main/codexSessions.ts": "B3"
-      }
-    },
     "agent-into-plugin": {
       "src/agents/agy/main/agyApi.ts": { "src/plugins/sessions/main/dialog.ts": "C1" },
       "src/agents/agy/main/agyHooks.ts": {
@@ -53,16 +47,18 @@
         "src/main/accountPicker.ts": "C4",
         "src/main/accounts.ts": "C4",
         "src/main/gitSteps.ts": "C9",
-        "src/main/host/host.ts": "B4",
-        "src/main/host/hosts.ts": "B4",
-        "src/main/host/sshHost.ts": "B4",
         "src/main/remote/launch.ts": "C10",
         "src/main/remote/paths.ts": "C10",
         "src/main/remote/sync.ts": "C10",
         "src/main/resumePlan.ts": "C9",
-        "src/main/sessionWorktrees.ts": "C9",
         "src/main/shim.ts": "C8",
         "src/main/statusline.ts": "C9"
+      },
+      "src/agents/claude/main/claudeLaunch.ts": {
+        "src/main/agentPlugin.ts": "C7",
+        "src/main/remote/launch.ts": "C10",
+        "src/main/remote/paths.ts": "C10",
+        "src/main/resumePlan.ts": "C9"
       },
       "src/agents/claude/main/claudeProbe.ts": { "src/main/loginShell.ts": "C8" },
       "src/agents/claude/main/claudeSessionStore.ts": {
@@ -72,7 +68,6 @@
       "src/agents/claude/main/claudeWorktreeExit.ts": { "src/main/resumePlan.ts": "C9" },
       "src/agents/claude/main/sessionTracker.ts": {
         "src/main/accountPicker.ts": "C4",
-        "src/main/host/host.ts": "B4",
         "src/main/remote/install.ts": "C10",
         "src/main/remote/paths.ts": "C10",
         "src/main/resumePlan.ts": "C9",
@@ -108,6 +103,7 @@
         "src/main/toolShim.ts": "C8"
       },
       "src/agents/codex/main/codexTransport.ts": { "src/main/leftovers.ts": "C9" },
+      "src/agents/kit/main/sessionWorktrees.ts": { "src/main/resumePlan.ts": "C9" },
       "src/agents/kit/main/stored.ts": { "src/main/resumePlan.ts": "C9" },
       "src/agents/kit/main/storedSessions.ts": {
         "src/main/accountPicker.ts": "C4",
@@ -115,27 +111,14 @@
         "src/main/loginShell.ts": "C8",
         "src/main/resumePlan.ts": "C9",
         "src/main/sessionSearch.ts": "C6",
-        "src/main/sessionWorktrees.ts": "C9",
         "src/main/toolInstall.ts": "C8",
         "src/main/usageCache.ts": "C6"
       }
     },
     "common-into-agent": {
-      "src/main/historyWatch.ts": {
-        "src/agents/agy/main/agyStore.ts": "B3",
-        "src/agents/codex/main/codexTrust.ts": "B3"
-      },
       "src/main/homeKeyOnDisk.ts": {
         "src/agents/agy/main/agyAccounts.ts": "C4",
         "src/agents/codex/main/codexAccounts.ts": "C4"
-      },
-      "src/main/host/localHost.ts": {
-        "src/agents/claude/main/claudeArgs.ts": "B4",
-        "src/agents/claude/main/claudeTrust.ts": "B4"
-      },
-      "src/main/host/sshHost.ts": {
-        "src/agents/claude/main/claudeArgs.ts": "B4",
-        "src/agents/claude/main/claudeTrustJs.ts": "B4"
       },
       "src/main/index.ts": {
         "src/agents/agy/main/agyAccounts.ts": "D1",
@@ -152,7 +135,6 @@
         "src/agents/codex/main/codexTrust.ts": "D1"
       },
       "src/main/mcpServers.ts": { "src/agents/claude/main/claudeTrust.ts": "C7" },
-      "src/main/remote/launch.ts": { "src/agents/claude/main/claudeTrustJs.ts": "C10" },
       "src/main/remote/usageMirror.ts": {
         "src/agents/agy/main/agyStore.ts": "C10",
         "src/agents/codex/main/codexMachine.ts": "C10"
@@ -169,9 +151,7 @@
     },
     "outside-into-kit": {
       "src/main/index.ts": { "src/agents/kit/main/storedSessions.ts": "B3" },
-      "src/main/sessionWorktrees.ts": { "src/agents/kit/main/sessionStore.ts": "B3" },
-      "src/plugins/sessions/api.ts": { "src/agents/kit/main/storedSessions.ts": "B3" },
-      "src/plugins/sessions/main/channels.ts": { "src/agents/kit/main/storedSessions.ts": "B3" }
+      "src/plugins/sessions/api.ts": { "src/agents/kit/main/storedSessions.ts": "B3" }
     },
     "plugin-into-agent": {
       "src/plugins/sessions/main/appHelpers.ts": {

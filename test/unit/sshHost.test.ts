@@ -2,21 +2,18 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { execFileSync, spawn, spawnSync } from 'child_process'
-import { machineClaudeArgs, SshHost, type MachineClaudeDeps } from '../../src/main/host/sshHost'
+import { execFileSync, spawnSync } from 'child_process'
+import { SshHost, type TabsOnMachineDeps } from '../../src/main/host/sshHost'
 import { killSessionCmd, renameSessionCmd } from '../../src/main/remote/launch'
 import { tabPackageDir } from '../../src/main/remote/paths'
 import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { localHost } from '../../src/main/host/localHost'
 import { GithubRepos } from '../../src/main/githubRepos'
 import { utilTerminalGuard } from '../../src/main/shim'
-import { answerOf, type BytesResult } from '../../src/main/remote/ssh'
-import { AccountPicker, type LaunchedSession } from '../../src/main/accountPicker'
-import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
-import { NO_USABLE_ACCOUNT } from '../../src/shared/accountUsage'
+import type { BytesResult } from '../../src/main/remote/ssh'
+import { shellOnThisMacAsTheMachine } from './helpers/agentTabs'
 import { barePath } from '../../src/shared/remoteKey'
 import { removeTree } from '../../src/plugins/sessions/main/sessionClose'
-import { REMOTE_ENV_LINES } from '../../src/main/remote/install'
 
 const MACHINE = 'devbox'
 let home: string
@@ -24,45 +21,26 @@ let repo: string
 
 let loginShell = '/bin/sh'
 
-function runOnMachine(cmd: string, opts?: { input?: Buffer }): Promise<BytesResult> {
-  return new Promise((resolve) => {
-    const c = spawn(loginShell, ['-c', cmd], {
-      env: { HOME: home, PATH: '/usr/bin:/bin' },
-      stdio: ['pipe', 'pipe', 'pipe']
-    })
-    const out: Buffer[] = []
-    let err = ''
-    c.stdout.on('data', (d: Buffer) => out.push(d))
-    c.stderr.on('data', (d: Buffer) => (err += String(d)))
-    c.on('close', (code) =>
-      resolve({ code, stdout: answerOf(cmd, Buffer.concat(out)), stderr: err })
-    )
-    c.stdin.on('error', () => {})
-    c.stdin.end(opts?.input)
-  })
-}
+const runOnMachine = shellOnThisMacAsTheMachine(
+  () => home,
+  () => loginShell
+)
 
-const machine = (run = runOnMachine, claude: Partial<MachineClaudeDeps> = {}): SshHost =>
+const machine = (run = runOnMachine, tabs: Partial<TabsOnMachineDeps> = {}): SshHost =>
   new SshHost(MACHINE, {
     run,
     shell: () => ({ spawnCwd: '/' }),
     watch: () => {},
     unwatch: () => {},
     github: {},
-    claude: {
+    tabs: {
       userData: home,
       controlDir: home,
       machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
       alive: () => new Set(),
       firstHeartbeatDone: async () => {},
-      realPath: (p) => p,
-      settings: () => ({ skipPermissions: false }),
-      agentTools: () => true,
-      pickAccount: async () => ({ env: {}, banner: '' }),
-      noAccountMessage: () => NO_USABLE_ACCOUNT.claude,
-      hookSettings: () => ({}),
       loginPath: async () => '',
-      ...claude
+      ...tabs
     }
   })
 
@@ -70,23 +48,6 @@ const keyed = (p: string): string => `ssh://${MACHINE}${p}`
 
 const git = (...args: string[]): string =>
   execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' })
-
-const onAMachineWithNoNodeOnItsPath = (
-  cmd: string,
-  opts?: { input?: Buffer }
-): Promise<BytesResult> => {
-  const at = cmd.lastIndexOf(' ') + 1
-  const body = Buffer.from(cmd.slice(at), 'base64').toString('utf8')
-  expect(body).toContain(REMOTE_ENV_LINES)
-  const noNode = body.replace(REMOTE_ENV_LINES, `${REMOTE_ENV_LINES}\nexport PATH=/usr/bin:/bin`)
-  return runOnMachine(cmd.slice(0, at) + Buffer.from(noNode).toString('base64'), opts)
-}
-
-const putNodeOnMachine = (): void => {
-  const node = path.join(home, '.koloft', 'node', 'bin')
-  fs.mkdirSync(node, { recursive: true })
-  fs.symlinkSync(process.execPath, path.join(node, 'node'))
-}
 
 beforeEach(() => {
   home = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-sshhost-')))
@@ -317,70 +278,6 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
       )
     })
 
-    // CC§9
-    it("reads a folder in the machine's .claude.json, and one under it, as trusted", async () => {
-      putNodeOnMachine()
-      const claudeJson = path.join(home, '.claude.json')
-      fs.writeFileSync(claudeJson, '{"numStartups":3}\n')
-      expect(await machine().trustsFolder(keyed(repo))).toBe(false)
-      fs.writeFileSync(
-        claudeJson,
-        JSON.stringify({ projects: { [repo]: { hasTrustDialogAccepted: true } } }, null, 2)
-      )
-      expect(await machine().trustsFolder(keyed(path.join(repo, 'sub')))).toBe(true)
-    })
-
-    // CC§9
-    it('on a machine with no node, where Koloft cannot read the trust, a folder reads as not trusted, so a scheduled run is never let through on a guess', async () => {
-      fs.writeFileSync(
-        path.join(home, '.claude.json'),
-        JSON.stringify({ projects: { [repo]: { hasTrustDialogAccepted: true } } })
-      )
-      expect(await machine(onAMachineWithNoNodeOnItsPath).trustsFolder(keyed(repo))).toBe(false)
-    })
-
-    // CC§9
-    it("stops looking up at the top of the machine's git repo: a repo in a trusted folder is not trusted, a worktree of a trusted repo is", async () => {
-      putNodeOnMachine()
-      fs.mkdirSync(path.join(home, 'plain'))
-      const claudeJson = path.join(home, '.claude.json')
-      fs.writeFileSync(
-        claudeJson,
-        JSON.stringify({ projects: { [home]: { hasTrustDialogAccepted: true } } })
-      )
-
-      expect(await machine().trustsFolder(keyed(path.join(home, 'plain')))).toBe(true)
-      expect(await machine().trustsFolder(keyed(path.join(repo, 'sub')))).toBe(false)
-
-      fs.writeFileSync(
-        claudeJson,
-        JSON.stringify({ projects: { [repo]: { hasTrustDialogAccepted: true } } })
-      )
-      git('worktree', 'add', '-q', '-b', 'worktree-w', path.join(repo, '.claude', 'worktrees', 'w'))
-      expect(
-        await machine().trustsFolder(keyed(path.join(repo, '.claude', 'worktrees', 'w')))
-      ).toBe(true)
-    })
-
-    // CC§9
-    it('on the machine too, a submodule or a worktree whose main repo is gone, under a trusted repo, is not trusted: a .git file with no readable commondir is its own top', async () => {
-      putNodeOnMachine()
-      const submodule = path.join(repo, 'sub')
-      fs.mkdirSync(path.join(repo, '.git', 'modules', 'sub'), { recursive: true })
-      fs.mkdirSync(submodule, { recursive: true })
-      fs.writeFileSync(path.join(submodule, '.git'), 'gitdir: ../.git/modules/sub\n')
-      const orphan = path.join(repo, 'orphan')
-      fs.mkdirSync(orphan)
-      fs.writeFileSync(path.join(orphan, '.git'), `gitdir: ${path.join(home, 'gone', '.git')}\n`)
-      fs.writeFileSync(
-        path.join(home, '.claude.json'),
-        JSON.stringify({ projects: { [repo]: { hasTrustDialogAccepted: true } } })
-      )
-
-      expect(await machine().trustsFolder(keyed(submodule))).toBe(false)
-      expect(await machine().trustsFolder(keyed(orphan))).toBe(false)
-    })
-
     it("offers the machine's skills to a scheduled task: the workspace's, then the machine home's (BB-M16)", async () => {
       const put = (file: string, text: string): void => {
         fs.mkdirSync(path.dirname(file), { recursive: true })
@@ -569,12 +466,6 @@ const sshFails = (code: number | null, stderr: string) => async (): Promise<Byte
 })
 const unreachable = sshFails(255, 'ssh: connect to host devbox port 22: Operation timed out')
 
-describe("Claude's folder trust on the machine", () => {
-  it('does not call a folder untrusted when the machine cannot be reached', async () => {
-    expect(await machine(unreachable).trustsFolder(keyed(repo))).toBe(true)
-  })
-})
-
 describe('a remote Workbench while the ssh link is down', () => {
   it('Changes and diff fail when ssh cannot connect, instead of answering "empty, not a repo" or "folder gone"', async () => {
     let linkDown = false
@@ -688,250 +579,6 @@ describe('each remote Workbench step is one ssh round trip', () => {
   })
 })
 
-describe('what a remote launch hands claude', () => {
-  const root = keyed('/w')
-
-  // CC§9
-  it('carries the model, effort, permission, name and first prompt a local launch carries', () => {
-    expect(
-      machineClaudeArgs(
-        {
-          root,
-          worktree: 'nightly-1',
-          model: 'sonnet',
-          effort: 'high',
-          permission: 'acceptEdits',
-          name: 'Nightly report',
-          firstPrompt: '/daily-report'
-        },
-        'sid1',
-        true
-      )
-    ).toEqual({
-      ok: true,
-      args: [
-        '--session-id',
-        'sid1',
-        '-w',
-        'nightly-1',
-        '--model',
-        'sonnet',
-        '--effort',
-        'high',
-        '--permission-mode',
-        'acceptEdits',
-        '--name',
-        'Nightly report',
-        '--',
-        '/daily-report'
-      ]
-    })
-  })
-
-  // CC§18
-  it('a first prompt whose picture sits in any other folder than Koloft’s own on the machine hands claude no --add-dir, as claude would stop on its question about that folder', () => {
-    const firstPrompt =
-      'fix it\n\nPicture: /Users/me/Library/Application Support/Koloft/palette-pictures/a.png'
-    expect(machineClaudeArgs({ root, firstPrompt }, 'sid1', false)).toEqual({
-      ok: true,
-      args: ['--session-id', 'sid1', '--', firstPrompt]
-    })
-  })
-
-  it('a first prompt that names a pasted picture also hands claude the picture’s folder on the machine with --add-dir, just before the prompt', () => {
-    const firstPrompt = 'fix it\n\nPicture: /home/me/.koloft/element-picks/a.png'
-    expect(machineClaudeArgs({ root, firstPrompt }, 'sid1', false)).toEqual({
-      ok: true,
-      pictures: '/home/me/.koloft/element-picks',
-      args: [
-        '--session-id',
-        'sid1',
-        '--add-dir',
-        '/home/me/.koloft/element-picks',
-        '--',
-        firstPrompt
-      ]
-    })
-  })
-
-  it('asks as a session you start does when the job keeps the usual permission, and a resume carries no name or prompt', () => {
-    expect(machineClaudeArgs({ root, permission: 'default' }, 'sid1', true)).toEqual({
-      ok: true,
-      args: ['--session-id', 'sid1', '--dangerously-skip-permissions']
-    })
-    expect(machineClaudeArgs({ root, permission: 'default' }, 'sid1', false)).toEqual({
-      ok: true,
-      args: ['--session-id', 'sid1']
-    })
-    expect(
-      machineClaudeArgs(
-        { root, resumeSessionId: 'old1', name: 'n', firstPrompt: 'x' },
-        'sid1',
-        false
-      )
-    ).toEqual({ ok: true, args: ['--resume', 'old1'] })
-  })
-})
-
-describe('accounts for remote launches started together', () => {
-  it('two remote launches started at once land on two accounts, as two local ones do', async () => {
-    const accounts = ['a', 'b'].map((name) => meta({ name }))
-    const sessions: LaunchedSession[] = []
-    const picker = new AccountPicker({
-      listAccounts: () => accounts,
-      fablePriority: () => false,
-      readSecret: async () => null,
-      probe: async () => ({ ok: false, error: 'network' }),
-      onProbeOutcome: () => {},
-      launchedSessions: () => sessions,
-      recordPick: (tabId, account) => sessions.push({ tabId, account }),
-      now: () => NOW_MS
-    })
-    accounts.forEach((a, i) =>
-      picker.cacheUsage(
-        'oauth',
-        a.name,
-        usage({ u5: 0.3, u7: 0.4, r5: NOW_S + 36_000, r7: NOW_S + (i + 1) * 86_400 })
-      )
-    )
-    const handed: string[] = []
-    const host = new SshHost(MACHINE, {
-      run: runOnMachine,
-      shell: () => ({ spawnCwd: '/' }),
-      watch: () => {},
-      unwatch: () => {},
-      github: {},
-      claude: {
-        userData: home,
-        controlDir: home,
-        machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
-        alive: () => new Set(),
-        firstHeartbeatDone: async () => {},
-        realPath: (p) => p,
-        settings: () => ({ skipPermissions: false }),
-        agentTools: () => true,
-        pickAccount: async (launchKey) => {
-          const res = await picker.pick(launchKey)
-          if (!res.account) return undefined
-          handed.push(res.account)
-          return { env: {}, banner: '' }
-        },
-        noAccountMessage: () => NO_USABLE_ACCOUNT.claude,
-        hookSettings: () => ({}),
-        loginPath: async () => ''
-      }
-    })
-    await Promise.all([host.launch({ root: keyed('/w') }), host.launch({ root: keyed('/w') })])
-    expect(handed.sort()).toEqual(['a', 'b'])
-  })
-
-  it('a --model asked of a remote launch yields to a custom endpoint account that pins its own model, and stays on any other account', async () => {
-    const tabScript = async (env: Record<string, string>, tabId: string): Promise<string> => {
-      const plan = await machine(runOnMachine, {
-        pickAccount: async () => ({ env, banner: '' })
-      }).launch({ root: keyed('/w'), model: 'opus' })
-      if (!plan.ok) throw new Error('launch refused')
-      plan.launchCommand(tabId)
-      return fs.readFileSync(path.join(tabPackageDir(home, tabId), `${tabId}.sh`), 'utf8')
-    }
-    expect(await tabScript({ ANTHROPIC_MODEL: 'glm-5.2' }, 'tab-pinned')).not.toContain('--model')
-    expect(await tabScript({}, 'tab-plain')).toMatch(/'--model' 'opus'|--model opus/)
-  })
-
-  // PLATFORM§33
-  it("writes the machine's login-shell PATH into the script of a Claude Code tab it starts there, and none into the script of one that re-attaches to a session still running there", async () => {
-    const live = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
-    const host = machine(runOnMachine, {
-      loginPath: async () => '/opt/rc-only/bin',
-      alive: () => new Set([live])
-    })
-    const script = async (tabId: string, resume?: string): Promise<string> => {
-      const claude = await host.launch({ root: keyed('/w'), resumeSessionId: resume })
-      if (!claude.ok) throw new Error('launch refused')
-      claude.launchCommand(tabId)
-      return fs.readFileSync(path.join(tabPackageDir(home, tabId), `${tabId}.sh`), 'utf8')
-    }
-    const handed = `PATH="$PATH":'/opt/rc-only/bin'`
-    expect(await script('claude-new')).toContain(handed)
-    expect(await script('claude-again', live)).not.toContain(handed)
-  })
-
-  it('a remote launch says whether its claude skips permission checks, from the launch’s own permission or else Settings, so a message the owner sends it can claim its real class (ADR-0028)', async () => {
-    const skips = async (skipPermissions: boolean, permission?: 'bypass' | 'default') => {
-      const plan = await machine(runOnMachine, {
-        settings: () => ({ skipPermissions })
-      }).launch({ root: keyed('/w'), permission })
-      if (!plan.ok) throw new Error('launch refused')
-      return plan.machine?.skipsPermissionChecks
-    }
-    expect(await skips(true)).toBe(true)
-    expect(await skips(true, 'default')).toBe(true)
-    expect(await skips(false)).toBe(false)
-    expect(await skips(false, 'bypass')).toBe(true)
-  })
-
-  it('a remote session resumed after its tmux ended is picked with its own id, so it can stay on the account it ran on', async () => {
-    const ended = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
-    const pickAccount = vi.fn(async () => ({ env: {}, banner: '' }))
-    await machine(runOnMachine, { pickAccount }).launch({
-      root: keyed('/w'),
-      resumeSessionId: ended
-    })
-    expect(pickAccount).toHaveBeenCalledWith(`launch-${ended}`, ended)
-  })
-
-  // ADR-0030
-  it("refuses a remote launch with no usable account, naming what is wrong with the accounts, instead of using the machine's own login, but re-attaching a live session needs none", async () => {
-    const pickAccount = vi.fn(async () => undefined)
-    const why = '"me" is not signed in — sign in again in Settings ▸ Accounts.'
-    const live = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
-    const host = new SshHost(MACHINE, {
-      run: runOnMachine,
-      shell: () => ({ spawnCwd: '/' }),
-      watch: () => {},
-      unwatch: () => {},
-      github: {},
-      claude: {
-        userData: home,
-        controlDir: home,
-        machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
-        alive: () => new Set([live]),
-        firstHeartbeatDone: async () => {},
-        realPath: (p) => p,
-        settings: () => ({ skipPermissions: false }),
-        agentTools: () => true,
-        pickAccount,
-        noAccountMessage: () => why,
-        hookSettings: () => ({}),
-        loginPath: async () => ''
-      }
-    })
-    await expect(host.launch({ root: keyed('/w') })).rejects.toThrow(why)
-    pickAccount.mockClear()
-    expect((await host.launch({ root: keyed('/w'), resumeSessionId: live })).ok).toBe(true)
-    expect(pickAccount).not.toHaveBeenCalled()
-  })
-})
-
-it("a launch decided before the machine's first heartbeat this run waits for it, so a session still running there is attached, not started again", async () => {
-  const live = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
-  let askForHeartbeat!: (answer: () => void) => void
-  const heartbeatAsked = new Promise<() => void>((asked) => (askForHeartbeat = asked))
-  const alive = new Set<string>()
-  const host = machine(runOnMachine, {
-    alive: () => alive,
-    firstHeartbeatDone: () => new Promise((done) => askForHeartbeat(done))
-  })
-  const launching = host.launch({ root: keyed('/w'), resumeSessionId: live })
-  const answer = await Promise.race([heartbeatAsked, launching.then(() => undefined)])
-  if (!answer) throw new Error('launch finished without asking for the first heartbeat')
-  alive.add(live)
-  answer()
-  const plan = await launching
-  if (!plan.ok) throw new Error('launch refused')
-  expect(plan.machine?.attachTo).toBe(live)
-})
-
 describe('the basic actions an agent builds its own launch from', () => {
   it("the line that sends a tab's files copies the tab's own folder on this Mac to the machine, names the machine package to push first when it is missing there, and removes the folder on this Mac afterwards", () => {
     const { dir, pushedLine } = machine().tabFiles('pty-9')
@@ -955,40 +602,34 @@ describe('the basic actions an agent builds its own launch from', () => {
 describe('ending a session that runs on the machine', () => {
   const live = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
   const tmux = `k-${live}`
-  const killAnswering = (code: number | null, stderr = '') => {
-    const pickAccount = vi.fn(async () => ({ env: {}, banner: '' }))
-    const host = machine(
+  const killAnswering = (code: number | null, stderr = ''): { host: SshHost } => ({
+    host: machine(
       (cmd, opts) =>
         cmd === killSessionCmd(tmux)
           ? Promise.resolve({ code, stdout: Buffer.alloc(0), stderr })
           : runOnMachine(cmd, opts),
-      { alive: () => new Set([live]), pickAccount }
+      { alive: () => new Set([live]) }
     )
-    return { host, pickAccount }
-  }
+  })
+  const openedNext = async (host: SshHost, sessionId: string): Promise<'start' | 'attach'> =>
+    (await host.tmux.open({ session: sessionId })).mode
 
-  it('a kill ssh could not deliver says why, and the next launch attaches to the session still running there', async () => {
-    const { host, pickAccount } = killAnswering(
-      255,
-      'ssh: connect to host devbox: Connection refused\n'
-    )
+  it('a kill ssh could not deliver says why, and the session, opened next, is attached to: it is still running there', async () => {
+    const { host } = killAnswering(255, 'ssh: connect to host devbox: Connection refused\n')
     expect(await host.tmux.end(tmux)).toBe('ssh: connect to host devbox: Connection refused')
-    await host.launch({ root: keyed('/w'), resumeSessionId: live })
-    expect(pickAccount).not.toHaveBeenCalled()
+    expect(await openedNext(host, live)).toBe('attach')
   })
 
-  it('a kill that timed out says so, and the next launch attaches', async () => {
-    const { host, pickAccount } = killAnswering(null)
+  it('a kill that timed out says so, and the session opened next is attached to', async () => {
+    const { host } = killAnswering(null)
     expect(await host.tmux.end(tmux)).toBe('ssh timed out')
-    await host.launch({ root: keyed('/w'), resumeSessionId: live })
-    expect(pickAccount).not.toHaveBeenCalled()
+    expect(await openedNext(host, live)).toBe('attach')
   })
 
-  it('a kill of a session already gone (tmux exits 1) is no failure, and the next launch starts afresh', async () => {
-    const { host, pickAccount } = killAnswering(1, "can't find session: " + tmux + '\n')
+  it('a kill of a session already gone (tmux exits 1) is no failure, and the session opened next starts afresh', async () => {
+    const { host } = killAnswering(1, "can't find session: " + tmux + '\n')
     expect(await host.tmux.end(tmux)).toBeUndefined()
-    await host.launch({ root: keyed('/w'), resumeSessionId: live })
-    expect(pickAccount).toHaveBeenCalled()
+    expect(await openedNext(host, live)).toBe('start')
   })
 
   const tmuxWhoseOnlySessionIs = (name: string): string => {
@@ -1016,17 +657,15 @@ printf '%s\\n' "\${5:-the session tmux picked}" >> ${JSON.stringify(killed)}
   describe("while a /clear's rename by the hook on the machine has not yet come back to Koloft", () => {
     const cleared = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'
 
-    it("a kill under the name before the /clear ends the session under the name in the tab's name file, and a launch of the cleared conversation sent right after starts afresh", async () => {
+    it("a kill under the name before the /clear ends the session under the name in the tab's name file, and the cleared conversation, opened right after, starts afresh", async () => {
       const killed = tmuxWhoseOnlySessionIs(`k-${cleared}`)
       tabNameFile('pty-1', `k-${cleared}`)
-      const pickAccount = vi.fn(async () => ({ env: {}, banner: '' }))
-      const host = machine(runOnMachine, { alive: () => new Set([cleared]), pickAccount })
+      const host = machine(runOnMachine, { alive: () => new Set([cleared]) })
 
       const kill = host.tmux.end(tmux, 'pty-1')
-      await host.launch({ root: keyed('/w'), resumeSessionId: cleared })
+      expect(await openedNext(host, cleared)).toBe('start')
       expect(await kill).toBeUndefined()
       expect(fs.readFileSync(killed, 'utf8')).toBe(`k-${cleared}\n`)
-      expect(pickAccount).toHaveBeenCalled()
     })
 
     it("an empty name file, caught mid-write, never sends tmux a kill with no name, which would end a session tmux picks: another tab's", async () => {
@@ -1047,22 +686,20 @@ printf '%s\\n' "\${5:-the session tmux picked}" >> ${JSON.stringify(killed)}
       ['has not reached the machine yet', tmux],
       ['has already renamed the session there', renamed]
     ])(
-      'a kill under the old name, sent when the rename %s, ends the session, and the next launch of the moved conversation starts afresh',
+      'a kill under the old name, sent when the rename %s, ends the session, and the moved conversation opened next starts afresh',
       async (_when, nameOnTheMachine) => {
         const killed = tmuxWhoseOnlySessionIs(nameOnTheMachine)
-        const pickAccount = vi.fn(async () => ({ env: {}, banner: '' }))
         const neverBack = new Promise<BytesResult>(() => {})
         const host = machine(
           (cmd, opts) =>
             cmd === renameSessionCmd('pty-1', tmux, renamed) ? neverBack : runOnMachine(cmd, opts),
-          { alive: () => new Set([moved]), pickAccount }
+          { alive: () => new Set([moved]) }
         )
         void host.tmux.rename('pty-1', tmux, renamed)
 
         expect(await host.tmux.end(tmux)).toBeUndefined()
         expect(fs.readFileSync(killed, 'utf8')).toBe(`${nameOnTheMachine}\n`)
-        await host.launch({ root: keyed('/w'), resumeSessionId: moved })
-        expect(pickAccount).toHaveBeenCalled()
+        expect(await openedNext(host, moved)).toBe('start')
       }
     )
   })

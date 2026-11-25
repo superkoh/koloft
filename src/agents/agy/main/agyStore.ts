@@ -7,6 +7,7 @@ import type { SaidLine, Turn } from '@shared/turns'
 import { AGY_LOGS_FOLDER } from '../shared/agyBrain'
 import { nonEmptyString, record } from '@core/unknownValue'
 import { readAppendedLines, type AppendCursor } from '../../../main/appendedLines'
+import type { HistoryStore } from '../../../main/historyWatch'
 import type { HistoryEntry } from '@agents/kit/main/storedSessions'
 
 export const AGY_APP_DIR = 'antigravity-cli'
@@ -33,6 +34,16 @@ export function agyTranscript(geminiDir: string, conversationId: string): string
 
 export const conversationDb = (geminiDir: string, id: string): string =>
   path.join(geminiDir, AGY_APP_DIR, 'conversations', `${id}.db`)
+
+// AGY§8
+const AGY_LISTS_A_NEW_CONVERSATION_WITHIN_MS = 1500
+
+// AGY§8
+export const AGY_HISTORY_STORE: HistoryStore = {
+  dir: (env) => path.join(ownersGeminiDir(env), AGY_APP_DIR, 'conversations'),
+  holdsASession: (rel) => !rel.includes(path.sep) && rel.endsWith('.db'),
+  settleMs: AGY_LISTS_A_NEW_CONVERSATION_WITHIN_MS
+}
 
 // AGY§8
 export const annotationFile = (geminiDir: string, id: string): string =>

@@ -102,7 +102,6 @@ import {
   ensureControlDir,
   rsyncPull,
   listenOverSsh,
-  backgroundOptions,
   masterCommandOutlivingKoloft,
   runMasterCommand,
   runSsh,
@@ -433,6 +432,7 @@ import {
   type TurnOver
 } from '@core/moment'
 import type { MainIpc } from '@core/ipc'
+import type { WorktreeResource } from '@core/agent/worktreeRecords'
 import { ClaudeDialogWatch } from '@agents/claude/main/claudeDialogWatch'
 import { docsWritingOn } from '@plugins/docs-writing/api'
 import { koloftPrompt, type SessionsWithStore } from '@plugins/sessions/api'
@@ -467,7 +467,6 @@ type SlashTarget = Parameters<SessionsStarted['slash']['typeWhenIdle']>[0]
 type SlashReplyTo = Parameters<SessionsStarted['slash']['typeWhenIdle']>[2]
 type Recipient = Parameters<ReturnType<SessionsStarted['buildHandOver']>['tell']>[0]
 type MergedHeads = NonNullable<Parameters<SessionsStarted['whatIsLeft']>[2]>
-type WorktreeResource = Parameters<SessionsWithStore['worktrees']['untouched']>[0]
 type NoticeFile = ReturnType<SessionsStarted['localNotice']>
 type SyncSession = Parameters<SessionsStarted['sessionSync']['observe']>[0][number]
 type CodexAsk = Parameters<SessionsStarted['codexDialog']>[0]
@@ -3559,22 +3558,10 @@ app.whenReady().then(() => {
       ...storedDeps,
       machine: {
         instance: codexMachineInstance(userData),
-        ready: loginEnvReady,
-        run: (host, cmd) =>
-          loginEnvReady().then(() => runSsh(host, cmd, { controlDir: remoteControlDir })),
-        sshArgs: (machine, background) => {
-          ensureControlDir(remoteControlDir)
-          return background
-            ? backgroundOptions(machine, remoteControlDir)
-            : sshOptions(remoteControlDir, false)
-        },
-        machinePackage,
-        tabDir: (tabId) => tabPackageDir(userData, tabId),
-        fileExists: (file) => hosts.machine(parseRemoteKey(file)!.host).fileExists(file),
+        machine: (host) => hosts.machine(host),
         keyed: pinnedKeyOn,
         mirrorDir: (host) => mirrorHookDir(userData, host),
-        nextPull: (host) => remoteSync?.nextPullDone(host) ?? Promise.resolve(),
-        loginPath: (host) => gitAccounts?.machineLoginPath(host) ?? Promise.resolve('')
+        nextPull: (host) => remoteSync?.nextPullDone(host) ?? Promise.resolve()
       },
       leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),
       trustFolder: trustCodexFolder,
@@ -4159,9 +4146,7 @@ app.whenReady().then(() => {
     gitDirExists: (root) => hosts.of(root).dirExists(`${root}/.git`),
     worktreeDirExists: (root, name) => hosts.of(root).dirExists(`${worktreeHomeOf(root)}/${name}`),
     worktreeRecorded: (root, name) =>
-      storedSessions().some((s) =>
-        s.worktrees.recorded(`${worktreeHomeOf(realpathSafe(root))}/${name}`)
-      ),
+      sessionBackends.worktreeRecords.recorded(`${worktreeHomeOf(realpathSafe(root))}/${name}`),
     branchExists: (root, branch) => branchExists(hostGitOut, root, branch),
     listRunFolders,
     runLeftovers,
@@ -4705,12 +4690,11 @@ function killTabPty(tabId: string, restarting = false): Promise<boolean> {
   if (sleeper) {
     forgetSleeper(tabId)
     const tree = projectInfoFor(sleeper.cwd).treeRoot
-    const owner = restarting ? undefined : storedSessions().find((s) => s.id === sleeper.kind)
-    const resource = owner?.store.listResources().find((r) => r.worktreePath === tree)
+    const resource = restarting ? undefined : sessionBackends.worktreeRecords.at(sleeper.kind, tree)
     if (!restarting) cronRunner?.onTabGone({ treeRoot: tree, sessionId: sleeper.sessionId })
-    return (resource ? removeUntouchedWorktree(owner, resource) : Promise.resolve()).then(
-      () => true
-    )
+    return (
+      resource ? removeUntouchedWorktree({ id: sleeper.kind }, resource) : Promise.resolve()
+    ).then(() => true)
   }
   return stopTabProcess(tabId, restarting)
 }
@@ -4872,7 +4856,7 @@ async function endAndRemove(
     return false
   }
   archiveSession(target.sessionId)
-  for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
+  sessionBackends.worktreeRecords.forgetUnusedAt(info.treeRoot)
   // CC§9
   closedSessionsStoppedUntil.set(
     target.sessionId,
@@ -4883,12 +4867,13 @@ async function endAndRemove(
 }
 
 async function removeUntouchedWorktree(
-  owner: SessionsWithStore | null | undefined,
+  owner: { readonly id: BackendId } | null | undefined,
   resource: WorktreeResource
 ): Promise<void> {
   const tree = resource.worktreePath
   if (sleeperTrees().includes(tree) || cronRunner?.tidiesFolder(tree)) return
-  if (sessionBackends.occupantOf(tree) || !(await owner?.worktrees.untouched(resource))) return
+  if (sessionBackends.occupantOf(tree)) return
+  if (!owner || !(await sessionBackends.worktreeRecords.untouched(owner.id, resource))) return
   if (treeRemovals.has(tree)) return
   const problem = await treeRemovals.run(tree, () =>
     removeTree(hostGitOut, {
@@ -5006,8 +4991,7 @@ async function tidyRun(root: string, worktree: string, sessionId?: string): Prom
   const result = await treeRemovals.run(info.treeRoot, () =>
     tidyTree(hostGitOut, info, (d) => hosts.of(d).dirExistsOrThrow(d), mergedHeads)
   )
-  if (result.removed)
-    for (const stored of storedSessions()) stored.store.removeUnusedResourcesAt(info.treeRoot)
+  if (result.removed) sessionBackends.worktreeRecords.forgetUnusedAt(info.treeRoot)
   return result
 }
 
@@ -5435,7 +5419,7 @@ function cronBindDeadlineMs(): number {
 const resumeProbes: ResumeProbes = {
   dirExists: dirExistsSync,
   occupantOf: (dir) => sessionBackends.occupantOf(dir),
-  recorded: (dir) => storedSessions().some((s) => s.worktrees.recorded(dir)),
+  recorded: (dir) => sessionBackends.worktreeRecords.recorded(dir),
   ...gitProbes(localGitOut)
 }
 
@@ -5467,14 +5451,9 @@ const githubOptions: GithubReposOptions = {
 
 const hosts = new Hosts(
   localHost(new GithubRepos(githubOptions), {
-    hookRegDir: () => hookRegDir ?? '',
-    agentPlugin: () => (agentToolsOn() ? claudeAgentPlugin : undefined),
-    docsPlugin: docsPluginWhileOn,
-    assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
     agentHomes: () => ({
       codexHome: path.dirname(codexSharedConfig())
-    }),
-    pastedPicturesDir
+    })
   }),
   (machine) =>
     new SshHost(machine, {
@@ -5506,20 +5485,12 @@ const hosts = new Hosts(
         }
       },
       github: githubOptions,
-      claude: {
+      tabs: {
         userData: app.getPath('userData'),
         controlDir: remoteControlDir,
         machinePackage,
         alive: () => remoteSync?.alive(machine) ?? new Set(),
         firstHeartbeatDone: () => remoteSync?.firstRoundDone(machine) ?? Promise.resolve(),
-        realPath: (p) => workspaceMgr?.realRemotePath({ host: machine, path: p }) ?? p,
-        settings: loadSettings,
-        pickAccount: (launchKey, resumeSessionId) =>
-          pickMachineAccount(() => pickForLaunch(launchKey, resumeSessionId)),
-        noAccountMessage: () => noAccountNow('claude'),
-        agentTools: agentToolsOn,
-        hookSettings: (tabId, dir, allowKoloft) =>
-          machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft),
         loginPath: () => gitAccounts?.machineLoginPath(machine) ?? Promise.resolve('')
       }
     })
@@ -5528,6 +5499,26 @@ const hosts = new Hosts(
 const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
   pty: ptyMgr,
   hosts,
+  launchHere: {
+    writeConductorMarker: (tabId, role) => writeConductorMarker(hookRegDir ?? '', tabId, role),
+    handOverOwnerWords: (tabId, words) =>
+      seedHandedOverOwnerWords(saidFile(hookRegDir ?? '', tabId), words),
+    agentPlugin: () => (agentToolsOn() ? claudeAgentPlugin : undefined),
+    docsPlugin: docsPluginWhileOn,
+    assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
+    pastedPicturesDir
+  },
+  launchOnMachine: {
+    realPath: (machine, p) => workspaceMgr?.realRemotePath({ host: machine, path: p }) ?? p,
+    settings: loadSettings,
+    pickAccount: (launchKey, resumeSessionId) =>
+      pickMachineAccount(() => pickForLaunch(launchKey, resumeSessionId)),
+    noAccountMessage: () => noAccountNow('claude'),
+    agentTools: agentToolsOn,
+    docsWritingOn,
+    hookSettings: (tabId, dir, allowKoloft) =>
+      machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)
+  },
   remoteTargets: () => workspaceMgr?.remoteTargets() ?? [],
   sessionRebound: (prevId, nextId, source) => workspaceMgr?.onSessionRebind(prevId, nextId, source),
   remoteSync: () => remoteSync,
@@ -6156,7 +6147,6 @@ const startedPlugins: PluginsStarted = startPlugins(
           return { ok: true }
         },
         worktrees: async (p) => (await workspaceMgr?.worktrees(p)) ?? [],
-        storedSessions,
         dirExists: (dir) => hosts.of(dir).dirExists(dir)
       }
     },
@@ -6383,7 +6373,10 @@ const {
   noticeFile,
   pruneStale,
   quotedPrompt,
+  saidFile,
+  seedHandedOverOwnerWords,
   setupHooks,
+  writeConductorMarker,
   writeTabHookSettings,
   resolveWorkspace,
   closingTree,
