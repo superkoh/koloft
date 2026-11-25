@@ -80,6 +80,8 @@ export const agent = {
   },
   // CC§12
   commandWithItsChoiceAfterIt: '/model haiku',
+  howToStopItsBackgroundTasks:
+    'Stop them in the session (ctrl+b lists background tasks) to free the resources.',
   flags: {
     resumeCanWaitOnAQuestionBeforeAnySign: false,
     conversationStartsAtFirstPrompt: false,

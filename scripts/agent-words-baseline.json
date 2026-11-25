@@ -1282,12 +1282,6 @@
       "title: 'Claude Code, Codex and Antigravity sessions',"
     ],
     "src/renderer/src/costs.css": [".acct-badge.agy {", ".acct-badge.codex {"],
-    "src/renderer/src/sessionRows.ts": [
-      ": backend === 'agy'",
-      ": backend === 'codex'",
-      "? 'Stop them in the Antigravity session (/tasks lists them) to free the resources.'",
-      "? 'Stop these tasks in the Codex session to free the resources.'"
-    ],
     "src/renderer/src/store.ts": [
       "const liveClaude = !!sess?.alive && !!sess.sessionId",
       "if (sessionId) return void begin(sessionId, sess?.treeRoot ?? tab.cwd, liveClaude)"

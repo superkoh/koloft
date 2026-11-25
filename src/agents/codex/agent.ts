@@ -86,6 +86,7 @@ export const agent = {
     makeEnterRunTheTypedText: [ESC],
     backToAnEmptyBox: [ESC, CLOSE_PAGER, EMPTY_THE_BOX]
   },
+  howToStopItsBackgroundTasks: 'Stop these tasks in the Codex session to free the resources.',
   flags: {
     // CODEX§9
     resumeCanWaitOnAQuestionBeforeAnySign: true,
