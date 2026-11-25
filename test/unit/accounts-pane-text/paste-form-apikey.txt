@@ -1,0 +1,119 @@
+=== empty ===
+<div class="acct-add">
+<div class="acct-add-title">Add API key</div>
+<input placeholder="Account name (e.g. personal)" spellcheck="false" type="text" value="">
+<input placeholder="sk-ant-api03-…" type="password" value="">
+<div class="acct-add-actions">
+<button class="mini">Cancel</button>
+<button class="mini" disabled="">Verify and save</button>
+</div>
+<span class="field-hint">What you paste is used only to verify and to write the Keychain entry — never echoed, never written to a file. A failed check still saves the account, marked UNVERIFIED.</span>
+</div>
+
+=== filled ===
+<div class="acct-add">
+<div class="acct-add-title">Add API key</div>
+<input placeholder="Account name (e.g. personal)" spellcheck="false" type="text" value="acct">
+<input placeholder="sk-ant-api03-…" type="password" value="sekret-1234">
+<div class="acct-add-actions">
+<button class="mini">Cancel</button>
+<button class="mini">Verify and save</button>
+</div>
+<span class="field-hint">What you paste is used only to verify and to write the Keychain entry — never echoed, never written to a file. A failed check still saves the account, marked UNVERIFIED.</span>
+</div>
+
+=== busy ===
+<div class="acct-add">
+<div class="acct-add-title">Add API key</div>
+<input placeholder="Account name (e.g. personal)" spellcheck="false" type="text" value="acct">
+<input placeholder="sk-ant-api03-…" type="password" value="sekret-1234">
+<div class="acct-add-actions">
+<button class="mini" disabled="">Cancel</button>
+<button class="mini" disabled="">Verifying…</button>
+</div>
+<span class="field-hint">What you paste is used only to verify and to write the Keychain entry — never echoed, never written to a file. A failed check still saves the account, marked UNVERIFIED.</span>
+</div>
+added: apikey "acct" with a secret of 11 characters
+
+=== refused: invalid-name ===
+<div class="acct-add">
+<div class="acct-add-title">Add API key</div>
+<input placeholder="Account name (e.g. personal)" spellcheck="false" type="text" value="acct">
+<input placeholder="sk-ant-api03-…" type="password" value="">
+<div class="acct-add-err">Invalid name: [A-Za-z0-9._-] only, 32 characters max</div>
+<div class="acct-add-actions">
+<button class="mini">Cancel</button>
+<button class="mini" disabled="">Verify and save</button>
+</div>
+<span class="field-hint">What you paste is used only to verify and to write the Keychain entry — never echoed, never written to a file. A failed check still saves the account, marked UNVERIFIED.</span>
+</div>
+
+=== refused: duplicate ===
+<div class="acct-add">
+<div class="acct-add-title">Add API key</div>
+<input placeholder="Account name (e.g. personal)" spellcheck="false" type="text" value="acct">
+<input placeholder="sk-ant-api03-…" type="password" value="">
+<div class="acct-add-err">An account of this kind already has that name</div>
+<div class="acct-add-actions">
+<button class="mini">Cancel</button>
+<button class="mini" disabled="">Verify and save</button>
+</div>
+<span class="field-hint">What you paste is used only to verify and to write the Keychain entry — never echoed, never written to a file. A failed check still saves the account, marked UNVERIFIED.</span>
+</div>
+added: apikey "acct" with a secret of 11 characters
+
+=== refused: invalid-endpoint ===
+<div class="acct-add">
+<div class="acct-add-title">Add API key</div>
+<input placeholder="Account name (e.g. personal)" spellcheck="false" type="text" value="acct">
+<input placeholder="sk-ant-api03-…" type="password" value="">
+<div class="acct-add-err">Invalid base URL: must start with http(s)://</div>
+<div class="acct-add-actions">
+<button class="mini">Cancel</button>
+<button class="mini" disabled="">Verify and save</button>
+</div>
+<span class="field-hint">What you paste is used only to verify and to write the Keychain entry — never echoed, never written to a file. A failed check still saves the account, marked UNVERIFIED.</span>
+</div>
+added: apikey "acct" with a secret of 11 characters
+
+=== refused: network ===
+<div class="acct-add">
+<div class="acct-add-title">Add API key</div>
+<input placeholder="Account name (e.g. personal)" spellcheck="false" type="text" value="acct">
+<input placeholder="sk-ant-api03-…" type="password" value="">
+<div class="acct-add-err">Could not save</div>
+<div class="acct-add-actions">
+<button class="mini">Cancel</button>
+<button class="mini" disabled="">Verify and save</button>
+</div>
+<span class="field-hint">What you paste is used only to verify and to write the Keychain entry — never echoed, never written to a file. A failed check still saves the account, marked UNVERIFIED.</span>
+</div>
+added: apikey "acct" with a secret of 11 characters
+
+=== saved but not signed in, and its sign-in could not start ===
+<div class="acct-add">
+<div class="acct-add-title">Add API key</div>
+<input placeholder="Account name (e.g. personal)" spellcheck="false" type="text" value="acct">
+<input placeholder="sk-ant-api03-…" type="password" value="">
+<div class="acct-add-actions">
+<button class="mini">Cancel</button>
+<button class="mini" disabled="">Verify and save</button>
+</div>
+<span class="field-hint">What you paste is used only to verify and to write the Keychain entry — never echoed, never written to a file. A failed check still saves the account, marked UNVERIFIED.</span>
+</div>
+added: apikey "acct" with a secret of 11 characters
+form closed
+
+=== saved but not signed in, and its sign-in started ===
+<div class="acct-add">
+<div class="acct-add-title">Add API key</div>
+<input placeholder="Account name (e.g. personal)" spellcheck="false" type="text" value="acct">
+<input placeholder="sk-ant-api03-…" type="password" value="">
+<div class="acct-add-actions">
+<button class="mini">Cancel</button>
+<button class="mini" disabled="">Verify and save</button>
+</div>
+<span class="field-hint">What you paste is used only to verify and to write the Keychain entry — never echoed, never written to a file. A failed check still saves the account, marked UNVERIFIED.</span>
+</div>
+added: apikey "acct" with a secret of 11 characters
+form closed

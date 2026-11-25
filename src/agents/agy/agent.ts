@@ -18,6 +18,8 @@ export const agent = {
   productName: 'Antigravity CLI',
   maker: 'Google',
   command: 'agy',
+  // AGY§5
+  signInCommand: 'agy',
   // AGY§3
   installCommand: `curl -fsSL ${AGY_INSTALLER_URL} | bash`,
   nodePackageFolderNames: [],
@@ -135,7 +137,8 @@ export const agent = {
       isASignInFolder: true,
       signsInThroughABrowser: true,
       storesAPastedKeyItself: false,
-      takesAnEndpoint: false
+      takesAnEndpoint: false,
+      asksItsFirstRunQuestionsForEachAccount: true
     }
   ]
 } as const satisfies AgentManifest

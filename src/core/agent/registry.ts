@@ -45,6 +45,10 @@ export function agentOfAccountKind(kind: AccountKindId): AgentId | undefined {
   return AGENT_IDS.find((id) => agentManifest(id).accountKinds.some((own) => own.id === kind))
 }
 
+export function signInKindOf(agent: AgentId): AccountKindFacts {
+  return agentManifest(agent).accountKinds.find((kind) => kind.signsInThroughABrowser)!
+}
+
 export function ofEachAgent<T>(value: (id: AgentId) => T): Record<AgentId, T> {
   return Object.fromEntries(AGENT_IDS.map((id) => [id, value(id)])) as Record<AgentId, T>
 }
