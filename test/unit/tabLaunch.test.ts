@@ -51,6 +51,7 @@ import { barePath } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import { koloftPrompt } from '@plugins/sessions/api'
 import { docsWritingOn } from '@plugins/docs-writing/api'
+import { claudeProjectPrompt, projectPromptFile } from '../../src/main/agentPlugin'
 import {
   saidFile,
   seedHandedOverOwnerWords,
@@ -159,6 +160,7 @@ async function claudeTab(
       handOverOwnerWords: (tabId: string, words: string) =>
         seedHandedOverOwnerWords(saidFile(regDir, tabId), words),
       agentPlugin: () => (withPlugin ? '/koloft/agent-plugin' : undefined),
+      projectPromptFile,
       docsPlugin: () => '/koloft/docs-plugin',
       assistOf: () => assist,
       pastedPicturesDir: () => path.join(userData, 'palette-pictures')
@@ -167,6 +169,7 @@ async function claudeTab(
       realPath: (_machine: string, p: string) => p,
       settings: () => ({ skipPermissions: false }),
       agentTools: () => true,
+      projectPrompt: claudeProjectPrompt,
       docsWritingOn,
       pickAccount: async () => ({ env: {}, banner: '' }),
       noAccountMessage: () => NO_USABLE_ACCOUNT.claude,

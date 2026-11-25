@@ -6,7 +6,6 @@ import { shq } from '@shared/shellQuote'
 import { portOffset } from '@shared/worktreeName'
 import { pictureFolderIn } from '@shared/pastedPictures'
 import { aboveItsTools } from '../../../main/agentLift'
-import { claudeProjectPrompt, projectPromptFile } from '../../../main/agentPlugin'
 import { AGENT_PROMPT_FILE } from '../../../main/agentPromptFile'
 import type { RemoteTab } from '../../../main/host/host'
 import type { Machine, TabProgram } from '../../../main/host/machine'
@@ -100,6 +99,7 @@ export interface ClaudeHereDeps {
   writeConductorMarker(tabId: string, role: string): void
   handOverOwnerWords(tabId: string, words: string): void
   agentPlugin(): string | undefined
+  projectPromptFile(userData: string, rules: string): string | undefined
   docsPlugin(): string | undefined
   assistOf(cwd: string, resumeKey?: string): LaunchIdentity | undefined
   pastedPicturesDir(): string
@@ -109,6 +109,7 @@ export interface ClaudeOnMachineDeps {
   realPath(machine: string, p: string): string
   settings(): { skipPermissions: boolean }
   agentTools(): boolean
+  projectPrompt(rules: string): string
   docsWritingOn(): boolean
   pickAccount(launchKey: string, resumeSessionId?: string): Promise<MachineAccount | undefined>
   noAccountMessage(): string
@@ -154,7 +155,7 @@ export async function launchClaudeHere(
   const agentPlugin = d.agentPlugin()
   const prompt =
     agentPlugin && !conductor
-      ? (spec.projectRules && projectPromptFile(path.dirname(agentPlugin), spec.projectRules)) ||
+      ? (spec.projectRules && d.projectPromptFile(path.dirname(agentPlugin), spec.projectRules)) ||
         path.join(agentPlugin, AGENT_PROMPT_FILE)
       : undefined
   return {
@@ -360,7 +361,7 @@ export async function launchClaudeOnMachine(
   // CC§9
   const model = spec.model && account?.env.ANTHROPIC_MODEL ? args.args.indexOf('--model') : -1
   const claudeArgs = args.args.filter((_, i) => model < 0 || (i !== model && i !== model + 1))
-  const projectPrompt = spec.projectRules && claudeProjectPrompt(spec.projectRules)
+  const projectPrompt = spec.projectRules && d.projectPrompt(spec.projectRules)
   return {
     ok: true,
     spawnCwd: opened.spawnCwd,

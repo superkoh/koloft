@@ -24,7 +24,7 @@ import { localHost } from '../../../src/main/host/localHost'
 import { SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST, SshHost } from '../../../src/main/host/sshHost'
 import { answerOf, type BytesResult } from '../../../src/main/remote/ssh'
 import { tabPushed } from '../../../src/main/remote/launch'
-import { keepSkillsIn } from '../../../src/main/agentPlugin'
+import { claudeProjectPrompt, keepSkillsIn, projectPromptFile } from '../../../src/main/agentPlugin'
 import { standInMachine, type MachineSaid } from './standInMachine'
 
 export const MACHINE = 'devbox'
@@ -289,6 +289,7 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
         seedHandedOverOwnerWords(saidFile(world.regDir, tabId), words),
       agentPlugin: () =>
         c.withPlugin === false ? undefined : path.join(world.home, 'koloft', 'agent-plugin'),
+      projectPromptFile,
       docsPlugin: () => path.join(world.home, 'koloft', 'docs-plugin'),
       assistOf: () => undefined,
       pastedPicturesDir: () => path.join(world.userData, 'palette-pictures')
@@ -297,6 +298,7 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
       realPath: (_machine: string, p: string) => p,
       settings: () => ({ skipPermissions: c.machine.skipPermissions ?? false }),
       agentTools: () => c.machine.agentTools ?? true,
+      projectPrompt: claudeProjectPrompt,
       docsWritingOn,
       pickAccount: c.machine.pickAccount ?? (async () => ({ env: {}, banner: '' })),
       noAccountMessage: c.machine.noAccountMessage ?? (() => NO_USABLE_ACCOUNT.claude),

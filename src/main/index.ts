@@ -402,8 +402,10 @@ import {
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import {
   checkSkillsAgain,
+  claudeProjectPrompt,
   keepSkillsIn,
   pluginSkills,
+  projectPromptFile,
   writeAgentPlugin,
   writeDocsPlugin
 } from './agentPlugin'
@@ -5351,6 +5353,7 @@ const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
     handOverOwnerWords: (tabId, words) =>
       seedHandedOverOwnerWords(saidFile(hookRegDir ?? '', tabId), words),
     agentPlugin: () => (agentToolsOn() ? claudeAgentPlugin : undefined),
+    projectPromptFile,
     docsPlugin: docsPluginWhileOn,
     assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
     pastedPicturesDir
@@ -5362,6 +5365,7 @@ const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
       pickMachineAccount(() => pickForLaunch(launchKey, resumeSessionId)),
     noAccountMessage: () => noAccountNow('claude'),
     agentTools: agentToolsOn,
+    projectPrompt: claudeProjectPrompt,
     docsWritingOn,
     hookSettings: (tabId, dir, allowKoloft) =>
       machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)
