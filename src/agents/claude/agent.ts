@@ -13,6 +13,8 @@ export const agent = {
   productName: 'Claude Code',
   maker: 'Anthropic',
   command: 'claude',
+  // CC§10
+  installCommand: 'curl -fsSL https://claude.ai/install.sh | bash',
   nodePackageFolderNames: ['claude-code'],
   wordsThatNameMe: {
     anyCase: ['claude', 'anthropic', 'fable', 'opus', 'sonnet', 'haiku', 'sk-ant'],
