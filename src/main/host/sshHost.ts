@@ -1097,7 +1097,9 @@ exit ${CALLER_GONE_EXIT}`,
         try {
           writeTabPackage(dir, { ...content, tabId, tmuxName, machineName: pkg.name })
         } catch (error) {
-          fs.rmSync(dir, { recursive: true, force: true })
+          try {
+            fs.rmSync(dir, { recursive: true, force: true })
+          } catch {}
           throw error
         }
         return this.tabLaunchLine(pkg, dir, tabId, mode)

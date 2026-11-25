@@ -1306,7 +1306,14 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
 
   protected async endRun(run: CodexRun): Promise<void> {
     if (run.machine)
-      fs.rmSync(this.machine(run.machine).tabFiles(run.tabId).dir, { recursive: true, force: true })
+      try {
+        fs.rmSync(this.machine(run.machine).tabFiles(run.tabId).dir, {
+          recursive: true,
+          force: true
+        })
+      } catch (error) {
+        this.deps.error(`Could not remove the files of a Codex tab on ${run.machine}: ${error}`)
+      }
     await run.transport.stop()
   }
 
