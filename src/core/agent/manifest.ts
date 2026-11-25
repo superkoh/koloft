@@ -44,6 +44,18 @@ export interface AgentFlags {
   commandsItRunsCanHaveATerminalOfTheirOwn: boolean
   runsCommandsInASandboxWhereSudoCannotStart: boolean
   questionToolTakesNoOptionDescriptions: boolean
+  typesASkillOnlyByTheNameInItsFile: boolean
+  refusesATypedSkillMarkedNotUserInvocable: boolean
+}
+
+export interface SkillFolderNames {
+  skills: readonly string[]
+  commands: readonly string[]
+}
+
+export interface SkillFolders {
+  inTheWorkspace: SkillFolderNames
+  inTheHome: SkillFolderNames
 }
 
 export type SmallJobKind = 'smallAndQuick' | 'judgesAReply' | 'picksFromAList'
@@ -68,6 +80,7 @@ export interface AgentManifest {
   maker: string
   wordsThatNameMe: AgentWords
   skillPrefix: string
+  skillFolders: SkillFolders
   questionToolName: string
   instructionFileNames: readonly string[]
   trustQuestion: string

@@ -5313,9 +5313,8 @@ const githubOptions: GithubReposOptions = {
 
 const hosts = new Hosts(
   localHost(new GithubRepos(githubOptions), {
-    agentHomes: () => ({
-      codexHome: path.dirname(codexSharedConfig())
-    })
+    moreSkillFoldersEveryAccountReads: (backend) =>
+      agentsMain.moreSkillFoldersEveryAccountReadsOnThisMac(backend)
   }),
   (machine) =>
     new SshHost(machine, {

@@ -29,6 +29,11 @@ export const agent = {
   },
   // CC§9
   skillPrefix: '/',
+  // CC§9
+  skillFolders: {
+    inTheWorkspace: { skills: ['.claude/skills'], commands: ['.claude/commands'] },
+    inTheHome: { skills: ['.claude/skills'], commands: ['.claude/commands'] }
+  },
   questionToolName: 'AskUserQuestion',
   // CC§30
   instructionFileNames: ['CLAUDE.md', 'AGENTS.md'],
@@ -77,7 +82,11 @@ export const agent = {
     // PLATFORM§58
     runsCommandsInASandboxWhereSudoCannotStart: false,
     // CC§14
-    questionToolTakesNoOptionDescriptions: false
+    questionToolTakesNoOptionDescriptions: false,
+    // CC§9
+    typesASkillOnlyByTheNameInItsFile: false,
+    // CC§20
+    refusesATypedSkillMarkedNotUserInvocable: true
   },
   pureFunctions: { effortsAModelTakes: () => CRON_EFFORTS },
   // CC§7

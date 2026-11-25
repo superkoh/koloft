@@ -10,6 +10,7 @@ export interface OneShotTarget {
 }
 
 export interface AgentCatalog {
+  moreSkillFoldersEveryAccountReadsOnThisMac(): readonly string[]
   mcpServersOn(folders: readonly string[]): Promise<McpServer[]>
 }
 
@@ -32,6 +33,10 @@ export class AgentsMain {
 
   async oneShotTarget(id: AgentId): Promise<OneShotTarget | null> {
     return (await this.built.get(id)?.oneShotTarget()) ?? null
+  }
+
+  moreSkillFoldersEveryAccountReadsOnThisMac(id: AgentId): readonly string[] {
+    return this.built.get(id)?.catalog.moreSkillFoldersEveryAccountReadsOnThisMac() ?? []
   }
 
   async mcpServersOn(folders: readonly string[]): Promise<McpServer[]> {

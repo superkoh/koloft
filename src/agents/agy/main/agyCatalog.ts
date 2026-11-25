@@ -19,6 +19,8 @@ export const agyCatalog = (
   ownersGemini: () => string,
   holdsGit: (folder: string) => Promise<boolean>
 ): AgentCatalog => ({
+  // AGY§4 AGY§31
+  moreSkillFoldersEveryAccountReadsOnThisMac: () => [],
   // AGY§30
   mcpServersOn: async (folders) => {
     const walks = await Promise.all(

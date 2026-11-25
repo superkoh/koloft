@@ -21,6 +21,7 @@ import { leaveForOS, osOpenFallback } from '../osOpen'
 import { dirExistsSync } from '../resumePlan'
 import { listSkills, type SkillFs } from '../skillList'
 import type { Host } from './host'
+import type { BackendId } from '@shared/types'
 
 const skillFs: SkillFs = {
   readdir: (p) => fs.readdirSync(p),
@@ -80,7 +81,7 @@ export function localGitRun(cwd: string, args: string[], network = false): Promi
 }
 
 export interface LocalHostDeps {
-  agentHomes(): { codexHome: string }
+  moreSkillFoldersEveryAccountReads(backend: BackendId): readonly string[]
 }
 
 async function readText(p: string): Promise<string> {
@@ -144,7 +145,11 @@ export function localHost(github: GithubRepos, deps: LocalHostDeps): Host {
       return { spawnCwd, cwd: spawnCwd }
     },
     listSkills: async (root, backend) =>
-      listSkills(skillFs, backend, { workspace: root, home: os.homedir(), ...deps.agentHomes() }),
+      listSkills(skillFs, backend, {
+        workspace: root,
+        home: os.homedir(),
+        moreInTheHome: deps.moreSkillFoldersEveryAccountReads(backend)
+      }),
     keyed: (p) => p,
     gitOut: localGitOut,
     gitRun: localGitRun,

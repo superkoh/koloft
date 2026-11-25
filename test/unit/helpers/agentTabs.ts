@@ -279,7 +279,7 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
       ...c.tracker
     },
     hosts: new Hosts(
-      localHost(new GithubRepos(), { agentHomes: () => ({ codexHome: '/nowhere' }) }),
+      localHost(new GithubRepos(), { moreSkillFoldersEveryAccountReads: () => [] }),
       (machine) => machineIn(world, machine, c.machine)
     ),
     launchHere: {

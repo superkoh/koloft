@@ -71,6 +71,7 @@ export async function ownersClaudePlaywrightMcp(cwd: string): Promise<string[]> 
 }
 
 export const claudeCatalog: AgentCatalog = {
+  moreSkillFoldersEveryAccountReadsOnThisMac: () => [],
   // CC§22
   mcpServersOn: async (folders) => {
     const walks = folders.map((onlyIn) => ({ onlyIn, folders: foldersUpToRoot(onlyIn) }))

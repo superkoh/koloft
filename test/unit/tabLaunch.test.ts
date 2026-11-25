@@ -136,7 +136,7 @@ async function claudeTab(
     },
     tracker: { track: () => {}, movePick: () => {}, list: () => [] },
     hosts: new Hosts(
-      localHost(new GithubRepos(), { agentHomes: () => ({ codexHome: '/nowhere' }) }),
+      localHost(new GithubRepos(), { moreSkillFoldersEveryAccountReads: () => [] }),
       (machine) =>
         new SshHost(machine, {
           run: async () => ({ code: 0, stdout: Buffer.from(''), stderr: '' }),

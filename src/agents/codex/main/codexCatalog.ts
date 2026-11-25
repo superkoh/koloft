@@ -1,3 +1,4 @@
+import path from 'path'
 import type { McpServer } from '@shared/types'
 import type { AgentCatalog } from '@core/agent/agentsMain'
 import { textOrNull } from '../../../main/mcpServers'
@@ -19,6 +20,10 @@ export function codexServers(configToml: string | null): McpServer[] {
 }
 
 export const codexCatalog = (sharedConfig: () => string): AgentCatalog => ({
+  // CODEX§15 CODEX§17
+  moreSkillFoldersEveryAccountReadsOnThisMac: () => [
+    path.join(path.dirname(sharedConfig()), 'skills')
+  ],
   // CODEX§15
   mcpServersOn: async () => codexServers(await textOrNull(sharedConfig()))
 })

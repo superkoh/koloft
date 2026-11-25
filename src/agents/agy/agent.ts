@@ -28,6 +28,11 @@ export const agent = {
   },
   // AGY§31
   skillPrefix: '/',
+  // AGY§31
+  skillFolders: {
+    inTheWorkspace: { skills: ['.agent/skills', '.agents/skills', '_agents/skills'], commands: [] },
+    inTheHome: { skills: [], commands: [] }
+  },
   // AGY§13 AGY§14
   questionToolName: 'ask_question',
   // AGY§2 AGY§32
@@ -86,7 +91,11 @@ export const agent = {
     // AGY§25
     runsCommandsInASandboxWhereSudoCannotStart: false,
     // AGY§14
-    questionToolTakesNoOptionDescriptions: true
+    questionToolTakesNoOptionDescriptions: true,
+    // AGY§31
+    typesASkillOnlyByTheNameInItsFile: true,
+    // AGY§31
+    refusesATypedSkillMarkedNotUserInvocable: false
   },
   pureFunctions: { effortsAModelTakes: agyEffortsAModelTakes },
   // AGY§5 AGY§6

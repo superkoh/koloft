@@ -12,6 +12,7 @@ import { GithubRepos } from '../../src/main/githubRepos'
 import { utilTerminalGuard } from '../../src/main/shim'
 import type { BytesResult } from '../../src/main/remote/ssh'
 import { shellOnThisMacAsTheMachine } from './helpers/agentTabs'
+import { agentsWithTheirCatalogs } from './helpers/agentCatalogs'
 import { barePath } from '../../src/shared/remoteKey'
 import { removeTree } from '../../src/plugins/sessions/main/sessionClose'
 
@@ -817,7 +818,14 @@ describe('the skills a scheduled task is offered, read where its workspace is (B
     put(path.join(codexHome, 'skills', 'codex-home', 'SKILL.md'))
     put(path.join(home, '.agents', 'skills', 'agents-home', 'SKILL.md'))
     put(path.join(home, '.gemini', 'config', 'skills', 'gemini', 'SKILL.md'), '---\nname: g\n---')
-    const here = localHost(new GithubRepos({}), { agentHomes: () => ({ codexHome }) })
+    const agents = agentsWithTheirCatalogs({
+      codexConfig: path.join(codexHome, 'config.toml'),
+      ownersGemini: path.join(home, '.gemini')
+    })
+    const here = localHost(new GithubRepos({}), {
+      moreSkillFoldersEveryAccountReads: (backend) =>
+        agents.moreSkillFoldersEveryAccountReadsOnThisMac(backend)
+    })
     const homeBefore = process.env.HOME
     process.env.HOME = home
     try {
