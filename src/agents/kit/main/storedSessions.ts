@@ -1017,6 +1017,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       ? this.store.getResource(m.worktreeResourceId)
       : this.store.listResources().find((r) => r.worktreePath === t?.cwd)
     let cwd = m?.cwd ?? t!.cwd
+    if (resource) await this.worktrees.whenSettled(resource.worktreePath)
     if (
       await rebuildsTheWorktree(
         req.mode,

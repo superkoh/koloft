@@ -38,6 +38,8 @@ import { passOf } from '../../../../src/main/tabPass'
 import { standInMachine, type StandInSetup } from '../../helpers/standInMachine'
 import { worktreesOfOneAgent } from '../../helpers/worktreesOfOneAgent'
 
+const A_RESUME_THAT_DID_NOT_WAIT_HAS_STARTED_MS = 200
+
 const TOO_OLD = { binary: '/fixture/codex', env: {}, version: '0.150.0', verified: false }
 
 const mocks = vi.hoisted(() => ({
@@ -1015,6 +1017,42 @@ describe('CodexSessions', () => {
     await sessions.stopAll()
     expect(leftWorktree).toHaveBeenCalledTimes(1)
     expect(fs.existsSync(worktree)).toBe(true)
+  })
+
+  it('a plain resume waits while another agent still builds or removes its worktree folder, and rebuilds the folder when that left it gone', async () => {
+    const worktree = path.join(repo, '.claude', 'worktrees', 'w1')
+    fs.mkdirSync(worktree, { recursive: true })
+    const resource: WorktreeResource = {
+      id: randomUUID(),
+      originalCwd: repo,
+      worktreePath: worktree,
+      worktreeName: 'w1',
+      worktreeBranch: 'worktree-w1',
+      originalHeadCommit: 'a'.repeat(40),
+      state: 'ready',
+      managed: true
+    }
+    sessions.store.putResource(resource)
+    vi.spyOn(sessions.worktrees, 'create').mockResolvedValue(resource)
+    const rebuild = vi.spyOn(sessions.worktrees, 'rebuild').mockImplementation(async () => {
+      fs.mkdirSync(worktree, { recursive: true })
+      return resource
+    })
+    const launched = await sessions.launch({ kind: 'codex', cwd: repo, worktree: 'w1' })
+    bind(0, A, worktree)
+    await sessions.stop(launched.id, undefined, true)
+    let anotherAgentDone = (): void => {}
+    const { preparing } = deps.worktreesOfEveryAgent
+    preparing.set(worktree, new Promise<void>((r) => (anotherAgentDone = r)))
+
+    const resuming = sessions.resume({ sessionId: codexSessionKey(A), cwd: worktree })
+    await new Promise((r) => setTimeout(r, A_RESUME_THAT_DID_NOT_WAIT_HAS_STARTED_MS))
+    expect(deps.pty.create).toHaveBeenCalledTimes(1)
+    fs.rmSync(worktree, { recursive: true })
+    preparing.delete(worktree)
+    anotherAgentDone()
+    expect((await resuming).cwd).toBe(worktree)
+    expect(rebuild).toHaveBeenCalledWith(resource.id)
   })
 
   it('a resume or a restart whose deleted worktree cannot be rebuilt answers rebuild-failed, and a plain resume of the deleted folder answers cwd-missing, as a Claude Code resume does', async () => {

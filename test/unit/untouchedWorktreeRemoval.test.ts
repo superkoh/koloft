@@ -49,6 +49,8 @@ const SIDES = [
   }
 ]
 
+const LONG_ENOUGH_TO_TAKE_A_FOLDER_MS = 1000
+
 const A = 'first-agent' as unknown as BackendId
 const B = 'second-agent' as unknown as BackendId
 
@@ -89,8 +91,12 @@ describe.each(SIDES)(
       owner: BackendId,
       resource: Parameters<typeof removeUntouchedWorktreeWith>[2]
     ) => Promise<void>
+    let removalHeld: Promise<void> | undefined
+    let removalReached: () => void
 
     beforeEach(() => {
+      removalHeld = undefined
+      removalReached = () => {}
       const myStore = new SessionStore(path.join(directory, 'a-sessions.json'))
       const theirStore = new SessionStore(path.join(directory, 'b-sessions.json'))
       const records = worktreeRecordsOfEveryAgent(() => [
@@ -108,7 +114,11 @@ describe.each(SIDES)(
             sessionBackends: { occupantOf: () => null, worktreeRecords: records },
             worktreesOfEveryAgent: everyAgent,
             treeRemovals: new TreeRemovals(),
-            removeTree,
+            removeTree: async (...args) => {
+              removalReached()
+              await removalHeld
+              return removeTree(...args)
+            },
             hostGitOut: gitOnTheirHost,
             dirExists: async (dir) => fs.existsSync(barePath(dir)),
             toast: (text) => {
@@ -146,5 +156,55 @@ describe.each(SIDES)(
       done()
       expect(stillThere(made.worktreePath)).toBe(true)
     })
+
+    it('keeps the folder and its branch while another agent is still in the middle of taking it over for the first time', async () => {
+      const made = await mine.create(side.at(repo), 'foo')
+      const taking = theirs.adopt(side.at(repo), made.worktreePath)
+      await close(A, made)
+      await taking
+      expect(stillThere(made.worktreePath)).toBe(true)
+    })
+
+    async function whileTheRemovalRuns<T>(
+      made: Parameters<typeof removeUntouchedWorktreeWith>[2],
+      meanwhile: () => Promise<T>
+    ): Promise<PromiseSettledResult<T>> {
+      let release = (): void => {}
+      removalHeld = new Promise<void>((r) => (release = r))
+      const reached = new Promise<void>((r) => (removalReached = r))
+      const closing = close(A, made)
+      await reached
+      const other = meanwhile()
+      await Promise.race([
+        other.catch(() => undefined),
+        new Promise((r) => setTimeout(r, LONG_ENOUGH_TO_TAKE_A_FOLDER_MS))
+      ])
+      release()
+      await closing
+      const [settled] = await Promise.allSettled([other])
+      return settled
+    }
+
+    it('another agent that starts a session in the folder while the removal runs waits for it and is refused, and records nothing ready', async () => {
+      const made = await mine.create(side.at(repo), 'foo')
+      const taking = await whileTheRemovalRuns(made, () =>
+        theirs.adopt(side.at(repo), made.worktreePath)
+      )
+      expect(taking).toMatchObject({
+        status: 'rejected',
+        reason: new Error('The checkout is not a worktree of this repository')
+      })
+      expect(theirs.records.at(made.worktreePath)).toBeUndefined()
+    })
+
+    it.skipIf(side.io)(
+      'another agent that recovers the folder while the removal runs waits for it, then makes the folder again and takes that',
+      async () => {
+        const made = await mine.create(side.at(repo), 'foo')
+        const recovered = await whileTheRemovalRuns(made, () => theirs.recover(made.worktreePath))
+        expect(recovered).toMatchObject({ status: 'fulfilled', value: { state: 'ready' } })
+        expect(fs.existsSync(path.join(made.worktreePath, 'file.txt'))).toBe(true)
+      }
+    )
   }
 )
