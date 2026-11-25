@@ -71,8 +71,8 @@ import { agySessionKey, codexSessionKey } from '../../src/agents/kit/main/sessio
 import { rowsOfEveryAgent } from '../../src/core/agent/sessionRows'
 import { SessionRuntime } from '../../src/core/agent/sessionRuntime'
 import { BackgroundFile } from '../../src/main/backgroundFile'
-import { rereadWhenRowsInMemoryChange } from '../../src/plugins/sessions/main/rowsInMemoryChanged'
 import { wireRunState } from '../../src/plugins/sessions/main/runState'
+import { sessionsChangedIn } from '../../src/plugins/sessions/main/sessionsChanged'
 import { WorkspaceManager } from '../../src/plugins/sessions/main/workspaces'
 import { agySessionsIn, codexSessionsIn, makeWorld, type World } from './helpers/agentTabs'
 
@@ -149,9 +149,7 @@ function terminals(prefix: string) {
   return { pty, envOf }
 }
 
-type Seen = Partial<
-  Record<'books' | 'list' | 'compare' | 'manager' | 'answerable' | 'rows' | 'rescan', number>
->
+type Seen = Partial<Record<'books' | 'list' | 'manager' | 'answerable' | 'rows' | 'rescan', number>>
 
 async function theSessionsOfTheApp() {
   const butlers = path.join(world.home, 'butler')
@@ -190,27 +188,30 @@ async function theSessionsOfTheApp() {
   let manager: WorkspaceManager | undefined
   const stored: StoredSessions[] = []
 
-  const theOtherTwoAgentsRowsChanged = rereadWhenRowsInMemoryChange({
-    pinned: () => manager?.pinnedPathList() ?? [],
-    rows: (workspace) =>
-      stored.flatMap((s) => s.rows(workspace).map((row) => ({ ...row, backendId: s.id }))),
-    members: () => new Set(stored.flatMap((s) => [...s.members()])),
-    reread: () => manager?.refresh()
+  const sessionsChanged = sessionsChangedIn({
+    noteSessions: () => {
+      said('books')
+      return []
+    },
+    sendSessions: () => said('list'),
+    workspaces: () =>
+      manager
+        ? {
+            sessionsChanged: () => {
+              said('manager')
+              manager!.sessionsChanged()
+            }
+          }
+        : null,
+    syncAnswerable: () => said('answerable')
   })
-  wireRunState(runtime, { workStillRunning: async () => false }, tracker)
-  tracker.on('update', () => {
-    said('books')
-    said('list')
-    said('manager')
-    manager?.onTrackerUpdate()
-    said('answerable')
-  })
-  const aStoredAgentsSessionsChanged = (): void => {
-    said('books')
-    said('list')
-    if (!manager) return
-    said('compare')
-    theOtherTwoAgentsRowsChanged()
+  wireRunState(runtime, { workStillRunning: async () => false })
+  tracker.on('update', sessionsChanged)
+  const wiredAsTheEntryFileWiresThem = {
+    runtime,
+    changed: sessionsChanged,
+    pinnedWorkspaces: () => manager?.pinnedPathList() ?? [],
+    rereadRows: () => manager?.refresh()
   }
 
   const codexTerminals = terminals('pty-codex')
@@ -218,16 +219,14 @@ async function theSessionsOfTheApp() {
     ranOnTheMachine: [],
     run: () => ({ code: 1, stdout: '', stderr: '' }),
     events: (tabId, event) => codex.observe(tabId, event),
-    runtime,
     rootOf,
-    changed: aStoredAgentsSessionsChanged
+    ...wiredAsTheEntryFileWiresThem
   })
   const agyTerminals = terminals('pty-agy')
   const agy = agySessionsIn(world, agyTerminals.pty, {
     machine: { run: async () => ({ code: 1, stdout: Buffer.from(''), stderr: '' }) },
-    runtime,
     rootOf,
-    changed: aStoredAgentsSessionsChanged
+    ...wiredAsTheEntryFileWiresThem
   })
   stored.push(codex, agy)
   stops.push(
@@ -367,6 +366,7 @@ async function theSessionsOfTheApp() {
     notPinned,
     during,
     quiet,
+    stepsInOrder: (): (keyof Seen)[] => [...seen],
     aRescanAskedForByAnythingElse: () => during(() => started.refresh()),
     rowOf,
     aBoundTab,
@@ -412,49 +412,51 @@ describe('a tab ends its turn while its background work still runs, so its statu
   )
 })
 
-describe('a tab ends its turn and its status changes to waiting', () => {
-  it('Claude Code: the session list is sent once, through all four steps', async () => {
-    const app = await theSessionsOfTheApp()
-    app.startsATurn('claude')
-    const seen = await app.during(() => app.endsItsTurn('claude'))
-    expect(app.statusOf('claude')).toBe('waiting')
-    expect(seen).toEqual(SENT_ONCE_THROUGH_ALL_FOUR_STEPS)
-  })
+describe("every agent's signal goes through the same function", () => {
+  it.each(EVERY_AGENT)(
+    '%s: a turn that starts runs the four steps once, in this order: the books, the send of the session list, the workspace manager, the answerable sync',
+    async (_name, agent) => {
+      const app = await theSessionsOfTheApp()
+      await app.during(() => app.startsATurn(agent))
+      expect(app.statusOf(agent)).toBe('working')
+      expect(app.stepsInOrder()).toEqual(['books', 'list', 'manager', 'answerable'])
+    }
+  )
 
-  it.each(STORED)(
-    "%s: the session list is sent twice, once by its own signal and once by Claude Code's",
+  it.each(EVERY_AGENT)(
+    '%s: a turn that ends, with its status changing to waiting, sends the session list once',
     async (_name, agent) => {
       const app = await theSessionsOfTheApp()
       app.startsATurn(agent)
       const seen = await app.during(() => app.endsItsTurn(agent))
       expect(app.statusOf(agent)).toBe('waiting')
-      expect(seen).toEqual({ books: 2, list: 2, compare: 1, manager: 1, answerable: 1 })
+      expect(seen).toEqual(SENT_ONCE_THROUGH_ALL_FOUR_STEPS)
     }
   )
 })
 
 describe('a change of a Codex or Antigravity session that is no edge of a turn', () => {
   it.each(STORED)(
-    '%s: the session list is sent once and its rows are compared; the manager is not asked whether a session started, ended or moved',
+    '%s: the four steps run once, and with its rows as they were nothing rescans',
     async (_name, agent) => {
       const app = await theSessionsOfTheApp()
       const seen = await app.during(() => app.changesWithNoTurnEdge(agent))
-      expect(seen).toEqual({ books: 1, list: 1, compare: 1 })
+      expect(seen).toEqual(SENT_ONCE_THROUGH_ALL_FOUR_STEPS)
     }
   )
 
   it.each(STORED)(
-    '%s: while a tab of the other agent is still starting in a pinned workspace, every such change rescans',
+    '%s: a tab of the other agent that is still starting in a pinned workspace makes it rescan nothing',
     async (_name, agent, other) => {
       const app = await theSessionsOfTheApp()
       await app.sessionsOf[other].launch({ kind: other, cwd: world.repo })
       const seen = await app.during(() => app.changesWithNoTurnEdge(agent))
-      expect(seen).toEqual({ books: 1, list: 1, compare: 1, rows: 1, rescan: 1 })
+      expect(seen).toEqual(SENT_ONCE_THROUGH_ALL_FOUR_STEPS)
     }
   )
 
   it.each(STORED)(
-    '%s: after the folder of a session of the other agent was deleted, such a change rescans and that row shows its folder as gone',
+    '%s: after the folder of a session of the other agent was deleted, it rescans nothing; that row shows its folder as gone with the next rescan',
     async (_name, agent, other) => {
       const app = await theSessionsOfTheApp()
       const folder = path.join(world.repo, 'sub')
@@ -473,18 +475,20 @@ describe('a change of a Codex or Antigravity session that is no edge of a turn',
       expect(app.rowOf(world.repo, key)?.invalidCwd).toBe(false)
       fs.rmSync(folder, { recursive: true })
       const seen = await app.during(() => app.changesWithNoTurnEdge(agent))
-      expect(seen).toEqual({ books: 1, list: 1, compare: 1, rows: 1, rescan: 1 })
+      expect(seen).toEqual(SENT_ONCE_THROUGH_ALL_FOUR_STEPS)
+      expect(app.rowOf(world.repo, key)?.invalidCwd).toBe(false)
+      await app.aRescanAskedForByAnythingElse()
       expect(app.rowOf(world.repo, key)?.invalidCwd).toBe(true)
     }
   )
 
   it.each(STORED)(
-    '%s: after a Claude Code session moved to another folder, such a change does not stamp the rows again',
+    '%s: after a Claude Code session moved to another folder, it stamps the rows again once, with no rescan',
     async (_name, agent) => {
       const app = await theSessionsOfTheApp()
       app.claudeSessionMoves(path.join(world.repo, 'moved'))
       const seen = await app.during(() => app.changesWithNoTurnEdge(agent))
-      expect(seen).toEqual({ books: 1, list: 1, compare: 1 })
+      expect(seen).toEqual({ ...SENT_ONCE_THROUGH_ALL_FOUR_STEPS, rows: 1 })
     }
   )
 })
@@ -523,7 +527,7 @@ describe('a title that changes', () => {
 
 describe('a session kept in the sidebar whose tab is closed and opened again', () => {
   it.each(STORED)(
-    "%s: in the butler's folder neither rescans, so its row keeps saying it runs after the close and through the reopening",
+    "%s: in the butler's folder each rescans once, so its row stops saying it runs after the close and says so again after the reopening",
     async (_name, agent) => {
       const app = await theSessionsOfTheApp()
       const tab = await app.aBoundTab(agent, SECOND_SESSION, app.butlers)
@@ -532,29 +536,26 @@ describe('a session kept in the sidebar whose tab is closed and opened again', (
       expect(app.rowOf(app.butlers, key)?.running).toBe(true)
 
       const closing = await app.during(() => app.sessionsOf[agent].stop(tab))
-      expect(closing.rescan).toBeUndefined()
-      expect(app.rowOf(app.butlers, key)?.running).toBe(true)
-
-      await app.aRescanAskedForByAnythingElse()
+      expect(closing.rescan).toBe(1)
       expect(app.rowOf(app.butlers, key)?.running).toBe(false)
 
       const reopening = await app.during(() =>
         app.sessionsOf[agent].resume({ sessionId: key, cwd: app.butlers })
       )
-      expect(reopening.rescan).toBeUndefined()
-      expect(app.rowOf(app.butlers, key)?.running).toBe(false)
+      expect(reopening.rescan).toBe(1)
+      expect(app.rowOf(app.butlers, key)?.running).toBe(true)
     }
   )
 
-  it.each(STORED)('%s: in a folder that is not pinned neither rescans', async (_name, agent) => {
+  it.each(STORED)('%s: in a folder that is not pinned each rescans once', async (_name, agent) => {
     const app = await theSessionsOfTheApp()
     const tab = await app.aBoundTab(agent, SECOND_SESSION, app.notPinned)
     const key = keyOf[agent](SECOND_SESSION)
     const closing = await app.during(() => app.sessionsOf[agent].stop(tab))
-    expect(closing.rescan).toBeUndefined()
+    expect(closing.rescan).toBe(1)
     const reopening = await app.during(() =>
       app.sessionsOf[agent].resume({ sessionId: key, cwd: app.notPinned })
     )
-    expect(reopening.rescan).toBeUndefined()
+    expect(reopening.rescan).toBe(1)
   })
 })

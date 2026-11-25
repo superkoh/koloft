@@ -223,6 +223,8 @@ async function codexTab(cwd: string, spec: Partial<CreateTabOptions>): Promise<s
       loginPath: async () => MACHINE_LOGIN_PATH_FOLDERS
     },
     changed: () => {},
+    pinnedWorkspaces: () => [],
+    rereadRows: () => {},
     events: () => {},
     error: () => {},
     noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],

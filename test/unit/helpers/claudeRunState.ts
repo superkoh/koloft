@@ -23,7 +23,7 @@ export function trackerWiredAsTheAppWiresIt(): SessionTracker {
   backends.register(
     new ClaudeBackend({ pty: { get: () => undefined }, tracker } as unknown as ClaudeBackendDeps)
   )
-  wireRunState(runtime, backends, tracker)
+  wireRunState(runtime, backends)
   runtimes.set(tracker, runtime)
   return tracker
 }

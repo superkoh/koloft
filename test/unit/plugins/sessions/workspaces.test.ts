@@ -16,7 +16,6 @@ import {
 } from '../../../../src/agents/claude/main/claudeSessionStore'
 import { rowsKeptInMemory } from '../../../../src/agents/kit/main/rowsKeptInMemory'
 import { rowsOfEveryAgent } from '../../../../src/core/agent/sessionRows'
-import { rereadWhenRowsInMemoryChange } from '../../../../src/plugins/sessions/main/rowsInMemoryChanged'
 import { projectInfoFor } from '../../../../src/main/projectInfo'
 import { encodeCwd } from '@shared/cwdKey'
 import {
@@ -41,7 +40,6 @@ let saves: number
 let dropped: string[]
 let mgr: WorkspaceManager
 let claude: ClaudeSessionStore
-let rowsOfOtherAgentsChanged: () => void
 let conductorIds: Set<string>
 
 const SEEDED: SessionWorkbenchState = { open: false, tabs: [] }
@@ -104,12 +102,6 @@ function managerAndStore({
     remoteRunning: managers.remoteRunning
   })
   claude = store
-  rowsOfOtherAgentsChanged = rereadWhenRowsInMemoryChange({
-    pinned: () => manager.pinnedPathList(),
-    rows: (ws) => additionalRows?.(ws) ?? [],
-    members: () => additionalMembers?.() ?? [],
-    reread: () => manager.refresh()
-  })
   return manager
 }
 
@@ -613,49 +605,7 @@ describe('WorkspaceManager: which transcript writes rescan the list', () => {
     await vi.waitFor(() => expect(pushed.length).toBeGreaterThan(beforeMove))
   })
 
-  it('a Codex change that leaves every Codex row as it was rescans nothing; one that changes a row does', async () => {
-    const codexRow = {
-      id: 'codex:local:t1',
-      title: 'Codex task',
-      cwd: repo,
-      worktree: 'main',
-      running: true,
-      invalidCwd: false,
-      mtime: 1
-    }
-    disposeRows()
-    mgr = managerAndStore({
-      projectsRoot,
-      remoteProjectsRoot: () => projectsRoot,
-      loadLayout: () => layout,
-      saveLayout: (l) => {
-        layout = l
-      },
-      projectInfo: projectInfoFor,
-      runningBindings: () => bindings,
-      killTab: () => {},
-      pushRows: (p) => pushed.push(p),
-      additionalRows: (ws) => (ws === repo ? [{ ...codexRow, backendId: 'codex' as const }] : []),
-      additionalMembers: () => new Set([codexRow.id])
-    })
-    startRows()
-    await mgr.firstScan
-    rowsOfOtherAgentsChanged()
-    await settle()
-
-    const before = pushed.length
-    rowsOfOtherAgentsChanged()
-    await settle()
-    expect(pushed.length).toBe(before)
-
-    codexRow.title = 'Codex task, renamed'
-    rowsOfOtherAgentsChanged()
-    await vi.waitFor(() =>
-      expect(latest(repo).rows.find((r) => r.id === codexRow.id)?.title).toBe('Codex task, renamed')
-    )
-  })
-
-  it("a Codex change in a claimed folder, which is listed but not pinned, rescans nothing; that folder's rows change with the next rescan", async () => {
+  it("a claimed folder is listed with its claim though it is not pinned, and a rescan shows its rows' changes", async () => {
     const claimed = path.join(root, 'claimed')
     fs.mkdirSync(claimed)
     const helper = {
@@ -687,15 +637,8 @@ describe('WorkspaceManager: which transcript writes rescan the list', () => {
     await mgr.firstScan
     expect(latest(claimed).workspace.claim).toEqual({ by: 'butler', shownAs: 'Butler' })
     expect(latest(claimed).rows.map((r) => r.title)).toEqual(['Helper'])
-    rowsOfOtherAgentsChanged()
-    await settle()
 
-    const before = pushed.length
     helper.title = 'Helper, renamed'
-    rowsOfOtherAgentsChanged()
-    await settle()
-    expect(pushed.length).toBe(before)
-
     mgr.refresh()
     await vi.waitFor(() =>
       expect(latest(claimed).rows.map((r) => r.title)).toEqual(['Helper, renamed'])
@@ -827,7 +770,7 @@ describe('WorkspaceManager: a session being closed for good', () => {
     mgr.hideWhileClosing('going')
     expect(latest(repo).rows).toEqual([])
     bindings.delete('going')
-    mgr.onTrackerUpdate()
+    mgr.sessionsChanged()
     await mgr.whenScanned()
     expect(latest(repo).rows).toEqual([])
 
@@ -854,7 +797,7 @@ describe('WorkspaceManager: a session leaving its worktree', () => {
 
   async function itsTabIsGone(): Promise<void> {
     bindings.delete('wt-1')
-    mgr.onTrackerUpdate()
+    mgr.sessionsChanged()
     await mgr.whenScanned()
   }
 
@@ -874,7 +817,7 @@ describe('WorkspaceManager: a session leaving its worktree', () => {
     await leftItsWorktree(true)
     await itsTabIsGone()
     bindings.set('wt-1', 'tab-2')
-    mgr.onTrackerUpdate()
+    mgr.sessionsChanged()
     await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.id)).toEqual(['wt-1']))
   })
 
@@ -896,7 +839,7 @@ describe('WorkspaceManager: a session leaving its worktree', () => {
   it('comes back as soon as its tab ends when the worktree was not removed', async () => {
     await leftItsWorktree(false)
     bindings.delete('wt-1')
-    mgr.onTrackerUpdate()
+    mgr.sessionsChanged()
     await vi.waitFor(() =>
       expect(latest(repo).rows).toMatchObject([{ id: 'wt-1', running: false }])
     )
@@ -928,7 +871,7 @@ describe('WorkspaceManager: pending launches', () => {
     writeJsonl(repo, 'new-one', '2026-08-08T12:00:00.000Z')
     bindings.set('new-one', 'tab-1')
     claude.onSessionBound('new-one')
-    mgr.onTrackerUpdate()
+    mgr.sessionsChanged()
     await vi.waitFor(() => {
       const rows = latest(repo).rows
       expect(rows.map((r) => r.id)).toEqual(['new-one', 'old-one'])
@@ -936,7 +879,7 @@ describe('WorkspaceManager: pending launches', () => {
     })
 
     bindings.delete('new-one')
-    mgr.onTrackerUpdate()
+    mgr.sessionsChanged()
     await vi.waitFor(() => expect(latest(repo).rows.map((r) => r.running)).toEqual([false, false]))
     expect(latest(repo).rows.some((r) => r.pending)).toBe(false)
   })
@@ -1020,7 +963,7 @@ describe('WorkspaceManager: pending launches', () => {
 
     bindings.set('s1', 'tab-1')
     claude.onSessionStart('tab-1', wtDir)
-    mgr.onTrackerUpdate()
+    mgr.sessionsChanged()
     await vi.waitFor(() =>
       expect(latest(repoDir).rows[0]).toMatchObject({
         id: 's1',
@@ -1247,7 +1190,7 @@ describe('WorkspaceManager: working-set eviction (D1/D2)', () => {
     expect(dropped).toEqual([])
 
     bindings.delete('fresh-1')
-    mgr.onTrackerUpdate()
+    mgr.sessionsChanged()
     await vi.waitFor(() => expect(layout.panels['fresh-1']).toBeUndefined())
     expect(dropped).toEqual(['fresh-1: no transcript found and not running'])
   })
@@ -1529,7 +1472,7 @@ describe('WorkspaceManager: a rescan re-reads only the transcript heads that cha
       )
     ]
     bindings.set('quiet-1', 'tab-q')
-    mgr.onTrackerUpdate()
+    mgr.sessionsChanged()
     await vi.waitFor(() =>
       expect(latest(repo).rows.find((r) => r.id === 'quiet-1')?.running).toBe(true)
     )
@@ -1540,7 +1483,7 @@ describe('WorkspaceManager: a rescan re-reads only the transcript heads that cha
       JSON.stringify({ type: 'summary', summary: 'later summary' }) + '\n'
     )
     bindings.set('grows-1', 'tab-g')
-    mgr.onTrackerUpdate()
+    mgr.sessionsChanged()
     await vi.waitFor(() => expect(titleOf('grows-1')).toBe('later summary'))
     expect(jsonlOpened()).toEqual(['grows-1.jsonl'])
 
@@ -1549,7 +1492,7 @@ describe('WorkspaceManager: a rescan re-reads only the transcript heads that cha
       JSON.stringify({ type: 'assistant', message: { content: 'more' } }) + '\n'
     )
     bindings.set('settled-1', 'tab-s')
-    mgr.onTrackerUpdate()
+    mgr.sessionsChanged()
     await vi.waitFor(() =>
       expect(latest(repo).rows.find((r) => r.id === 'settled-1')?.running).toBe(true)
     )
@@ -1594,7 +1537,7 @@ describe('WorkspaceManager: a rescan re-reads only the transcript heads that cha
 
     fs.chmodSync(file, 0o644)
     bindings.set('locked-1', 'tab-l')
-    mgr.onTrackerUpdate()
+    mgr.sessionsChanged()
     await vi.waitFor(() => expect(latest(repo).rows[0].title).toBe('a session'))
   })
 })
@@ -2197,7 +2140,7 @@ describe('mixed session backends', () => {
     expect(latest(repo).rows.find((r) => r.id === codexKey)?.revealDir).toBe(codexDir)
     bindings.delete(codexKey)
     extra[0].running = false
-    mgr.onTrackerUpdate()
+    mgr.sessionsChanged()
     await vi.waitFor(() =>
       expect(latest(repo).rows.find((r) => r.id === codexKey)).toMatchObject({
         running: false,
@@ -2424,16 +2367,16 @@ describe('WorkspaceManager: a running session that moved', () => {
     await vi.waitFor(() => expect(latest(repo).rows.length).toBe(1))
     expect(latest(repo).rows[0]).toMatchObject({ worktree: 'main', revealDir: repo })
     await settle()
-    mgr.onTrackerUpdate()
+    mgr.sessionsChanged()
 
     const before = pushed.length
-    mgr.onTrackerUpdate()
+    mgr.sessionsChanged()
     expect(pushed.length).toBe(before)
 
     const listed = vi.spyOn(fs.promises, 'readdir')
     listed.mockClear()
     live.set('moving', { treeRoot: wt, worktree: 'eng', relocated: true })
-    mgr.onTrackerUpdate()
+    mgr.sessionsChanged()
     expect(pushed.length).toBe(before + 1)
     expect(latest(repo).rows[0]).toMatchObject({ worktree: 'eng', revealDir: wt })
     await settle()
@@ -2446,12 +2389,12 @@ describe('WorkspaceManager: a running session that moved', () => {
     writeJsonl(repo, 'cold')
     own('cold')
     mgr = liveMgr()
-    mgr.onTrackerUpdate()
+    mgr.sessionsChanged()
     expect(pushed).toEqual([])
     startRows()
     await mgr.firstScan
     const before = pushed.length
-    mgr.onTrackerUpdate()
+    mgr.sessionsChanged()
     expect(pushed.length).toBe(before)
   })
 

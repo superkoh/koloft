@@ -272,6 +272,8 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
 export interface WiredIntoTheApp {
   runtime?: SessionRuntime
   changed?: () => void
+  pinnedWorkspaces?: () => string[]
+  rereadRows?: () => void
   rootOf?: (dir: string) => string
 }
 
@@ -312,6 +314,8 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
     }),
     remoteDirExists: async () => true,
     changed: () => a.changed?.(),
+    pinnedWorkspaces: () => a.pinnedWorkspaces?.() ?? [],
+    rereadRows: () => a.rereadRows?.(),
     events: (tabId, event) => {
       a.events?.(tabId, event)
       sessions?.observe(tabId, event)
@@ -391,6 +395,8 @@ export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): Code
       loginPath: async () => LOGIN_PATH_ON_THE_MACHINE
     },
     changed: () => c.changed?.(),
+    pinnedWorkspaces: () => c.pinnedWorkspaces?.() ?? [],
+    rereadRows: () => c.rereadRows?.(),
     events: (tabId, event) => c.events?.(tabId, event),
     error: () => {},
     noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],

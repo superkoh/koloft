@@ -29,7 +29,7 @@ export interface TabSubsystems {
   tracker: Pick<SessionTracker, 'setAlive'>
   storedOwnerOf: (tabId: string) => Pick<SessionsWithStore, 'stop'> | undefined
   toast: (message: string) => void
-  workspaces: MadeLater<Pick<WorkspaceManager, 'onTrackerUpdate'>>
+  workspaces: MadeLater<Pick<WorkspaceManager, 'sessionsChanged'>>
   announce: <T>(moment: Moment<T>, m: T) => void
 }
 
@@ -51,8 +51,8 @@ export function subscribeTabSubsystems(lifecycle: TabLifecycle, s: TabSubsystems
   lifecycle.on('teardown', ({ tabId }) => s.claude.launchEnded(tabId))
   lifecycle.on('teardown', (exit) => s.announce(TAB_TORN_DOWN, exit))
 
-  lifecycle.on('slept', () => s.workspaces()?.onTrackerUpdate())
-  lifecycle.on('woken', () => s.workspaces()?.onTrackerUpdate())
+  lifecycle.on('slept', () => s.workspaces()?.sessionsChanged())
+  lifecycle.on('woken', () => s.workspaces()?.sessionsChanged())
   lifecycle.on('forgotten', (tabId) => s.announce(TAB_FORGOTTEN, tabId))
-  lifecycle.on('forgotten', () => s.workspaces()?.onTrackerUpdate())
+  lifecycle.on('forgotten', () => s.workspaces()?.sessionsChanged())
 }
