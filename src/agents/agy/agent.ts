@@ -103,6 +103,9 @@ export const agent = {
     pasteKeepsItsLastLineFeeds: false,
     // AGY§15 AGY§16
     passedOnMessageShowsAsFromAnotherSession: false,
+    sessionsOfItsKindOnOneMachineTalkWithTheirOwnTool: false,
+    // AGY§16
+    mightNotTakeAMessageWhileItsTurnRuns: true,
     // AGY§25
     commandsItRunsCanHaveATerminalOfTheirOwn: true,
     // AGY§25

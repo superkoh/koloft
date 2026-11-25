@@ -42,6 +42,8 @@ export interface AgentFlags {
   conversationStartsAtFirstPrompt: boolean
   pasteKeepsItsLastLineFeeds: boolean
   passedOnMessageShowsAsFromAnotherSession: boolean
+  sessionsOfItsKindOnOneMachineTalkWithTheirOwnTool: boolean
+  mightNotTakeAMessageWhileItsTurnRuns: boolean
   commandsItRunsCanHaveATerminalOfTheirOwn: boolean
   runsCommandsInASandboxWhereSudoCannotStart: boolean
   questionToolTakesNoOptionDescriptions: boolean
