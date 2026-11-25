@@ -390,6 +390,7 @@ import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
 import { TreeRemovals } from './treeRemovals'
 import { removeUntouchedWorktreeWith } from './untouchedWorktreeRemoval'
+import { removingTheWorktree, type WorktreesBeingPrepared } from './worktreesBeingPrepared'
 import { worktreeExitFollow } from './worktreeExitFollow'
 import { discordTokenRead, discordTokenWrite } from './accounts'
 import {
@@ -661,7 +662,7 @@ const worktreeExits = worktreeExitFollow({
 })
 const closedTabs = new Map<string, LeftTab | null>()
 const treeRemovals = new TreeRemovals()
-const worktreesBeingPrepared = new Map<string, Promise<unknown>>()
+const worktreesBeingPrepared: WorktreesBeingPrepared = new Map()
 
 const attentionDeps: PluginStartDeps['sessions']['attention'] = {
   onChange: (pending, event) => {
@@ -4093,7 +4094,7 @@ async function leftOnceRemovalsEnd(
   if (!tree) return []
   const sharing = aliveSessionsIn(tree.treeRoot, target.tabId)
   return [
-    ...sharing.map((s) => `The session "${s.title}" is still open in ${tree.treeRoot}.`),
+    ...sharing.map((s) => stillOpenIn(s.title, tree.treeRoot)),
     ...leftText(await whatIsLeft(hostGitOut, tree, mergedHeads))
   ]
 }
@@ -4113,7 +4114,13 @@ async function closeSessionFully(
     await treeRemovals.settled(target.treeRoot)
     const where = info ?? projectInfoFor(target.treeRoot)
     const close = (): Promise<boolean> => endAndRemove(target, where, tell)
-    return await (where.worktreeName ? treeRemovals.run(where.treeRoot, close) : close())
+    return await (where.worktreeName
+      ? removingTheWorktree(
+          { preparing: worktreesBeingPrepared, treeRemovals },
+          where.treeRoot,
+          close
+        )
+      : close())
   } finally {
     workspaceMgr?.closingEnded(target.sessionId)
   }
@@ -4136,8 +4143,11 @@ async function endAndRemove(
   const alreadyRemoved =
     !!tree && !tree.branches.length && !(await hosts.of(info.treeRoot).dirExists(info.treeRoot))
   const leftSinceTheCheck =
-    tabId && tree && !alreadyRemoved
-      ? leftText(await whatIsLeft(hostGitOut, tree, mergedHeads))
+    tree && !alreadyRemoved
+      ? [
+          ...anotherSessionIn((dir) => sessionBackends.occupantOf(dir), tree.treeRoot),
+          ...(tabId ? leftText(await whatIsLeft(hostGitOut, tree, mergedHeads)) : [])
+        ]
       : []
   if (leftSinceTheCheck.length) {
     tell(
@@ -4831,6 +4841,7 @@ const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
     loadSettings().browserControl ? ownersClaudePlaywrightMcp(cwd) : [],
   ptysChanged: () => writeRelayEnv(ptyTabIds()),
   resumeProbes,
+  worktreesBeingPrepared,
   events: (tabId, event) => sessionBackends.observe(tabId, event),
   messaged: (tabId, fromSessionId) => sessionCommand.messaged(tabId, fromSessionId),
   error: (message) => sendToRenderer(CH.toast.show, message),
@@ -5647,10 +5658,12 @@ const {
   writeConductorMarker,
   writeTabHookSettings,
   resolveWorkspace,
+  anotherSessionIn,
   closingTree,
   leftText,
   machineUnreachable,
   removeTree,
+  stillOpenIn,
   tidyTree,
   whatIsLeft,
   envMs,

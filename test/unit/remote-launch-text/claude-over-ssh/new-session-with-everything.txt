@@ -113,6 +113,29 @@ exited
 k-<session id>
 === run over ssh, in this order ===
 sh -c 'echo koloft-answer-starts-here; eval "$(printf %s "$0" | base64 -d)"' <base64 of the script below>
+set -- '-C' '/home/me/proj' 'worktree' 'list' '--porcelain'
+export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+if [ -z "$LC_ALL$LC_CTYPE" ]; then
+  case "$(locale charmap 2>/dev/null)" in
+  ANSI_X3.4-1968|US-ASCII)
+    koloft_u=$(locale -a 2>/dev/null | awk '{ l = tolower($0) }
+      l ~ /^c\.utf-?8$/ && c == "" { c = $0 }
+      l ~ /^en_us\.utf-?8$/ && e == "" { e = $0 }
+      l ~ /\.utf-?8$/ && u == "" { u = $0 }
+      END { print (c != "" ? c : (e != "" ? e : u)) }')
+    if [ -n "$koloft_u" ]; then
+      case "${LANG:-C}" in
+      C|POSIX) LC_CTYPE=$koloft_u; export LC_CTYPE ;;
+      *) LANG=$koloft_u; export LANG ;;
+      esac
+    fi
+    unset koloft_u ;;
+  esac
+fi
+koloft_git="'include.path=$HOME/.koloft/git-accounts/config'"; case "$GIT_CONFIG_PARAMETERS" in *"$koloft_git"*) ;; *) GIT_CONFIG_PARAMETERS="${GIT_CONFIG_PARAMETERS:+$GIT_CONFIG_PARAMETERS }$koloft_git"; export GIT_CONFIG_PARAMETERS ;; esac; unset koloft_git
+GIT_OPTIONAL_LOCKS=0 git "$@"
+--- the next one ---
+sh -c 'echo koloft-answer-starts-here; eval "$(printf %s "$0" | base64 -d)"' <base64 of the script below>
 set -- 
 export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 if [ -z "$LC_ALL$LC_CTYPE" ]; then
