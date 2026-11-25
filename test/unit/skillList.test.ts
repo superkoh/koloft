@@ -121,7 +121,7 @@ describe('listSkills: what the task field offers after you type / (BB-M16)', () 
       expect(names('agy')).toEqual(['/agent-project', '/agents-project', '/underscore-project'])
     })
 
-    it('Antigravity: a skill is offered only by the name in its file, even one marked not user-invocable, as that is what agy runs', () => {
+    it('Antigravity offers a skill only by the name in its file, Codex by its folder when the file has none, and both offer one marked not user-invocable, as both run it when typed', () => {
       const fs = fakeFs({
         [`${WS}/.agents/skills`]: ['named-dir', 'nameless-dir', 'hidden-dir'],
         [`${WS}/.agents/skills/named-dir`]: ['SKILL.md'],
@@ -132,7 +132,11 @@ describe('listSkills: what the task field offers after you type / (BB-M16)', () 
         [`${WS}/.agents/skills/hidden-dir/SKILL.md`]: '---\nname: quiet\nuser-invocable: false\n---'
       })
       expect(listSkills(fs, 'agy', AT).map((s) => s.name)).toEqual(['/quiet', '/ship'])
-      expect(listSkills(fs, 'codex', AT).map((s) => s.name)).toEqual(['$nameless-dir', '$ship'])
+      expect(listSkills(fs, 'codex', AT).map((s) => s.name)).toEqual([
+        '$nameless-dir',
+        '$quiet',
+        '$ship'
+      ])
     })
 
     it('Antigravity: a name in more than one project folder shows the copy agy runs: .agent first, then .agents, then _agents', () => {
