@@ -96,6 +96,8 @@ export interface AgyTabSpec {
   koloftSkill: boolean
 }
 
+const START_OF_THIS_RUN = '"$T.start.$$.json"'
+
 // AGY§31
 export const AGY_SKILLS = `${AGY_APP_DIR}/skills`
 
@@ -129,7 +131,9 @@ export function agyTab(s: AgyTabSpec): TabProgram {
     `${NOTICE_ENV}="${remoteNoticeFile(s.tabId)}"`,
     // AGY§10 AGY§29
     `${AGY_STATUS_FRAMES_ENV}=off`,
-    ...(s.start ? [`${AGY_START_ENV}="$T.start.json"`] : []),
+    ...(s.start
+      ? [`mv -f "$T.start.json" ${START_OF_THIS_RUN}`, `${AGY_START_ENV}=${START_OF_THIS_RUN}`]
+      : []),
     `export ${exported.join(' ')}`,
     `set -- agy --gemini_dir=${remoteAgyHome(s.account)} ${s.args.map(shq).join(' ')}`,
     // AGY§29
@@ -140,6 +144,7 @@ export function agyTab(s: AgyTabSpec): TabProgram {
     run: run.map((line) => `  ${line}\n`).join(''),
     ensureTool: 'agy',
     beforeTmux: '',
+    whenItEnds: s.start ? `rm -f ${START_OF_THIS_RUN}` : '',
     files: {
       [file('settings.json')]: s.settings,
       [file('hooks.json')]: s.hooks,
