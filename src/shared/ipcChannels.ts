@@ -100,6 +100,9 @@ export const CH = {
     dismissSignInFailure: 'accounts:dismiss-sign-in-failure',
     codexUseReset: 'accounts:codex-use-reset',
     loginProgress: 'accounts:login-progress',
+    beginSignIn: 'accounts:begin-sign-in',
+    signInProgress: 'accounts:sign-in-progress',
+    endSignIn: 'accounts:end-sign-in',
     update: 'accounts:update'
   },
   gitAccounts: {

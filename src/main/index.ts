@@ -32,7 +32,7 @@ import {
 } from '@agents/agy/main/agyAccounts'
 import { ownersGeminiDir } from '@agents/agy/main/agyStore'
 import { watchHistoryOf } from './historyWatch'
-import { MARK_OUTPUT_START, SignInOutput } from './signInOutput'
+import { terminalSignInsOf } from './terminalSignIn'
 import type { SessionEvent } from '@shared/sessionEvent'
 import { askWiring } from './askWiring'
 import {
@@ -248,6 +248,7 @@ import {
   takesAnEndpoint,
   BACKEND_OF_SIGN_IN_FOLDER,
   isSignInFolderKind,
+  isAccountKind,
   type SignInFolderKind,
   type GitPlatform,
   type GitTokenAdd
@@ -267,8 +268,9 @@ import type {
   AccountView,
   ArtifactView,
   BackendId,
-  SignInResult,
   SignInFailure,
+  SignInProgress,
+  SignInStart,
   ScreenAnswer,
   ScreenRequest,
   TerminalExit,
@@ -1310,8 +1312,8 @@ const {
   loginPtys,
   feedLoginWatcher,
   failLogin,
-  cancelGuidedLogin,
-  startGuidedLogin
+  startLogin,
+  cancelLogins
 } = claudeAccountsOf({
   ptyMgr,
   usageViews,
@@ -1320,13 +1322,18 @@ const {
   pushAccounts,
   notifyExpired,
   sendToRenderer,
+  signInChanged: (progress) => agentsMain.signInChanged(progress),
   savedUsage,
   tracker: {
     launchedSessions: () => tracker.launchedSessions(),
     setPickedAccount: (tabId, account) => tracker.setPickedAccount(tabId, account)
   },
   sessionAccounts: { of: (backend, sessionId) => sessionAccounts?.of(backend, sessionId) },
-  claudeBackend: { picked: (tabId, skipFlag) => claudeBackend.picked(tabId, skipFlag) },
+  claudeBackend: {
+    picked: (tabId, skipFlag) => claudeBackend.picked(tabId, skipFlag),
+    forgetAvailability: () => claudeBackend.forgetAvailability(),
+    availability: () => claudeBackend.availability()
+  },
   loginEnvReady,
   CLAUDE_AUTH_ENV_VARS,
   cronTestMs,
@@ -1363,7 +1370,8 @@ const homeAccountsDeps = {
   savedHomeUsageOf,
   usageViews,
   viewKey,
-  sessionAccounts: () => sessionAccounts
+  sessionAccounts: () => sessionAccounts,
+  signInInATab: (...signIn: Parameters<typeof signInToHome>) => signInToHome(...signIn)
 }
 const codexAccounts = codexHomeAccounts({
   ...homeAccountsDeps,
@@ -2226,42 +2234,12 @@ function codexSharedConfig(): string {
   return codexConfigFile(codexSessions?.defaultEnv)
 }
 
-interface HomeSignInTab {
-  kind: SignInFolderKind
-  name: string
-  again: boolean
-  output: SignInOutput
-}
-const signInPtys = new Map<string, HomeSignInTab>()
-let signInFailure: SignInFailure | null = null
-
-function setSignInFailure(f: SignInFailure | null): void {
-  signInFailure = f
-  sendToRenderer(CH.accounts.signInFailure, f)
-}
-
 function forgetAccount(name: string, kind: AccountKind): void {
   removeAccountMeta(name, kind)
   usageViews.delete(viewKey(name, kind))
   savedHomeUsage.delete(viewKey(name, kind))
   agentsMain.forgetAccount(kind, name)
   pushAccounts()
-}
-
-async function endHomeSignIn(s: HomeSignInTab): Promise<void> {
-  const probeAnswered = await probeHomeAccount[s.kind](s.name).then(
-    () => !usageViews.get(viewKey(s.name, s.kind))?.probeError,
-    () => false
-  )
-  const account = findAccount(s.name, s.kind)
-  if (!probeAnswered || !account || account.status === 'ok') return
-  if (!s.again) forgetAccount(s.name, s.kind)
-  setSignInFailure({
-    backend: BACKEND_OF_SIGN_IN_FOLDER[s.kind],
-    name: s.name,
-    again: s.again,
-    tail: s.output.tail()
-  })
 }
 
 function noteHomeAccount(name: string, kind: SignInFolderKind): void {
@@ -2277,54 +2255,34 @@ function noteHomeAccount(name: string, kind: SignInFolderKind): void {
   pushAccounts()
 }
 
-const homeLogin: Record<
-  SignInFolderKind,
-  (name: string) => Promise<{ binary?: string; env: Record<string, string>; args?: string[] }>
-> = {
-  'codex-home': codexAccounts.homeLogin,
-  'agy-home': agyAccounts.homeLogin
+const { signInPtys, endHomeSignIn, signInToHome } = terminalSignInsOf({
+  usageViews,
+  viewKey,
+  forgetAccount,
+  noteHomeAccount,
+  homeShellTab,
+  toolInstallPtys: { add: (id) => toolInstallPtys.add(id) },
+  signInChanged: (progress) => agentsMain.signInChanged(progress),
+  heldSignInFailure: () => agentsMain.heldSignInFailure(),
+  forgetHeldSignInFailure: () => agentsMain.forgetHeldSignInFailure()
+})
+
+function asOldSignInFailure(held: SignInProgress | null): SignInFailure | null {
+  return held && isSignInFolderKind(held.kind)
+    ? {
+        backend: BACKEND_OF_SIGN_IN_FOLDER[held.kind],
+        name: held.name,
+        again: held.again,
+        tail: held.tail ?? ''
+      }
+    : null
 }
 
-const probeHomeAccount: Record<SignInFolderKind, (name: string) => Promise<void>> = {
-  'codex-home': codexAccounts.probeHomeAccount,
-  'agy-home': agyAccounts.probeHomeAccount
-}
-
-async function signInToHome(
-  kind: SignInFolderKind,
-  name: string,
-  again: boolean
-): Promise<SignInResult> {
-  const v = again
-    ? findAccount(name, kind)
-      ? 'ok'
-      : 'invalid-name'
-    : validateNewAccount(name, kind)
-  if (v !== 'ok') return { ok: false, error: v }
-  if (!again && keepsSecretInKeychain(kind) && !(await keychainDelete(kind, name)))
-    return { ok: false, error: 'keychain' }
-  if (signInFailure) setSignInFailure(null)
-  const login = await homeLogin[kind](name)
-  noteHomeAccount(name, kind)
-  const assignments = Object.entries(login.env).map(([k, val]) => `${k}=${shq(val)}`)
-  const args = (login.args ?? ['login']).map(shq).join(' ')
-  // PLATFORM§63
-  const signIn = (quotedBinary: string): string =>
-    `exec env ${assignments.join(' ')} ${quotedBinary} ${args}`
-  const tab = homeShellTab(
-    `${MARK_OUTPUT_START}; ` +
-      (login.binary
-        ? signIn(shq(login.binary))
-        : installThen(
-            BACKEND_OF_SIGN_IN_FOLDER[kind],
-            signIn,
-            process.env.KOLOFT_TEST_TOOL_INSTALLER
-          ))
-  )
-  signInPtys.set(tab.tabId, { kind, name, again, output: new SignInOutput() })
-  if (!login.binary) toolInstallPtys.add(tab.tabId)
-  return { ok: true, ...tab }
-}
+agentsMain.watchSignIns((news, heldFailureChanged) => {
+  sendToRenderer(CH.accounts.signInProgress, news)
+  if (heldFailureChanged)
+    sendToRenderer(CH.accounts.signInFailure, asOldSignInFailure(news.heldFailure))
+})
 
 function ownersGemini(): string {
   return ownersGeminiDir(agySessions?.defaultEnv ?? process.env)
@@ -5058,32 +5016,31 @@ function registerIpc(): void {
     pushAccounts()
   })
   ipcMain.handle(CH.accounts.probe, () => probeAllForPanel())
-  ipcMain.handle(CH.accounts.startLogin, async (_e, name: string, reauth?: boolean) => {
-    const v = reauth
-      ? findAccount(name, 'oauth')
-        ? 'ok'
-        : 'unknown'
-      : validateNewAccount(name, 'oauth')
-    if (v !== 'ok') return v
-    claudeBackend.forgetAvailability()
-    const installFirst = !(await claudeBackend.availability()).available
-    for (const id of loginWatchers.keys()) cancelGuidedLogin(id)
-    startGuidedLogin(name, installFirst)
-    return 'ok'
+  ipcMain.handle(CH.accounts.startLogin, (_e, name: string, reauth?: boolean) =>
+    startLogin(name, reauth)
+  )
+  ipcMain.handle(CH.accounts.signIn, async (_e, kind: unknown, name: string, again?: boolean) => {
+    if (!isSignInFolderKind(kind)) return { ok: false, error: 'invalid-name' }
+    const started = await agentsMain.signIn(kind, name, again === true)
+    return started.ok ? { ok: true, ...started.progress.tab } : started
   })
+  ipcMain.handle(CH.accounts.signInFailure, () =>
+    asOldSignInFailure(agentsMain.heldSignInFailure())
+  )
+  ipcMain.on(CH.accounts.dismissSignInFailure, () => agentsMain.forgetHeldSignInFailure())
   ipcMain.handle(
-    CH.accounts.signIn,
-    async (_e, kind: unknown, name: string, again?: boolean): Promise<SignInResult> =>
-      isSignInFolderKind(kind)
-        ? signInToHome(kind, name, again === true)
+    CH.accounts.beginSignIn,
+    (_e, kind: unknown, name: unknown, again: unknown): Promise<SignInStart> | SignInStart =>
+      isAccountKind(kind) && typeof name === 'string'
+        ? agentsMain.signIn(kind, name, again === true)
         : { ok: false, error: 'invalid-name' }
   )
-  ipcMain.handle(CH.accounts.signInFailure, () => signInFailure)
-  ipcMain.on(CH.accounts.dismissSignInFailure, () => setSignInFailure(null))
-  ipcMain.handle(CH.accounts.codexUseReset, (_e, name: string) => codexUseReset(name))
-  ipcMain.on(CH.accounts.cancelLogin, () => {
-    for (const id of [...loginWatchers.keys()]) cancelGuidedLogin(id)
+  ipcMain.handle(CH.accounts.signInProgress, () => agentsMain.heldSignInFailure())
+  ipcMain.on(CH.accounts.endSignIn, (_e, kind: unknown, name: unknown) => {
+    if (isAccountKind(kind) && typeof name === 'string') agentsMain.endSignIn(kind, name)
   })
+  ipcMain.handle(CH.accounts.codexUseReset, (_e, name: string) => codexUseReset(name))
+  ipcMain.on(CH.accounts.cancelLogin, () => cancelLogins())
 
   ipcMain.handle(CH.settings.get, () => loadSettings())
   ipcMain.handle(CH.app.version, () => app.getVersion())
