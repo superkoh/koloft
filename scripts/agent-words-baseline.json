@@ -851,16 +851,6 @@
       "fs.writeFileSync(script, AGY_STATUSLINE_JS)",
       "import { AGY_COST_ENV } from '@agents/agy/main/agyHooks'"
     ],
-    "src/main/taskProcs.ts": [
-      ".filter((row) => looksLikeClaude(row.command))",
-      "async function readClaudeShells(table: ProcessTable, exec: Exec): Promise<ClaudeShells | null> {",
-      "const claudeShellsOf = new WeakMap<ProcessTable, Promise<ClaudeShells | null>>()",
-      "if (!looksLikeClaude(table.byPid.get(rootPid)?.command ?? '')) return null",
-      "if (!read) claudeShellsOf.set(table, (read = readClaudeShells(table, exec)))",
-      "import { looksLikeClaude } from '@agents/claude/main/claudeLiveness'",
-      "interface ClaudeShells {",
-      "let read = claudeShellsOf.get(table)"
-    ],
     "src/main/toolInstall.ts": [
       "agy: `curl -fsSL ${AGY_INSTALLER_URL} | bash`",
       "claude: 'curl -fsSL https://claude.ai/install.sh | bash',",

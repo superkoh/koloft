@@ -63,8 +63,7 @@
         "src/main/accountPicker.ts": "C4",
         "src/main/remote/install.ts": "C10",
         "src/main/remote/paths.ts": "C10",
-        "src/main/rowActivity.ts": "C3",
-        "src/main/taskProcs.ts": "C9"
+        "src/main/rowActivity.ts": "C3"
       },
       "src/agents/codex/main/backend.ts": { "src/main/accounts.ts": "C4" },
       "src/agents/codex/main/codexAccounts.ts": {
@@ -137,7 +136,6 @@
         "src/agents/claude/main/advisorOnFable.ts": "C8"
       },
       "src/main/statusline.ts": { "src/agents/agy/main/agyHooks.ts": "C9" },
-      "src/main/taskProcs.ts": { "src/agents/claude/main/claudeLiveness.ts": "C9" },
       "src/main/usageCache.ts": { "src/agents/agy/main/agyStore.ts": "C6" },
       "src/main/usageScan.ts": { "src/agents/agy/main/agyStore.ts": "C6" }
     },
