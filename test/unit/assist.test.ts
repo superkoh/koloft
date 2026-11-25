@@ -22,6 +22,8 @@ function recordingBinary(name: string, reply: string): { bin: string; log: strin
   return { bin, log }
 }
 
+const nothingToCleanUp = (): void => {}
+
 const read = (file: string): string | null =>
   fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null
 
@@ -48,7 +50,8 @@ function assistWith(
     target: async (backend) => {
       const binary = bins[backend]
       if (!binary) return null
-      return { binary, env: backend === 'codex' ? { CODEX_HOME: '/homes/work' } : {} }
+      const env = backend === 'codex' ? { CODEX_HOME: '/homes/work' } : {}
+      return { binary, env, done: nothingToCleanUp }
     },
     onThisAccount: async (_backend, asked) => asked
   })
@@ -132,7 +135,7 @@ describe('Koloft Assist', () => {
         rows: { turn: { backend: 'agy', model: 'gemini-4-neon', effort: 'xhigh' } }
       }),
       enabled: () => true,
-      target: async () => ({ binary: agy.bin, env: {} }),
+      target: async () => ({ binary: agy.bin, env: {}, done: nothingToCleanUp }),
       onThisAccount: async () => ({ model: 'gemini-4-argon' })
     })({ ...JOB, row: 'turn' })
     expect(reply).toBe('NEWS')
@@ -161,7 +164,7 @@ describe('Koloft Assist', () => {
         fresh({
           picks: picksOf({ backend: 'claude' }),
           enabled: () => true,
-          target: async () => ({ binary: bin, env: {} }),
+          target: async () => ({ binary: bin, env: {}, done: nothingToCleanUp }),
           onThisAccount: (_backend, asked) =>
             new Promise((done) => setTimeout(() => done(asked), waitMs))
         })(JOB)
@@ -277,7 +280,7 @@ describe('Koloft Assist', () => {
             rows: { title: { backend: 'codex', model: 'gpt-6-luna' } }
           }),
           enabled: () => true,
-          target: async () => ({ binary: codex, env: {} }),
+          target: async () => ({ binary: codex, env: {}, done: nothingToCleanUp }),
           onThisAccount: async (_backend, asked) => asked
         })
       } finally {
