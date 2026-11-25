@@ -1876,9 +1876,9 @@ async function readModelList(backend: BackendId): Promise<ListedModel[] | undefi
     const picked = codexPicker.peek(accountViews())
     return codexSessions?.listedModels(picked && codexHomeOf(app.getPath('userData'), picked.name))
   }
-  const target = await agyOneShotTarget()
+  const target = await agentsMain.oneShotTarget(backend)
   if (!target) return undefined
-  return readAgyModels(target.binary, target.env, target.args ?? []).finally(() => target.done?.())
+  return readAgyModels(target.binary, target.env, target.args ?? []).finally(() => target.done())
 }
 
 function listedModels(backend: BackendId): Promise<ListedModel[] | undefined> {
