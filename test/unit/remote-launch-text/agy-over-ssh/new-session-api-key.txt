@@ -1,0 +1,187 @@
+=== the shell the line is typed into ===
+/bin/zsh
+=== the line typed into the tab on this Mac ===
+h=$(COPYFILE_DISABLE=1 tar cf - --no-xattrs -C '<home>/userData/remote/tabs/pty-t1' . | ssh -o RemoteCommand=none -o RequestTTY=no -o ControlMaster=auto -o ControlPath=<home>/ssh-control/%C -o ControlPersist=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 'devbox' 'umask 077; find "$HOME/.koloft/tabs" -name \*.pass -mmin +1 -delete 2>/dev/null; test -d "$HOME/.koloft/m-0000000000000000" && mkdir -p "$HOME/.koloft/tabs" && tar xmf - -C "$HOME/.koloft/tabs" && echo koloft-tab-in'); case "$h" in *koloft-tab-in*) ;; *) COPYFILE_DISABLE=1 tar czf - --no-xattrs -C '<home>' . | ssh -o RemoteCommand=none -o RequestTTY=no -o ControlMaster=auto -o ControlPath=<home>/ssh-control/%C -o ControlPersist=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 'devbox' 'umask 077; mkdir -p "$HOME/.koloft" && cd "$HOME/.koloft" && rm -rf m.tmp.pty-t1 && mkdir m.tmp.pty-t1 && tar xzf - -C m.tmp.pty-t1 && sh -c "test -d m-0000000000000000 || mv m.tmp.pty-t1 m-0000000000000000; rm -rf m.tmp.pty-t1"' && COPYFILE_DISABLE=1 tar cf - --no-xattrs -C '<home>/userData/remote/tabs/pty-t1' . | ssh -o RemoteCommand=none -o RequestTTY=no -o ControlMaster=auto -o ControlPath=<home>/ssh-control/%C -o ControlPersist=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 'devbox' 'umask 077; find "$HOME/.koloft/tabs" -name \*.pass -mmin +1 -delete 2>/dev/null; test -d "$HOME/.koloft/m-0000000000000000" && mkdir -p "$HOME/.koloft/tabs" && tar xmf - -C "$HOME/.koloft/tabs" && echo koloft-tab-in' >/dev/null ;; esac || { echo '[Koloft] could not connect or push files — see the error above'; rm -rf '<home>/userData/remote/tabs/pty-t1'; exit 4; }; rm -rf '<home>/userData/remote/tabs/pty-t1'; a=start; while :; do ssh -tt -o RemoteCommand=none -o RequestTTY=no -o ControlMaster=auto -o ControlPath=<home>/ssh-control/%C -o ControlPersist=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=3 'devbox' "sh \"\$HOME/.koloft/tabs/pty-t1.sh\" $a $COLUMNS $LINES"; c=$?; [ "$c" = 255 ] || { [ "$c" = 0 ] || echo "[Koloft] the session on the machine stopped with exit code $c — see above"; exit "$c"; }; a=attach; printf '\033[?1000l\033[?1002l\033[?1003l\033[?1006l\033[?2004l\033[?25h\033[?1049l'; clear; echo '[Koloft] connection lost, reconnecting in 2s…'; sleep 2; done
+=== file pty-t1.env ===
+ANT_ACCOUNT='work'
+KOLOFT_AGY_KEY='api-key-of-the-koloft-account'
+
+=== file pty-t1.hooks.json ===
+{
+  "koloft": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "/bin/sh \"$HOME/.koloft/m-0000000000000000/agy-hook.sh\" PostToolUse",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "PreInvocation": [
+      {
+        "command": "/bin/sh \"$HOME/.koloft/m-0000000000000000/agy-hook.sh\" PreInvocation",
+        "type": "command"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "/bin/sh \"$HOME/.koloft/m-0000000000000000/agy-hook.sh\" PreToolUse",
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "SessionStart": [
+      {
+        "command": "/bin/sh \"$HOME/.koloft/m-0000000000000000/agy-hook.sh\" SessionStart",
+        "type": "command"
+      }
+    ],
+    "Stop": [
+      {
+        "command": "/bin/sh \"$HOME/.koloft/m-0000000000000000/agy-hook.sh\" Stop",
+        "type": "command"
+      }
+    ]
+  }
+}
+
+=== file pty-t1.pass ===
+KOLOFT_TAB_PASS=<pass>
+
+=== file pty-t1.settings.json ===
+{
+  "altScreenMode": "always",
+  "modelProvider": "gemini",
+  "title": {
+    "command": "/bin/sh \"$HOME/.koloft/m-0000000000000000/agy-title.sh\"",
+    "type": "command"
+  },
+  "trustedWorkspaces": []
+}
+
+=== file pty-t1.sh ===
+#!/bin/sh
+M="$HOME/.koloft/m-0000000000000000"
+T="$HOME/.koloft/tabs/pty-t1"
+export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+if [ -z "$LC_ALL$LC_CTYPE" ]; then
+  case "$(locale charmap 2>/dev/null)" in
+  ANSI_X3.4-1968|US-ASCII)
+    koloft_u=$(locale -a 2>/dev/null | awk '{ l = tolower($0) }
+      l ~ /^c\.utf-?8$/ && c == "" { c = $0 }
+      l ~ /^en_us\.utf-?8$/ && e == "" { e = $0 }
+      l ~ /\.utf-?8$/ && u == "" { u = $0 }
+      END { print (c != "" ? c : (e != "" ? e : u)) }')
+    if [ -n "$koloft_u" ]; then
+      case "${LANG:-C}" in
+      C|POSIX) LC_CTYPE=$koloft_u; export LC_CTYPE ;;
+      *) LANG=$koloft_u; export LANG ;;
+      esac
+    fi
+    unset koloft_u ;;
+  esac
+fi
+koloft_git="'include.path=$HOME/.koloft/git-accounts/config'"; case "$GIT_CONFIG_PARAMETERS" in *"$koloft_git"*) ;; *) GIT_CONFIG_PARAMETERS="${GIT_CONFIG_PARAMETERS:+$GIT_CONFIG_PARAMETERS }$koloft_git"; export GIT_CONFIG_PARAMETERS ;; esac; unset koloft_git
+if [ "$1" = run ]; then
+  KOLOFT_TMUX_FOLLOW=1; export KOLOFT_TMUX_FOLLOW
+  PATH="$PATH":'/opt/login-shell/bin:/home/linuxbrew/.linuxbrew/bin'
+  KOLOFT_TAB_ID=pty-t1; PATH="$M/bin/:$PATH"; export KOLOFT_TAB_ID PATH
+  unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN KOLOFT_TAB_PASS
+  [ -f "$HOME/.koloft/tabs/pty-t1.env" ] && { set -a; . "$HOME/.koloft/tabs/pty-t1.env"; set +a; rm -f "$HOME/.koloft/tabs/pty-t1.env"; }
+  [ -f "$HOME/.koloft/tabs/pty-t1.pass" ] && { set -a; . "$HOME/.koloft/tabs/pty-t1.pass"; set +a; rm -f "$HOME/.koloft/tabs/pty-t1.pass"; }
+  [ -n "$KOLOFT_TAB_PASS" ] && ( umask 077; printf 'set-environment -t %s KOLOFT_TAB_ID %s\nset-environment -t %s KOLOFT_TAB_PASS %s\n' "m-pty-t1-t" pty-t1 "m-pty-t1-t" "$KOLOFT_TAB_PASS" > "$HOME/.koloft/tabs/pty-t1.keys" ) && tmux -L koloft source-file "$HOME/.koloft/tabs/pty-t1.keys"; rm -f "$HOME/.koloft/tabs/pty-t1.keys"
+  trap : INT QUIT
+  (
+  A="$HOME/.koloft/agy"/'work'; G="$HOME/.gemini"
+  mkdir -p "$A/antigravity-cli/cache" "$A/config" "$HOME/.koloft/hook-sessions" && chmod 700 "$HOME/.koloft/agy"
+  mkdir -p "$G/antigravity-cli/conversations"; [ "$(readlink "$A/antigravity-cli/conversations")" = "$G/antigravity-cli/conversations" ] || { rm -rf "$A/antigravity-cli/conversations"; ln -s "$G/antigravity-cli/conversations" "$A/antigravity-cli/conversations"; }
+  mkdir -p "$G/antigravity-cli/brain"; [ "$(readlink "$A/antigravity-cli/brain")" = "$G/antigravity-cli/brain" ] || { rm -rf "$A/antigravity-cli/brain"; ln -s "$G/antigravity-cli/brain" "$A/antigravity-cli/brain"; }
+  mkdir -p "$G/antigravity-cli/annotations"; [ "$(readlink "$A/antigravity-cli/annotations")" = "$G/antigravity-cli/annotations" ] || { rm -rf "$A/antigravity-cli/annotations"; ln -s "$G/antigravity-cli/annotations" "$A/antigravity-cli/annotations"; }
+  mkdir -p "$G/antigravity-cli/presence"; [ "$(readlink "$A/antigravity-cli/presence")" = "$G/antigravity-cli/presence" ] || { rm -rf "$A/antigravity-cli/presence"; ln -s "$G/antigravity-cli/presence" "$A/antigravity-cli/presence"; }
+  mkdir -p "$G/config/projects"; [ "$(readlink "$A/config/projects")" = "$G/config/projects" ] || { rm -rf "$A/config/projects"; ln -s "$G/config/projects" "$A/config/projects"; }
+  mkdir -p "$G/config/rules"; [ "$(readlink "$A/config/rules")" = "$G/config/rules" ] || { rm -rf "$A/config/rules"; ln -s "$G/config/rules" "$A/config/rules"; }
+  mkdir -p "$G/config/plugins"; [ "$(readlink "$A/config/plugins")" = "$G/config/plugins" ] || { rm -rf "$A/config/plugins"; ln -s "$G/config/plugins" "$A/config/plugins"; }
+  mkdir -p "$G/antigravity"; [ "$(readlink "$A/antigravity")" = "$G/antigravity" ] || { rm -rf "$A/antigravity"; ln -s "$G/antigravity" "$A/antigravity"; }
+  mkdir -p "$(dirname "$G/antigravity-cli/conversation_summaries.db")"; [ "$(readlink "$A/antigravity-cli/conversation_summaries.db")" = "$G/antigravity-cli/conversation_summaries.db" ] || { rm -rf "$A/antigravity-cli/conversation_summaries.db"; ln -s "$G/antigravity-cli/conversation_summaries.db" "$A/antigravity-cli/conversation_summaries.db"; }
+  mkdir -p "$(dirname "$G/config/GEMINI.md")"; [ "$(readlink "$A/config/GEMINI.md")" = "$G/config/GEMINI.md" ] || { rm -rf "$A/config/GEMINI.md"; ln -s "$G/config/GEMINI.md" "$A/config/GEMINI.md"; }
+  mkdir -p "$(dirname "$G/config/AGENTS.md")"; [ "$(readlink "$A/config/AGENTS.md")" = "$G/config/AGENTS.md" ] || { rm -rf "$A/config/AGENTS.md"; ln -s "$G/config/AGENTS.md" "$A/config/AGENTS.md"; }
+  mkdir -p "$(dirname "$G/config/config.json")"; [ "$(readlink "$A/config/config.json")" = "$G/config/config.json" ] || { rm -rf "$A/config/config.json"; ln -s "$G/config/config.json" "$A/config/config.json"; }
+  mkdir -p "$(dirname "$G/config/mcp_config.json")"; [ "$(readlink "$A/config/mcp_config.json")" = "$G/config/mcp_config.json" ] || { rm -rf "$A/config/mcp_config.json"; ln -s "$G/config/mcp_config.json" "$A/config/mcp_config.json"; }
+  mkdir -p "$(dirname "$G/GEMINI.md")"; [ "$(readlink "$A/GEMINI.md")" = "$G/GEMINI.md" ] || { rm -rf "$A/GEMINI.md"; ln -s "$G/GEMINI.md" "$A/GEMINI.md"; }
+  mv -f "$T.settings.json" "$A/antigravity-cli/settings.json" && mv -f "$T.hooks.json" "$A/config/hooks.json"
+  [ -f "$T.onboarding.json" ] && { [ -f "$A/antigravity-cli/cache/onboarding.json" ] || mv "$T.onboarding.json" "$A/antigravity-cli/cache/onboarding.json"; rm -f "$T.onboarding.json"; }
+  [ -f "$T.auth.json" ] && { [ -f "$A/antigravity-cli/antigravity-oauth-token" ] || mv "$T.auth.json" "$A/antigravity-cli/antigravity-oauth-token"; rm -f "$T.auth.json"; }
+  mkdir -p "$A/antigravity-cli/skills"; { diff -r "$M/docs-plugin/skills/koloft-docs" "$A/antigravity-cli/skills/koloft-docs" >/dev/null 2>&1 || { rm -rf "$A/antigravity-cli/skills/koloft-docs.new-$$" && cp -R "$M/docs-plugin/skills/koloft-docs" "$A/antigravity-cli/skills/koloft-docs.new-$$" && rm -rf "$A/antigravity-cli/skills/koloft-docs" && mv "$A/antigravity-cli/skills/koloft-docs.new-$$" "$A/antigravity-cli/skills/koloft-docs"; }; }; rm -rf "$A/antigravity-cli/skills/koloft"
+  unset GEMINI_API_KEY; [ -n "$KOLOFT_AGY_KEY" ] && { GEMINI_API_KEY="$KOLOFT_AGY_KEY"; export GEMINI_API_KEY; }; unset KOLOFT_AGY_KEY
+  KOLOFT_AGY_LOG="$HOME/.koloft/hook-sessions/pty-t1.agy.jsonl"
+  KOLOFT_NOTICE="$HOME/.koloft/hook-sessions/pty-t1.notice"
+  AGY_CLI_OSC7501=off
+  export KOLOFT_AGY_LOG KOLOFT_NOTICE AGY_CLI_OSC7501
+  set -- agy --gemini_dir="$HOME/.koloft/agy"/'work' '--csrf_token=<token>'
+  [ -x /usr/sbin/taskpolicy ] && set -- /usr/sbin/taskpolicy -a "$@"
+  python3 -c 'import pty, termios' >/dev/null 2>&1 && exec python3 "$M/status-relay.py" "$@"
+  exec "$@"
+  )
+  c=$?
+  [ $c = 0 ] || tmux -L koloft capture-pane -p -t "$TMUX_PANE" > "$HOME/.koloft/tabs/pty-t1.screen" 2>/dev/null
+  echo $c > "$HOME/.koloft/tabs/pty-t1.exit"
+  exit
+fi
+trap 'rm -f "$HOME/.koloft/tabs/pty-t1.pass"' EXIT
+[ -f "$HOME/.koloft/tabs/pty-t1.pass" ] && { set -a; . "$HOME/.koloft/tabs/pty-t1.pass"; set +a; rm -f "$HOME/.koloft/tabs/pty-t1.pass"; }
+[ -n "$2" ] && rm -f "$HOME/.koloft/tabs/pty-t1.pts"
+if [ -n "$2" ] && [ ! -t 0 ]; then
+  TERM=xterm-256color; export TERM
+  exec script -qfec "stty cols $2 rows $3; tty > '$HOME/.koloft/tabs/pty-t1.pts'; exec sh '$HOME/.koloft/tabs/pty-t1.sh' $1" /dev/null
+fi
+exited() {
+  c=$?; [ -s "$HOME/.koloft/tabs/pty-t1.exit" ] && c=$(cat "$HOME/.koloft/tabs/pty-t1.exit")
+  [ "$c" = 255 ] && c=254
+  [ -f "$HOME/.koloft/tabs/pty-t1.screen" ] && awk 'NF { if (seen) for (; n; n--) print ""; seen = 1; n = 0; print; next } { n++ }' "$HOME/.koloft/tabs/pty-t1.screen"
+  rm -f "$HOME/.koloft/tabs/pty-t1.env"; exit $c
+}
+[ "$1" = attach ] && { n="$(cat "$HOME/.koloft/tabs/pty-t1.tmux" 2>/dev/null || echo 'm-pty-t1-t')"; if tmux -L koloft show-environment -t "$n" KOLOFT_TAB_PASS >/dev/null 2>&1; then [ -n "$KOLOFT_TAB_PASS" ] && ( umask 077; printf 'set-environment -t %s KOLOFT_TAB_ID %s\nset-environment -t %s KOLOFT_TAB_PASS %s\n' "$n" pty-t1 "$n" "$KOLOFT_TAB_PASS" > "$HOME/.koloft/tabs/pty-t1.keys" ) && tmux -L koloft source-file "$HOME/.koloft/tabs/pty-t1.keys"; rm -f "$HOME/.koloft/tabs/pty-t1.keys"; fi; unset KOLOFT_TAB_PASS; tmux -L koloft set -gq set-titles on \; set -gq set-titles-string '#{pane_title}' \; set -gq allow-passthrough on 2>/dev/null; tmux -L koloft -u attach -d -t "$n"; exited; }
+trap 'rm -f "$T.auth.json"' EXIT
+sh "$M/ensure.sh" agy || exit $?
+cd '/home/me/proj' || exit 3
+echo ''
+rm -f "$HOME/.koloft/hook-sessions/pty-t1.json" "$HOME/.koloft/hook-sessions/pty-t1.status.jsonl" "$HOME/.koloft/tabs/pty-t1.exit" "$HOME/.koloft/tabs/pty-t1.screen" "$HOME/.koloft/tabs/pty-t1.tmux"
+if tmux -L koloft show-environment -t "m-pty-t1-t" KOLOFT_TAB_PASS >/dev/null 2>&1; then [ -n "$KOLOFT_TAB_PASS" ] && ( umask 077; printf 'set-environment -t %s KOLOFT_TAB_ID %s\nset-environment -t %s KOLOFT_TAB_PASS %s\n' "m-pty-t1-t" pty-t1 "m-pty-t1-t" "$KOLOFT_TAB_PASS" > "$HOME/.koloft/tabs/pty-t1.keys" ) && tmux -L koloft source-file "$HOME/.koloft/tabs/pty-t1.keys"; rm -f "$HOME/.koloft/tabs/pty-t1.keys"; fi
+[ -n "$KOLOFT_TAB_PASS" ] && ( umask 077; printf 'KOLOFT_TAB_PASS=%s\n' "$KOLOFT_TAB_PASS" > "$HOME/.koloft/tabs/pty-t1.pass" ); unset KOLOFT_TAB_PASS
+tmux -L koloft set -gq set-titles on \; set -gq set-titles-string '#{pane_title}' \; set -gq allow-passthrough on 2>/dev/null; tmux -L koloft -u -f "$M/tmux.conf" new-session -A -D -s 'm-pty-t1-t' 'sh "$HOME/.koloft/tabs/pty-t1.sh" run'
+exited
+
+=== run over ssh, in this order ===
+sh -c 'echo koloft-answer-starts-here; eval "$(printf %s "$0" | base64 -d)"' <base64 of the script below>
+set -- 
+export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+if [ -z "$LC_ALL$LC_CTYPE" ]; then
+  case "$(locale charmap 2>/dev/null)" in
+  ANSI_X3.4-1968|US-ASCII)
+    koloft_u=$(locale -a 2>/dev/null | awk '{ l = tolower($0) }
+      l ~ /^c\.utf-?8$/ && c == "" { c = $0 }
+      l ~ /^en_us\.utf-?8$/ && e == "" { e = $0 }
+      l ~ /\.utf-?8$/ && u == "" { u = $0 }
+      END { print (c != "" ? c : (e != "" ? e : u)) }')
+    if [ -n "$koloft_u" ]; then
+      case "${LANG:-C}" in
+      C|POSIX) LC_CTYPE=$koloft_u; export LC_CTYPE ;;
+      *) LANG=$koloft_u; export LANG ;;
+      esac
+    fi
+    unset koloft_u ;;
+  esac
+fi
+koloft_git="'include.path=$HOME/.koloft/git-accounts/config'"; case "$GIT_CONFIG_PARAMETERS" in *"$koloft_git"*) ;; *) GIT_CONFIG_PARAMETERS="${GIT_CONFIG_PARAMETERS:+$GIT_CONFIG_PARAMETERS }$koloft_git"; export GIT_CONFIG_PARAMETERS ;; esac; unset koloft_git
+A="$HOME/.koloft/agy"/'work'
+cat "$HOME/.gemini/antigravity-cli/settings.json" 2>/dev/null; printf ''
+cat "$HOME/.gemini/config/hooks.json" 2>/dev/null; printf ''
+cat "$A/antigravity-cli/settings.json" 2>/dev/null; printf ''
+for s in "$HOME/.koloft/agy"/*/antigravity-cli/settings.json; do cat "$s" 2>/dev/null; printf ''; done

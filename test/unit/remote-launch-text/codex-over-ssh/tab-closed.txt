@@ -1,0 +1,75 @@
+=== run over ssh, in this order ===
+sh -c 'eval "$(printf %s "$0" | base64 -d)"' <base64 of the script below>
+set -- 'pty-t1'
+export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+if [ -z "$LC_ALL$LC_CTYPE" ]; then
+  case "$(locale charmap 2>/dev/null)" in
+  ANSI_X3.4-1968|US-ASCII)
+    koloft_u=$(locale -a 2>/dev/null | awk '{ l = tolower($0) }
+      l ~ /^c\.utf-?8$/ && c == "" { c = $0 }
+      l ~ /^en_us\.utf-?8$/ && e == "" { e = $0 }
+      l ~ /\.utf-?8$/ && u == "" { u = $0 }
+      END { print (c != "" ? c : (e != "" ? e : u)) }')
+    if [ -n "$koloft_u" ]; then
+      case "${LANG:-C}" in
+      C|POSIX) LC_CTYPE=$koloft_u; export LC_CTYPE ;;
+      *) LANG=$koloft_u; export LANG ;;
+      esac
+    fi
+    unset koloft_u ;;
+  esac
+fi
+koloft_git="'include.path=$HOME/.koloft/git-accounts/config'"; case "$GIT_CONFIG_PARAMETERS" in *"$koloft_git"*) ;; *) GIT_CONFIG_PARAMETERS="${GIT_CONFIG_PARAMETERS:+$GIT_CONFIG_PARAMETERS }$koloft_git"; export GIT_CONFIG_PARAMETERS ;; esac; unset koloft_git
+D="$HOME/.koloft/cx/table-instance"
+tree_of() {
+  ps -eo pid=,ppid= | awk -v r="$1" '{ p[$1] = $2 } END { s[r] = 1; do { c = 0; for (x in p) if (!(x in s) && (p[x] in s)) { s[x] = 1; c = 1 } } while (c); for (x in s) print x }'
+}
+any_alive() {
+  for x in $all; do
+    case "$(ps -o stat= -p "$x" 2>/dev/null | tr -d ' ')" in ''|Z*) ;; *) return 0 ;; esac
+  done
+  return 1
+}
+signal_and_wait() {
+  kill -s "$1" $all 2>/dev/null
+  n=0
+  while [ "$n" -lt "$2" ] && any_alive; do sleep 0.2; n=$((n+1)); done
+}
+stop_one() {
+  p="$D/$1.pid"
+  if [ -f "$p" ]; then
+    pid=$(cat "$p")
+    case "$(ps -p "$pid" -o args= 2>/dev/null)" in
+      *app-server*)
+        all=$(tree_of "$pid")
+        signal_and_wait TERM 6
+        signal_and_wait KILL 10 ;;
+    esac
+  fi
+  rm -f "$D/$1".*
+}
+stop_one "$1"
+exit 0
+--- the next one ---
+sh -c 'eval "$(printf %s "$0" | base64 -d)"' <base64 of the script below>
+set -- 
+export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+if [ -z "$LC_ALL$LC_CTYPE" ]; then
+  case "$(locale charmap 2>/dev/null)" in
+  ANSI_X3.4-1968|US-ASCII)
+    koloft_u=$(locale -a 2>/dev/null | awk '{ l = tolower($0) }
+      l ~ /^c\.utf-?8$/ && c == "" { c = $0 }
+      l ~ /^en_us\.utf-?8$/ && e == "" { e = $0 }
+      l ~ /\.utf-?8$/ && u == "" { u = $0 }
+      END { print (c != "" ? c : (e != "" ? e : u)) }')
+    if [ -n "$koloft_u" ]; then
+      case "${LANG:-C}" in
+      C|POSIX) LC_CTYPE=$koloft_u; export LC_CTYPE ;;
+      *) LANG=$koloft_u; export LANG ;;
+      esac
+    fi
+    unset koloft_u ;;
+  esac
+fi
+koloft_git="'include.path=$HOME/.koloft/git-accounts/config'"; case "$GIT_CONFIG_PARAMETERS" in *"$koloft_git"*) ;; *) GIT_CONFIG_PARAMETERS="${GIT_CONFIG_PARAMETERS:+$GIT_CONFIG_PARAMETERS }$koloft_git"; export GIT_CONFIG_PARAMETERS ;; esac; unset koloft_git
+test -d "$HOME/.koloft/codex-home"

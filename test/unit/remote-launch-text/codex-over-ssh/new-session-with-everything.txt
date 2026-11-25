@@ -1,0 +1,116 @@
+=== the program the tab runs on this Mac ===
+/bin/sh
+=== its arguments ===
+-c
+h=$(COPYFILE_DISABLE=1 tar cf - --no-xattrs -C '<home>/userData/remote/tabs/pty-t1' . | ssh -o ControlPath=<home>/ssh-control/%C 'devbox' 'umask 077; find "$HOME/.koloft/tabs" -name \*.pass -mmin +1 -delete 2>/dev/null; test -d "$HOME/.koloft/m-0000000000000000" && mkdir -p "$HOME/.koloft/tabs" && tar xmf - -C "$HOME/.koloft/tabs" && echo koloft-tab-in'); case "$h" in *koloft-tab-in*) ;; *) COPYFILE_DISABLE=1 tar czf - --no-xattrs -C '<home>' . | ssh -o ControlPath=<home>/ssh-control/%C 'devbox' 'umask 077; mkdir -p "$HOME/.koloft" && cd "$HOME/.koloft" && rm -rf m.tmp.pty-t1 && mkdir m.tmp.pty-t1 && tar xzf - -C m.tmp.pty-t1 && sh -c "test -d m-0000000000000000 || mv m.tmp.pty-t1 m-0000000000000000; rm -rf m.tmp.pty-t1"' && COPYFILE_DISABLE=1 tar cf - --no-xattrs -C '<home>/userData/remote/tabs/pty-t1' . | ssh -o ControlPath=<home>/ssh-control/%C 'devbox' 'umask 077; find "$HOME/.koloft/tabs" -name \*.pass -mmin +1 -delete 2>/dev/null; test -d "$HOME/.koloft/m-0000000000000000" && mkdir -p "$HOME/.koloft/tabs" && tar xmf - -C "$HOME/.koloft/tabs" && echo koloft-tab-in' >/dev/null ;; esac || { echo '[Koloft] could not connect or push files — see the error above'; rm -rf '<home>/userData/remote/tabs/pty-t1'; exit 4; }; rm -rf '<home>/userData/remote/tabs/pty-t1'; ssh -tt -o ControlPath=<home>/ssh-control/%C 'devbox' "sh \"\$HOME/.koloft/tabs/pty-t1.sh\" start"; c=$?; [ "$c" = 0 ] || { echo "[Koloft] Codex did not start on the machine (exit $c) — see above"; exit "$c"; }; clear; exec '/usr/sbin/taskpolicy' '-a' '/fixture/codex' '--remote' 'unix:///test/rpc.sock' '-C' '/home/me/proj' '-c' 'tui.status_line=["context-used","five-hour-limit","weekly-limit","git-branch","codex-version","model-with-reasoning","estimated-thread-cost","pull-request-number","current-dir"]' '-c' 'check_for_update_on_startup=false' '-c' 'disable_paste_burst=true' '-c' 'features.tui_workspace=false' '-c' 'features.default_mode_request_user_input=true' '-a' 'on-request' '-s' 'workspace-write' '-m' 'pinned-model' '-c' 'model_reasoning_effort="xhigh"' 'FIRST PROMPT'
+=== file pty-t1.pass ===
+KOLOFT_TAB_PASS=<pass>
+
+=== file pty-t1.sh ===
+#!/bin/sh
+M="$HOME/.koloft/m-0000000000000000"
+export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+if [ -z "$LC_ALL$LC_CTYPE" ]; then
+  case "$(locale charmap 2>/dev/null)" in
+  ANSI_X3.4-1968|US-ASCII)
+    koloft_u=$(locale -a 2>/dev/null | awk '{ l = tolower($0) }
+      l ~ /^c\.utf-?8$/ && c == "" { c = $0 }
+      l ~ /^en_us\.utf-?8$/ && e == "" { e = $0 }
+      l ~ /\.utf-?8$/ && u == "" { u = $0 }
+      END { print (c != "" ? c : (e != "" ? e : u)) }')
+    if [ -n "$koloft_u" ]; then
+      case "${LANG:-C}" in
+      C|POSIX) LC_CTYPE=$koloft_u; export LC_CTYPE ;;
+      *) LANG=$koloft_u; export LANG ;;
+      esac
+    fi
+    unset koloft_u ;;
+  esac
+fi
+koloft_git="'include.path=$HOME/.koloft/git-accounts/config'"; case "$GIT_CONFIG_PARAMETERS" in *"$koloft_git"*) ;; *) GIT_CONFIG_PARAMETERS="${GIT_CONFIG_PARAMETERS:+$GIT_CONFIG_PARAMETERS }$koloft_git"; export GIT_CONFIG_PARAMETERS ;; esac; unset koloft_git
+[ -f "$HOME/.koloft/tabs/pty-t1.pass" ] && { set -a; . "$HOME/.koloft/tabs/pty-t1.pass"; set +a; rm -f "$HOME/.koloft/tabs/pty-t1.pass"; }
+sh "$M/ensure-codex.sh" '999.0.0' || exit $?
+PATH="$HOME/.koloft/codex-cli/bin:$PATH"; export PATH
+H="$HOME/.koloft/codex-home"
+mkdir -p "$H" "$HOME/.koloft/cx/table-instance" && chmod 700 "$H" "$HOME/.koloft/cx/table-instance" || exit 3
+mkdir -p "$H/skills"; { diff -r "$M/docs-plugin/skills/koloft-docs" "$H/skills/koloft-docs" >/dev/null 2>&1 || { rm -rf "$H/skills/koloft-docs.new-$$" && cp -R "$M/docs-plugin/skills/koloft-docs" "$H/skills/koloft-docs.new-$$" && rm -rf "$H/skills/koloft-docs" && mv "$H/skills/koloft-docs.new-$$" "$H/skills/koloft-docs"; }; }; rm -rf "$H/skills/koloft"
+cd '/home/me/proj' || exit 3
+if d=$(cd '/home/me/proj' 2>/dev/null && pwd -P); then grep -qxF "[projects.\"$d\"]" "$H/config.toml" 2>/dev/null || printf '\n[projects."%s"]\ntrust_level = "trusted"\n' "$d" >> "$H/config.toml"; fi
+S="$HOME/.koloft/cx/table-instance/pty-t1"
+rm -f "$S".* "$HOME/.koloft/hook-sessions/pty-t1.shell-wrote.jsonl"
+printf '%s' 'The owner'\''s own words, with a '\'' in them' > "$S.said"
+printf '%s' '' > "$S.said.task-first"
+PATH="$PATH":'/opt/login-shell/bin:/home/linuxbrew/.linuxbrew/bin'
+(
+  KOLOFT_TAB_ID='pty-t1'; export KOLOFT_TAB_ID
+  CODEX_HOME="$H"; PATH="$M/bin:$PATH"; export CODEX_HOME PATH
+  KOLOFT_CODEX_REPLY_LANGUAGE="$M/codex-reply-language.sh"; KOLOFT_CODEX_SAID="$S.said"; KOLOFT_NOTICE="$HOME/.koloft/hook-sessions/pty-t1.notice"
+  KOLOFT_SHELL_WROTE="$HOME/.koloft/hook-sessions/pty-t1.shell-wrote.jsonl"; KOLOFT_CODEX_DISCORD_SAID="$HOME/.koloft/hook-sessions/pty-t1.discord-said"
+  export KOLOFT_CODEX_REPLY_LANGUAGE KOLOFT_CODEX_SAID KOLOFT_NOTICE KOLOFT_SHELL_WROTE KOLOFT_CODEX_DISCORD_SAID
+  KOLOFT_HOLD_TAB=pty-t1; export KOLOFT_HOLD_TAB
+  command -v setsid >/dev/null 2>&1 && exec setsid nohup codex app-server --listen "unix://$S.sock" -c 'tui.status_line=["context-used","five-hour-limit","weekly-limit","git-branch","codex-version","model-with-reasoning","estimated-thread-cost","pull-request-number","current-dir"]' -c 'sandbox_workspace_write.network_access=true' -c 'developer_instructions="OWNER TEXT"' -c 'features.default_mode_request_user_input=true' -c 'allow_login_shell=false'
+  exec nohup codex app-server --listen "unix://$S.sock" -c 'tui.status_line=["context-used","five-hour-limit","weekly-limit","git-branch","codex-version","model-with-reasoning","estimated-thread-cost","pull-request-number","current-dir"]' -c 'sandbox_workspace_write.network_access=true' -c 'developer_instructions="OWNER TEXT"' -c 'features.default_mode_request_user_input=true' -c 'allow_login_shell=false'
+) </dev/null >"$S.log" 2>&1 &
+echo $! > "$S.pid"
+i=0
+while [ ! -e "$S.sock" ]; do
+  i=$((i + 1))
+  if [ "$i" -gt 150 ] || ! kill -0 "$(cat "$S.pid")" 2>/dev/null; then
+    echo '[Koloft] Codex did not start on this machine:'; tail -n 20 "$S.log"; exit 5
+  fi
+  sleep 0.1
+done
+exit 0
+
+=== run over ssh, in this order ===
+sh -c 'eval "$(printf %s "$0" | base64 -d)"' <base64 of the script below>
+set -- 
+export PATH="$HOME/.local/bin:$HOME/.koloft/node/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+if [ -z "$LC_ALL$LC_CTYPE" ]; then
+  case "$(locale charmap 2>/dev/null)" in
+  ANSI_X3.4-1968|US-ASCII)
+    koloft_u=$(locale -a 2>/dev/null | awk '{ l = tolower($0) }
+      l ~ /^c\.utf-?8$/ && c == "" { c = $0 }
+      l ~ /^en_us\.utf-?8$/ && e == "" { e = $0 }
+      l ~ /\.utf-?8$/ && u == "" { u = $0 }
+      END { print (c != "" ? c : (e != "" ? e : u)) }')
+    if [ -n "$koloft_u" ]; then
+      case "${LANG:-C}" in
+      C|POSIX) LC_CTYPE=$koloft_u; export LC_CTYPE ;;
+      *) LANG=$koloft_u; export LANG ;;
+      esac
+    fi
+    unset koloft_u ;;
+  esac
+fi
+koloft_git="'include.path=$HOME/.koloft/git-accounts/config'"; case "$GIT_CONFIG_PARAMETERS" in *"$koloft_git"*) ;; *) GIT_CONFIG_PARAMETERS="${GIT_CONFIG_PARAMETERS:+$GIT_CONFIG_PARAMETERS }$koloft_git"; export GIT_CONFIG_PARAMETERS ;; esac; unset koloft_git
+D="$HOME/.koloft/cx/table-instance"
+tree_of() {
+  ps -eo pid=,ppid= | awk -v r="$1" '{ p[$1] = $2 } END { s[r] = 1; do { c = 0; for (x in p) if (!(x in s) && (p[x] in s)) { s[x] = 1; c = 1 } } while (c); for (x in s) print x }'
+}
+any_alive() {
+  for x in $all; do
+    case "$(ps -o stat= -p "$x" 2>/dev/null | tr -d ' ')" in ''|Z*) ;; *) return 0 ;; esac
+  done
+  return 1
+}
+signal_and_wait() {
+  kill -s "$1" $all 2>/dev/null
+  n=0
+  while [ "$n" -lt "$2" ] && any_alive; do sleep 0.2; n=$((n+1)); done
+}
+stop_one() {
+  p="$D/$1.pid"
+  if [ -f "$p" ]; then
+    pid=$(cat "$p")
+    case "$(ps -p "$pid" -o args= 2>/dev/null)" in
+      *app-server*)
+        all=$(tree_of "$pid")
+        signal_and_wait TERM 6
+        signal_and_wait KILL 10 ;;
+    esac
+  fi
+  rm -f "$D/$1".*
+}
+for p in "$D"/*.pid; do [ -f "$p" ] && stop_one "$(basename "$p" .pid)"; done
+exit 0
