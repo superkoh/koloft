@@ -658,7 +658,18 @@ Unless a bullet below says more, it is inferred, not checked.
     own hook on the Linux build over SSH, CC 2.1.289). A `<command-name>` record names the command, and a
     `user` `isMeta` record holds `<local-command-caveat>`.
   - `/context` also adds a `user` `isMeta` record whose content is the same report as
-    clean markdown ("## Context Usage …").
+    clean markdown ("## Context Usage …"). Still so on 2.1.331 and 2.1.332 (2026-11-25,
+    darwin-arm64, a python pty with `pyte` against a stand-in Messages API, a scratch
+    `HOME`, one turn then `/context`, Esc and Enter 300 ms apart, 1 run per build with
+    `"tui": "fullscreen"`, with no `tui` setting and with `"tui": "default"`): the
+    `<command-name>` record, the stdout record and the `isMeta` markdown each time, the
+    markdown byte for byte the same on both builds and in every layout. Only the stdout
+    record changed: 2.1.332's legend reads "Estimated tokens by category" with no
+    "tokens" on each row (2.1.331: "Estimated usage by category", "System prompt: 100
+    tokens (<0.1%)"), and in fullscreen its skills part is the one line `13 skills`
+    (2.1.331: `Skills · /skills` / `└ 13 skills · 2.1k tokens`), 16 lines against 18;
+    with `"tui": "default"` both builds list every skill. Koloft's answer to a typed
+    `/context` is built from the `isMeta` markdown, so it did not change.
   - An unknown command writes one `system`/`informational` record, `level: "warning"`,
     content "Unknown command: /x. Did you mean /y?", and nothing else.
   - `/compact` first writes a plain `user` record whose content is `"/compact"` with no
