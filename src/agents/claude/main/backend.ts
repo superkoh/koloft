@@ -24,7 +24,6 @@ import type {
   TabExit,
   WorktreeExitWatch
 } from '@core/agent/sessionBackends'
-import { finishAfterKoloftQuits } from './claudeWorktreeExit'
 import { claudeWorktreeExitWatch } from './claudeWorktreeExitWatch'
 import { KEEPS_NO_WORKTREE_RECORDS } from '@core/agent/worktreeRecords'
 import {
@@ -336,8 +335,7 @@ export class ClaudeBackend implements SessionBackend {
     return claudeWorktreeExitWatch(tabId, hostOfTab, {
       pidOf: (id) => this.d.pty.pidOf(id),
       infoOf: (id) => this.d.tracker.infoOf(id),
-      store: () => this.d.store(),
-      finishAfterKoloftQuits
+      store: () => this.d.store()
     })
   }
 

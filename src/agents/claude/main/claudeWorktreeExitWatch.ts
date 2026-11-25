@@ -1,6 +1,6 @@
 import type { WorktreeExitWatch } from '@core/agent/sessionBackends'
 import type { BackendSessionInfo, HostId } from '@shared/types'
-import { WorktreeRemovalWatch } from './claudeWorktreeExit'
+import { finishAfterKoloftQuits, WorktreeRemovalWatch } from './claudeWorktreeExit'
 
 export interface ClaudeWorktreeExitDeps {
   pidOf(tabId: string): number | undefined
@@ -9,7 +9,6 @@ export interface ClaudeWorktreeExitDeps {
     leavingWorktree(sessionId: string, tabId: string): void
     leftWorktree(sessionId: string, removed: boolean): void
   } | null
-  finishAfterKoloftQuits(claudePid: number, treeRoot: string): void
 }
 
 // CC§4
@@ -35,7 +34,7 @@ export function claudeWorktreeExitWatch(
       if (session?.sessionId) d.store()?.leavingWorktree(session.sessionId, tabId)
       return true
     },
-    failedSaying() {
+    terminalEnded() {
       if (!leaving) return undefined
       const { sessionId } = leaving
       const claudeSaid = watch.failure()
@@ -44,7 +43,7 @@ export function claudeWorktreeExitWatch(
     },
     koloftQuits() {
       if (leaving?.claudePid && leaving.treeRoot)
-        d.finishAfterKoloftQuits(leaving.claudePid, leaving.treeRoot)
+        finishAfterKoloftQuits(leaving.claudePid, leaving.treeRoot)
     }
   }
 }

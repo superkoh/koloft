@@ -2272,4 +2272,5 @@ tab's environment (`src/main/ptyManager.ts`).
   folder trusted and onboarding seeded (§5). Not probed: the macOS build, Ctrl+C and
   Ctrl+D.
 
-Koloft dependents: `removesItsWorktreeAsItExits` in `src/agents/agy/agent.ts`.
+Koloft dependents: `removesItsWorktreeAsItExits` in `src/agents/agy/agent.ts` and `worktreeExitWatch`
+in `src/agents/agy/main/backend.ts`.

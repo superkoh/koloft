@@ -34,7 +34,7 @@ export type TabExit = Pick<TabEnded, 'tabId' | 'exitCode' | 'signal' | 'crashed'
 
 export interface WorktreeExitWatch {
   startedRemoving(printed: string): boolean
-  failedSaying(): string | undefined
+  terminalEnded(): string | undefined
   koloftQuits(): void
 }
 

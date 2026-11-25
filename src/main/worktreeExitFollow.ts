@@ -36,7 +36,7 @@ export function worktreeExitFollow(d: WorktreeExitFollowDeps): {
   function tabExited(e: { id: string }): void {
     const exit = tabExits.get(e.id)
     tabExits.delete(e.id)
-    const failure = exit?.failedSaying()
+    const failure = exit?.terminalEnded()
     if (failure) sendToRenderer(CH.toast.show, failure)
   }
 
