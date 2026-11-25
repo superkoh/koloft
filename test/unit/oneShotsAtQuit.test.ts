@@ -7,7 +7,7 @@ import { DEFAULT_SETTINGS } from '../../src/shared/settingsOps'
 import { EVERY_AGENTS_ONE_SHOT } from './helpers/agentOneShots'
 
 const GONE_WITHIN_MS = 3_000
-const BACKENDS: BackendId[] = ['claude', 'codex', 'agy']
+const BACKENDS = Object.keys(EVERY_AGENTS_ONE_SHOT) as BackendId[]
 
 type Modules = {
   quit: typeof import('../../src/main/oneShotsAtQuit')
@@ -42,9 +42,10 @@ afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
-function longRunningBinary(name: string): { bin: string; pidFile: string } {
-  const bin = path.join(dir, name)
-  const pidFile = path.join(dir, `${name}.pid`)
+function longRunningBinary(name: string, run: string): { bin: string; pidFile: string } {
+  fs.mkdirSync(path.join(dir, run))
+  const bin = path.join(dir, run, name)
+  const pidFile = path.join(dir, `${run}.pid`)
   fs.writeFileSync(bin, `#!/bin/sh\necho $$ > ${JSON.stringify(pidFile)}\nexec sleep 600\n`, {
     mode: 0o755
   })
@@ -104,7 +105,7 @@ const JOB = { row: 'title' as const, system: 'You write short titles.', prompt: 
 describe('one-shot commands when Koloft quits', () => {
   for (const backend of BACKENDS) {
     it(`stops a ${backend} Assist one-shot still running when Koloft quits`, async () => {
-      const fake = longRunningBinary(backend)
+      const fake = longRunningBinary(backend, 'assist')
       const answer = assistOn(backend, fake.bin)(JOB)
       const pid = await runningPid(fake.pidFile)
       mods.quit.endOneShots()
@@ -114,8 +115,8 @@ describe('one-shot commands when Koloft quits', () => {
   }
 
   it('stops the Antigravity model list and usage reads still running when Koloft quits', async () => {
-    const models = longRunningBinary('agy-models')
-    const quota = longRunningBinary('agy-usage')
+    const models = longRunningBinary('agy', 'models')
+    const quota = longRunningBinary('agy', 'usage')
     const listed = mods.agy.readAgyModels(models.bin, {}, [])
     const usage = mods.agy.readAgyQuota(quota.bin, {}, dir)
     const pids = [await runningPid(models.pidFile), await runningPid(quota.pidFile)]
@@ -126,7 +127,7 @@ describe('one-shot commands when Koloft quits', () => {
   })
 
   it('starts no one-shot and makes no target for it once Koloft quits', async () => {
-    const fake = longRunningBinary('claude')
+    const fake = longRunningBinary('claude', 'after-quit')
     const targets: BackendId[] = []
     mods.quit.endOneShots()
     expect(await assistOn('claude', fake.bin, targets)(JOB)).toBeNull()

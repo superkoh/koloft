@@ -248,7 +248,7 @@ export function agyListedModels(stdout: string): ListedModel[] {
   return [...efforts].map(([id, taken]) => ({ id, efforts: knownEfforts(taken) }))
 }
 
-// AGY§21
+// AGY§20 AGY§21
 export function readAgyModels(
   binary: string,
   env: NodeJS.ProcessEnv,

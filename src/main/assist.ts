@@ -98,7 +98,7 @@ export function koloftAssist(deps: AssistDeps): Assist {
         console.error('[koloft] Assist could not make its one-shot target:', backend, err)
         return null
       })
-      if (job.signal?.aborted || oneShotsEnded()) {
+      if (job.signal?.aborted) {
         target?.done()
         return null
       }
