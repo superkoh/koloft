@@ -276,18 +276,33 @@ function shown(text: string): string {
   return JSON.stringify(text)
 }
 
+const linesTakenAt = new Map<string, number>()
+
 function listenAt(socket: string, whose: string): void {
+  linesTakenAt.set(socket, 0)
   const server = net.createServer((conn) => {
-    inFlight++
     const chunks: Buffer[] = []
     conn.on('data', (c: Buffer) => chunks.push(c))
-    conn.on('end', () => {
+    conn.on('error', () => {})
+    conn.on('close', () => {
       got.push(`${whose}'s message socket: ${shown(Buffer.concat(chunks).toString('utf8'))}`)
-      inFlight--
+      linesTakenAt.set(socket, linesTakenAt.get(socket)! + 1)
     })
   })
   server.listen(socket)
   listening.push(server)
+}
+
+async function writeLineAndSeeItTaken(
+  receiver: string,
+  line: string,
+  write?: (line: string) => Promise<void>
+): Promise<void> {
+  const before = linesTakenAt.get(receiver)
+  await writeLineInTurn(receiver, line, write)
+  if (before === undefined) return
+  while (linesTakenAt.get(receiver) === before)
+    await new Promise((resolve) => setImmediate(resolve))
 }
 
 const procStart = (): string =>
@@ -546,7 +561,7 @@ async function stage(kind: Kind): Promise<Stage> {
     sessionBackends: {
       permissionClass: (tab) => (tab === BUTLER_TAB || tab === TARGET_TAB ? 'bypass' : 'prompting')
     },
-    writeLineInTurn,
+    writeLineInTurn: writeLineAndSeeItTaken,
     noteOfWhatKoloftSends,
     noteSent,
     buildHandOver: (d) =>
