@@ -4237,8 +4237,8 @@ not, ADR-0052.
 - Measured 2026-11-24 in the `koloft-e2e-sshd` Docker image (Debian 12, OpenSSH 9.2p1),
   reached through the lab's jump host by a dev build.
 
-Koloft dependents: `tabScript` (`src/main/remote/launch.ts`) reads `<tab>.env` into a shell
-variable and deletes it as its first step after the stand-in terminal, and writes it back
+Koloft dependents: on a start, `tabScript` (`src/main/remote/launch.ts`) reads `<tab>.env`
+into a shell variable and deletes it before the machine's setup, and writes it back
 only just before it starts tmux, whose new session's script reads and deletes it at once
 (a start that lands on a session already running leaves it until its own end); sending a
 tab deletes such files left over an hour ago whose tab has no script running.
