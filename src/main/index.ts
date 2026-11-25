@@ -115,12 +115,12 @@ import {
   browserForwardFile,
   machinePackageBase,
   pageForwardsFile,
-  mirrorAgyGemini,
   mirrorHookDir,
-  mirrorProjectsRoot,
   remoteShellPidFile,
   tabPackageDir
 } from './remote/paths'
+import { mirrorAgyGemini } from '@agents/agy/main/agyMirror'
+import { mirrorProjectsRoot } from '@agents/claude/main/claudeMirror'
 import { RemoteSync } from './remote/sync'
 import { machineUsageDirs } from './remote/usageMirror'
 import { syncMirrorsOf } from './remote/syncMirrors'
@@ -3785,7 +3785,7 @@ app.whenReady().then(() => {
       )
       return (workspaceMgr?.remoteTargets() ?? []).map((t) => ({
         host: t.host,
-        ...syncMirrorsOf(t, userData, codexMachines, codexSessions, agySessions),
+        ...syncMirrorsOf(t.host, userData, sessionBackends),
         paths: t.paths,
         hasTabs: live.has(t.host),
         agentTabs: agentTabsOn.has(t.host),

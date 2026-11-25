@@ -325,6 +325,7 @@ export interface WiredIntoTheApp {
 
 export interface AgySetup extends WiredIntoTheApp {
   machine: MachineSetup
+  pinnedMachines?: () => string[]
   agentTools?: boolean
   apiKey?: string
   signedInOnTheWeb?: boolean
@@ -387,7 +388,7 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
     remote: {
       machine,
       saidWhenTheMachineWantsAPasswordFirst: SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST,
-      hosts: () => [MACHINE],
+      hosts: () => a.pinnedMachines?.() ?? [MACHINE],
       keyed: (host, p) => `ssh://${host}${p}`,
       mirrorDir: () => mirror,
       mirrorGemini: () => path.join(world.home, 'mirror-gemini'),

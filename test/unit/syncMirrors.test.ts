@@ -1,96 +1,247 @@
-import { describe, expect, it } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
+import fs from 'fs'
+import { app } from 'electron'
+
+vi.mock('electron', async () => {
+  const nfs = await import('node:fs')
+  const nos = await import('node:os')
+  const npath = await import('node:path')
+  const base = nfs.mkdtempSync(npath.join(nos.tmpdir(), 'koloft-sync-mirrors-'))
+  return { app: { getPath: () => base, getName: () => 'koloft-dev', isPackaged: false } }
+})
+
+afterAll(() => fs.rmSync(app.getPath('userData'), { recursive: true, force: true }))
+
+const machineThreads = vi.hoisted(() => ({ listed: [] as unknown[] }))
+
+vi.mock('../../src/main/cliRuntime', () => ({
+  resolveCliRuntime: async (spec: {
+    command: string
+    environment(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv
+  }) => ({
+    binary: `/fixture/${spec.command}`,
+    env: spec.environment({ HOME: process.env.HOME, PATH: '/usr/bin:/bin' }),
+    version: '999.0.0',
+    verified: true
+  })
+}))
+
+vi.mock('../../src/agents/codex/main/codexTransport', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../src/agents/codex/main/codexTransport')>()
+  return {
+    ...real,
+    createCodexTransport: async () => ({
+      url: 'unix:///test/rpc.sock',
+      stop: async () => {},
+      request: async () => ({})
+    }),
+    CodexRpc: class {
+      request = async (
+        method: string,
+        params: { cwds?: string[]; archived?: boolean }
+      ): Promise<{ data: unknown[]; nextCursor?: null }> =>
+        method === 'hooks/list'
+          ? {
+              data: (params.cwds ?? []).map((cwd) => ({
+                cwd,
+                hooks: [],
+                warnings: [],
+                errors: []
+              }))
+            }
+          : method === 'thread/list' && !params.archived
+            ? { data: machineThreads.listed, nextCursor: null }
+            : { data: [], nextCursor: null }
+
+      close = async (): Promise<void> => {}
+    }
+  }
+})
+
 import { RemoteSync, type RemoteTarget } from '../../src/main/remote/sync'
 import type { RunResult } from '../../src/main/remote/ssh'
 import { syncMirrorsOf } from '../../src/main/remote/syncMirrors'
+import { SessionBackends } from '../../src/core/agent/sessionBackends'
+import type { ResumeProbes } from '../../src/main/resumePlan'
+import { codexBackend } from '../../src/agents/codex/main/backend'
+import { agyBackend } from '../../src/agents/agy/main/backend'
+import type { CodexSessions } from '../../src/agents/codex/main/codexSessions'
+import type { AgySessions } from '../../src/agents/agy/main/agySessions'
+import {
+  agySessionsIn,
+  claudeBackendIn,
+  codexSessionsIn,
+  makeWorld,
+  recordingPty,
+  recordingSsh
+} from './helpers/agentTabs'
+import { lifecycle } from './helpers/sessionBackendStub'
 
 const PINNED = './sync-mirrors'
 const MACHINE = 'box'
 const OTHER_MACHINE = 'other'
 const USER_DATA = '/ud'
 const WORKSPACE_ON_THE_MACHINE = '/home/me/api'
+const on = (machine: string): string => `ssh://${machine}${WORKSPACE_ON_THE_MACHINE}`
+const A_SESSION = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const EVERY_FOLDER_HAS_FILES =
   'transcripts t\nhooks h\n' + Array.from({ length: 12 }, () => 'extra e\n').join('')
 const SSH_MASTER_FULL =
   'mux_client_request_session: session request failed: Session open refused by peer'
+const ANTIGRAVITY_LISTER = 'agy-list.mjs'
 
-interface WhatEachAgentHas {
-  codex: { tabsOn: string[]; historyOn: string[] } | 'not built'
-  agy: { runOrHistoryOn: string[] } | 'not built'
+interface Agents {
+  codex: CodexSessions
+  agy: AgySessions
+  codexAnswersOn: Set<string>
+  agyListsOn: Set<string>
 }
 
-const nothing: WhatEachAgentHas = {
-  codex: { tabsOn: [], historyOn: [] },
-  agy: { runOrHistoryOn: [] }
+interface Case {
+  file: string
+  title: string
+  codexAndAntigravityBuilt?: false
+  has?: (agents: Agents) => Promise<void>
 }
 
-const CASES: { file: string; title: string; has: WhatEachAgentHas }[] = [
+const codexTabOn = async (a: Agents, machine: string): Promise<void> => {
+  await a.codex.launch({ kind: 'codex', cwd: on(machine), tabId: `codex-on-${machine}` })
+}
+const codexHistoryOn = async (a: Agents, machine: string): Promise<void> => {
+  a.codexAnswersOn.add(machine)
+  machineThreads.listed = [
+    { id: A_SESSION, cwd: WORKSPACE_ON_THE_MACHINE, name: 'Earlier', createdAt: 1, updatedAt: 1 }
+  ]
+  await a.codex.refreshMachineHistory(machine, true)
+}
+const agyRunOn = async (a: Agents, machine: string): Promise<void> => {
+  await a.agy.launch({ kind: 'agy', cwd: on(machine), tabId: `agy-on-${machine}` })
+}
+const agyHistoryOn = async (a: Agents, machine: string): Promise<void> => {
+  a.agyListsOn.add(machine)
+  await a.agy.refreshHistory()
+}
+
+const CASES: Case[] = [
   {
     file: 'nothing',
     title:
-      'no agent has a tab or history there; Claude Code is never asked, so a tab, history or nothing of its own pulls this same list',
-    has: nothing
+      'no agent has a tab or history there; Claude Code answers the same whatever it has there, so this is its list too'
   },
   {
     file: 'codex-tab',
     title: 'a Codex tab is open there',
-    has: { ...nothing, codex: { tabsOn: [MACHINE], historyOn: [] } }
+    has: (a) => codexTabOn(a, MACHINE)
   },
   {
     file: 'codex-tab-elsewhere',
     title: 'a Codex tab is open on another machine only',
-    has: { ...nothing, codex: { tabsOn: [OTHER_MACHINE], historyOn: [] } }
+    has: (a) => codexTabOn(a, OTHER_MACHINE)
   },
   {
     file: 'codex-history',
     title: 'Codex has history there and no tab',
-    has: { ...nothing, codex: { tabsOn: [], historyOn: [MACHINE] } }
+    has: (a) => codexHistoryOn(a, MACHINE)
   },
   {
     file: 'agy-run-or-history',
-    title: 'Antigravity has a run or history there',
-    has: { ...nothing, agy: { runOrHistoryOn: [MACHINE] } }
+    title: 'Antigravity has a run there',
+    has: (a) => agyRunOn(a, MACHINE)
+  },
+  {
+    file: 'agy-run-or-history',
+    title: 'Antigravity has history there and no run',
+    has: (a) => agyHistoryOn(a, MACHINE)
   },
   {
     file: 'agy-elsewhere',
-    title: 'Antigravity has a run or history on another machine only',
-    has: { ...nothing, agy: { runOrHistoryOn: [OTHER_MACHINE] } }
+    title: 'Antigravity has a run on another machine only',
+    has: (a) => agyRunOn(a, OTHER_MACHINE)
+  },
+  {
+    file: 'agy-elsewhere',
+    title: 'Antigravity has history on another machine only',
+    has: (a) => agyHistoryOn(a, OTHER_MACHINE)
   },
   {
     file: 'every-agent',
     title: 'Codex has a tab and Antigravity a run there',
-    has: { codex: { tabsOn: [MACHINE], historyOn: [] }, agy: { runOrHistoryOn: [MACHINE] } }
+    has: async (a) => {
+      await codexTabOn(a, MACHINE)
+      await agyRunOn(a, MACHINE)
+    }
   },
   {
     file: 'not-built',
     title: 'Codex and Antigravity were not built',
-    has: { codex: 'not built', agy: 'not built' }
+    codexAndAntigravityBuilt: false
   }
 ]
 
-function targetOf(has: WhatEachAgentHas): RemoteTarget {
-  const { codex, agy } = has
-  const codexSessions =
-    codex === 'not built'
-      ? null
-      : {
-          machinesWithTabs: () => codex.tabsOn,
-          hasHistoryOn: (host: string) => codex.historyOn.includes(host)
+const EVERY_AGENT = CASES.find((c) => c.file === 'every-agent')!
+
+const answered = (stdout = ''): { code: number; stdout: Buffer; stderr: string } => ({
+  code: 0,
+  stdout: Buffer.from(stdout),
+  stderr: ''
+})
+
+async function targetOf(c: Case): Promise<RemoteTarget> {
+  const world = makeWorld()
+  const stops: (() => Promise<void>)[] = []
+  try {
+    const probes = {} as ResumeProbes
+    const backends = new SessionBackends(lifecycle())
+    backends.register(
+      claudeBackendIn(world, recordingPty('claude-tab').pty, {
+        machine: { run: async () => answered() }
+      })
+    )
+    if (c.codexAndAntigravityBuilt !== false) {
+      const codexAnswersOn = new Set<string>()
+      const agyListsOn = new Set<string>()
+      const codex = codexSessionsIn(world, recordingPty('codex-tab').pty, {
+        ranOnTheMachine: [],
+        run: (machine) => ({ code: codexAnswersOn.has(machine) ? 0 : 1, stdout: '', stderr: '' })
+      })
+      const listed = JSON.stringify([
+        {
+          conversation_id: A_SESSION,
+          title: 'Earlier',
+          preview: '',
+          workspace_uris: [`file://${WORKSPACE_ON_THE_MACHINE}`],
+          last_modified_time: 1,
+          step_count: 1
         }
-  const agySessions =
-    agy === 'not built' ? null : { usesHost: (host: string) => agy.runOrHistoryOn.includes(host) }
-  return {
-    host: MACHINE,
-    ...syncMirrorsOf(
-      { host: MACHINE },
-      USER_DATA,
-      new Set(codexSessions?.machinesWithTabs()),
-      codexSessions,
-      agySessions
-    ),
-    paths: [WORKSPACE_ON_THE_MACHINE],
-    hasTabs: true,
-    agentTabs: false,
-    busy: false
+      ])
+      const agy = agySessionsIn(world, recordingPty('agy-tab').pty, {
+        pinnedMachines: () => [...agyListsOn],
+        machine: {
+          run: recordingSsh((readable) =>
+            readable.includes(ANTIGRAVITY_LISTER) ? { stdout: Buffer.from(listed) } : {}
+          ).run
+        }
+      })
+      stops.push(
+        () => codex.stopAll(),
+        () => agy.stopAll()
+      )
+      backends.register(codexBackend(codex, probes, () => probes))
+      backends.register(agyBackend(agy, probes, () => probes))
+      await c.has?.({ codex, agy, codexAnswersOn, agyListsOn })
+    }
+    return {
+      host: MACHINE,
+      ...syncMirrorsOf(MACHINE, USER_DATA, backends),
+      paths: [WORKSPACE_ON_THE_MACHINE],
+      hasTabs: true,
+      agentTabs: false,
+      busy: false
+    }
+  } finally {
+    machineThreads.listed = []
+    for (const stop of stops) await stop()
+    await world.gone()
   }
 }
 
@@ -174,18 +325,18 @@ async function asPinned(target: RemoteTarget): Promise<string> {
   return lines.join('\n') + '\n'
 }
 
-describe('which folders Koloft pulls back from a remote machine, in which order and with which flags, pinned so that moving the code changes no byte', () => {
-  it.each(CASES)('$file: $title', async ({ file, has }) => {
-    await expect(await asPinned(targetOf(has))).toMatchFileSnapshot(`${PINNED}/${file}.txt`)
+describe("which folders Koloft pulls back from a remote machine, in which order and with which flags, asked of each agent's own sessions and pinned so that moving the code changes no byte", () => {
+  it.each(CASES)('$file: $title', async (c) => {
+    await expect(await asPinned(await targetOf(c))).toMatchFileSnapshot(`${PINNED}/${c.file}.txt`)
   })
 
   it('the whole heartbeat script, when Codex and Antigravity both use the machine', async () => {
-    const [round] = await rounds(targetOf(CASES.find((c) => c.file === 'every-agent')!.has))
+    const [round] = await rounds(await targetOf(EVERY_AGENT))
     await expect(round.heartbeat).toMatchFileSnapshot(`${PINNED}/heartbeat-every-agent.txt`)
   })
 
   it('once a full ssh master refuses a copy, the next round copies one folder at a time in this order', async () => {
-    const target = targetOf(CASES.find((c) => c.file === 'every-agent')!.has)
+    const target = await targetOf(EVERY_AGENT)
     const [, oneAtATime] = await rounds(target, 2, (from, round) =>
       round === 1 && from === '.claude/projects'
         ? { code: 255, stdout: '', stderr: SSH_MASTER_FULL }

@@ -36,23 +36,20 @@
       },
       "src/agents/agy/main/agyTab.ts": {
         "src/main/remote/install.ts": "C10",
-        "src/main/remote/launch.ts": "C10",
-        "src/main/remote/paths.ts": "C10"
+        "src/main/remote/launch.ts": "C10"
       },
       "src/agents/agy/main/backend.ts": { "src/main/accounts.ts": "C4" },
       "src/agents/claude/main/backend.ts": {
         "src/main/accountPicker.ts": "C4",
         "src/main/accounts.ts": "C4",
         "src/main/remote/launch.ts": "C10",
-        "src/main/remote/paths.ts": "C10",
         "src/main/remote/sync.ts": "C10",
         "src/main/shim.ts": "C8",
         "src/main/statusline.ts": "C9"
       },
       "src/agents/claude/main/claudeLaunch.ts": {
         "src/main/agentPlugin.ts": "C7",
-        "src/main/remote/launch.ts": "C10",
-        "src/main/remote/paths.ts": "C10"
+        "src/main/remote/launch.ts": "C10"
       },
       "src/agents/claude/main/claudeProbe.ts": { "src/main/loginShell.ts": "C8" },
       "src/agents/claude/main/claudeSessionStore.ts": {
@@ -62,16 +59,15 @@
       "src/agents/claude/main/sessionTracker.ts": {
         "src/main/accountPicker.ts": "C4",
         "src/main/remote/install.ts": "C10",
-        "src/main/remote/paths.ts": "C10",
         "src/main/rowActivity.ts": "C3"
       },
       "src/agents/codex/main/backend.ts": { "src/main/accounts.ts": "C4" },
       "src/agents/codex/main/codexLeftovers.ts": { "src/main/leftovers.ts": "C9" },
       "src/agents/codex/main/codexMachine.ts": {
         "src/main/remote/install.ts": "C10",
-        "src/main/remote/launch.ts": "C10",
-        "src/main/remote/paths.ts": "C10"
+        "src/main/remote/launch.ts": "C10"
       },
+      "src/agents/codex/main/codexMirror.ts": { "src/main/usageCache.ts": "C6" },
       "src/agents/codex/main/codexObservation.ts": {
         "src/main/openShimScript.ts": "C8",
         "src/main/rowActivity.ts": "C3"
@@ -108,9 +104,11 @@
       },
       "src/main/index.ts": {
         "src/agents/agy/main/agyAccounts.ts": "D1",
+        "src/agents/agy/main/agyMirror.ts": "D1",
         "src/agents/agy/main/agyStore.ts": "D1",
         "src/agents/claude/main/claudeCommandOutput.ts": "D1",
         "src/agents/claude/main/claudeDialogWatch.ts": "D1",
+        "src/agents/claude/main/claudeMirror.ts": "D1",
         "src/agents/claude/main/claudeSessionRegistry.ts": "D1",
         "src/agents/claude/main/claudeTrust.ts": "D1",
         "src/agents/claude/main/claudeWorktreeExit.ts": "D1",
@@ -126,13 +124,9 @@
         "src/agents/claude/main/advisorOnFable.ts": "C10",
         "src/agents/codex/main/codexMachine.ts": "C10"
       },
-      "src/main/remote/syncMirrors.ts": {
-        "src/agents/agy/main/agyStore.ts": "C10",
-        "src/agents/agy/main/agyTab.ts": "C10"
-      },
       "src/main/remote/usageMirror.ts": {
-        "src/agents/agy/main/agyStore.ts": "C10",
-        "src/agents/codex/main/codexMachine.ts": "C10"
+        "src/agents/agy/main/agyMirror.ts": "C6",
+        "src/agents/codex/main/codexMirror.ts": "C6"
       },
       "src/main/rowActivity.ts": { "src/agents/claude/main/claudeTouchedFiles.ts": "C3" },
       "src/main/shim.ts": {

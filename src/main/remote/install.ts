@@ -363,7 +363,7 @@ const HOOK_DIR_SUM = `stamped "${REMOTE_HOOK_DIR}" | cksum`
 export function heartbeatCmd(
   paths: string[],
   watched: string[] = [],
-  projectSlugs: string[] = [],
+  byWorkspace: { folder: string; subfolders: string[] }[] = [],
   extraDirs: string[] = [],
   shellTabs: string[] = []
 ): string {
@@ -372,8 +372,13 @@ export function heartbeatCmd(
       `${FINGERPRINT}; n=$1; shift; ` +
       `while [ "$n" -gt 0 ]; do echo "${STAMP_LINE}$(fp "$1" 2>/dev/null)"; shift; n=$((n - 1)); done; ` +
       `${EVERY_FILE_STAMPED}; ` +
-      `echo "${TRANSCRIPTS_LINE}$([ -d "$HOME/.claude/projects" ] && for s in $1; do ` +
-      'for d in "$HOME/.claude/projects/$s"*; do [ -d "$d" ] && stamped "$d"; done; done | cksum)"; shift; ' +
+      byWorkspace
+        .map(
+          ({ folder }) =>
+            `echo "${TRANSCRIPTS_LINE}$([ -d "$HOME/${folder}" ] && for s in $1; do ` +
+            `for d in "$HOME/${folder}/$s"*; do [ -d "$d" ] && stamped "$d"; done; done | cksum)"; shift; `
+        )
+        .join('') +
       `mkdir -p "${REMOTE_HOOK_DIR}" 2>/dev/null; echo "${HOOKS_LINE}$(${HOOK_DIR_SUM})"; ` +
       `m=$1; shift; while [ "$m" -gt 0 ]; do echo "${EXTRA_LINE}$([ -d "$HOME/$1" ] && stamped "$HOME/$1" | cksum)"; shift; m=$((m - 1)); done; ` +
       `${EACH_SHELLS_FOREGROUND_AND_FOLDER}; ${TOOL_SHELLS_IN_FLIGHT}; ` +
@@ -384,7 +389,7 @@ export function heartbeatCmd(
     [
       String(watched.length),
       ...watched,
-      projectSlugs.join(' '),
+      ...byWorkspace.map(({ subfolders }) => subfolders.join(' ')),
       String(extraDirs.length),
       ...extraDirs,
       String(shellTabs.length),
@@ -415,7 +420,7 @@ export function hookBellCmd(): string {
 export const NO_FILES_THERE = ''
 
 export interface MirrorStamps {
-  transcripts?: string
+  byWorkspace: string[]
   hooks?: string
   extras: string[]
 }
@@ -445,7 +450,7 @@ export function parseHeartbeat(stdout: string): {
   const stamps: string[] = []
   const shells: ShellReport[] = []
   const toolShells: string[] = []
-  const mirrors: MirrorStamps = { extras: [] }
+  const mirrors: MirrorStamps = { byWorkspace: [], extras: [] }
   const git = new Map<string, RemoteGitInfo>()
   let uid = NaN
   let tmpRoot = ''
@@ -471,7 +476,7 @@ export function parseHeartbeat(stdout: string): {
     } else if (!current && line.startsWith(STAMP_LINE)) {
       stamps.push(line.slice(STAMP_LINE.length))
     } else if (!current && line.startsWith(TRANSCRIPTS_LINE)) {
-      mirrors.transcripts = line.slice(TRANSCRIPTS_LINE.length)
+      mirrors.byWorkspace.push(line.slice(TRANSCRIPTS_LINE.length))
     } else if (!current && line.startsWith(HOOKS_LINE)) {
       mirrors.hooks = line.slice(HOOKS_LINE.length)
     } else if (!current && line.startsWith(EXTRA_LINE)) {

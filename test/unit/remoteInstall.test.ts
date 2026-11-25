@@ -15,6 +15,9 @@ import {
   parseHeartbeat
 } from '../../src/main/remote/install'
 import { answerOf } from '../../src/main/remote/ssh'
+import { REMOTE_CLAUDE_PROJECTS } from '../../src/agents/claude/main/claudeMirror'
+
+const CLAUDE_PROJECTS_OF_API = [{ folder: REMOTE_CLAUDE_PROJECTS, subfolders: ['-home-koh-api'] }]
 import { MIN_AGY_VERSION, MIN_CLAUDE_VERSION } from '../../src/main/cliMinimums'
 
 const REAL_TOOLS = [
@@ -578,7 +581,7 @@ describe('the heartbeat question', () => {
     fs.writeFileSync(path.join(other, 's3.jsonl'), 'a\n')
     fs.writeFileSync(path.join(hookDir, 't1.json'), '{"event":"stop"}')
     const mirrors = (): ReturnType<typeof parseHeartbeat>['mirrors'] => {
-      const res = spawnSync('sh', ['-c', heartbeatCmd([], [], ['-home-koh-api'])], {
+      const res = spawnSync('sh', ['-c', heartbeatCmd([], [], CLAUDE_PROJECTS_OF_API)], {
         encoding: 'utf8',
         env: { ...process.env, HOME: home }
       })
@@ -588,7 +591,7 @@ describe('the heartbeat question', () => {
     const hook = path.join(hookDir, 't1.json')
     fs.utimesSync(hook, 1_700_000_000.25, 1_700_000_000.25)
     const first = mirrors()
-    expect(first.transcripts).toMatch(/^\d+ \d+$/)
+    expect(first.byWorkspace[0]).toMatch(/^\d+ \d+$/)
     expect(first.hooks).toMatch(/^\d+ \d+$/)
 
     fs.appendFileSync(path.join(other, 's3.jsonl'), 'b\n')
@@ -597,14 +600,14 @@ describe('the heartbeat question', () => {
 
     fs.appendFileSync(path.join(mine, 's1', 'subagents', 'x.jsonl'), 'b\n')
     const appended = mirrors()
-    expect(appended.transcripts).not.toBe(first.transcripts)
+    expect(appended.byWorkspace[0]).not.toBe(first.byWorkspace[0])
     expect(appended.hooks).toBe(first.hooks)
 
     fs.writeFileSync(hook, '{"event":"ask"}X')
     fs.utimesSync(hook, 1_700_000_000.5, 1_700_000_000.5)
     const rewritten = mirrors()
     expect(rewritten.hooks).not.toBe(appended.hooks)
-    expect(rewritten.transcripts).toBe(appended.transcripts)
+    expect(rewritten.byWorkspace[0]).toBe(appended.byWorkspace[0])
 
     fs.writeFileSync(path.join(hookDir, 't2.status.jsonl'), 'x\n')
     const added = mirrors()
@@ -641,13 +644,13 @@ describe('the heartbeat question', () => {
 
   it('says "no files there" for the transcripts of a machine that never ran a Claude Code session, so they are not copied, while Koloft’s own hook folder is made and always stamped, so its copy still shows a shell that breaks rsync', () => {
     const home = fs.mkdtempSync(path.join(dir, 'bare-home-'))
-    const res = spawnSync('sh', ['-c', heartbeatCmd([], [], ['-home-koh-api'])], {
+    const res = spawnSync('sh', ['-c', heartbeatCmd([], [], CLAUDE_PROJECTS_OF_API)], {
       encoding: 'utf8',
       env: { ...process.env, HOME: home }
     })
     expect(res.status).toBe(0)
     const mirrors = parseHeartbeat(res.stdout).mirrors
-    expect(mirrors.transcripts).toBe(NO_FILES_THERE)
+    expect(mirrors.byWorkspace[0]).toBe(NO_FILES_THERE)
     expect(mirrors.hooks).toMatch(/^\d+ \d+$/)
     expect(fs.existsSync(path.join(home, '.koloft', 'hook-sessions'))).toBe(true)
   })
@@ -655,13 +658,13 @@ describe('the heartbeat question', () => {
   it('still stamps transcripts once the folder is there but every transcript was deleted, so the copy with --delete drops them here too', () => {
     const home = fs.mkdtempSync(path.join(dir, 'emptied-home-'))
     fs.mkdirSync(path.join(home, '.claude', 'projects', '-home-koh-api'), { recursive: true })
-    const res = spawnSync('sh', ['-c', heartbeatCmd([], [], ['-home-koh-api'], ['brain'])], {
+    const res = spawnSync('sh', ['-c', heartbeatCmd([], [], CLAUDE_PROJECTS_OF_API, ['brain'])], {
       encoding: 'utf8',
       env: { ...process.env, HOME: home }
     })
     expect(res.status).toBe(0)
     const mirrors = parseHeartbeat(res.stdout).mirrors
-    expect(mirrors.transcripts).toMatch(/^\d+ \d+$/)
+    expect(mirrors.byWorkspace[0]).toMatch(/^\d+ \d+$/)
     expect(mirrors.extras).toEqual([NO_FILES_THERE])
   })
 
