@@ -593,7 +593,6 @@ export class WorkspaceManager {
     for (const ws of [...this.layout.workspaces, ...(claimed ? [{ path: claimed.path }] : [])]) {
       const { key, scanPath } = this.scope(ws.path)
       const missing = await this.missing(ws.path)
-      let git: { isGit: boolean; wtDirs: string[] } | undefined
       let gitBeingRead: Promise<{ isGit: boolean; wtDirs: string[] }> | undefined
       const readGit = (): Promise<{ isGit: boolean; wtDirs: string[] }> =>
         (gitBeingRead ??= (async () => {
@@ -601,21 +600,20 @@ export class WorkspaceManager {
             ? (this.deps.remoteGit?.(key.host, key.path)?.isGit ?? false)
             : !missing && (await isGitCheckoutAsync(ws.path))
           const wtDirs = await this.worktreeDirs(ws.path, isGit)
-          return (git = { isGit, wtDirs })
+          return { isGit, wtDirs }
         })())
       let now: RowsNow | undefined
       const answers = await pass.in(
         { path: ws.path, realPath: scanPath, worktreeDirs: async () => (await readGit()).wtDirs },
         () => (now ??= this.rowsNow(key))
       )
-      const { isGit } = git ?? (await readGit())
+      const { isGit } = await readGit()
       for (const answer of answers) for (const id of answer.ids) wsBySession.set(id, ws.path)
-      const rows: SessionRow[] = []
-      for (const answer of answers) {
-        for (const r of answer.kept) {
-          const at = rows.findIndex((x) => (x.createdAt ?? 0) < (r.createdAt ?? 0))
-          rows.splice(at < 0 ? rows.length : at, 0, r)
-        }
+      const [first, ...later] = answers.map((answer) => answer.kept)
+      const rows: SessionRow[] = [...(first ?? [])]
+      for (const r of later.flat()) {
+        const at = rows.findIndex((x) => (x.createdAt ?? 0) < (r.createdAt ?? 0))
+        rows.splice(at < 0 ? rows.length : at, 0, r)
       }
       payload.push({
         workspace: {

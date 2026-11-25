@@ -103,6 +103,13 @@ export interface RowsOfEveryAgent {
 }
 
 const BETWEEN_LIVE_KEYS = '\n'
+const NO_LIVE_SESSION = ''
+
+export const A_PASS_WITH_NO_ROWS: RowsPass = {
+  in: async () => ({ starting: [], kept: [], ids: [], hasMore: false }),
+  done: async () => {},
+  shown: () => {}
+}
 
 export function rowsOfEveryAgent(
   agents: () => { id: BackendId; rows: SessionRowsSource }[]
@@ -113,14 +120,21 @@ export function rowsOfEveryAgent(
     },
     rowsPass: (start) => {
       const asked = agents()
-      const passes = asked.map((agent) => ({
-        id: agent.id,
-        pass: agent.rows.rowsPass({
-          ...start,
-          keptByAnother: (id) =>
-            asked.some((other) => other !== agent && other.rows.members().has(id))
-        })
-      }))
+      const passes = asked.map((agent) => {
+        let keptByOthers: ReadonlySet<string>[] | undefined
+        return {
+          id: agent.id,
+          pass: agent.rows.rowsPass({
+            ...start,
+            keptByAnother: (id) => {
+              keptByOthers ??= asked
+                .filter((other) => other !== agent)
+                .map((other) => other.rows.members())
+              return keptByOthers.some((members) => members.has(id))
+            }
+          })
+        }
+      })
       return {
         in: async (place, now) => {
           const answers: WorkspaceSessions<SessionRow>[] = []
@@ -154,9 +168,9 @@ export function rowsOfEveryAgent(
       const readers = new Map(agents().map((agent) => [agent.id, agent.rows.whereNow()]))
       return (row) => readers.get(row.backendId)?.(row) ?? {}
     },
-    liveKey: () =>
-      agents()
-        .map((agent) => agent.rows.liveKey())
-        .join(BETWEEN_LIVE_KEYS)
+    liveKey: () => {
+      const keys = agents().map((agent) => agent.rows.liveKey())
+      return keys.some(Boolean) ? keys.join(BETWEEN_LIVE_KEYS) : NO_LIVE_SESSION
+    }
   }
 }

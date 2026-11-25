@@ -2442,6 +2442,19 @@ describe('WorkspaceManager: a running session that moved', () => {
     listed.mockRestore()
   })
 
+  it('sends nothing when the session list changes while no session is running, before the first rows too', async () => {
+    writeJsonl(repo, 'cold')
+    own('cold')
+    mgr = liveMgr()
+    mgr.onTrackerUpdate()
+    expect(pushed).toEqual([])
+    startRows()
+    await mgr.firstScan
+    const before = pushed.length
+    mgr.onTrackerUpdate()
+    expect(pushed.length).toBe(before)
+  })
+
   it('hands back no folder for a RUNNING session whose folder was removed under it', async () => {
     const gone = path.join(repo, '.claude', 'worktrees', 'pulled')
     writeJsonl(repo, 'live-2')

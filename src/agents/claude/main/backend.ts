@@ -18,7 +18,12 @@ import { hasUsableAccount } from '@shared/accountUsage'
 import type { Turn } from '@shared/turns'
 import { isValidWorktreeName } from '@shared/worktreeName'
 import type { ModeClass, SessionBackend } from '@core/agent/sessionBackends'
-import type { RowsPass, RowsPassStart, WhereNow } from '@core/agent/sessionRows'
+import {
+  A_PASS_WITH_NO_ROWS,
+  type RowsPass,
+  type RowsPassStart,
+  type WhereNow
+} from '@core/agent/sessionRows'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
 import type { PtyManager } from '../../../main/ptyManager'
 import type { SessionTracker } from './sessionTracker'
@@ -281,28 +286,28 @@ export class ClaudeBackend implements SessionBackend {
     return this.d.store()?.historyRows(workspacePath) ?? []
   }
 
-  rowsReady(): Promise<void> {
-    return this.d.store()!.rowsReady()
+  async rowsReady(): Promise<void> {
+    await this.d.store()?.rowsReady()
   }
 
   rowsPass(start: RowsPassStart): RowsPass {
-    return this.d.store()!.rowsPass(start)
+    return this.d.store()?.rowsPass(start) ?? A_PASS_WITH_NO_ROWS
   }
 
   members(): ReadonlySet<string> {
-    return this.d.store()!.members()
+    return this.d.store()?.members() ?? new Set()
   }
 
-  usedFolders(): Promise<DiscoveredFolder[]> {
-    return this.d.store()!.usedFolders()
+  async usedFolders(): Promise<DiscoveredFolder[]> {
+    return (await this.d.store()?.usedFolders()) ?? []
   }
 
   whereNow(): WhereNow {
-    return this.d.store()!.whereNow()
+    return this.d.store()?.whereNow() ?? (() => ({}))
   }
 
   liveKey(): string {
-    return this.d.store()!.liveKey()
+    return this.d.store()?.liveKey() ?? ''
   }
 
   launchEnded(tabId: string): void {
