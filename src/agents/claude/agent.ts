@@ -79,5 +79,32 @@ export const agent = {
     // CC§14
     questionToolTakesNoOptionDescriptions: false
   },
-  pureFunctions: { effortsAModelTakes: () => CRON_EFFORTS }
+  pureFunctions: { effortsAModelTakes: () => CRON_EFFORTS },
+  // CC§7
+  accountKinds: [
+    {
+      id: 'oauth',
+      keychainServiceSuffix: '-claude-oauth',
+      isASignInFolder: false,
+      signsInThroughABrowser: true,
+      storesAPastedKeyItself: false,
+      takesAnEndpoint: false
+    },
+    {
+      id: 'apikey',
+      keychainServiceSuffix: '-anthropic-api',
+      isASignInFolder: false,
+      signsInThroughABrowser: false,
+      storesAPastedKeyItself: false,
+      takesAnEndpoint: false
+    },
+    {
+      id: 'custom',
+      keychainServiceSuffix: '-custom-endpoint',
+      isASignInFolder: false,
+      signsInThroughABrowser: false,
+      storesAPastedKeyItself: false,
+      takesAnEndpoint: true
+    }
+  ]
 } as const satisfies AgentManifest
