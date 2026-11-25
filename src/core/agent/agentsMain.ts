@@ -1,6 +1,12 @@
 // ADR-0054
-import type { McpServer } from '@shared/types'
-import { AGENT_IDS, agentManifest, type AgentId } from './registry'
+import type { AccountAddResult, McpServer } from '@shared/types'
+import {
+  AGENT_IDS,
+  agentManifest,
+  agentOfAccountKind,
+  type AccountKindId,
+  type AgentId
+} from './registry'
 
 export interface OneShotTarget {
   binary: string
@@ -23,11 +29,30 @@ export interface AgentShimScript {
   script: string
 }
 
+export interface StartAsk {
+  tabId: string
+  resumeSessionId?: string
+}
+
+export interface AgentAccounts {
+  pickForThisStart(ask: StartAsk): Promise<object>
+  probeAll(): Promise<void>
+  addSecret(
+    kind: AccountKindId,
+    name: string,
+    secret: string,
+    endpoint?: { baseUrl?: string; model?: string }
+  ): Promise<AccountAddResult>
+  forget(kind: AccountKindId, name: string): void
+  folderSaysItRunsOnAKey(kind: AccountKindId, name: string): boolean
+}
+
 export interface AgentMain {
   id: AgentId
   oneShotTarget(): Promise<OneShotTarget | null>
   catalog: AgentCatalog
   tools: AgentTools
+  accounts: AgentAccounts
 }
 
 export class AgentsMain {
@@ -61,5 +86,38 @@ export class AgentsMain {
       this.inListOrder().map((agent) => agent.catalog.mcpServersOn(folders))
     )
     return each.flat()
+  }
+
+  private ownerOf(kind: AccountKindId): AgentMain | undefined {
+    const id = agentOfAccountKind(kind)
+    return id && this.built.get(id)
+  }
+
+  async pickForThisStart(id: AgentId | undefined, ask: StartAsk): Promise<object> {
+    const agent = id && this.built.get(id)
+    return agent ? agent.accounts.pickForThisStart(ask) : {}
+  }
+
+  async probeAllAccounts(): Promise<void> {
+    await Promise.all(this.inListOrder().map((agent) => agent.accounts.probeAll()))
+  }
+
+  addSecret(
+    kind: AccountKindId,
+    name: string,
+    secret: string,
+    endpoint?: { baseUrl?: string; model?: string }
+  ): Promise<AccountAddResult> {
+    const owner = this.ownerOf(kind)
+    if (!owner) throw new Error(`No agent keeps accounts of the kind ${kind}.`)
+    return owner.accounts.addSecret(kind, name, secret, endpoint)
+  }
+
+  forgetAccount(kind: AccountKindId, name: string): void {
+    this.ownerOf(kind)?.accounts.forget(kind, name)
+  }
+
+  folderSaysItRunsOnAKey(kind: AccountKindId, name: string): boolean {
+    return this.ownerOf(kind)?.accounts.folderSaysItRunsOnAKey(kind, name) ?? false
   }
 }

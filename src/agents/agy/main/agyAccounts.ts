@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import { execFile } from 'child_process'
 import type { AccountKind, AccountView, QuotaBucket } from '@shared/types'
+import type { AgentAccounts } from '@core/agent/agentsMain'
 import {
   AUTO_PROBE_MS,
   FIVE_HOUR_MINUTES,
@@ -11,7 +12,12 @@ import {
   windowLabel
 } from '@shared/accountUsage'
 import { HomeAccountPicker } from '../../kit/main/homeAccountPicker'
-import type { HomeAccountsDeps } from '../../kit/main/homeAccounts'
+import {
+  addHomeKey,
+  answerOfTerminalPick,
+  terminalPickOf,
+  type HomeAccountsDeps
+} from '../../kit/main/homeAccounts'
 import type { AgyHomePick, AgySessions } from './agySessions'
 import { agyListedModels, type ListedModel } from '@shared/sessionPicks'
 import { record } from '@core/unknownValue'
@@ -280,6 +286,10 @@ export function agyApiKeyRoute(home: string): boolean {
 }
 
 // AGY§6
+export const agyKeyOnDisk = (userData: string, name: string): boolean =>
+  agyApiKeyRoute(agyHomeOf(userData, name))
+
+// AGY§6
 export function setAgyApiKeyRoute(home: string, on: boolean): void {
   if (on === agyApiKeyRoute(home)) return
   const own = readJson(settingsFile(home))
@@ -496,6 +506,12 @@ export function agyHomeAccounts(deps: AgyHomeAccountsDeps) {
     return agyProbeRound
   }
 
+  // AGY§6
+  async function storeHomeKey(name: string, key: string): Promise<void> {
+    if (!(await keychainWrite('agy-home', name, key))) throw new Error('Keychain write failed.')
+    setAgyApiKeyRoute(agyHomeFor(name), true)
+  }
+
   return {
     agyPicker,
     agyHomeFor,
@@ -512,10 +528,23 @@ export function agyHomeAccounts(deps: AgyHomeAccountsDeps) {
       return { binary, env: agyAccountEnv(apiKey), args: [`--gemini_dir=${home}`] }
     },
     probeHomeAccount: (name: string) => probeAgyAccount(name),
-    // AGY§6
-    storeHomeKey: async (name: string, key: string) => {
-      if (!(await keychainWrite('agy-home', name, key))) throw new Error('Keychain write failed.')
-      setAgyApiKeyRoute(agyHomeFor(name), true)
-    }
+    accounts: {
+      pickForThisStart: () =>
+        answerOfTerminalPick('agy', () => {
+          const picked = terminalPickOf(pickAgyHome())
+          return picked && (agyApiKeyRoute(picked.home) ? { ...picked, kind: 'apikey' } : picked)
+        }),
+      probeAll: probeAgyAccounts,
+      addSecret: (_kind, name, secret) =>
+        addHomeKey(
+          'agy-home',
+          name,
+          secret,
+          { storeHomeKey, probeHomeAccount: probeAgyAccount },
+          deps
+        ),
+      forget: () => {},
+      folderSaysItRunsOnAKey: (_kind, name) => agyKeyOnDisk(app.getPath('userData'), name)
+    } satisfies AgentAccounts
   }
 }

@@ -2,8 +2,15 @@ import fs from 'fs'
 import path from 'path'
 import { AUTO_PROBE_MS, launchLine } from '@shared/accountUsage'
 import type { AccountView, CodexLimits, CodexLimitWindow, CodexResetOutcome } from '@shared/types'
+import type { AgentAccounts } from '@core/agent/agentsMain'
 import { HomeAccountPicker } from '../../kit/main/homeAccountPicker'
-import type { HomeAccountsDeps } from '../../kit/main/homeAccounts'
+import {
+  addHomeKey,
+  answerOfTerminalPick,
+  terminalPickOf,
+  type HomeAccountsDeps
+} from '../../kit/main/homeAccounts'
+import { readJson } from '../../../main/jsonDrops'
 import { joinProjectTables } from './codexTrust'
 import type { CodexSessions } from './codexSessions'
 
@@ -16,6 +23,10 @@ function codexHomesRoot(userData: string): string {
 export function codexHomeOf(userData: string, name: string): string {
   return path.join(codexHomesRoot(userData), name)
 }
+
+// CODEX§15
+export const codexKeyOnDisk = (userData: string, name: string): boolean =>
+  readJson(path.join(codexHomeOf(userData, name), 'auth.json')).auth_mode === 'apikey'
 
 export function codexHomes(userData: string): string[] {
   try {
@@ -241,6 +252,21 @@ export function codexHomeAccounts(deps: CodexHomeAccountsDeps) {
     return codexProbeRound
   }
 
+  async function probeHomeAccount(name: string): Promise<void> {
+    const codexSessions = deps.codexSessions()
+    await codexSessions?.rereadSignIn(codexHomeOf(app.getPath('userData'), name))
+    await probeCodexAccount(name)
+  }
+
+  // CODEX§15
+  async function storeHomeKey(name: string, key: string): Promise<void> {
+    const codexSessions = deps.codexSessions()
+    if (!codexSessions) throw new Error('Codex is not set up.')
+    const home = codexHomeOf(app.getPath('userData'), name)
+    prepareCodexHome(home, codexSharedConfig())
+    await codexSessions.storeApiKey(home, key)
+  }
+
   return {
     codexPicker,
     pickCodexHome,
@@ -254,18 +280,14 @@ export function codexHomeAccounts(deps: CodexHomeAccountsDeps) {
       prepareCodexHome(home, codexSharedConfig())
       return { binary: available ? codexSessions?.cliBinary : undefined, env: { CODEX_HOME: home } }
     },
-    probeHomeAccount: async (name: string) => {
-      const codexSessions = deps.codexSessions()
-      await codexSessions?.rereadSignIn(codexHomeOf(app.getPath('userData'), name))
-      await probeCodexAccount(name)
-    },
-    // CODEX§15
-    storeHomeKey: async (name: string, key: string) => {
-      const codexSessions = deps.codexSessions()
-      if (!codexSessions) throw new Error('Codex is not set up.')
-      const home = codexHomeOf(app.getPath('userData'), name)
-      prepareCodexHome(home, codexSharedConfig())
-      await codexSessions.storeApiKey(home, key)
-    }
+    probeHomeAccount,
+    accounts: {
+      pickForThisStart: () => answerOfTerminalPick('codex', () => terminalPickOf(pickCodexHome())),
+      probeAll: probeCodexAccounts,
+      addSecret: (_kind, name, secret) =>
+        addHomeKey('codex-home', name, secret, { storeHomeKey, probeHomeAccount }, deps),
+      forget: () => {},
+      folderSaysItRunsOnAKey: (_kind, name) => codexKeyOnDisk(app.getPath('userData'), name)
+    } satisfies AgentAccounts
   }
 }
