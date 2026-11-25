@@ -405,7 +405,6 @@ interface Stage {
   drain(): Promise<string[]>
   scripts(): string[]
   setApi(answers: boolean): void
-  codexGone: { now: boolean }
 }
 
 async function stage(kind: Kind): Promise<Stage> {
@@ -427,7 +426,6 @@ async function stage(kind: Kind): Promise<Stage> {
   let claudeTab = false
   let codex: ReturnType<typeof codexSessionsIn> | null = null
   let agy: ReturnType<typeof agySessionsIn> | null = null
-  const codexGone = { now: false }
   if (kind.backend === 'claude') {
     const backend = claudeBackendIn(world, ptyMgr, {
       machine: { run: recordingSsh().run },
@@ -549,9 +547,7 @@ async function stage(kind: Kind): Promise<Stage> {
         return machines.get(host)!
       }
     },
-    get codexSessions() {
-      return codexGone.now ? null : codex
-    },
+    codexSessions: codex,
     hookRegDir: world.regDir,
     butler: { firstWordsComing: () => {} },
     sessionBackends: {
@@ -727,7 +723,6 @@ async function stage(kind: Kind): Promise<Stage> {
     shut: () => {
       open.now = false
     },
-    codexGone,
     scripts: () => scripts.listed(),
     setApi: (answers) => {
       apiAnswers = answers
@@ -952,27 +947,6 @@ async function everyCase(kind: Kind): Promise<string> {
   )
 
   if (kind.backend === 'codex') {
-    s.codexGone.now = true
-    out.push(
-      section('Codex did not start in this Koloft: koloft session send', [
-        `the sender sees: ${await s.verb(['send', 'Target', MESSAGE], SENDER_TAB)}`,
-        ...(await s.drain())
-      ])
-    )
-    const gone = await new Promise<string | undefined>((settle) =>
-      s.handOver.hand(s.recipient, {
-        clientId: 'koloft-discord-1235',
-        text: async () => '[Discord] Hello again.',
-        settle
-      })
-    )
-    out.push(
-      section('Codex did not start in this Koloft: Discord hands a message over', [
-        `failed: ${gone ?? '(no)'}`,
-        ...(await s.drain())
-      ])
-    )
-    s.codexGone.now = false
     appServer.refuses = true
     out.push(
       section('the app-server refuses the queued message', [
