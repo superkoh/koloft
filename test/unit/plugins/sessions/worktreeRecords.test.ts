@@ -163,7 +163,12 @@ describe('what each agent says about worktrees', () => {
     }
     const backends: SessionBackend[] = [
       claudeBackendIn(world, pty, { machine }),
-      codexBackend(codex, probes, () => probes),
+      codexBackend(
+        codex,
+        probes,
+        () => probes,
+        async () => {}
+      ),
       agyBackend(agy, probes, () => probes)
     ]
     expect(backends.map((backend) => backend.id)).toEqual(SESSION_BACKENDS)
