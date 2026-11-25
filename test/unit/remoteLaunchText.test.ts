@@ -550,15 +550,16 @@ describe('the order a launch on another machine keeps', () => {
     expect(claude.started[0].typedLine).toContain('a=attach')
   })
 
-  it('attaching to a session still running there, Claude Code sends its settings file again and Antigravity sends none of its own files, only the script and the pass', async () => {
+  it('attaching to a session still running there, Claude Code sends its settings file again and Antigravity sends none of its own files, only the script and the pass, and neither sends the account', async () => {
     const stillRunning = { alive: () => new Set([RUNNING_THERE]) }
     await claudeTabOn(claudeWith(stillRunning), { resumeSessionId: RUNNING_THERE })
     expect(filesOfTheTab()).toContain(`${TAB}.json`)
+    expect(filesOfTheTab()).not.toContain(`${TAB}.env`)
     fs.rmSync(tabPackageDir(world.userData, TAB), { recursive: true })
     await agyTabOn(agyWith(stillRunning), {
       resumeSessionId: agySessionKey(RUNNING_THERE, MACHINE)
     })
-    expect(filesOfTheTab()).toEqual([`${TAB}.env`, `${TAB}.pass`, `${TAB}.sh`])
+    expect(filesOfTheTab()).toEqual([`${TAB}.pass`, `${TAB}.sh`])
   })
 
   // ADR-0052

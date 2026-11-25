@@ -2679,7 +2679,7 @@ rechecks against real installs of 2.1.322 on macOS (darwin-arm64) and Linux
   `~/.claude.json` (`src/agents/claude/main/claudeTrust.ts` locally, `src/main/remote/launch.ts`
   remotely), never `.config.json`, and never looks at `CLAUDE_CONFIG_DIR`. The local
   writer creates `~/.claude.json` when it is missing; the remote one does so only when
-  Koloft supplied the login (the tab's `.env` file exists). So on a home whose claude
+  Koloft supplied the login (the tab brought an account). So on a home whose claude
   runs from a non-empty `~/.claude/.config.json` alone, Koloft's first launch makes the
   second file: on both builds the onboarding flag and folder trust it writes go unread,
   on 2.1.319 every run prints the notice, and on a remote machine the warm-up, which

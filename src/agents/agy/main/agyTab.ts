@@ -22,6 +22,7 @@ import { STATUS_RELAY_FILE } from '../../../main/remote/statusRelay'
 const AGY_KEY_ENV = 'GEMINI_API_KEY'
 const AGY_STATUS_FRAMES_ENV = 'AGY_CLI_OSC7501'
 export const AGY_KEY_FROM_KOLOFT = 'KOLOFT_AGY_KEY'
+export const AGY_SIGN_IN_FROM_KOLOFT = 'KOLOFT_AGY_SIGN_IN'
 
 // AGY§8 AGY§19
 export const AGY_BRAIN_FLAGS = [
@@ -91,15 +92,12 @@ export interface AgyTabSpec {
   settings: string
   hooks: string
   onboarding?: string
-  token?: string
   start?: string
   koloftSkill: boolean
 }
 
 // AGY§31
 export const AGY_SKILLS = `${AGY_APP_DIR}/skills`
-
-const SIGN_IN_FILE_GOES_WHEN_THE_SCRIPT_ENDS = `trap 'rm -f "$T.auth.json"' EXIT\n`
 
 // AGY§4 AGY§5 AGY§6
 export function agyTab(s: AgyTabSpec): TabProgram {
@@ -123,7 +121,8 @@ export function agyTab(s: AgyTabSpec): TabProgram {
     ...SHARED_FILES.map((f) => `mkdir -p "$(dirname "$G/${f}")"; ${link(f)}`),
     `mv -f "$T.settings.json" "${own}/settings.json" && mv -f "$T.hooks.json" "$A/config/hooks.json"`,
     seed('onboarding.json', `${own}/cache/onboarding.json`),
-    seed('auth.json', `${own}/antigravity-oauth-token`),
+    // PLATFORM§75
+    `[ -n "$${AGY_SIGN_IN_FROM_KOLOFT}" ] && { [ -f "${own}/antigravity-oauth-token" ] || ( umask 077; printf '%s' "$${AGY_SIGN_IN_FROM_KOLOFT}" > "${own}/antigravity-oauth-token" ); }; unset ${AGY_SIGN_IN_FROM_KOLOFT}`,
     skillsFromMachineLine(`$A/${AGY_SKILLS}`, '$M', s.koloftSkill),
     `unset ${AGY_KEY_ENV}; [ -n "$${AGY_KEY_FROM_KOLOFT}" ] && { ${AGY_KEY_ENV}="$${AGY_KEY_FROM_KOLOFT}"; export ${AGY_KEY_ENV}; }; unset ${AGY_KEY_FROM_KOLOFT}`,
     `${AGY_LOG_ENV}="${REMOTE_HOOK_DIR}/${agyLogName(s.tabId)}"`,
@@ -139,14 +138,12 @@ export function agyTab(s: AgyTabSpec): TabProgram {
   const file = (name: string): string => `${s.tabId}.${name}`
   return {
     run: run.map((line) => `  ${line}\n`).join(''),
-    beforeEnsure: SIGN_IN_FILE_GOES_WHEN_THE_SCRIPT_ENDS,
     ensureTool: 'agy',
     beforeTmux: '',
     files: {
       [file('settings.json')]: s.settings,
       [file('hooks.json')]: s.hooks,
       ...(s.onboarding ? { [file('onboarding.json')]: s.onboarding } : {}),
-      ...(s.token ? { [file('auth.json')]: s.token } : {}),
       ...(s.start ? { [file('start.json')]: s.start } : {})
     }
   }

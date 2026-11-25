@@ -15,7 +15,7 @@ import {
   TAB_PASS_FILE_SUFFIX,
   tmuxHoldsATabPass
 } from './install'
-import { remotePtsFile, remoteTabPath } from './paths'
+import { remotePtsFile, remoteTabPath, REMOTE_TABS_DIR } from './paths'
 import { passOf, TAB_PASS_ENV } from '../tabPass'
 import { OWNING_TAB_ENV } from '../owningTabEnv'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
@@ -155,6 +155,8 @@ const SETTINGS_ON_A_TMUX_ALREADY_RUNNING = `tmux -L koloft ${[
 
 export const POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE = '/bin/zsh'
 
+export const ACCOUNT_ENV_HELD_IN_MEMORY = 'account_env'
+
 export const TAB_TMUX_NAME_SH = `cat "$HOME/.koloft/tabs/$1.tmux" 2>/dev/null
 exit 0`
 
@@ -177,7 +179,7 @@ export function tabScript(spec: TabSpec): string {
   const attachTo = `"$(cat "${T}.tmux" 2>/dev/null || echo '${spec.tmuxName}')"`
   // PLATFORM§33 CC§3 AGY§25
   const loginPathToo = spec.loginPath ? `  PATH="$PATH":${shq(spec.loginPath)}\n` : ''
-  // PLATFORM§35
+  // PLATFORM§35 PLATFORM§75
   return `#!/bin/sh
 M="$HOME/.koloft/${spec.machineName}"
 T="${T}"
@@ -207,12 +209,14 @@ exited() {
   rm -f "${T}.env"; exit $c
 }
 [ "$1" = attach ] && { n=${attachTo}; ${passIntoATmuxThatHoldsOne(T, '$n', spec.tabId)}; unset ${TAB_PASS_ENV}; ${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u attach -d -t "$n"; exited; }
-${program.beforeEnsure}sh "$M/ensure.sh"${program.ensureTool ? ` ${program.ensureTool}` : ''} || exit $?
+unset ${ACCOUNT_ENV_HELD_IN_MEMORY}; ${ACCOUNT_ENV_HELD_IN_MEMORY}=$(cat "${T}.env" 2>/dev/null); rm -f "${T}.env"
+sh "$M/ensure.sh"${program.ensureTool ? ` ${program.ensureTool}` : ''} || exit $?
 cd ${shq(spec.cwd)}${spec.fallbackCwd ? ` || cd ${shq(spec.fallbackCwd)}` : ''} || exit 3
 echo ${shq(spec.banner)}
 rm -f "${H}.json" "${H}${STATUS_LOG_SUFFIX}" "${T}.exit" "${T}.screen" "${T}.tmux"
 ${program.beforeTmux}${passIntoATmuxThatHoldsOne(T, spec.tmuxName, spec.tabId)}
 [ -n "$${TAB_PASS_ENV}" ] && ( umask 077; printf '${TAB_PASS_ENV}=%s\\n' "$${TAB_PASS_ENV}" > "${T}${TAB_PASS_FILE_SUFFIX}" ); unset ${TAB_PASS_ENV}
+[ -n "$${ACCOUNT_ENV_HELD_IN_MEMORY}" ] && ( umask 077; printf '%s\\n' "$${ACCOUNT_ENV_HELD_IN_MEMORY}" > "${T}.env" ); unset ${ACCOUNT_ENV_HELD_IN_MEMORY}
 ${SETTINGS_ON_A_TMUX_ALREADY_RUNNING}tmux -L koloft -u -f "$M/tmux.conf" new-session -A -D -s '${spec.tmuxName}' 'sh "${T}.sh" run'
 exited
 `
@@ -291,14 +295,30 @@ const COULD_NOT_CONNECT = `echo '[Koloft] could not connect or push files — se
 const TAB_IN = 'koloft-tab-in'
 const PASS_FILES_OF_FAILED_LAUNCHES_GO_AFTER_MIN = 1
 
+const SECRET_FILES_NO_TAB_READS_AFTER_MIN = 60
+
+// PLATFORM§75
+const SWEEP_SECRET_FILES_NO_RUNNING_TAB_READS = remoteShCommand(
+  `cd "${REMOTE_TABS_DIR}" 2>/dev/null || exit 0
+running=$(ps -A -o args= 2>/dev/null) || running=$(cat /proc/[0-9]*/cmdline 2>/dev/null | tr '\\000' ' ')
+[ -n "$running" ] || exit 0
+for f in *.env *.auth.json; do
+  [ -f "$f" ] && [ -n "$(find "$f" -mmin +${SECRET_FILES_NO_TAB_READS_AFTER_MIN} 2>/dev/null)" ] || continue
+  case "$f" in *.env) tab=\${f%.env} ;; *) tab=\${f%.auth.json} ;; esac
+  case "$running" in *"/.koloft/tabs/$tab.sh"*) continue ;; esac
+  rm -f "$f"
+done
+exit 0`
+)
+
 // PLATFORM§3
 function pushTabDirBesideMachine(s: MachineTarget & { tabDir: string }): string {
-  return (
-    `COPYFILE_DISABLE=1 tar cf - --no-xattrs -C ${shq(s.tabDir)} . | ssh ${s.sshOptions.join(' ')} ${shq(s.host)} ` +
-    `'umask 077; find "$HOME/.koloft/tabs" -name \\*${TAB_PASS_FILE_SUFFIX} -mmin +${PASS_FILES_OF_FAILED_LAUNCHES_GO_AFTER_MIN} -delete 2>/dev/null; ` +
+  const onTheMachine =
+    `umask 077; find "$HOME/.koloft/tabs" -name \\*${TAB_PASS_FILE_SUFFIX} -mmin +${PASS_FILES_OF_FAILED_LAUNCHES_GO_AFTER_MIN} -delete 2>/dev/null; ` +
+    `${SWEEP_SECRET_FILES_NO_RUNNING_TAB_READS}; ` +
     `test -d "$HOME/.koloft/${s.machine.name}" && mkdir -p "$HOME/.koloft/tabs" ` +
-    `&& tar xmf - -C "$HOME/.koloft/tabs" && echo ${TAB_IN}'`
-  )
+    `&& tar xmf - -C "$HOME/.koloft/tabs" && echo ${TAB_IN}`
+  return `COPYFILE_DISABLE=1 tar cf - --no-xattrs -C ${shq(s.tabDir)} . | ssh ${s.sshOptions.join(' ')} ${shq(s.host)} ${shq(onTheMachine)}`
 }
 
 export function tabPushed(s: MachineTarget & { tabDir: string }): string {
