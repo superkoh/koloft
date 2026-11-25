@@ -1623,7 +1623,8 @@ const messaging = sessionMessaging({
     return buildHandOver
   },
   ptyMgr,
-  machineOfTab
+  machineOfTab,
+  tabIdsOf
 })
 
 const syncRepoKeys = new GitRepoKeys(undefined, (machine, paths) =>

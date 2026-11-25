@@ -29,6 +29,7 @@ export interface SessionMessagingDeps<HandOver> {
   readonly buildHandOver: (d: HandOverTabState & HandOverWiring) => HandOver
   ptyMgr: Pick<PtyManager, 'get' | 'type' | 'whenReady'>
   machineOfTab(tabId: string): string | undefined
+  tabIdsOf(tabId: string): string[]
 }
 
 export interface SessionVerbsMessaging extends Pick<Messages, 'send' | 'mightNotTakeAMessageNow'> {
@@ -47,7 +48,11 @@ export function sessionMessaging<HandOver>(d: SessionMessagingDeps<HandOver>): {
   // ADR-0028
   async function noteKoloftSent(tabId: string, note: SentNote): Promise<void> {
     const host = machineOfTab(tabId)
-    if (host) return d.hosts.machine(host).noteSent(tabId, note)
+    if (host) {
+      const machine = d.hosts.machine(host)
+      await Promise.all(d.tabIdsOf(tabId).map((id) => machine.noteSent(id, note)))
+      return
+    }
     if (d.hookRegDir) d.noteSent(d.hookRegDir, tabId, note)
   }
 

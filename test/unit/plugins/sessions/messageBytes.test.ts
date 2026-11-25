@@ -609,7 +609,8 @@ async function stage(kind: Kind): Promise<Stage> {
       }),
     ptyMgr,
     machineOfTab: (tab) =>
-      tab === TARGET_TAB && kind.remote ? (codex?.machineOfTab(tab) ?? MACHINE) : undefined
+      tab === TARGET_TAB && kind.remote ? (codex?.machineOfTab(tab) ?? MACHINE) : undefined,
+    tabIdsOf: (tab) => [tab]
   })
 
   const started = new StartedSessions(() => path.join(world.home, 'started-sessions.json'))

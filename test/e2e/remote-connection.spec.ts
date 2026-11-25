@@ -12,9 +12,11 @@ import {
   launchWithRemote,
   liveTmuxSessions,
   machineAgyCalls,
+  machineClaudeTranscript,
   machineCodexLog,
   machineHome,
   OTHER_AGENTS_ON_THE_MACHINE,
+  promptContextsOnTheMachine,
   REMOTE_WS_NAME,
   remoteDir,
   sshCommands,
@@ -47,6 +49,7 @@ import {
 import { seedSettings, type E2EEnv } from './helpers/env'
 import { codexCalls } from './helpers/codex'
 import { portFreeOnTheMac } from './helpers/fixtureServer'
+import { NOT_SENT_BY_KOLOFT } from '../../src/plugins/sessions/main/hooks'
 
 const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
 const SEVERAL_FAILED_2S_HEARTBEATS_MS = 8000
@@ -278,6 +281,53 @@ test.describe('losing and regaining the machine: Koloft never invents an ending 
       await runIn(page2, centerTerm(page2), TURN_LONGER_THAN_ONE_MIRROR_PULL)
       await expect(row).toHaveClass(/\bst-working\b/, { timeout: 60_000 })
       await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
+    } finally {
+      await quitAndClose(app2)
+    }
+  })
+
+  // ADR-0028
+  test('after a Koloft restart takes a remote Claude tab back, a koloft session send to it from another tab is taken as sent by Koloft, never flagged as not sent by Koloft', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    seedSettings(env, { hintsOff: true })
+    const claude = EVERY_AGENT_ON_THE_MACHINE[0]
+    let id = ''
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      id = await startOnTheMachine(page, claude)
+      await page.waitForTimeout(LAYOUT_SAVE_DEBOUNCE_SETTLE_MS)
+    } finally {
+      await quitAndClose(app)
+    }
+
+    const app2 = await launchApp(env)
+    try {
+      const page2 = await app2.firstWindow()
+      await waitBooted(page2)
+      await untilItCameBackOnTheMachine(env, claude.label, 0)
+      await expect(wsRows(page2, REMOTE_WS_NAME).first()).toHaveClass(/\bst-(waiting|idle)\b/, {
+        timeout: IDLE_20S_HEARTBEAT_ROUND_TIMEOUT_MS
+      })
+      await startSessionIn(page2, 'ws-a')
+      const sender = (await page2.evaluate(() => window.api.sessions.list())).find(
+        (s) => s.alive && s.host !== 'ssh'
+      )!.tabId
+      await page2.evaluate(
+        ([t, l]) => window.api.terminal.write(t, l + '\r'),
+        [sender, `/koloft session send ${id} reached the tab taken back`]
+      )
+      const transcript = machineClaudeTranscript(env, id)
+      await expect
+        .poll(() => (fs.existsSync(transcript) ? fs.readFileSync(transcript, 'utf8') : ''), {
+          timeout: 90_000
+        })
+        .toContain('Peer said:')
+      expect(
+        promptContextsOnTheMachine(env, 'claude', id).filter((c) => c.includes(NOT_SENT_BY_KOLOFT))
+      ).toEqual([])
     } finally {
       await quitAndClose(app2)
     }
