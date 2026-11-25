@@ -17,9 +17,6 @@ export interface StandInSetup {
   loginPath?: () => Promise<string>
 }
 
-type WhatCodexAsks =
-  'name' | 'ready' | 'run' | 'sh' | 'sshArgs' | 'loginPath' | 'packageName' | 'tabFiles'
-
 const bytes = (r: MachineSaid): BytesResult => ({
   code: r.code,
   stdout: Buffer.from(r.stdout ?? ''),
@@ -27,22 +24,31 @@ const bytes = (r: MachineSaid): BytesResult => ({
 })
 
 export function standInMachine(name: string, s: StandInSetup = {}): Machine {
+  const notSetUp = (what: string) => (): never => {
+    throw new Error(`the stand-in for ${name} was not set up for ${what}`)
+  }
   const run = async (cmd: string): Promise<BytesResult> =>
     bytes((await s.run?.(cmd)) ?? { code: 0 })
-  const machine: Pick<Machine, WhatCodexAsks> = {
+  return {
     name,
+    bare: notSetUp('bare'),
     ready: async () => {},
     run,
     sh: async (script, args) =>
       s.sh ? bytes(await s.sh(script, args)) : run(remoteAnswerCommand(script, args)),
+    runScript: notSetUp('runScript'),
+    reachOrThrow: notSetUp('reachOrThrow'),
     sshArgs: s.sshArgs ?? (() => []),
     loginPath: s.loginPath ?? (async () => ''),
     packageName: () => s.packageName ?? 'm-0000000000000000',
-    tabFiles:
-      s.tabFiles ??
-      (() => {
-        throw new Error(`no tab files on the stand-in for ${name}`)
-      })
+    tabFiles: s.tabFiles ?? notSetUp('tabFiles'),
+    tmux: {
+      open: notSetUp('tmux.open'),
+      end: notSetUp('tmux.end'),
+      endedByKoloft: notSetUp('tmux.endedByKoloft'),
+      rename: notSetUp('tmux.rename')
+    },
+    answerRequest: notSetUp('answerRequest'),
+    requestCallerWaits: notSetUp('requestCallerWaits')
   }
-  return machine as Machine
 }

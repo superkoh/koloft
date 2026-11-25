@@ -163,10 +163,7 @@ const historyOrTrustedHooks = async (method: string) =>
 
 type MachineDeps = NonNullable<CodexSessionDeps['machine']>
 
-function fakeMachine(
-  standIn: StandInSetup = {},
-  overrides: Partial<MachineDeps> = {}
-): MachineDeps {
+function fakeMachine(standIn: StandInSetup = {}): MachineDeps {
   return {
     instance: 'test',
     machine: (name) =>
@@ -176,8 +173,7 @@ function fakeMachine(
       }),
     keyed: (machine, onMachineFile) => keyedOn(machine, onMachineFile)!,
     mirrorDir: () => directory,
-    nextPull: async () => {},
-    ...overrides
+    nextPull: async () => {}
   }
 }
 
@@ -852,12 +848,7 @@ describe('CodexSessions', () => {
     expect(await sessions.transcriptExists(codexSessionKey(B))).toBe(true)
 
     const onMachine = new Set<string>()
-    deps.machine = fakeMachine(
-      {
-        sh: (script, [file]) => ({ code: script === 'test -f "$1"' && onMachine.has(file) ? 0 : 1 })
-      },
-      { keyed: (machine, onMachineFile) => `${machine}:${onMachineFile}` }
-    )
+    deps.machine = fakeMachine({ sh: (_script, [file]) => ({ code: onMachine.has(file) ? 0 : 1 }) })
     mocks.request.mockImplementation(async () => ({
       thread: { id: B, cwd: '/srv/repo', path: '/srv/rollout-b.jsonl' }
     }))

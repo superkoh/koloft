@@ -994,7 +994,9 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
               (trustedOnMachine.includes(barePath(cwd)) ||
                 this.machineTrusts(parseRemoteKey(cwd)!)),
             askMachineTrust ? this.ownConfig(home) : {},
-            this.machine(machine).loginPath()
+            this.machine(machine)
+              .loginPath()
+              .catch(() => '')
           ])
         : [[], undefined, false, {}, '']
       // CODEX§16

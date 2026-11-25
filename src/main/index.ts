@@ -102,7 +102,6 @@ import {
   ensureControlDir,
   rsyncPull,
   listenOverSsh,
-  backgroundOptions,
   masterCommandOutlivingKoloft,
   runMasterCommand,
   runSsh,
