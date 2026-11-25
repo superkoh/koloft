@@ -752,6 +752,10 @@ test.describe('Scheduled jobs, edge cases (the main flow is cron.spec.ts): overl
       const onSwitch = page.locator('[aria-label="Gone agent job on"]')
       await expect(onSwitch).toBeDisabled()
       await expect(onSwitch).not.toBeChecked()
+      await expect(gone.locator('button', { hasText: 'Run now' })).toBeDisabled()
+      await expect(
+        edCard(page, 'Alpha job').locator('button', { hasText: 'Run now' })
+      ).toBeEnabled()
 
       await page.locator('button[aria-label="Edit Gone agent job"]').click()
       const runsIn = edFormRow(page, 'Runs in')

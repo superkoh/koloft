@@ -360,7 +360,11 @@ export function CronJobsDialog({
         </div>
       ) : (
         <div className="job-acts">
-          <button className="mini" onClick={() => void window.api.cron.runNow(job.id)}>
+          <button
+            className="mini"
+            disabled={!cronBackend(job)}
+            onClick={() => void window.api.cron.runNow(job.id)}
+          >
             <IconPlay size={11} />
             Run now
           </button>
