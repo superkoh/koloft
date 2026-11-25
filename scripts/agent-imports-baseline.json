@@ -26,11 +26,8 @@
     },
     "agent-main-into-mixed-main": {
       "src/agents/agy/main/agySessions.ts": {
-        "src/main/cliMinimums.ts": "C8",
-        "src/main/cliRuntime.ts": "C8",
         "src/main/remote/launch.ts": "C10",
         "src/main/rowActivity.ts": "C3",
-        "src/main/toolInstall.ts": "C8",
         "src/main/toolShim.ts": "C8"
       },
       "src/agents/agy/main/agyTab.ts": {
@@ -49,7 +46,6 @@
         "src/main/remote/launch.ts": "C10",
         "src/main/remote/paths.ts": "C10"
       },
-      "src/agents/claude/main/claudeProbe.ts": { "src/main/loginShell.ts": "C8" },
       "src/agents/claude/main/claudeSessionStore.ts": {
         "src/main/sessionSearch.ts": "C6",
         "src/main/usageCache.ts": "C6"
@@ -69,12 +65,7 @@
         "src/main/openShimScript.ts": "C8",
         "src/main/rowActivity.ts": "C3"
       },
-      "src/agents/codex/main/codexRuntime.ts": {
-        "src/main/cliMinimums.ts": "C8",
-        "src/main/cliRuntime.ts": "C8"
-      },
       "src/agents/codex/main/codexSessions.ts": {
-        "src/main/cliMinimums.ts": "C8",
         "src/main/leftovers.ts": "C9",
         "src/main/openShimScript.ts": "C8",
         "src/main/remote/launch.ts": "C10",
@@ -82,10 +73,7 @@
       },
       "src/agents/codex/main/codexTransport.ts": { "src/main/leftovers.ts": "C9" },
       "src/agents/kit/main/storedSessions.ts": {
-        "src/main/cliRuntime.ts": "C8",
-        "src/main/loginShell.ts": "C8",
         "src/main/sessionSearch.ts": "C6",
-        "src/main/toolInstall.ts": "C8",
         "src/main/usageCache.ts": "C6"
       }
     },
@@ -111,6 +99,11 @@
         "src/agents/codex/main/codexMachine.ts": "D1",
         "src/agents/codex/main/codexTrust.ts": "D1"
       },
+      "src/main/remote/install.ts": {
+        "src/agents/agy/main/agyMinimum.ts": "C10",
+        "src/agents/agy/shared/agyInstaller.ts": "C10",
+        "src/agents/claude/main/claudeMinimum.ts": "C10"
+      },
       "src/main/remote/machinePackageFiles.ts": {
         "src/agents/agy/main/agyHooks.ts": "C10",
         "src/agents/agy/main/agyStore.ts": "C10",
@@ -125,7 +118,8 @@
       "src/main/rowActivity.ts": { "src/agents/claude/main/claudeTouchedFiles.ts": "C3" },
       "src/main/shim.ts": {
         "src/agents/agy/main/agyAccounts.ts": "C8",
-        "src/agents/claude/main/advisorOnFable.ts": "C8"
+        "src/agents/claude/main/advisorOnFable.ts": "C8",
+        "src/agents/claude/main/claudeMinimum.ts": "C8"
       },
       "src/main/statusline.ts": { "src/agents/agy/main/agyHooks.ts": "C9" },
       "src/main/usageCache.ts": { "src/agents/agy/main/agyStore.ts": "C6" },

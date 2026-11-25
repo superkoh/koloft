@@ -115,27 +115,6 @@
       "const CODEX_ONE_SHOT = (launch: ModelAndEffort): string[] => [",
       "function agyResponse(out: string): string | null {"
     ],
-    "src/main/cliMinimums.ts": [
-      "byHand: 'Run \"claude update\" yourself'",
-      "byHand: `Run \"agy update\" there as a user who can write the folder agy is in, or install agy for yourself with \"curl -fsSL ${AGY_INSTALLER_URL} | bash\"`",
-      "export const AGY_UPDATE_TIMEOUT_MS = 5 * 60_000",
-      "export const ENSURE_AGY_MINIMUM_FN = ensureMinimumFn({",
-      "export const ENSURE_CLAUDE_MINIMUM_FN = ensureMinimumFn({",
-      "export const MIN_AGY_VERSION = '1.4.0'",
-      "export const MIN_CLAUDE_VERSION = '2.1.293'",
-      "export const MIN_CODEX_VERSION = '0.161.0'",
-      "export const TESTED_AGY_LINE = '1.4'",
-      "export const TESTED_CODEX_LINE = '0.170'",
-      "import { AGY_INSTALLER_URL } from './toolInstall'",
-      "min: MIN_AGY_VERSION,",
-      "min: MIN_CLAUDE_VERSION,",
-      "product: 'Antigravity CLI',",
-      "product: 'Claude Code',",
-      "tool: 'agy',",
-      "tool: 'claude',",
-      "update: `if command -v timeout >/dev/null 2>&1; then timeout ${AGY_UPDATE_TIMEOUT_MS / 1000} \"$1\" update; else \"$1\" update; fi`,"
-    ],
-    "src/main/cliRuntime.ts": ["command: Exclude<AgentCommand, 'claude'>"],
     "src/main/homeKeyOnDisk.ts": [
       "'agy-home': (userData, name) => agyApiKeyRoute(agyHomeOf(userData, name))",
       "'codex-home': (userData, name) =>",
@@ -402,7 +381,6 @@
       "export const CODEX_TMP_DIR = process.platform === 'darwin' ? '/tmp' : os.tmpdir()",
       "return idIn(commandWithEnv, 'CLAUDE_CODE_SESSION_ID')"
     ],
-    "src/main/loginShell.ts": ["const AGENT_COMMANDS = ['claude', 'codex', 'agy'] as const"],
     "src/main/openShimScript.ts": [
       "export const CODEX_OPEN_SENT = 'koloft-open:sent'",
       "fs.writeFileSync(path.join(shimDir, 'open'), codexOpenShimScript(shim.requestDir), {",
@@ -436,8 +414,9 @@
       "have agy || official_install agy ${AGY_INSTALLER_URL}",
       "have claude || official_install claude https://claude.ai/install.sh",
       "have npm || { say \"Codex is installed with npm, and this machine has none: install Node.js 20 or newer there, then start the session again\"; exit 4; }",
-      "import { AGY_INSTALLER_URL } from '../toolInstall'",
-      "import { ENSURE_AGY_MINIMUM_FN, ENSURE_CLAUDE_MINIMUM_FN } from '../cliMinimums'",
+      "import { AGY_INSTALLER_URL } from '@agents/agy/shared/agyInstaller'",
+      "import { ENSURE_AGY_MINIMUM_FN } from '@agents/agy/main/agyMinimum'",
+      "import { ENSURE_CLAUDE_MINIMUM_FN } from '@agents/claude/main/claudeMinimum'",
       "npm install -g --prefix \"${CODEX_CLI_DIR}\" \"@openai/codex@$want\" </dev/null || { say \"Codex $want did not install; see the output above\"; exit 4; }",
       "say \"installing Codex $want on this machine (once per Codex version)\"",
       "say \"this machine has no CA certificates (the ca-certificates package), so Codex cannot reach OpenAI from here — it would only say \\\\\"workspace routing discovery failed\\\\\". Install ca-certificates there, then start the session again.\"",
@@ -611,7 +590,7 @@
       "import { ADVISOR_OFF_ON_FABLE_FN } from '@agents/claude/main/advisorOnFable'",
       "import { CLAUDE_AGENT_SHIM } from './agentShim'",
       "import { CLAUDE_AUTH_ENV_VARS } from './remote/launch'",
-      "import { ENSURE_CLAUDE_MINIMUM_FN } from './cliMinimums'",
+      "import { ENSURE_CLAUDE_MINIMUM_FN } from '@agents/claude/main/claudeMinimum'",
       "import { agyAccountEnv } from '@agents/agy/main/agyAccounts'",
       "pick_account claude \"${NO_USABLE_ACCOUNT.claude}\"",
       "psvc=\"__KOLOFT_KEYCHAIN_NS__-claude-oauth\"",
@@ -633,12 +612,6 @@
       "export function setupAgyStatusline(paths: StatuslinePaths): string {",
       "fs.writeFileSync(script, AGY_STATUSLINE_JS)",
       "import { AGY_COST_ENV } from '@agents/agy/main/agyHooks'"
-    ],
-    "src/main/toolInstall.ts": [
-      "agy: `curl -fsSL ${AGY_INSTALLER_URL} | bash`",
-      "claude: 'curl -fsSL https://claude.ai/install.sh | bash',",
-      "codex: 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh',",
-      "export const AGY_INSTALLER_URL = 'https://antigravity.google/cli/install.sh'"
     ],
     "src/main/toolShim.ts": [
       "CODEX_TMP_DIR,",

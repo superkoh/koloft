@@ -29,7 +29,7 @@ import {
 import { execFileSync } from 'child_process'
 import { dirExistsSync, gitProbes } from '../../../../src/main/resumePlan'
 import { localGitOut } from '../../../../src/main/host/localHost'
-import { MIN_CODEX_VERSION } from '../../../../src/main/cliMinimums'
+import { MIN_CODEX_VERSION } from '../../../../src/agents/codex/main/codexMinimum'
 import { portOffset } from '@shared/worktreeName'
 import { keyedOn } from '@shared/remoteKey'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'

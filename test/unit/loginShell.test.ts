@@ -86,6 +86,20 @@ describe('one login shell answers every agent lookup at startup', () => {
     })
   })
 
+  it('asks the login shell for claude, codex and agy in that order, in one script', async () => {
+    const asked = path.join(zdotdir, 'asked')
+    const { shell } = countingZsh(`printf '%s' "$4" > '${asked}'\nexec /bin/zsh "$@"`)
+    await agentsInLoginShell({ PATH: '/usr/bin:/bin', ZDOTDIR: zdotdir }, shell)
+    const script = fs.readFileSync(asked, 'utf8').replace(/_[0-9a-f]{32}\\/g, '_<token>\\')
+    expect(script).toBe(
+      "printf '\\000KOLOFT_LOGIN_BEGIN_<token>\\000'; " +
+        "command -v claude || true; printf '\\000'; " +
+        "command -v codex || true; printf '\\000'; " +
+        "command -v agy || true; printf '\\000'; " +
+        "/usr/bin/env -0; printf '\\000KOLOFT_LOGIN_END_<token>\\000'"
+    )
+  })
+
   it('answers every name even when the profile stops the shell at the first failing command', async () => {
     fs.writeFileSync(path.join(zdotdir, '.zshrc'), 'setopt ERR_EXIT\n')
     const { shell } = countingZsh()
