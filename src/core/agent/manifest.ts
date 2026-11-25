@@ -81,6 +81,7 @@ export interface AgentManifest {
   questionToolName: string
   instructionFileNames: readonly string[]
   trustQuestion: string
+  textItsMessagesCannotHold?: string
   ownLogFolderNames: readonly string[]
   atTopOfSessionFolder: AtTopOfSessionFolder
   envOfItsSessionThatMisleadsWhatStartsInside: EnvNames

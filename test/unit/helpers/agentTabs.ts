@@ -263,6 +263,7 @@ export interface ClaudeSetup {
   events?: ClaudeBackendDeps['events']
   hookSettings?: ClaudeBackendDeps['hookSettings']
   liveRegistryOn?: ClaudeBackendDeps['liveRegistryOn']
+  messages?: ClaudeBackendDeps['messages']
 }
 
 export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): ClaudeBackend {
@@ -313,7 +314,8 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
     events: c.events ?? (() => {}),
     error: () => {},
     projectRules: async () => c.projectRules,
-    liveRegistryOn: c.liveRegistryOn
+    liveRegistryOn: c.liveRegistryOn,
+    messages: c.messages
   } as unknown as ClaudeBackendDeps)
 }
 

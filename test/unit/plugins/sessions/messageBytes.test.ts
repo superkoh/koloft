@@ -104,13 +104,18 @@ import { sessionVerb, type Target } from '../../../../src/plugins/sessions/main/
 import { HandOver, type Recipient } from '../../../../src/plugins/sessions/main/handOver'
 import { StartedSessions } from '../../../../src/plugins/sessions/main/startedSessions'
 import {
-  noteOfWhatKoloftSends,
   noteSent,
+  opensAsOnlyKoloftSends,
   writeConductorMarker
 } from '../../../../src/plugins/sessions/main/hooks'
 import { FROM_KOLOFT } from '../../../../src/plugins/sessions/main/messageOpenings'
 import { writeLineInTurn } from '../../../../src/agents/claude/main/crossSessionMessage'
 import { whenMessagingSocket } from '../../../../src/agents/claude/main/claudeSessionRegistry'
+import type { RemoteTab } from '../../../../src/main/host/host'
+import { codexBackend } from '../../../../src/agents/codex/main/backend'
+import { agyBackend } from '../../../../src/agents/agy/main/backend'
+import type { SentNote, SessionMessages } from '../../../../src/core/agent/sessionBackends'
+import type { ResumeProbes } from '../../../../src/main/resumePlan'
 import { butlersWords } from '../../../../src/plugins/butler/main/sessionHooks'
 import { withoutTheRelayTag } from '../../../../src/plugins/discord/main/sessionHooks'
 import { INBOX_SENDER } from '../../../../src/plugins/inbox/main/inbox'
@@ -404,7 +409,6 @@ interface Stage {
   drain(): Promise<string[]>
   scripts(): string[]
   setApi(answers: boolean): void
-  codexGone: { now: boolean }
 }
 
 async function stage(kind: Kind): Promise<Stage> {
@@ -426,7 +430,6 @@ async function stage(kind: Kind): Promise<Stage> {
   let claudeTab = false
   let codex: ReturnType<typeof codexSessionsIn> | null = null
   let agy: ReturnType<typeof agySessionsIn> | null = null
-  const codexGone = { now: false }
   if (kind.backend === 'claude') {
     const backend = claudeBackendIn(world, ptyMgr, {
       machine: { run: recordingSsh().run },
@@ -541,52 +544,72 @@ async function stage(kind: Kind): Promise<Stage> {
 
   const noteSsh = recordingSsh()
   const machines = new Map<string, ReturnType<typeof machineIn>>()
+  const noteKoloftSent = (tab: string, note: SentNote): Promise<void> =>
+    messaging.noteKoloftSent(tab, note)
+  const NO_RESUME_IS_PLANNED_HERE = {} as ResumeProbes
+  const agents: Record<BackendId, SessionMessages> = {
+    claude: claudeBackendIn(world, ptyMgr, {
+      machine: { run: recordingSsh().run },
+      tracker: {
+        remoteOf: (tab) =>
+          tab === TARGET_TAB && kind.remote ? ({ host: MACHINE } as RemoteTab) : undefined
+      },
+      messages: {
+        writeLineInTurn: writeLineAndSeeItTaken,
+        remoteControlDir: world.controlDir,
+        sessionOfTab,
+        liveClaudeRegistryOn: async () =>
+          JSON.stringify({
+            sessionId: TARGET_SESSION,
+            messagingSocketPath: SOCKET_ON_THE_MACHINE
+          }) + '\0',
+        whenMessagingSocket: (sessionId, ms) => whenMessagingSocket(sessionId, ms, registry),
+        whenMessagingSocketOnMachine: async (sessionId, ms, readLiveRegistry) => {
+          const { whenMessagingSocketOnMachine } =
+            await import('../../../../src/agents/claude/main/claudeSessionRegistry')
+          return whenMessagingSocketOnMachine(sessionId, ms, readLiveRegistry)
+        },
+        noteKoloftSent
+      }
+    }),
+    codex:
+      codex &&
+      codexBackend(
+        codex,
+        NO_RESUME_IS_PLANNED_HERE,
+        () => NO_RESUME_IS_PLANNED_HERE,
+        noteKoloftSent,
+        async () => undefined
+      ),
+    agy: agy && agyBackend(agy, NO_RESUME_IS_PLANNED_HERE, () => NO_RESUME_IS_PLANNED_HERE)
+  } as Record<BackendId, SessionMessages>
   const messaging = sessionMessaging({
-    tracker: {
-      remoteOf: (tab) => (tab === TARGET_TAB && kind.remote ? { host: MACHINE } : undefined)
-    },
     hosts: {
       machine: (host) => {
         if (!machines.has(host)) machines.set(host, machineIn(world, host, { run: noteSsh.run }))
         return machines.get(host)!
       }
     },
-    get codexSessions() {
-      return codexGone.now ? null : codex
-    },
     hookRegDir: world.regDir,
     butler: { firstWordsComing: () => {} },
     sessionBackends: {
-      permissionClass: (tab) => (tab === BUTLER_TAB || tab === TARGET_TAB ? 'bypass' : 'prompting')
+      permissionClass: (tab) => (tab === BUTLER_TAB || tab === TARGET_TAB ? 'bypass' : 'prompting'),
+      send: (backend, tab, m) => agents[backend].send(tab, m),
+      mightNotTakeAMessageNow: (backend, tab, turnHasEnded) =>
+        agents[backend].mightNotTakeAMessageNow(tab, turnHasEnded)
     },
-    writeLineInTurn: writeLineAndSeeItTaken,
-    noteOfWhatKoloftSends,
     noteSent,
+    opensAsOnlyKoloftSends,
     buildHandOver: (d) =>
       new HandOver({
         ...d,
         ready: tracked(d.ready),
         type: tracked(d.type),
-        queue: tracked(d.queue),
-        sendLine: tracked(d.sendLine),
-        noteSent: tracked(d.noteSent)
+        send: tracked(d.send)
       }),
     ptyMgr,
-    startupErrors: { codex: '<why Codex could not start>' },
-    remoteControlDir: world.controlDir,
-    sessionOfTab,
     machineOfTab: (tab) =>
-      tab === TARGET_TAB && kind.remote ? (codex?.machineOfTab(tab) ?? MACHINE) : undefined,
-    storedOwnerOf: (tab) => (tab === TARGET_TAB ? (agy ?? codex ?? undefined) : undefined),
-    liveClaudeRegistryOn: async () =>
-      JSON.stringify({ sessionId: TARGET_SESSION, messagingSocketPath: SOCKET_ON_THE_MACHINE }) +
-      '\0',
-    whenMessagingSocket: (sessionId, ms) => whenMessagingSocket(sessionId, ms, registry),
-    whenMessagingSocketOnMachine: async (sessionId, ms, readLiveRegistry) => {
-      const { whenMessagingSocketOnMachine } =
-        await import('../../../../src/agents/claude/main/claudeSessionRegistry')
-      return whenMessagingSocketOnMachine(sessionId, ms, readLiveRegistry)
-    }
+      tab === TARGET_TAB && kind.remote ? (codex?.machineOfTab(tab) ?? MACHINE) : undefined
   })
 
   const started = new StartedSessions(() => path.join(world.home, 'started-sessions.json'))
@@ -648,12 +671,11 @@ async function stage(kind: Kind): Promise<Stage> {
     }),
     bound: async (tab) => tab !== TARGET_TAB || conversation.started,
     asking: () => false,
-    queue: tracked(messaging.forSessionVerbs.queue),
-    sendLine: tracked(messaging.forSessionVerbs.sendLine),
+    send: tracked(messaging.forSessionVerbs.send),
+    mightNotTakeAMessageNow: messaging.forSessionVerbs.mightNotTakeAMessageNow,
     press: tracked(messaging.forSessionVerbs.press),
-    deliver: tracked(messaging.forSessionVerbs.deliver),
-    noteSent: tracked(messaging.forSessionVerbs.noteSent),
     modeOf: messaging.forSessionVerbs.modeOf,
+    opensAsOnlyKoloftSends: messaging.forSessionVerbs.opensAsOnlyKoloftSends,
     stop: () => {},
     answer: async () => undefined,
     undelivered: (_callerTab, t, why) => void undelivered.push(`to ${t.name}: ${why}`),
@@ -724,7 +746,6 @@ async function stage(kind: Kind): Promise<Stage> {
     shut: () => {
       open.now = false
     },
-    codexGone,
     scripts: () => scripts.listed(),
     setApi: (answers) => {
       apiAnswers = answers
@@ -949,27 +970,6 @@ async function everyCase(kind: Kind): Promise<string> {
   )
 
   if (kind.backend === 'codex') {
-    s.codexGone.now = true
-    out.push(
-      section('Codex did not start in this Koloft: koloft session send', [
-        `the sender sees: ${await s.verb(['send', 'Target', MESSAGE], SENDER_TAB)}`,
-        ...(await s.drain())
-      ])
-    )
-    const gone = await new Promise<string | undefined>((settle) =>
-      s.handOver.hand(s.recipient, {
-        clientId: 'koloft-discord-1235',
-        text: async () => '[Discord] Hello again.',
-        settle
-      })
-    )
-    out.push(
-      section('Codex did not start in this Koloft: Discord hands a message over', [
-        `failed: ${gone ?? '(no)'}`,
-        ...(await s.drain())
-      ])
-    )
-    s.codexGone.now = false
     appServer.refuses = true
     out.push(
       section('the app-server refuses the queued message', [

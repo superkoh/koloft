@@ -150,13 +150,7 @@
         "src/agents/claude/main/crossSessionMessage.ts": "C2",
         "src/agents/codex/main/backend.ts": "D1"
       },
-      "src/plugins/sessions/main/handOver.ts": {
-        "src/agents/claude/main/crossSessionMessage.ts": "C2"
-      },
       "src/plugins/sessions/main/hooks.ts": { "src/agents/codex/main/codexLaunchConfig.ts": "C9" },
-      "src/plugins/sessions/main/sessionVerbs.ts": {
-        "src/agents/claude/main/crossSessionMessage.ts": "C2"
-      },
       "src/plugins/sessions/main/start.ts": {
         "src/agents/agy/main/agySessions.ts": "D1",
         "src/agents/agy/main/backend.ts": "D1",
@@ -183,8 +177,7 @@
     }
   },
   "messagingOf": {
-    "src/plugins/sessions/main/handOver.ts": 1,
-    "src/plugins/sessions/main/sessionVerbs.ts": 5,
+    "src/plugins/sessions/main/sessionVerbs.ts": 1,
     "src/plugins/sessions/skill/text.ts": 1
   }
 }

@@ -11,7 +11,14 @@ export function storedBackend<R extends StoredRun, H extends HistoryEntry, P>(
   resumeProbes: ResumeProbes,
   own: Pick<
     SessionBackend,
-    'accountUsable' | 'trustsFolder' | 'turns' | 'peerNames' | 'runningElsewhere' | 'showsAPanel'
+    | 'accountUsable'
+    | 'trustsFolder'
+    | 'turns'
+    | 'peerNames'
+    | 'runningElsewhere'
+    | 'send'
+    | 'mightNotTakeAMessageNow'
+    | 'showsAPanel'
   >,
   machineProbes?: (cwd: string) => ResumeProbes
 ): SessionBackend {

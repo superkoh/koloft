@@ -51,6 +51,7 @@ describe('whether a tab shows a menu or a panel, as each agent answers it', () =
       }),
       NO_RESUME_IS_PLANNED_HERE,
       () => NO_RESUME_IS_PLANNED_HERE,
+      async () => {},
       async (tabId) => (read.push(tabId), A_CODEX_PICKER)
     )
     expect(await codex.showsAPanel(TAB)).toBe(true)
