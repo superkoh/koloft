@@ -25,7 +25,7 @@ export interface TabSubsystems {
   attention: Pick<AttentionTracker, 'clear' | 'tabStopping'>
   backends: Pick<SessionBackends, 'tabExited'>
   toast: (message: string) => void
-  workspaces: MadeLater<Pick<WorkspaceManager, 'onTrackerUpdate'>>
+  workspaces: MadeLater<Pick<WorkspaceManager, 'sessionsChanged'>>
   announce: <T>(moment: Moment<T>, m: T) => void
 }
 
@@ -39,8 +39,8 @@ export function subscribeTabSubsystems(lifecycle: TabLifecycle, s: TabSubsystems
   lifecycle.on('teardown', (exit) => s.backends.tabExited(exit, (error) => s.toast(String(error))))
   lifecycle.on('teardown', (exit) => s.announce(TAB_TORN_DOWN, exit))
 
-  lifecycle.on('slept', () => s.workspaces()?.onTrackerUpdate())
-  lifecycle.on('woken', () => s.workspaces()?.onTrackerUpdate())
+  lifecycle.on('slept', () => s.workspaces()?.sessionsChanged())
+  lifecycle.on('woken', () => s.workspaces()?.sessionsChanged())
   lifecycle.on('forgotten', (tabId) => s.announce(TAB_FORGOTTEN, tabId))
-  lifecycle.on('forgotten', () => s.workspaces()?.onTrackerUpdate())
+  lifecycle.on('forgotten', () => s.workspaces()?.sessionsChanged())
 }

@@ -106,7 +106,7 @@ export const start: PluginStart<
   const runtime = Object.assign(new SessionRuntime(), d.runtime)
   const tracker = new SessionTracker(runtime)
   const sessionBackends = Object.assign(new SessionBackends(d.backendLifecycle), d.backendHooks)
-  wireRunState(runtime, sessionBackends, tracker)
+  wireRunState(runtime, sessionBackends)
   tracker.on('turn-ended', ({ tabId, turn }) =>
     sessionBackends.observe(tabId, { type: 'turn-ended', turn })
   )

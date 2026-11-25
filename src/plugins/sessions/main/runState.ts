@@ -3,9 +3,7 @@ import type { SessionRuntime } from '@core/agent/sessionRuntime'
 
 export function wireRunState(
   runtime: SessionRuntime,
-  backends: Pick<SessionBackends, 'workStillRunning'>,
-  rows: { updateSoon(): void }
+  backends: Pick<SessionBackends, 'workStillRunning'>
 ): void {
   runtime.workStillRunning = (tabId) => backends.workStillRunning(tabId)
-  runtime.on('turn-over', () => rows.updateSoon())
 }

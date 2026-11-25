@@ -300,6 +300,8 @@ beforeEach(() => {
     projectInfo: (p) => ({ root: p.startsWith('ssh://') ? REMOTE_WS : repo, treeRoot: p }),
     remoteDirExists: async () => true,
     changed: vi.fn(),
+    pinnedWorkspaces: () => [],
+    rereadRows: () => {},
     events: vi.fn((tabId, event) => sessions.observe(tabId, event)),
     error: vi.fn(),
     noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],
