@@ -4,7 +4,7 @@ import { randomUUID } from 'crypto'
 import type { BackendId } from '@shared/types'
 import { writeAgentShim } from './agentShim'
 import {
-  CODEX_TMP_DIR,
+  SHORT_TMP_DIR,
   OPEN_REQUEST_FOLDER,
   OPEN_SHIM_FOLDER,
   ownedByThisRun,
@@ -40,7 +40,7 @@ export function startToolShim(
   }
 ): ToolShim {
   removeFoldersLeftByEndedRuns(deps.openShimRoot, OPEN_SHIM_FOLDER)
-  removeFoldersLeftByEndedRuns(CODEX_TMP_DIR, OPEN_REQUEST_FOLDER)
+  removeFoldersLeftByEndedRuns(SHORT_TMP_DIR, OPEN_REQUEST_FOLDER)
   const shim = writeOpenShim(deps.openShimRoot, ownedByThisRun(randomUUID()), opts.userZdotdir)
   try {
     fs.symlinkSync(

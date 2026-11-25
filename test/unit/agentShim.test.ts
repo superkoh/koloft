@@ -6,7 +6,11 @@ import { spawn } from 'child_process'
 
 vi.mock('node-pty', () => ({ spawn: vi.fn() }))
 
-import { CLAUDE_AGENT_SHIM, REMOTE_AGENT_SHIM, writeAgentShim } from '../../src/main/agentShim'
+import {
+  SHARED_FOLDER_AGENT_SHIM,
+  REMOTE_AGENT_SHIM,
+  writeAgentShim
+} from '../../src/main/agentShim'
 import { CANNOT_WRITE_THE_REQUEST } from './helpers/agentShims'
 import { AGENT_SHIM_WAITS_MS, answered, refused } from '../../src/core/command'
 import { AgentRequests, replyJson, REQUEST_NAME } from '../../src/main/agentRequests'
@@ -83,7 +87,7 @@ beforeEach(() => {
   agentDir = path.join(base, 'agent')
   fs.mkdirSync(shimDir)
   fs.mkdirSync(agentDir)
-  fs.writeFileSync(path.join(shimDir, 'koloft'), CLAUDE_AGENT_SHIM, { mode: 0o755 })
+  fs.writeFileSync(path.join(shimDir, 'koloft'), SHARED_FOLDER_AGENT_SHIM, { mode: 0o755 })
   received = []
   watcher = null
 })

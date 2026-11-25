@@ -7,7 +7,7 @@ import os from 'os'
 import path from 'path'
 import { startToolShim, type ToolShim } from '../../src/main/toolShim'
 import { writeWholeBeforeVisible } from '../../src/main/jsonDrops'
-import { CODEX_TMP_DIR, ownedByThisRun } from '../../src/main/leftovers'
+import { SHORT_TMP_DIR, ownedByThisRun } from '../../src/main/leftovers'
 import { CANNOT_WRITE_THE_REQUEST } from './helpers/agentShims'
 
 const SWEEPS_BEFORE_GIVING_UP_MS = 3000
@@ -54,7 +54,7 @@ describe('startToolShim', () => {
       for (const name of Object.values(names))
         fs.mkdirSync(path.join(openShimRoot, name), { recursive: true })
       const requestDirOf = (name: string): string =>
-        path.join(CODEX_TMP_DIR, `koloft-cx-open-${name}`)
+        path.join(SHORT_TMP_DIR, `koloft-cx-open-${name}`)
       for (const name of [names.ended, names.live]) {
         fs.mkdirSync(requestDirOf(name))
         onTestFinished(() => fs.rmSync(requestDirOf(name), { recursive: true, force: true }))

@@ -23,7 +23,7 @@ export function pidAlive(pid: number): boolean {
 }
 
 // PLATFORM§3
-export const CODEX_TMP_DIR = process.platform === 'darwin' ? '/tmp' : os.tmpdir()
+export const SHORT_TMP_DIR = process.platform === 'darwin' ? '/tmp' : os.tmpdir()
 export const MACOS_PID_AT_MOST_FIVE_DIGITS = '\\d{1,5}'
 const OPEN_SHIM_TOKEN = `(${MACOS_PID_AT_MOST_FIVE_DIGITS})-[0-9a-f-]{36}$`
 export const OPEN_SHIM_FOLDER = new RegExp(`^${OPEN_SHIM_TOKEN}`)

@@ -4,7 +4,7 @@ import path from 'path'
 import { keychainNamespace } from '@shared/types'
 import type { AgentShimScript } from '@core/agent/agentsMain'
 import { OPEN_SHIM_HEAD, OPEN_SHIM_TARGET } from './openShimScript'
-import { CLAUDE_AGENT_SHIM } from './agentShim'
+import { SHARED_FOLDER_AGENT_SHIM } from './agentShim'
 import {
   SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS,
   writeSudoShims
@@ -91,7 +91,7 @@ export function setupShim(
   fs.rmSync(path.join(shimDir, 'muse'), { force: true })
 
   const agentShimPath = path.join(shimDir, 'koloft')
-  fs.writeFileSync(agentShimPath, CLAUDE_AGENT_SHIM, { mode: 0o755 })
+  fs.writeFileSync(agentShimPath, SHARED_FOLDER_AGENT_SHIM, { mode: 0o755 })
   fs.chmodSync(agentShimPath, 0o755)
   writeSudoShims(shimDir, SUDO_FILES_WHERE_ANY_TERMINAL_IS_THE_OWNERS)
 

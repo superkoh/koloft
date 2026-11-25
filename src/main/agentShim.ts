@@ -78,7 +78,7 @@ fi
 exit "$code"
 `
 
-export const CLAUDE_AGENT_SHIM = `${HEAD}
+export const SHARED_FOLDER_AGENT_SHIM = `${HEAD}
 if [ -z "$KOLOFT_AGENT_DIR" ] || [ -z "$KOLOFT_TAB_ID" ] || [ -z "$KOLOFT_PID" ] || ! kill -0 "$KOLOFT_PID" 2>/dev/null; then
   echo "koloft: this works only in a Koloft session with agent tools turned on (Koloft Settings)." >&2
   exit 1
