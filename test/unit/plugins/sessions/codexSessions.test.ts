@@ -11,6 +11,10 @@ import {
 } from '../../../../src/agents/codex/main/codexSessions'
 import { storedBackend } from '../../../../src/agents/kit/main/stored'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../../../src/agents/claude/main/backend'
+import { removeUntouchedWorktreeWith } from '../../../../src/main/untouchedWorktreeRemoval'
+import { worktreeRecordsOfEveryAgent } from '../../../../src/core/agent/worktreeRecords'
+import { TreeRemovals } from '../../../../src/main/treeRemovals'
+import { removeTree } from '../../../../src/plugins/sessions/main/sessionClose'
 import { codexSessionKey } from '../../../../src/agents/kit/main/sessionStore'
 import type { WorktreeResource } from '../../../../src/core/agent/worktreeRecords'
 import type {
@@ -1096,6 +1100,114 @@ describe('CodexSessions', () => {
       backend.resume({ sessionId: key, cwd: worktree, mode: 'direct' })
     ).resolves.toEqual({ ok: false, code: 'cwd-missing' })
   })
+
+  const gitIn = (dir: string, ...args: string[]) =>
+    execFileSync('git', ['-C', dir, '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], {
+      encoding: 'utf8'
+    }).trim()
+
+  async function untouchedWorktreeFoo(): Promise<WorktreeResource> {
+    gitIn(repo, 'init', '-q', '--initial-branch=main')
+    fs.writeFileSync(path.join(repo, 'file.txt'), 'initial\n')
+    gitIn(repo, 'add', 'file.txt')
+    gitIn(repo, 'commit', '-q', '-m', 'base')
+    return sessions.worktrees.create(repo, 'foo')
+  }
+
+  const closeTheOtherTabIn = (made: WorktreeResource): Promise<void> =>
+    removeUntouchedWorktreeWith(
+      {
+        sleeperTrees: () => [],
+        cronRunner: null,
+        sessionBackends: {
+          occupantOf: (dir) => sessions.occupantOf(dir),
+          worktreeRecords: worktreeRecordsOfEveryAgent(() => [
+            { id: 'codex', worktreeRecords: sessions.worktrees.records }
+          ])
+        },
+        worktreesOfEveryAgent: deps.worktreesOfEveryAgent,
+        treeRemovals: new TreeRemovals(),
+        removeTree,
+        hostGitOut: localGitOut,
+        dirExists: async (dir) => fs.existsSync(dir),
+        toast: (text) => {
+          throw new Error(text)
+        }
+      },
+      { id: 'codex' },
+      made
+    )
+
+  it('a resume sent to the main folder does not keep its old untouched worktree while it starts, so closing the other tab there removes it', async () => {
+    const made = await untouchedWorktreeFoo()
+    addMember(A, made.worktreePath, made.id)
+    const held = deferred<void>()
+    const reached = deferred<void>()
+    vi.spyOn(sessions, 'availability').mockImplementation(async () => {
+      reached.resolve()
+      await held.promise
+      return { id: 'codex', available: true }
+    })
+
+    const starting = sessions.resume({
+      sessionId: codexSessionKey(A),
+      cwd: made.worktreePath,
+      mode: 'main'
+    })
+    await reached.promise
+    await closeTheOtherTabIn(made)
+    held.resolve()
+
+    expect(fs.existsSync(made.worktreePath)).toBe(false)
+    await expect(starting).resolves.toMatchObject({ cwd: repo })
+  })
+
+  it.each([
+    { moment: 'still checks that Codex is there', holds: 'availability' },
+    { moment: 'has taken the folder over and reads the project rules', holds: 'projectRules' },
+    { moment: 'is a resume that waits for the folder to settle', holds: 'whenSettled' }
+  ] as const)(
+    'closing a tab whose untouched worktree a second session of the same agent is starting in keeps the folder while that session $moment',
+    async ({ holds }) => {
+      const made = await untouchedWorktreeFoo()
+      const projectInfo = deps.projectInfo
+      deps.projectInfo = (p) =>
+        p === made.worktreePath ? { root: repo, treeRoot: p, worktreeName: 'foo' } : projectInfo(p)
+      const held = deferred<void>()
+      const reached = deferred<void>()
+      if (holds === 'availability')
+        vi.spyOn(sessions, 'availability').mockImplementation(async () => {
+          reached.resolve()
+          await held.promise
+          return { id: 'codex', available: true }
+        })
+      else if (holds === 'projectRules')
+        deps.projectRules = async () => {
+          reached.resolve()
+          await held.promise
+          return undefined
+        }
+      else {
+        addMember(A, made.worktreePath, made.id)
+        vi.spyOn(sessions.worktrees, 'whenSettled').mockImplementation(async () => {
+          reached.resolve()
+          await held.promise
+        })
+      }
+
+      const starting =
+        holds === 'whenSettled'
+          ? sessions.resume({ sessionId: codexSessionKey(A), cwd: made.worktreePath })
+          : sessions.launch({ kind: 'codex', cwd: made.worktreePath })
+      await reached.promise
+      await closeTheOtherTabIn(made)
+      held.resolve()
+
+      expect(fs.existsSync(path.join(made.worktreePath, 'file.txt'))).toBe(true)
+      expect(gitIn(repo, 'branch', '--list', 'worktree-foo')).not.toBe('')
+      await expect(starting).resolves.toMatchObject({ cwd: made.worktreePath })
+    }
+  )
 
   it.each([
     { where: 'on this Mac', machine: undefined },
