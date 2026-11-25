@@ -4,6 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import type { GitFileStatus, GitStatusMap, GitNumstatMap } from '@shared/types'
 import { coalesce } from '@core/coalesce'
+import { SESSION_WORKTREES_FOLDER } from '@shared/worktreeName'
 
 const execFile = promisify(execFileCb)
 
@@ -126,7 +127,7 @@ function parseNumstatInto(out: GitNumstatMap, stdout: string, toplevel: string):
   }
 }
 
-const SESSION_WORKTREES_DIR = '.claude/worktrees/'
+const SESSION_WORKTREES_DIR = `${SESSION_WORKTREES_FOLDER}/`
 
 export interface StatusOutputs {
   nameStatus: string | null

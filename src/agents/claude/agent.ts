@@ -10,6 +10,8 @@ export const agent = {
   name: 'Claude',
   productName: 'Claude Code',
   maker: 'Anthropic',
+  command: 'claude',
+  nodePackageFolderNames: ['claude-code'],
   wordsThatNameMe: {
     anyCase: ['claude', 'anthropic', 'fable', 'opus', 'sonnet', 'haiku', 'sk-ant'],
     wholeWord: [
