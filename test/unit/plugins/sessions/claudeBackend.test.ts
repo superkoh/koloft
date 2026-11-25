@@ -147,7 +147,7 @@ function machineBackend(): {
           : AGY_TABS[id] && { alive: AGY_TABS[id].alive }),
       clearResumeIntent: () => {}
     },
-    machineOfTab: (id: string) => MACHINE_TABS[id]?.host ?? CODEX_TABS[id],
+    machineOfTab: (id: string) => MACHINE_TABS[id]?.host ?? CODEX_TABS[id] ?? AGY_TABS[id]?.host,
     hosts: {
       machine: (host: string) => ({
         answerRequest: async (id: string, reply: string | null) =>
@@ -341,21 +341,25 @@ describe('ClaudeBackend: koloft requests from a session on a remote machine', ()
     expect(m.sent[2]).toEqual(['devbox', 'r16', replyJson(refused(NOT_ITS_PASS))])
   })
 
-  it('a request with no pass is found by the tmux session it runs in, asked of every agent, before the tab id it names: one in an Antigravity tab’s tmux session naming another live tab on that machine counts as the Antigravity tab, and one in the tmux session of an Antigravity tab whose terminal has exited counts as the tab it names', async () => {
+  async function keylessAnswer(tmux: string): Promise<string | null> {
     const m = machineBackend()
     const preTabPasses = ['pty-a', 'pty-g', 'pty-g-exited']
     for (const id of preTabPasses) markStartedBeforeTabPasses(id, true)
     try {
-      m.drop('req-r17.json', keyless('pty-a', 'k-sg'))
-      m.drop('req-r18.json', keyless('pty-a', 'k-sg-exited'))
-      await vi.waitFor(() => expect(m.sent).toHaveLength(2), { timeout: 5000 })
-      expect(Object.fromEntries(m.sent.map(([, id, reply]) => [id, reply]))).toEqual({
-        r17: replyJson(answered('for pty-g')),
-        r18: replyJson(answered('for pty-a'))
-      })
+      m.drop('req-r17.json', keyless('pty-a', tmux))
+      await vi.waitFor(() => expect(m.sent).toHaveLength(1), { timeout: 5000 })
+      return m.sent[0][2]
     } finally {
       for (const id of preTabPasses) markStartedBeforeTabPasses(id, false)
     }
+  }
+
+  it('a request with no pass is found by the tmux session it runs in, asked of every agent, before the tab id it names: one in an Antigravity tab’s tmux session naming another live tab on that machine counts as the Antigravity tab', async () => {
+    expect(await keylessAnswer('k-sg')).toBe(replyJson(answered('for pty-g')))
+  })
+
+  it('a request with no pass in the tmux session of an Antigravity tab whose terminal has exited is found by the tab id it names', async () => {
+    expect(await keylessAnswer('k-sg-exited')).toBe(replyJson(answered('for pty-a')))
   })
 
   // ADR-0039
