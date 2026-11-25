@@ -278,12 +278,12 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
 
 ### Screen compare
 
-- `account-screens.spec.ts` holds each screen of accounts, welcome, Assist and usage three
+- The `*-screens.spec.ts` specs (accounts, welcome, Assist, usage) hold each screen three
   ways through `expectScreen` (helpers/screenCompare.ts): pixels (a baseline per macOS
   version; on a version with none the pixel part is reported as not compared), and
   structure and screen-reader text, which every Mac compares. After a change meant to show,
   remake them with `npm run build`, then
-  `npx playwright test test/e2e/account-screens.spec.ts --update-snapshots`, and look at the
+  `npx playwright test test/e2e/*-screens.spec.ts --update-snapshots`, and look at the
   changed files before committing them.
 
 ### Selectors

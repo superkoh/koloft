@@ -757,37 +757,26 @@ if (argv[0] === 'app-server' && argv[1] === 'proxy') {
                 resetsAt: now + w.resetsInMins * 60
               }
             : null
+        const windows =
+          auth?.windows ??
+          (auth?.usedPercent !== undefined
+            ? [{ mins: 10080, usedPercent: auth.usedPercent, resetsInMins: 3 * 1440 }]
+            : null)
         result(id, {
-          rateLimits:
-            auth && auth.windows
-              ? {
-                  limitId: 'codex',
-                  primary: windowOf(auth.windows[0]),
-                  secondary: windowOf(auth.windows[1]),
-                  credits:
-                    auth.balance !== undefined
-                      ? { hasCredits: true, unlimited: false, balance: auth.balance }
-                      : null,
-                  rateLimitReachedType: auth.windows.some((w) => w.usedPercent >= 100)
-                    ? 'rate_limit_reached'
-                    : null
-                }
-              : auth && auth.usedPercent !== undefined
-                ? {
-                    limitId: 'codex',
-                    primary: {
-                      usedPercent: auth.usedPercent,
-                      windowDurationMins: 10080,
-                      resetsAt: now + 3 * 86400
-                    },
-                    secondary: null,
-                    credits:
-                      auth.balance !== undefined
-                        ? { hasCredits: true, unlimited: false, balance: auth.balance }
-                        : null,
-                    rateLimitReachedType: auth.usedPercent >= 100 ? 'rate_limit_reached' : null
-                  }
-                : null,
+          rateLimits: windows
+            ? {
+                limitId: 'codex',
+                primary: windowOf(windows[0]),
+                secondary: windowOf(windows[1]),
+                credits:
+                  auth.balance !== undefined
+                    ? { hasCredits: true, unlimited: false, balance: auth.balance }
+                    : null,
+                rateLimitReachedType: windows.some((w) => w.usedPercent >= 100)
+                  ? 'rate_limit_reached'
+                  : null
+              }
+            : null,
           rateLimitResetCredits:
             auth && auth.resets !== undefined
               ? {

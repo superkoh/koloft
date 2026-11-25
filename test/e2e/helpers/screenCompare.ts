@@ -12,12 +12,11 @@ const SHOTS_BEFORE_GIVING_UP_ON_A_STILL_SCREEN = 6
 const BETWEEN_TWO_SHOTS_OF_A_STILL_SCREEN_MS = 150
 const PIXEL_BASELINE_OS = `darwin${os.release().split('.')[0]}`
 
-export const PIXEL_PART_SKIPPED = 'pixel compare skipped'
+const PIXEL_PART_SKIPPED = 'pixel compare skipped'
 
 export interface ScreenParts {
   name: string
   parts: Locator[]
-  hideHomeIn?: string
   room?: number
   mouseStays?: boolean
 }
@@ -94,6 +93,7 @@ function structureOf(parts: Locator[]): Promise<string[]> {
           'text-align',
           'white-space'
         ])
+        const measuredFromTheDrawnLayout = new Set(['width', 'height', 'inset'])
         type Read = (p: string) => string
         const readerOf = (el: Element, pseudo?: string): Read => {
           if (!pseudo && 'computedStyleMap' in el) {
@@ -110,6 +110,7 @@ function structureOf(parts: Locator[]): Promise<string[]> {
           for (const [name, initial] of single) {
             const v = read(name)
             if (name === 'content' && !pseudo) continue
+            if (pseudo && measuredFromTheDrawnLayout.has(name)) continue
             if (
               (name === 'outline-width' || name === 'outline-color') &&
               read('outline-style') === 'none'
@@ -121,6 +122,7 @@ function structureOf(parts: Locator[]): Promise<string[]> {
             out.push(`${name}: ${v}`)
           }
           for (const [name, longhands, initial] of groups) {
+            if (pseudo && measuredFromTheDrawnLayout.has(name)) continue
             const values = longhands.map((p, i) =>
               (name === 'border-color' || name === 'border-width') && borderless(i) ? '-' : read(p)
             )
@@ -133,9 +135,16 @@ function structureOf(parts: Locator[]): Promise<string[]> {
         }
         const kept =
           /^(role|aria-.*|title|placeholder|type|disabled|readonly|tabindex|style|data-.*|href|alt|for|name|value)$/
+        const typedInto = (el: Element): boolean =>
+          el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
         const attrsOf = (el: Element): string => {
           const out = [...el.attributes]
-            .filter((a) => kept.test(a.name) && !(a.name === 'style' && a.value === ''))
+            .filter(
+              (a) =>
+                kept.test(a.name) &&
+                !(a.name === 'style' && a.value === '') &&
+                !(a.name === 'value' && typedInto(el))
+            )
             .map((a) => `${a.name}=${JSON.stringify(a.value)}`)
           if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
             const shown = el.type === 'password' ? '•'.repeat(el.value.length) : el.value
@@ -301,8 +310,12 @@ function comparePixels(name: string, shot: Buffer): string | null {
     const thisSystemHasBaselines =
       fs.existsSync(folder) &&
       fs.readdirSync(folder).some((f) => f.endsWith(`.${PIXEL_BASELINE_OS}.png`))
+    if (thisSystemHasBaselines && update === 'missing') {
+      fs.writeFileSync(baseline, shot)
+      return `no pixel baseline ${path.basename(baseline)} yet: written now, run again`
+    }
     if (thisSystemHasBaselines)
-      return `no pixel baseline ${path.basename(baseline)}, though this system (${PIXEL_BASELINE_OS}) has others: run with -u to make it`
+      return `no pixel baseline ${path.basename(baseline)}, though this system (${PIXEL_BASELINE_OS}) has others`
     const line = `${name}: this machine's system (${PIXEL_BASELINE_OS}) has no pixel baseline, so the pixel part was not compared`
     info.annotations.push({ type: PIXEL_PART_SKIPPED, description: line })
     console.warn(line)
@@ -323,12 +336,6 @@ function comparePixels(name: string, shot: Buffer): string | null {
   return `${count} pixels differ from the baseline; see ${actualFile} and ${diffFile}`
 }
 
-function withoutHome(text: string, home: string | undefined): string {
-  if (!home) return text
-  const variants = [home, home.replace(/^\/private/, '')]
-  return variants.reduce((t, h) => t.split(h).join('<home>'), text)
-}
-
 export async function expectScreen(page: Page, screen: ScreenParts): Promise<void> {
   const { name, parts } = screen
   for (const part of parts) await expect(part).toBeVisible()
@@ -347,20 +354,17 @@ export async function expectScreen(page: Page, screen: ScreenParts): Promise<voi
     })
   }
   let shot = await settledShot()
-  for (let tries = 1; tries < SHOTS_BEFORE_GIVING_UP_ON_A_STILL_SCREEN; tries++) {
+  let still = false
+  for (let tries = 1; !still && tries < SHOTS_BEFORE_GIVING_UP_ON_A_STILL_SCREEN; tries++) {
     await page.waitForTimeout(BETWEEN_TWO_SHOTS_OF_A_STILL_SCREEN_MS)
     const again = await settledShot()
-    const still = again.equals(shot)
+    still = again.equals(shot)
     shot = again
-    if (still) break
   }
+  expect(still, `${name}: the screen kept changing between two shots`).toBe(true)
   const structure = (await structureOf(parts)).join('\n\n')
   const aria = (await Promise.all(parts.map((p) => p.ariaSnapshot()))).join('\n\n')
-  expect
-    .soft(withoutHome(structure, screen.hideHomeIn) + '\n', `${name}: structure`)
-    .toMatchSnapshot(`${name}.structure.txt`)
-  expect
-    .soft(withoutHome(aria, screen.hideHomeIn) + '\n', `${name}: screen-reader text`)
-    .toMatchSnapshot(`${name}.aria.txt`)
+  expect.soft(structure + '\n', `${name}: structure`).toMatchSnapshot(`${name}.structure.txt`)
+  expect.soft(aria + '\n', `${name}: screen-reader text`).toMatchSnapshot(`${name}.aria.txt`)
   expect.soft(comparePixels(name, shot), `${name}: pixels`).toBeNull()
 }
