@@ -12,6 +12,7 @@ import { CODEX_TMP_DIR, ownedByThisRun } from '../../../main/leftovers'
 import { answerStreamOf } from '../../../main/remote/ssh'
 import { sharedProcessTable, type ProcessRow } from '../../../main/processTable'
 import { envMs } from '@core/agent/sessionRuntime'
+import { misleadsWhatStartsInsideAnAgentsSession } from '@core/agent/registry'
 
 export type CodexFrame = Record<string, unknown>
 
@@ -77,12 +78,14 @@ export function codexEnvironment(overrides?: NodeJS.ProcessEnv): NodeJS.ProcessE
     'CLAUDE_EFFORT',
     'AI_AGENT',
     'TERM_SESSION_ID',
+    'ANT_ACCOUNT',
     'GEMINI_API_KEY',
     ...BROWSER_TAB_ENV
   ])
   for (const key of Object.keys(env)) {
     if (
       runtime.has(key) ||
+      misleadsWhatStartsInsideAnAgentsSession(key) ||
       key.startsWith('KOLOFT_') ||
       key.startsWith('CLAUDE_CODE_') ||
       key.startsWith('ANTIGRAVITY_')

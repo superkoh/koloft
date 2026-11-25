@@ -35,7 +35,15 @@ export const agent = {
   atTopOfSessionFolder: { internalNames: [], internalNameEndings: [], foldersMadeEmptyAhead: [] },
   // CODEX§10 CODEX§38
   envOfItsSessionThatMisleadsWhatStartsInside: {
-    named: ['KOLOFT_CODEX_SAID', 'KOLOFT_CODEX_DISCORD_SAID', 'KOLOFT_CODEX_REPLY_LANGUAGE'],
+    named: [
+      'CODEX_THREAD_ID',
+      'CODEX_SESSION_ID',
+      'CODEX_SHELL',
+      'CODEX_CI',
+      'KOLOFT_CODEX_SAID',
+      'KOLOFT_CODEX_DISCORD_SAID',
+      'KOLOFT_CODEX_REPLY_LANGUAGE'
+    ],
     startingWith: []
   },
   modelEveryAccountTakes: MODEL_EVERY_ACCOUNT_TAKES,
