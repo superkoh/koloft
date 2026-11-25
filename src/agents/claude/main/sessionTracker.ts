@@ -28,7 +28,7 @@ import {
   type RealFilesOnMachine
 } from '../../../main/realFiles'
 import { ClaudeTouchedFiles, toolFilePath } from './claudeTouchedFiles'
-import { claudeToolDid } from '../../../main/rowActivity'
+import { claudeToolDid } from './claudeToolDid'
 import { TitleSources } from '../../../main/titleSources'
 import { UsageMeter } from '../../../main/usageMeter'
 import { wakeupItem } from '@core/scheduleLabel'

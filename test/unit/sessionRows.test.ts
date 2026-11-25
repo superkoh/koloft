@@ -497,6 +497,24 @@ describe('parkedBadge', () => {
     ])
     expect(b.hint).toMatch(/ctrl\+b/)
   })
+
+  it.each([
+    ['claude', 'Stop them in the session (ctrl+b lists background tasks) to free the resources.'],
+    ['codex', 'Stop these tasks in the Codex session to free the resources.'],
+    ['agy', 'Stop them in the Antigravity session (/tasks lists them) to free the resources.']
+  ] as const)('tells a %s row, word for word, how to stop its parked work', (backend, hint) => {
+    const parked = [{ id: 's1', kind: 'server' as const, label: 'dev', state: 'waiting' as const }]
+    expect(sessionActivityBadge({ backendId: backend, background: parked })?.hint).toBe(hint)
+  })
+
+  it('tells a row with programs left running, of any agent, to stop the ones no longer needed', () => {
+    const left = [{ pid: 1, command: '/bin/sleep 100' }]
+    const parked = [{ id: 's1', kind: 'server' as const, label: 'dev', state: 'waiting' as const }]
+    for (const backendId of ['claude', 'codex', 'agy'] as const)
+      expect(sessionActivityBadge({ backendId, background: parked }, left)?.hint).toBe(
+        'Programs this session started keep running on their own. Stop any you no longer need.'
+      )
+  })
 })
 
 describe('welcomeQuietLine', () => {
