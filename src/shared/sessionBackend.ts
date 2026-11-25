@@ -152,7 +152,6 @@ export type Capability = true | { pending: true }
 export interface Capabilities {
   browserControl: Capability
   askHookWaitsForDiscord: Capability
-  panelSeen: Capability
   worktreeRemovalFollowed: Capability
 }
 
@@ -161,7 +160,6 @@ const PENDING = { pending: true } as const
 const EVERYTHING: Capabilities = {
   browserControl: true,
   askHookWaitsForDiscord: true,
-  panelSeen: true,
   worktreeRemovalFollowed: true
 }
 
@@ -189,8 +187,8 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
     ssh: ON_A_MACHINE
   },
   agy: {
-    local: { ...OUTSIDE_LOCAL_CLAUDE, panelSeen: PENDING },
-    ssh: { ...ON_A_MACHINE, panelSeen: PENDING }
+    local: OUTSIDE_LOCAL_CLAUDE,
+    ssh: ON_A_MACHINE
   }
 }
 

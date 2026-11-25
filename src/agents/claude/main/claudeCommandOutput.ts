@@ -1,11 +1,5 @@
 import { stripTerminalCodes } from '@core/terminalCodes'
-
-export type CommandOutputKind = 'printed' | 'notice' | 'details'
-
-export interface CommandOutput {
-  kind: CommandOutputKind
-  text: string
-}
+import type { CommandOutput } from '@core/agent/commandOutput'
 
 const PRINTED = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/
 
