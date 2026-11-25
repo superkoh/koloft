@@ -266,7 +266,7 @@ test.describe('welcome: every step, for each agent installed or not and signed i
       await welcomeGo(page).click()
       const aside = page.locator('.wl-aside')
       await expect(aside).toBeVisible({ timeout: 20_000 })
-      await expectScreen(page, { name: 'welcome-stepped-aside', parts: [aside] })
+      await expectScreen(page, { name: 'welcome-stepped-aside', parts: [aside], room: 0 })
       const bar = page.locator('.term-island > .wb-bar')
       await bar.getByRole('button', { name: 'Cancel' }).click()
       await expect(welcome(page).locator('.acct-login-state.bad')).toBeVisible({ timeout: 20_000 })
