@@ -42,7 +42,7 @@ import type { TranscriptPlaces } from '@core/transcriptPlaces'
 import { claudeWroteIt, commandOutputOf } from './claudeCommandOutput'
 import type { CommandOutput } from '@core/agent/commandOutput'
 import { withoutHandover } from '@plugins/sessions/main/handoverPreamble'
-import { messageText } from '@plugins/sessions/main/messageText'
+import { messageText } from './messageText'
 import {
   parseRecord,
   type TextBlock,

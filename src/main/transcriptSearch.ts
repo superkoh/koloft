@@ -2,7 +2,7 @@ import fs from 'fs'
 import readline from 'readline'
 import type { SearchSnippet } from '@shared/types'
 import { mapAtMost } from '@core/mapAtMost'
-import { messageText } from '@plugins/sessions/main/messageText'
+import { messageText } from '@agents/claude/main/messageText'
 
 export interface TranscriptFile {
   id: string
