@@ -1,0 +1,3 @@
+#!/bin/sh
+: koloft askpass
+exec "$(dirname "$0")/koloft" secret sudo "$1" "$(ps -o args= -p "$PPID" 2>/dev/null)"

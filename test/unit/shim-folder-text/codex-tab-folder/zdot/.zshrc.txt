@@ -1,0 +1,6 @@
+koloft_found_zdotdir="${ZDOTDIR-}"
+if [ -n "$koloft_user_zdotdir" ]; then ZDOTDIR="$koloft_user_zdotdir"; else unset ZDOTDIR; fi
+[ -f "${ZDOTDIR:-$HOME}/.zshrc" ] && . "${ZDOTDIR:-$HOME}/.zshrc"
+koloft_user_zdotdir="${ZDOTDIR-}"
+export ZDOTDIR="$koloft_found_zdotdir"
+if [ "$ZDOTDIR" = '<userData>/codex-open/<pid>-<uuid>/zdot' ]; then path=('<userData>/codex-open/<pid>-<uuid>' ${path:#'<userData>/codex-open/<pid>-<uuid>'}); fi
