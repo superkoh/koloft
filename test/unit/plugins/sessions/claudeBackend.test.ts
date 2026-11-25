@@ -110,6 +110,11 @@ const MACHINE_TABS = {
 
 const CODEX_TABS = { 'pty-cx': 'devbox', 'pty-cy': 'otherbox' } as Record<string, string>
 
+const AGY_TABS = { 'pty-g': { host: 'devbox', tmuxName: 'k-sg' } } as Record<
+  string,
+  { host: string; tmuxName: string }
+>
+
 const WORKBENCH_SHELLS = {
   'pty-wa': { util: true, ownerTabId: 'pty-a' },
   'pty-wcx': { util: true, ownerTabId: 'pty-cx' },
@@ -136,7 +141,8 @@ function machineBackend(): {
   const backend = new ClaudeBackend({
     pty: {
       get: (id: string) =>
-        WORKBENCH_SHELLS[id] ?? (MACHINE_TABS[id] || CODEX_TABS[id] ? { alive: true } : undefined),
+        WORKBENCH_SHELLS[id] ??
+        (MACHINE_TABS[id] || CODEX_TABS[id] || AGY_TABS[id] ? { alive: true } : undefined),
       clearResumeIntent: () => {}
     },
     machineOfTab: (id: string) => MACHINE_TABS[id]?.host ?? CODEX_TABS[id],
@@ -169,7 +175,12 @@ function machineBackend(): {
     }),
     userData: () => userData,
     events: () => {},
-    machineOf: (id: string) => MACHINE_TABS[id]?.host
+    machineOf: (id: string) => MACHINE_TABS[id]?.host,
+    otherTabOnMachine: (machine: string, tmuxName: string, launchTab: string) =>
+      Object.entries(AGY_TABS).find(
+        ([id, t]) =>
+          t.host === machine && ((tmuxName && t.tmuxName === tmuxName) || id === launchTab)
+      )?.[0]
   } as unknown as ClaudeBackendDeps)
   const callerSeen: (RequestCallerState | undefined)[] = []
   const callerChecks: string[] = []
@@ -326,6 +337,20 @@ describe('ClaudeBackend: koloft requests from a session on a remote machine', ()
     m.drop('req-r16.json', keyless('pty-a', 'k-sa'))
     await vi.waitFor(() => expect(m.sent).toHaveLength(3), { timeout: 5000 })
     expect(m.sent[2]).toEqual(['devbox', 'r16', replyJson(refused(NOT_ITS_PASS))])
+  })
+
+  it('a request with no pass is found by the tmux session it runs in, asked of every agent, before the tab id it names: one in an Antigravity tab’s tmux session naming another live tab on that machine counts as the Antigravity tab', async () => {
+    const m = machineBackend()
+    markStartedBeforeTabPasses('pty-a', true)
+    markStartedBeforeTabPasses('pty-g', true)
+    try {
+      m.drop('req-r17.json', keyless('pty-a', 'k-sg'))
+      await vi.waitFor(() => expect(m.sent).toHaveLength(1), { timeout: 5000 })
+      expect(m.sent).toEqual([['devbox', 'r17', replyJson(answered('for pty-g'))]])
+    } finally {
+      markStartedBeforeTabPasses('pty-a', false)
+      markStartedBeforeTabPasses('pty-g', false)
+    }
   })
 
   // ADR-0039

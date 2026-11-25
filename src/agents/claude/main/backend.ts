@@ -820,7 +820,8 @@ export class ClaudeBackend implements SessionBackend {
     r: { tabId?: unknown; tmux?: unknown }
   ): string | undefined {
     const tmux = typeof r.tmux === 'string' ? r.tmux : ''
-    const byTmux = tmux && this.tabRunningTmux(tmux, machine)
+    const byTmux =
+      tmux && (this.tabRunningTmux(tmux, machine) || this.liveTabOnMachine(machine, '', tmux))
     if (byTmux) return byTmux
     const asked = typeof r.tabId === 'string' ? r.tabId : ''
     const facts = this.d.pty.get(asked)
