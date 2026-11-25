@@ -19,6 +19,11 @@ export interface WorktreeRecords {
   forgetUnusedAt(treeRoot: string): void
 }
 
+export const A_FOLDER_BEING_PREPARED = 'Worktree preparation is already in progress'
+
+export const A_NAME_WITH_A_RECOVERY_RECORD =
+  'This worktree name has a recovery record; recover it or choose a different name'
+
 export const KEEPS_NO_WORKTREE_RECORDS: WorktreeRecords = {
   of: () => [],
   at: () => undefined,
