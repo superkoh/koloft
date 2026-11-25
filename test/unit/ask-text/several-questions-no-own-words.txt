@@ -1,0 +1,58 @@
+# Asks two questions at once, each taking one pick, and neither takes own words
+
+## Claude Code, its ask held by its hook (a tab on this Mac that Discord or the owner-asleep butler answers)
+never asks this: every Claude Code question has its own row for own words (its dialog draws “Type something.”, CC§14)
+
+## Claude Code, its ask not held (a tab on this Mac nobody answers from elsewhere; a tab on another machine, whose hook only records, takes this path too: inferred, not checked): Koloft answers by keys
+never asks this: every Claude Code question has its own row for own words (its dialog draws “Type something.”, CC§14)
+
+## Codex (its app-server's request, read on the TUI's connection; the tab runs on the stand-in machine of agentTabs)
+the sample: the `item/tool/requestUserInput` shape of CODEX§20 with two questions, both `isOther: false`
+the raw ask: app-server frame: {"id":7,"method":"item/tool/requestUserInput","params":{"threadId":"22222222-2222-4222-8222-222222222222","turnId":"t1","itemId":"call_1","questions":[{"id":"colour","header":"colour","question":"Which colour do you prefer?","isOther":false,"isSecret":false,"options":[{"label":"Red","description":"Choose red."},{"label":"Green","description":"Choose green."}]},{"id":"size","header":"size","question":"Which size?","isOther":false,"isSecret":false,"options":[{"label":"Small"},{"label":"Large"}]}],"isBlocking":true,"autoResolutionMs":null}}
+the session row's small line: Asks: Which colour do you prefer?
+Discord card: body:
+    Which colour do you prefer?
+    1. Red — Choose red.
+    2. Green — Choose green.
+    
+    Which size?
+    1. Small
+    2. Large
+Discord card: footnote: -# Reply with one line per question: the number or the name of one option.
+Discord card: buttons: (nothing)
+Inbox card: title: “Fix the docs” asks 2 questions
+Inbox card: quote: (nothing)
+Inbox card: questions:
+    “Which colour do you prefer?”: options Red | Green; several picks: no; own-words box: no
+    “Which size?”: options Small | Large; several picks: no; own-words box: no
+Inbox card: text: (nothing)
+Inbox card: buttons: Send answers
+the butler's owner-asleep report, the part that says what was asked: asked the owner "Which colour do you prefer? 1. Red — Choose red. 2. Green — Choose green. Which size? 1. Small 2. Large"
+this ask's id: the app-server's request id: 7
+--- replied "1\n2" in the session's Discord room ---
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: keys pressed: "1" "2"
+--- answered "1\n2" with koloft session answer ---
+Koloft said: (taken, no refusal)
+what reached the agent: keys pressed: "1" "2"
+--- replied "1" in the session's Discord room ---
+Discord said: under the message: Reply with one line per question: the number or the name of one option.
+handed to the session as a message: (nothing)
+what reached the agent: (nothing)
+--- answered "1" with koloft session answer ---
+Koloft said: Reply with one line per question: the number or the name of one option.
+what reached the agent: (nothing)
+--- replied "Blue\nLarge" in the session's Discord room ---
+Discord said: under the message: Reply with one line per question: the number or the name of one option.
+handed to the session as a message: (nothing)
+what reached the agent: (nothing)
+--- answered "Blue\nLarge" with koloft session answer ---
+Koloft said: Reply with one line per question: the number or the name of one option.
+what reached the agent: (nothing)
+
+## Antigravity, read through its API (a tab on this Mac)
+never asks this: Koloft reads every Antigravity question that has options as one that takes own words (agyQuestion, AGY§14)
+
+## Antigravity, read from its tool call and 7501 status only, its API not answering (a tab on another machine has no API client and reads this way: inferred, not checked): Koloft answers by keys
+never asks this: Koloft reads every Antigravity question that has options as one that takes own words (agyQuestion, AGY§14)
