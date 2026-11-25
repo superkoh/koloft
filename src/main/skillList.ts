@@ -92,12 +92,12 @@ export interface SkillPlaces {
   moreInTheHome?: readonly string[]
 }
 
-export interface SkillFolders {
+export interface SkillFolderPaths {
   skills: string[]
   commands?: string[]
 }
 
-export function skillFolders(backend: BackendId, p: SkillPlaces): Record<Source, SkillFolders> {
+export function skillFolders(backend: BackendId, p: SkillPlaces): Record<Source, SkillFolderPaths> {
   const { inTheWorkspace, inTheHome } = agentManifest(backend).skillFolders
   const ws = (rel: string): string => path.join(p.workspace, rel)
   const home = (rel: string): string => path.join(p.home, rel)
