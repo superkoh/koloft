@@ -1,0 +1,8 @@
+- switch "In the pool" [checked]
+- text: walled FABLE
+- button "Delete account":
+  - img
+- text: Delete walled and remove its Keychain credential?
+- button "Delete"
+- button "Cancel"
+- text: 5h 100% 7d 70% fable 97% 5h resets 10:10

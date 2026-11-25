@@ -1,0 +1,153 @@
+div.wl [data-step="4" role="dialog" aria-label="Welcome to Koloft"]
+  {display: flex; position: fixed; color: rgb(246, 243, 238); background-color: rgb(11, 11, 13); flex-direction: column; overflow-x: hidden; overflow-y: hidden; font-family: Geist, -apple-system, "system-ui", "Helvetica Neue", Arial, sans-serif; z-index: 95; inset: 0px}
+  div.wl-glow [aria-hidden="true"]
+    {display: block; position: absolute; inset: 0px}
+    i.wl-blob.claude
+      {display: block; position: absolute; opacity: 0.06; background-image: radial-gradient(closest-side, rgb(255, 122, 61), rgba(0, 0, 0, 0)); width: 892.8px; height: 892.8px; font-style: italic; border-radius: 50%; inset: 86.4px auto auto -259.2px}
+    i.wl-blob.codex
+      {display: block; position: absolute; opacity: 0.06; background-image: radial-gradient(closest-side, rgb(47, 196, 178), rgba(0, 0, 0, 0)); width: 892.8px; height: 892.8px; font-style: italic; border-radius: 50%; inset: auto auto -489.6px 144px}
+    i.wl-blob.agy
+      {display: block; position: absolute; opacity: 0.06; background-image: radial-gradient(closest-side, rgb(240, 96, 158), rgba(0, 0, 0, 0)); width: 892.8px; height: 892.8px; font-style: italic; border-radius: 50%; inset: auto -316.8px -288px auto}
+  header.wl-top
+    {display: flex; position: relative; flex-shrink: 0; flex-basis: 46px; align-items: center; justify-content: center; padding: 0px 18px 0px 18px}
+    div.wl-prog
+      {display: flex; gap: 6px}
+      i.past
+        {display: block; background-color: rgba(236, 150, 112, 0.5); width: 30px; height: 3px; font-style: italic; border-radius: 2px}
+      i.past
+        {display: block; background-color: rgba(236, 150, 112, 0.5); width: 30px; height: 3px; font-style: italic; border-radius: 2px}
+      i.past
+        {display: block; background-color: rgba(236, 150, 112, 0.5); width: 30px; height: 3px; font-style: italic; border-radius: 2px}
+      i.on
+        {display: block; background-color: rgb(236, 150, 112); width: 44px; height: 3px; font-style: italic; border-radius: 2px}
+    button.wl-skip
+      {display: flex; position: absolute; color: rgb(167, 162, 155); align-items: center; font-size: 13px; text-align: center; padding: 1px 6px 1px 6px; inset: auto 18px auto auto; gap: 8px}
+      "Skip setup"
+      kbd
+        {display: block; background-color: rgba(255, 255, 255, 0.05); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 11px; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.18); border-radius: 5px; padding: 1px 6px 1px 6px}
+        "esc"
+  main.wl-stage
+    {display: flex; position: relative; min-height: 0px; flex-direction: column; flex-grow: 1; flex-basis: 0%; align-items: center; justify-content: center; padding: 0px 24px 0px 24px; gap: 14px}
+    div.wl-chip
+      {display: flex; color: rgb(167, 162, 155); background-color: rgba(255, 255, 255, 0.03); align-items: center; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 12.5px; transform: translate(0px, 0px); filter: blur(0px); border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.12); border-radius: 999px; padding: 5px 13px 5px 13px; gap: 9px}
+      "Ready · ws-a"
+      span.wl-dot
+        {display: block; background-color: rgb(143, 198, 154); box-shadow: rgb(143, 198, 154) 0px 0px 10px 0px; width: 7px; height: 7px; border-radius: 50%}
+    h1.wl-title
+      {display: block; font-size: 64px; font-weight: 700; line-height: 1.04; letter-spacing: -2.24px; text-align: center; transform: translate(0px, 0px); filter: blur(0px); margin: 4px 0px 0px 0px}
+      "Built for you."
+      span.wl-script
+        {display: inline; color: rgba(0, 0, 0, 0); background-image: linear-gradient(95deg, rgb(184, 162, 255) 0%, rgb(143, 208, 238) 38%, rgb(242, 185, 152) 70%, rgb(255, 156, 118) 100%); font-family: "Instrument Serif", Georgia, serif; font-weight: 400; font-style: italic; letter-spacing: -0.64px; padding: 0px 5.12px 0px 0px}
+        "And for your agents."
+    p.wl-sub
+      {display: block; color: rgb(167, 162, 155); max-width: 640px; font-size: 17px; line-height: 1.5; text-align: center; transform: translate(0px, 0px); filter: blur(0px)}
+      "Say what you want done. That starts your first session."
+    div.wl-final
+      {display: block; position: relative; transform: translate(0px, 0px); filter: blur(0px); margin: 22px 0px 0px 0px}
+      div.wl-win.wide
+        {display: grid; background-color: rgb(15, 15, 17); box-shadow: rgba(0, 0, 0, 0.9) 0px 40px 90px -30px; width: 760px; height: 300px; min-height: 0px; max-height: 423.2px; grid-template-columns: 230px 1fr 230px; overflow-x: hidden; overflow-y: hidden; font-family: -apple-system, "system-ui", "Helvetica Neue", Arial, sans-serif; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.12); border-radius: 13px}
+        div.wl-side
+          {display: flex; flex-direction: column; overflow-x: hidden; overflow-y: hidden; padding: 14px 10px 14px 10px; gap: 12px}
+          div.wl-ws [style="animation-delay: 0ms;"]
+            {display: flex; flex-direction: column; transform: translate(0px, 0px); filter: blur(0px); gap: 4px}
+            div.wl-ws-head
+              {display: flex; color: rgb(243, 241, 238); align-items: center; font-size: 13px; font-weight: 600; padding: 2px 6px 2px 6px; gap: 7px}
+              svg
+                {display: block; color: rgb(201, 160, 106); width: 14px; height: 14px; overflow-x: hidden; overflow-y: hidden}
+                shape 41bddbd8
+              span
+                {display: block}
+                "ws-a"
+        div.wl-win-main
+          {display: grid; background-color: rgb(7, 7, 8); align-items: center; border-width: - - - 1px; border-style: none none none solid; border-color: - - - rgba(255, 255, 255, 0.1)}
+          div.wl-target.empty
+            {display: flex; position: absolute; color: rgb(189, 185, 178); background-color: rgb(7, 7, 8); flex-direction: column; align-items: center; justify-content: center; text-align: center; z-index: 5; padding: 0px 14px 0px 14px; inset: 0px; gap: 6px}
+            small
+              {display: block; color: rgb(144, 139, 132); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 11px}
+              "Your first session opens here."
+        div.wl-win-wb
+          {display: flex; background-color: rgb(18, 18, 20); flex-direction: column; border-width: - - - 1px; border-style: none none none solid; border-color: - - - rgba(255, 255, 255, 0.1)}
+          div.wl-wb-tabs
+            {display: flex; color: rgb(144, 139, 132); font-size: 11.5px; border-width: - - 1px -; border-style: none none solid none; border-color: - - rgba(255, 255, 255, 0.1) -; padding: 10px 12px 10px 12px; gap: 12px}
+            span.on
+              {display: block; color: rgb(236, 150, 112)}
+              "Changes"
+            span
+              {display: block}
+              "Web"
+            span
+              {display: block}
+              "Shell"
+          small
+            {display: block; color: rgb(144, 139, 132); font-size: 11.5px; text-align: center; padding: 0px 18px 0px 18px; margin: auto}
+            "What a session changes shows up here."
+      div.wl-cue.c-wb
+        {display: flex; position: absolute; color: rgb(36, 19, 10); background-image: linear-gradient(rgb(246, 180, 147), rgb(232, 144, 108)); box-shadow: rgba(236, 150, 112, 0.7) 0px 12px 30px -10px; font-size: 12.5px; white-space: nowrap; transform: scale(1, 1) translate(0px, 0px); border-radius: 9px; padding: 6px 12px 6px 12px; inset: -16px 14px auto auto; gap: 7px}
+        "files it changed · web · shell"
+        b
+          {display: block; font-weight: 700}
+          "Workbench"
+      div.wl-cue.c-p
+        {display: flex; position: absolute; color: rgb(36, 19, 10); background-image: linear-gradient(rgb(246, 180, 147), rgb(232, 144, 108)); box-shadow: rgba(236, 150, 112, 0.7) 0px 12px 30px -10px; font-size: 12.5px; white-space: nowrap; transform: scale(1, 1) translate(0px, 0px); border-radius: 9px; padding: 6px 12px 6px 12px; inset: auto auto -14px 14px; gap: 7px}
+        "say it in plain words"
+        b
+          {display: block; font-weight: 700}
+          "⌘P"
+      div.wl-phone
+        {display: block; position: absolute; background-color: rgb(49, 51, 56); box-shadow: rgba(0, 0, 0, 0.9) 0px 30px 60px -20px; width: 196px; height: 330px; transform: rotate(3deg) translate(0px, 0px); border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.16); border-radius: 30px; padding: 34px 12px 14px 12px; inset: -6px -196px auto auto}
+        div.wl-phone-head
+          {display: block; color: rgb(242, 243, 245); font-size: 12.5px; font-weight: 600; border-width: - - 1px -; border-style: none none solid none; border-color: - - rgba(255, 255, 255, 0.08) -; padding: 0px 0px 8px 0px}
+          "# alfred"
+        div.wl-phone-msg
+          {display: flex; position: absolute; inset: auto 12px 44px 12px; gap: 8px}
+          span.wl-phone-av
+            {display: grid; color: rgb(36, 19, 10); background-color: rgb(236, 150, 112); width: 26px; height: 26px; flex-shrink: 0; align-items: center; border-radius: 50%}
+            svg
+              {display: block; width: 13px; height: 13px; overflow-x: hidden; overflow-y: hidden}
+              shape a9121a09
+          div
+            {display: block}
+            b
+              {display: inline; color: rgb(242, 243, 245); font-size: 12px; font-weight: 700}
+              "Alfred"
+            p
+              {display: block; color: rgb(219, 222, 225); font-size: 11.5px; line-height: 1.4; margin: 2px 0px 0px 0px}
+              "Hi, I’m Alfred. Connect Discord any time, and I’ll ask you here when a session needs you."
+      div.wl-cue.c-al
+        {display: flex; position: absolute; color: rgb(36, 19, 10); background-image: linear-gradient(rgb(246, 180, 147), rgb(232, 144, 108)); box-shadow: rgba(236, 150, 112, 0.7) 0px 12px 30px -10px; font-size: 12.5px; white-space: nowrap; transform: scale(1, 1) translate(0px, 0px); border-radius: 9px; padding: 6px 12px 6px 12px; inset: auto -196px -30px auto; gap: 7px}
+        "on your phone, once you connect Discord"
+        b
+          {display: block; font-weight: 700}
+          "Alfred"
+  footer.wl-foot
+    {display: flex; position: relative; flex-shrink: 0; justify-content: center; padding: 18px 24px 38px 24px}
+    div.wl-go
+      {display: flex; flex-direction: column; align-items: center; gap: 14px}
+      div.wl-ask.big
+        {display: flex; color: rgb(167, 162, 155); background-color: rgba(20, 20, 23, 0.9); box-shadow: rgba(184, 162, 255, 0.08) 0px 0px 0px 1px, rgba(184, 162, 255, 0.5) 0px 20px 50px -24px; width: 620px; align-items: center; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.14); border-radius: 13px; padding: 7px 8px 7px 14px; gap: 10px}
+        svg
+          {display: block; width: 15px; height: 15px; overflow-x: hidden; overflow-y: hidden}
+          shape eca4fb90
+        input [placeholder="Try: explain this project" value="" .value="" .focused]
+          {display: block; color: rgb(246, 243, 238); min-width: 0px; flex-grow: 1; flex-basis: 0%; overflow-x: clip; overflow-y: clip; font-size: 15px; padding: 1px 2px 1px 2px}
+        button.wl-agtag [tabindex="-1"]
+          {display: flex; color: rgb(246, 243, 238); background-color: rgba(255, 255, 255, 0.04); align-items: center; font-size: 12.5px; text-align: center; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.12); border-radius: 8px; padding: 4px 8px 4px 8px; gap: 6px}
+          "Antigravity"
+          svg [aria-hidden="true"]
+            {display: block; width: 12px; height: 12px; overflow-x: hidden; overflow-y: hidden}
+            shape 91c7dcf9
+          kbd
+            {display: block; background-color: rgba(255, 255, 255, 0.05); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 11px; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.18); border-radius: 5px; padding: 1px 6px 1px 6px}
+            "tab"
+        button.wl-cta.small
+          {display: flex; color: rgb(36, 19, 10); background-image: linear-gradient(rgb(248, 188, 155), rgb(233, 140, 102)); box-shadow: rgba(236, 150, 112, 0.75) 0px 18px 44px -14px, rgba(255, 255, 255, 0.4) 0px 1px 0px 0px inset; min-height: 34px; align-items: center; font-size: 13.5px; font-weight: 600; text-align: center; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.3); border-radius: 9px; padding: 0px 14px 0px 14px; gap: 6px}
+          "Start"
+          svg
+            {display: block; width: 13px; height: 13px; overflow-x: hidden; overflow-y: hidden}
+            shape 5f439a6b
+      div.wl-perm
+        {display: block; color: rgb(167, 162, 155); font-size: 12.5px}
+        "Sessions run each step without stopping to ask."
+        button.ob-link
+          {display: inline-block; color: rgb(236, 150, 112); text-align: center}
+          "Ask me first instead"

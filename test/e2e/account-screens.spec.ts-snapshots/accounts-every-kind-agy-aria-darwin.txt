@@ -1,0 +1,18 @@
+- text: Antigravity
+
+- switch "In the pool" [checked]
+- text: google
+- button "Delete account":
+  - img
+- text: Gemini Models · 7d 42% Gemini Models · 5h 10% Gemini Models · 7d resets 3-9 09:30
+- switch "In the pool" [checked]
+- text: gemini-key API KEY
+- button "Delete account":
+  - img
+- text: Metered — used only when every subscription is rate-limited
+- button "Sign in with Google":
+  - img
+  - text: Sign in with Google
+- button "Paste Gemini API key":
+  - img
+  - text: Paste Gemini API key

@@ -1,0 +1,20 @@
+- dialog "Welcome to Koloft":
+  - banner:
+    - button "Skip setup esc"
+  - main:
+    - text: Ready · ws-a
+    - heading "Built for you. And for your agents." [level=1]
+    - paragraph: Your newest session is one key away.
+    - img
+    - text: "ws-a Tidy the release notes Claude · 2h ago Tidy the release notes Claude · ws-a · 2h ago Changes Web Shell What a session changes shows up here. Workbench files it changed · web · shell ⌘P say it in plain words # alfred"
+    - img
+    - text: Alfred
+    - paragraph: Hi, I’m Alfred. Connect Discord any time, and I’ll ask you here when a session needs you.
+    - text: Alfred on your phone, once you connect Discord
+  - contentinfo:
+    - button "Resume “Tidy the release notes” ↩"
+    - img
+    - textbox "Or tell Koloft what to do…"
+    - button "Claude tab"
+    - text: Sessions run each step without stopping to ask.
+    - button "Ask about risky steps instead"

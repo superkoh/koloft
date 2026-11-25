@@ -276,6 +276,16 @@ earns a test, red-first, black-box boundaries) is deliberately not written down 
   keeps waiting on after it hides: switch with `switchToRow` (helpers/p1.ts) before
   typing into the new one.
 
+### Screen compare
+
+- `account-screens.spec.ts` holds each screen of accounts, welcome, Assist and usage three
+  ways through `expectScreen` (helpers/screenCompare.ts): pixels (a baseline per macOS
+  version; on a version with none the pixel part is reported as not compared), and
+  structure and screen-reader text, which every Mac compares. After a change meant to show,
+  remake them with `npm run build`, then
+  `npx playwright test test/e2e/account-screens.spec.ts --update-snapshots`, and look at the
+  changed files before committing them.
+
 ### Selectors
 
 - The app has no `data-testid`s: prefer role/text/stable-class selectors. Workbench,

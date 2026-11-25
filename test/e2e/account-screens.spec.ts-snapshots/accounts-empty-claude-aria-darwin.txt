@@ -1,0 +1,12 @@
+- text: Claude
+
+- text: Prefer accounts with fable allowance Off, accounts are picked by weekly use alone, skipping any near its 5-hour limit — use that when fable is nearly spent and one account is taking every session.
+- switch [checked]
+
+- text: No accounts yet — add one below. Claude sessions start only once there is one.
+- button "Sign in":
+  - img
+  - text: Sign in
+- button "Paste token":
+  - img
+  - text: Paste token

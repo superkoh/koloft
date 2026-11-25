@@ -1,0 +1,10 @@
+- text: Sign in to Antigravity
+- textbox "Name this account (e.g. work)": fresh
+- text: Sign-in did not complete. Welcome to the Antigravity CLI. You are currently not signed in. > 1. Google OAuth 2. Use a Google Cloud project
+- button "Cancel"
+- button "Try again"
+- text: Koloft opens a terminal tab that runs
+- code: agy
+- text: for this account only. Finish the sign-in there; the tab closes itself when
+- code: agy
+- text: ends. Signed in, the account joins the pool; if not, this page says so. Sign in, then pick a colour scheme and answer Google’s Terms and data-use screen yourself, then type /exit. Your Antigravity conversations, rules, plugins and MCP servers are shared by every account.

@@ -1,0 +1,19 @@
+- heading "Usage" [level=3]
+- paragraph: What your sessions would cost on the API, counted from their tokens at list price. A subscription is not billed per token, so this is a yardstick, not a bill.
+
+- group "Range":
+  - button "7 days"
+  - button "30 days" [pressed]
+  - button "90 days"
+  - button "All"
+- group "Group by":
+  - button "Day" [pressed]
+  - button "Session"
+  - button "Workspace"
+  - button "Model"
+
+- text: $11.4last 30 days 4sessions
+
+- text: $10.0 $7.50 $5.00 $2.50 0
+
+- text: 2/3 2/18 today

@@ -1,0 +1,4 @@
+- listbox "Agents":
+  - option "Claude default" [selected]
+  - option "Codex No account" [disabled]
+  - option "Antigravity No account" [disabled]

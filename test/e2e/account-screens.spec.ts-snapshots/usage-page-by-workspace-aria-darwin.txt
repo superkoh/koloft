@@ -1,0 +1,3 @@
+- text: By workspace
+
+- text: ws-a 2 sessions $8.00 ws-b 1 session $2.40 Other 1 session $1.00

@@ -1,0 +1,29 @@
+- text: Account usage updated just now Claude
+- 'group "Pool: 3 measured, 2 usable, 1 walled"': Pool 3 measured · 2 usable 50% 55% 59% 1 walled
+- text: studio FABLE
+- group "5h resets in 2h 00m": 42%
+- group "7d resets at 3-7 09:30": 63%
+- group "fable resets at 3-7 09:30": 18%
+- text: garden
+- group "5h resets in 2h 00m": 7%
+- group "7d resets at 3-7 09:30": 31%
+- text: walled FABLE WALLED
+- group "5h walled, back in 40m": 100%
+- group "7d resets at 3-7 09:30": 70%
+- group "fable allowance spent, resets at 3-7 09:30": 97%
+- text: metered API KEY Metered — used only when every subscription is rate-limited Codex
+- 'group "Pool: 2 measured, 1 usable, 1 walled"': Pool 2 measured · 1 usable 63% 77% 1 walled
+- text: plus
+- group "5h resets in 4h 30m": 25%
+- group "7d resets at 3-8 10:30": 61%
+- text: capped WALLED
+- button "Use a reset"
+- group "5h walled, back in 40m": 100%
+- group "7d resets at 3-6 09:30": 92%
+- text: 2 resets saved, first expires 3-5 09:30 signed-out EXPIRED Not signed in — sign in again from Settings Antigravity google Gemini Models · 7d 42% Gemini Models · 5h 10% Gemini Models · 7d resets 3-9 09:30 gemini-key API KEY Metered — used only when every subscription is rate-limited
+- button "Probe now 1–2 requests per account":
+  - img
+  - text: Probe now 1–2 requests per account
+- button "Account settings…":
+  - img
+  - text: Account settings…

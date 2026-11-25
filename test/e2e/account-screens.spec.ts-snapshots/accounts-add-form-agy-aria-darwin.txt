@@ -1,0 +1,6 @@
+- text: Add Gemini API key
+- textbox "Account name (e.g. personal)"
+- textbox "Gemini API key"
+- button "Cancel"
+- button "Save" [disabled]
+- text: "The key goes into your Keychain and is handed to agy when a session starts. Saving opens agy in a terminal tab once: pick a colour scheme and answer Google’s Terms screen there, then type /exit, and the account is ready."

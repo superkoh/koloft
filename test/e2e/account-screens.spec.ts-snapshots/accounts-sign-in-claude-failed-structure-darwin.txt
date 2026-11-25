@@ -1,0 +1,32 @@
+div.acct-add
+  {display: flex; background-color: rgb(22, 22, 24); flex-direction: column; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.17); border-radius: 7px; padding: 12px; gap: 8px}
+  div.acct-add-title
+    {display: block; font-size: 13px; font-weight: 600}
+    "Sign in"
+  input [placeholder="Name this account (e.g. work)" type="text" value="night" .value="night" .focused]
+    {display: block; background-color: rgb(13, 13, 15); outline-style: auto; outline-width: 1px; outline-color: rgb(229, 151, 0); overflow-x: clip; overflow-y: clip; font-family: Arial; font-size: 13px; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.17); border-radius: 7px; padding: 8px 10px 8px 10px}
+  div.acct-login-state.bad
+    {display: flex; color: rgb(217, 119, 106); flex-direction: column; align-items: flex-start; font-size: 12.5px; line-height: 1.6; gap: 8px}
+    div
+      {display: block}
+      "Sign-in did not complete."
+    pre.acct-login-tail
+      {display: block; color: rgb(144, 139, 132); background-color: rgb(13, 13, 15); width: 100%; max-height: 120px; overflow-x: auto; overflow-y: auto; font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 11px; white-space: pre-wrap; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.1); border-radius: 7px; padding: 8px 10px 8px 10px}
+      "Sign-in timed out (stand-in: the hidden terminal’s own lines name this machine’s user and a throwaway folder)"
+    div.acct-add-actions [style="justify-content: flex-start;"]
+      {display: flex; justify-content: flex-start; gap: 8px}
+      button.mini [disabled=""]
+        {display: flex; opacity: 0.45; color: rgb(243, 241, 238); background-color: rgb(52, 52, 58); align-items: center; font-size: 13px; font-weight: 600; line-height: 1; text-align: center; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.17); border-radius: 7px; padding: 7px 14px 7px 14px; gap: 5px}
+        "Show terminal"
+      button.mini
+        {display: flex; color: rgb(243, 241, 238); background-color: rgb(52, 52, 58); align-items: center; font-size: 13px; font-weight: 600; line-height: 1; text-align: center; border-width: 1px; border-style: solid; border-color: rgba(255, 255, 255, 0.17); border-radius: 7px; padding: 7px 14px 7px 14px; gap: 5px}
+        "Try again"
+  span.field-hint
+    {display: block; color: rgb(189, 185, 178); font-size: 12.5px; line-height: 1.6}
+    "Koloft runs the official in the — no terminal tab. Once you authorize in the browser, the token goes straight into your Keychain and the account joins the pool: no copy-paste, and you never leave this panel."
+    code
+      {display: inline; color: rgb(243, 241, 238); background-color: rgb(13, 13, 15); font-family: "JetBrainsMono Nerd Font", "SF Mono", "JetBrains Mono", Menlo, monospace; font-size: 12px; border-radius: 4px; padding: 1px 5px 1px 5px}
+      "claude setup-token"
+    b
+      {display: inline; font-weight: 700}
+      "background"

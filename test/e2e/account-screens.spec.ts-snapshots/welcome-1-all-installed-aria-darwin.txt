@@ -1,0 +1,16 @@
+- dialog "Welcome to Koloft":
+  - banner:
+    - button "Skip setup esc"
+  - main:
+    - text: 3 of 3 ready on this Mac
+    - heading "Three agents. One window." [level=1]
+    - paragraph: Koloft runs Claude Code, Codex and Antigravity.
+    - text: Claude Code Anthropic Ready
+    - img
+    - text: 2 sessions · 1 folder Codex OpenAI Ready
+    - img
+    - text: 1 session · 1 folder Antigravity CLI Google Ready
+    - img
+    - text: No sessions yet
+  - contentinfo:
+    - button "Continue ↩"
