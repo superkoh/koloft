@@ -25,6 +25,7 @@ const CHANNEL = { guildId: '111', channelId: '222', name: 'koloft-all' }
 const ASSIST_STARTS_AND_ANSWERS_MS = 60_000
 const FOLDER_HASH_CHARS = 16
 const OFFLINE_REPLY = 'Koloft was offline, this message was not delivered.'
+const V038_CODEX_KEY = 'codex:local:019a0000-0000-7000-8000-000000000001'
 
 // ADR-0029
 function assistFolder(env: E2EEnv, scope: string): string {
@@ -181,7 +182,7 @@ test.describe('Upgrade continuity: what v0.38.0 left on disk keeps working after
   test('an Assist that ran on Codex while new sessions default to Claude starts a new conversation on Claude and still answers in Discord', async ({
     env
   }) => {
-    seedV038(env, { scope: 'global', backend: 'codex', lastSessionKey: 'codex:019a0000-old' })
+    seedV038(env, { scope: 'global', backend: 'codex', lastSessionKey: V038_CODEX_KEY })
     const fake = await startFakeDiscord(env)
     try {
       const { app } = await upgradedApp(env, fake)
@@ -190,9 +191,7 @@ test.describe('Upgrade continuity: what v0.38.0 left on disk keeps working after
         .toBe(1)
       expect(resumedId(assistCalls(env, 'global')[0])).toBeUndefined()
       await answersOnDiscord(fake, 'hello from a Codex Assist')
-      await expect
-        .poll(() => butlerSessionOnDisk(env)?.lastSessionKey)
-        .not.toBe('codex:019a0000-old')
+      await expect.poll(() => butlerSessionOnDisk(env)?.lastSessionKey).not.toBe(V038_CODEX_KEY)
       await quitAndClose(app)
     } finally {
       await fake.close()
