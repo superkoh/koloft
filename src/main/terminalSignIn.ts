@@ -4,20 +4,27 @@ import {
   type AccountKind,
   type AccountMeta,
   type AccountView,
-  type SignInFailure,
+  type SignInCommand,
   type SignInFolderKind,
-  type SignInResult
+  type SignInProgress,
+  type SignInStart
 } from '@shared/types'
 import { shq } from '@shared/shellQuote'
 import { MARK_OUTPUT_START, SignInOutput } from './signInOutput'
 import { findAccount, keychainDelete, validateNewAccount } from './accounts'
 import { installThen } from './toolInstall'
 
+interface OwnTerminalSignIn {
+  homeLogin(name: string): Promise<SignInCommand>
+  probeHomeAccount(name: string): Promise<void>
+}
+
 interface HomeSignInTab {
   kind: SignInFolderKind
   name: string
   again: boolean
   output: SignInOutput
+  probeHomeAccount(name: string): Promise<void>
 }
 
 export interface TerminalSignInDeps {
@@ -27,13 +34,9 @@ export interface TerminalSignInDeps {
   noteHomeAccount(name: string, kind: SignInFolderKind): void
   homeShellTab(launchCommand: string): { tabId: string; cwd: string }
   toolInstallPtys: { add(id: string): unknown }
-  homeLogin: Record<
-    SignInFolderKind,
-    (name: string) => Promise<{ binary?: string; env: Record<string, string>; args?: string[] }>
-  >
-  probeHomeAccount: Record<SignInFolderKind, (name: string) => Promise<void>>
-  signInFailure(): SignInFailure | null
-  setSignInFailure(f: SignInFailure | null): void
+  signInChanged(progress: SignInProgress): void
+  heldSignInFailure(): SignInProgress | null
+  forgetHeldSignInFailure(): void
 }
 
 export function terminalSignInsOf(deps: TerminalSignInDeps) {
@@ -44,26 +47,26 @@ export function terminalSignInsOf(deps: TerminalSignInDeps) {
     noteHomeAccount,
     homeShellTab,
     toolInstallPtys,
-    homeLogin,
-    probeHomeAccount,
-    signInFailure,
-    setSignInFailure
+    signInChanged,
+    heldSignInFailure,
+    forgetHeldSignInFailure
   } = deps
 
   const signInPtys = new Map<string, HomeSignInTab>()
 
   async function endHomeSignIn(s: HomeSignInTab): Promise<void> {
-    const probeAnswered = await probeHomeAccount[s.kind](s.name).then(
+    const probeAnswered = await s.probeHomeAccount(s.name).then(
       () => !usageViews.get(viewKey(s.name, s.kind))?.probeError,
       () => false
     )
     const account = findAccount(s.name, s.kind)
     if (!probeAnswered || !account || account.status === 'ok') return
     if (!s.again) forgetAccount(s.name, s.kind)
-    setSignInFailure({
-      backend: BACKEND_OF_SIGN_IN_FOLDER[s.kind],
+    signInChanged({
+      kind: s.kind,
       name: s.name,
       again: s.again,
+      phase: 'failed',
       tail: s.output.tail()
     })
   }
@@ -71,8 +74,9 @@ export function terminalSignInsOf(deps: TerminalSignInDeps) {
   async function signInToHome(
     kind: SignInFolderKind,
     name: string,
-    again: boolean
-  ): Promise<SignInResult> {
+    again: boolean,
+    own: OwnTerminalSignIn
+  ): Promise<SignInStart> {
     const v = again
       ? findAccount(name, kind)
         ? 'ok'
@@ -81,8 +85,8 @@ export function terminalSignInsOf(deps: TerminalSignInDeps) {
     if (v !== 'ok') return { ok: false, error: v }
     if (!again && keepsSecretInKeychain(kind) && !(await keychainDelete(kind, name)))
       return { ok: false, error: 'keychain' }
-    if (signInFailure()) setSignInFailure(null)
-    const login = await homeLogin[kind](name)
+    if (heldSignInFailure()) forgetHeldSignInFailure()
+    const login = await own.homeLogin(name)
     noteHomeAccount(name, kind)
     const assignments = Object.entries(login.env).map(([k, val]) => `${k}=${shq(val)}`)
     const args = (login.args ?? ['login']).map(shq).join(' ')
@@ -99,9 +103,17 @@ export function terminalSignInsOf(deps: TerminalSignInDeps) {
               process.env.KOLOFT_TEST_TOOL_INSTALLER
             ))
     )
-    signInPtys.set(tab.tabId, { kind, name, again, output: new SignInOutput() })
+    signInPtys.set(tab.tabId, {
+      kind,
+      name,
+      again,
+      output: new SignInOutput(),
+      probeHomeAccount: own.probeHomeAccount
+    })
     if (!login.binary) toolInstallPtys.add(tab.tabId)
-    return { ok: true, ...tab }
+    const progress: SignInProgress = { kind, name, again, phase: 'inATab', tab }
+    signInChanged(progress)
+    return { ok: true, progress }
   }
 
   return { signInPtys, endHomeSignIn, signInToHome }

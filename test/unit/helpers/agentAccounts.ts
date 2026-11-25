@@ -9,5 +9,7 @@ export const accountsThatAreNeverAsked: AgentAccounts = {
   probeAll: asked,
   addSecret: asked,
   forget: asked,
-  folderSaysItRunsOnAKey: asked
+  folderSaysItRunsOnAKey: asked,
+  signIn: asked,
+  cancelSignIn: asked
 }

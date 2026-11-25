@@ -246,6 +246,7 @@ import {
   takesAnEndpoint,
   BACKEND_OF_SIGN_IN_FOLDER,
   isSignInFolderKind,
+  isAccountKind,
   type SignInFolderKind,
   type GitPlatform,
   type GitTokenAdd
@@ -265,8 +266,9 @@ import type {
   AccountView,
   ArtifactView,
   BackendId,
-  SignInResult,
   SignInFailure,
+  SignInProgress,
+  SignInStart,
   ScreenAnswer,
   ScreenRequest,
   TerminalExit,
@@ -1319,6 +1321,7 @@ const {
   pushAccounts,
   notifyExpired,
   sendToRenderer,
+  signInChanged: (progress) => agentsMain.signInChanged(progress),
   savedUsage,
   tracker: {
     launchedSessions: () => tracker.launchedSessions(),
@@ -1366,7 +1369,8 @@ const homeAccountsDeps = {
   savedHomeUsageOf,
   usageViews,
   viewKey,
-  sessionAccounts: () => sessionAccounts
+  sessionAccounts: () => sessionAccounts,
+  signInInATab: (...signIn: Parameters<typeof signInToHome>) => signInToHome(...signIn)
 }
 const codexAccounts = codexHomeAccounts({
   ...homeAccountsDeps,
@@ -2194,13 +2198,6 @@ function codexSharedConfig(): string {
   return codexConfigFile(codexSessions?.defaultEnv)
 }
 
-let signInFailure: SignInFailure | null = null
-
-function setSignInFailure(f: SignInFailure | null): void {
-  signInFailure = f
-  sendToRenderer(CH.accounts.signInFailure, f)
-}
-
 function forgetAccount(name: string, kind: AccountKind): void {
   removeAccountMeta(name, kind)
   usageViews.delete(viewKey(name, kind))
@@ -2222,19 +2219,6 @@ function noteHomeAccount(name: string, kind: SignInFolderKind): void {
   pushAccounts()
 }
 
-const homeLogin: Record<
-  SignInFolderKind,
-  (name: string) => Promise<{ binary?: string; env: Record<string, string>; args?: string[] }>
-> = {
-  'codex-home': codexAccounts.homeLogin,
-  'agy-home': agyAccounts.homeLogin
-}
-
-const probeHomeAccount: Record<SignInFolderKind, (name: string) => Promise<void>> = {
-  'codex-home': codexAccounts.probeHomeAccount,
-  'agy-home': agyAccounts.probeHomeAccount
-}
-
 const { signInPtys, endHomeSignIn, signInToHome } = terminalSignInsOf({
   usageViews,
   viewKey,
@@ -2242,10 +2226,26 @@ const { signInPtys, endHomeSignIn, signInToHome } = terminalSignInsOf({
   noteHomeAccount,
   homeShellTab,
   toolInstallPtys: { add: (id) => toolInstallPtys.add(id) },
-  homeLogin,
-  probeHomeAccount,
-  signInFailure: () => signInFailure,
-  setSignInFailure
+  signInChanged: (progress) => agentsMain.signInChanged(progress),
+  heldSignInFailure: () => agentsMain.heldSignInFailure(),
+  forgetHeldSignInFailure: () => agentsMain.forgetHeldSignInFailure()
+})
+
+function asOldSignInFailure(held: SignInProgress | null): SignInFailure | null {
+  return held && isSignInFolderKind(held.kind)
+    ? {
+        backend: BACKEND_OF_SIGN_IN_FOLDER[held.kind],
+        name: held.name,
+        again: held.again,
+        tail: held.tail ?? ''
+      }
+    : null
+}
+
+agentsMain.watchSignIns((news, heldFailureChanged) => {
+  sendToRenderer(CH.accounts.signInProgress, news)
+  if (heldFailureChanged)
+    sendToRenderer(CH.accounts.signInFailure, asOldSignInFailure(news.heldFailure))
 })
 
 function ownersGemini(): string {
@@ -4973,15 +4973,26 @@ function registerIpc(): void {
   ipcMain.handle(CH.accounts.startLogin, (_e, name: string, reauth?: boolean) =>
     startLogin(name, reauth)
   )
+  ipcMain.handle(CH.accounts.signIn, async (_e, kind: unknown, name: string, again?: boolean) => {
+    if (!isSignInFolderKind(kind)) return { ok: false, error: 'invalid-name' }
+    const started = await agentsMain.signIn(kind, name, again === true)
+    return started.ok ? { ok: true, ...started.progress.tab } : started
+  })
+  ipcMain.handle(CH.accounts.signInFailure, () =>
+    asOldSignInFailure(agentsMain.heldSignInFailure())
+  )
+  ipcMain.on(CH.accounts.dismissSignInFailure, () => agentsMain.forgetHeldSignInFailure())
   ipcMain.handle(
-    CH.accounts.signIn,
-    async (_e, kind: unknown, name: string, again?: boolean): Promise<SignInResult> =>
-      isSignInFolderKind(kind)
-        ? signInToHome(kind, name, again === true)
+    CH.accounts.beginSignIn,
+    (_e, kind: unknown, name: unknown, again: unknown): Promise<SignInStart> | SignInStart =>
+      isAccountKind(kind) && typeof name === 'string'
+        ? agentsMain.signIn(kind, name, again === true)
         : { ok: false, error: 'invalid-name' }
   )
-  ipcMain.handle(CH.accounts.signInFailure, () => signInFailure)
-  ipcMain.on(CH.accounts.dismissSignInFailure, () => setSignInFailure(null))
+  ipcMain.handle(CH.accounts.signInProgress, () => agentsMain.heldSignInFailure())
+  ipcMain.on(CH.accounts.endSignIn, (_e, kind: unknown, name: unknown) => {
+    if (isAccountKind(kind) && typeof name === 'string') agentsMain.endSignIn(kind, name)
+  })
   ipcMain.handle(CH.accounts.codexUseReset, (_e, name: string) => codexUseReset(name))
   ipcMain.on(CH.accounts.cancelLogin, () => cancelLogins())
 

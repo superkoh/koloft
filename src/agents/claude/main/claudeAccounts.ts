@@ -5,7 +5,8 @@ import {
   type AccountKind,
   type AccountMeta,
   type AccountView,
-  type LoginProgress
+  type LoginProgress,
+  type SignInProgress
 } from '@shared/types'
 import { CH, type Channel } from '@shared/ipcChannels'
 import { ACCOUNT_KINDS_OF, noAccountLine } from '@shared/accountUsage'
@@ -41,6 +42,7 @@ import { claudeCodeGuessesWindowOf, pickMachineAccount } from './claudeAccountEn
 // CC§7
 interface LoginWatch {
   name: string
+  again: boolean
   buf: string
   sawUrl: boolean
   done: boolean
@@ -80,6 +82,7 @@ export interface ClaudeAccountDeps {
   pushAccounts(): void
   notifyExpired(name: string): void
   sendToRenderer(channel: Channel, ...args: unknown[]): boolean
+  signInChanged(progress: SignInProgress): void
   savedUsage: UsageSnapshots
   tracker: {
     launchedSessions(): LaunchedSession[]
@@ -109,6 +112,7 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
     pushAccounts,
     notifyExpired,
     sendToRenderer,
+    signInChanged,
     savedUsage,
     tracker,
     sessionAccounts,
@@ -264,8 +268,18 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
     return cronTestMs('KOLOFT_LOGIN_TIMEOUT_MS', LOGIN_TIMEOUT_MS)
   }
 
-  function sendLoginProgress(p: LoginProgress): void {
+  function sendLoginProgress(p: LoginProgress, again: boolean): void {
     sendToRenderer(CH.accounts.loginProgress, p)
+    const { phase, name, url, tail, tabId, cwd } = p
+    signInChanged({
+      kind: 'oauth',
+      name,
+      again,
+      phase,
+      ...(url !== undefined && { url }),
+      ...(tail !== undefined && { tail }),
+      ...(tabId !== undefined && { tab: { tabId, cwd } })
+    })
   }
 
   function feedLoginWatcher(tabId: string, data: string): void {
@@ -293,13 +307,13 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
         const u = AUTH_URL_RE.exec(w.buf)
         if (u) {
           w.sawUrl = true
-          sendLoginProgress({ phase: 'browser', name: w.name, url: u[0] })
+          sendLoginProgress({ phase: 'browser', name: w.name, url: u[0] }, w.again)
         }
       }
       return
     }
     endLoginWatch(tabId, w)
-    void completeLogin(tabId, w.name, m[0])
+    void completeLogin(tabId, w.name, m[0], w.again)
   }
 
   function endLoginWatch(tabId: string, w: LoginWatch): void {
@@ -313,12 +327,15 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
     if (!w || w.done) return
     endLoginWatch(tabId, w)
     const tail = plainTerminalTail(w.buf)
-    sendLoginProgress({
-      phase: 'failed',
-      name: w.name,
-      tail: `${why}${tail ? `\n${tail}` : ''}`,
-      ...(terminalKept && { tabId, cwd: ptyMgr.get(tabId)?.cwd })
-    })
+    sendLoginProgress(
+      {
+        phase: 'failed',
+        name: w.name,
+        tail: `${why}${tail ? `\n${tail}` : ''}`,
+        ...(terminalKept && { tabId, cwd: ptyMgr.get(tabId)?.cwd })
+      },
+      w.again
+    )
   }
 
   function giveUpLoginAfter(tabId: string, ms: number, why: string): NodeJS.Timeout {
@@ -339,7 +356,7 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
     } catch {}
   }
 
-  function startGuidedLogin(name: string, installFirst: boolean): string {
+  function startGuidedLogin(name: string, installFirst: boolean, again: boolean): string {
     const handle = ptyMgr.create({
       kind: 'shell',
       koloftShim: PLAIN_KOLOFT_SHIM,
@@ -358,6 +375,7 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
     })
     loginWatchers.set(handle.id, {
       name,
+      again,
       buf: '',
       sawUrl: false,
       done: false,
@@ -375,7 +393,7 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
     })
     loginPtys.add(handle.id)
     if (installFirst) toolInstallPtys.add(handle.id)
-    sendLoginProgress({ phase: 'starting', name })
+    sendLoginProgress({ phase: 'starting', name }, again)
     return handle.id
   }
 
@@ -392,7 +410,7 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
     claudeBackend.forgetAvailability()
     const installFirst = !(await claudeBackend.availability()).available
     for (const id of loginWatchers.keys()) cancelGuidedLogin(id)
-    startGuidedLogin(name, installFirst)
+    startGuidedLogin(name, installFirst, reauth === true)
     return 'ok'
   }
 
@@ -400,18 +418,26 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
     for (const id of [...loginWatchers.keys()]) cancelGuidedLogin(id)
   }
 
-  async function completeLogin(tabId: string, name: string, token: string): Promise<void> {
+  async function completeLogin(
+    tabId: string,
+    name: string,
+    token: string,
+    again: boolean
+  ): Promise<void> {
     const result = await probeAccount('oauth', token, { timeoutMs: ACCOUNT_PROBE_TIMEOUT_MS })
     if (!result.ok && result.error === 'expired') {
-      sendLoginProgress({
-        phase: 'failed',
-        name,
-        tail:
-          'The captured token was rejected — usually that means the capture was incomplete. ' +
-          'Use “Paste token” instead, or “Show terminal” to see the raw output.',
-        tabId,
-        cwd: ptyMgr.get(tabId)?.cwd
-      })
+      sendLoginProgress(
+        {
+          phase: 'failed',
+          name,
+          tail:
+            'The captured token was rejected — usually that means the capture was incomplete. ' +
+            'Use “Paste token” instead, or “Show terminal” to see the raw output.',
+          tabId,
+          cwd: ptyMgr.get(tabId)?.cwd
+        },
+        again
+      )
       return
     }
     const stored = await keychainWrite('oauth', name, token)
@@ -435,7 +461,7 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
       usageViews.set(key, { probeError: result.error })
     }
     pushAccounts()
-    sendLoginProgress({ phase: 'saved', name })
+    sendLoginProgress({ phase: 'saved', name }, again)
     try {
       ptyMgr.kill(tabId)
     } catch {}
@@ -446,7 +472,14 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
     probeAll,
     addSecret,
     forget: (kind, name) => picker.forget(kind, name),
-    folderSaysItRunsOnAKey: () => false
+    folderSaysItRunsOnAKey: () => false,
+    signIn: async (_kind, name, again) => {
+      const started = await startLogin(name, again)
+      return started === 'ok'
+        ? { ok: true, progress: { kind: 'oauth', name, again, phase: 'starting' } }
+        : { ok: false, error: started }
+    },
+    cancelSignIn: () => cancelLogins()
   }
 
   return {

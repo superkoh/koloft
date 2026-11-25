@@ -1,7 +1,13 @@
 import fs from 'fs'
 import path from 'path'
 import { AUTO_PROBE_MS, launchLine } from '@shared/accountUsage'
-import type { AccountView, CodexLimits, CodexLimitWindow, CodexResetOutcome } from '@shared/types'
+import type {
+  AccountView,
+  CodexLimits,
+  CodexLimitWindow,
+  CodexResetOutcome,
+  SignInCommand
+} from '@shared/types'
 import type { AgentAccounts } from '@core/agent/agentsMain'
 import { HomeAccountPicker } from '../../kit/main/homeAccountPicker'
 import {
@@ -267,21 +273,24 @@ export function codexHomeAccounts(deps: CodexHomeAccountsDeps) {
     await codexSessions.storeApiKey(home, key)
   }
 
+  // CODEX§15
+  async function homeLogin(name: string): Promise<SignInCommand> {
+    const codexSessions = deps.codexSessions()
+    const available = (await codexSessions?.availability())?.available
+    const home = codexHomeOf(app.getPath('userData'), name)
+    prepareCodexHome(home, codexSharedConfig())
+    return { binary: available ? codexSessions?.cliBinary : undefined, env: { CODEX_HOME: home } }
+  }
+
   return {
     codexPicker,
     pickCodexHome,
     codexUseReset,
     probeCodexAccounts,
-    // CODEX§15
-    homeLogin: async (name: string) => {
-      const codexSessions = deps.codexSessions()
-      const available = (await codexSessions?.availability())?.available
-      const home = codexHomeOf(app.getPath('userData'), name)
-      prepareCodexHome(home, codexSharedConfig())
-      return { binary: available ? codexSessions?.cliBinary : undefined, env: { CODEX_HOME: home } }
-    },
-    probeHomeAccount,
     accounts: {
+      signIn: (_kind, name, again) =>
+        deps.signInInATab('codex-home', name, again, { homeLogin, probeHomeAccount }),
+      cancelSignIn: () => {},
       pickForThisStart: () => answerOfTerminalPick('codex', () => terminalPickOf(pickCodexHome())),
       probeAll: probeCodexAccounts,
       addSecret: (_kind, name, secret) =>
