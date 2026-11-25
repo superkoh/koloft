@@ -150,6 +150,7 @@ async function claudeTab(
             machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
             alive: () => new Set(),
             firstHeartbeatDone: async () => {},
+            nextRoundThatReachesIt: () => new Promise(() => {}),
             loginPath: async () => ''
           }
         })

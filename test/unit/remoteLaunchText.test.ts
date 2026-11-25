@@ -139,6 +139,17 @@ const typedIntoTheTab = (tab: TabStarted): string =>
     part('the line typed into the tab on this Mac', tab.typedLine)
   ].join('\n')
 
+function heartbeats(): { next(): Promise<void>; reachesTheMachine(): Promise<void> } {
+  const waiting: (() => void)[] = []
+  return {
+    next: () => new Promise((done) => waiting.push(done)),
+    reachesTheMachine: async () => {
+      for (const done of waiting.splice(0)) done()
+      await new Promise((settled) => setImmediate(settled))
+    }
+  }
+}
+
 interface ClaudeTab {
   ssh: RecordedSsh
   started: TabStarted[]
@@ -424,11 +435,17 @@ describe('the order a launch on another machine keeps', () => {
   })
 
   // ADR-0044
-  it("a Claude Code session Koloft just ended on the machine, resumed while the machine's last heartbeat still lists it, starts anew and so asks for an account; a resume refused for having none leaves the note that Koloft ended the session, so every later resume before the next heartbeat starts anew and asks for an account again, never attaching to the session that is gone", async () => {
+  it("a Claude Code session Koloft just ended on the machine, resumed while the machine's last heartbeat still lists it, starts anew and so asks for an account; neither a resume refused for having none nor one whose start was typed into its tab uses up the note that Koloft ended the session, as that start may still fail on the machine, so every later resume starts anew and asks for an account again, never attaching to the session that is gone, until a heartbeat that reaches the machine after the start says whether it runs", async () => {
     const why = '"me" is not signed in — sign in again in Settings ▸ Accounts.'
     const pickAccount = vi.fn(async (): Promise<typeof ACCOUNT | undefined> => undefined)
+    const beat = heartbeats()
     const tab = claudeWith(
-      { pickAccount, noAccountMessage: () => why, alive: () => new Set([RUNNING_THERE]) },
+      {
+        pickAccount,
+        noAccountMessage: () => why,
+        alive: () => new Set([RUNNING_THERE]),
+        nextRoundThatReachesIt: beat.next
+      },
       {
         remoteTab: {
           host: MACHINE,
@@ -446,8 +463,33 @@ describe('the order a launch on another machine keeps', () => {
     expect(pickAccount).toHaveBeenCalledTimes(3)
     expect(tab.started[0].typedLine).toContain('a=start')
     expect((await claudeTabOn(tab, { resumeSessionId: RUNNING_THERE })).ok).toBe(true)
-    expect(pickAccount).toHaveBeenCalledTimes(3)
-    expect(tab.started[1].typedLine).toContain('a=attach')
+    expect(pickAccount).toHaveBeenCalledTimes(4)
+    expect(tab.started[1].typedLine).toContain('a=start')
+    await beat.reachesTheMachine()
+    expect((await claudeTabOn(tab, { resumeSessionId: RUNNING_THERE })).ok).toBe(true)
+    expect(pickAccount).toHaveBeenCalledTimes(4)
+    expect(tab.started[2].typedLine).toContain('a=attach')
+  })
+
+  it('a Claude Code session started anew after Koloft ended it, and ended by Koloft once more before a heartbeat reached the machine, is started anew again by a resume after that heartbeat: the heartbeat clears only the note left before that start', async () => {
+    const beat = heartbeats()
+    const tab = claudeWith(
+      { alive: () => new Set([RUNNING_THERE]), nextRoundThatReachesIt: beat.next },
+      {
+        remoteTab: {
+          host: MACHINE,
+          projectsRoot: path.join(world.userData, 'projects'),
+          tmuxName: `k-${RUNNING_THERE}`
+        }
+      }
+    )
+    tab.backend.stop(TAB)
+    expect((await claudeTabOn(tab, { resumeSessionId: RUNNING_THERE })).ok).toBe(true)
+    expect(tab.started[0].typedLine).toContain('a=start')
+    tab.backend.stop(TAB)
+    await beat.reachesTheMachine()
+    expect((await claudeTabOn(tab, { resumeSessionId: RUNNING_THERE })).ok).toBe(true)
+    expect(tab.started[1].typedLine).toContain('a=start')
   })
 
   it('a Claude Code session the machine still runs, ended by Koloft while a resume of it is already deciding to attach, is started anew by the next resume: the attach does not use up the note that Koloft ended it', async () => {

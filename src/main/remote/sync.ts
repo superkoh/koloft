@@ -208,6 +208,11 @@ export class RemoteSync {
     return new Promise((done) => this.state(host).waitingForNextPull.push(done))
   }
 
+  async nextRoundThatReachesIt(host: string): Promise<void> {
+    do await this.nextPullDone(host)
+    while (!this.state(host).connected)
+  }
+
   firstRoundDone(host: string): Promise<void> {
     const st = this.state(host)
     if (this.stopped || st.roundEnded) return Promise.resolve()
@@ -495,7 +500,7 @@ export class RemoteSync {
 // PLATFORM§35
 export function launchMode(opts: {
   alive: ReadonlySet<string>
-  killed: ReadonlySet<string>
+  killed: { has(sessionId: string): boolean }
   sessionId: string
 }): 'start' | 'attach' {
   return opts.alive.has(opts.sessionId) && !opts.killed.has(opts.sessionId) ? 'attach' : 'start'

@@ -86,6 +86,7 @@ export interface TabsOnMachineDeps {
   machinePackage(): MachinePackage
   alive(): ReadonlySet<string>
   firstHeartbeatDone(): Promise<void>
+  nextRoundThatReachesIt(): Promise<void>
   loginPath(): Promise<string>
 }
 
@@ -526,7 +527,7 @@ export class SshHost implements Host, Machine {
     rename: (tabId, from, to) => this.renameTmux(tabId, from, to)
   }
   private git: GitOps
-  private killedSessions = new Set<string>()
+  private killedSessions = new Map<string, Promise<unknown>>()
   private kills = new Map<string, Promise<unknown>>()
   private renamesOnTheWire = new Map<string, string>()
   private resizes = new Map<string, ReturnType<typeof setTimeout>>()
@@ -900,14 +901,14 @@ export class SshHost implements Host, Machine {
       for (const name of namesItMayHave) if (this.kills.get(name) === kill) this.kills.delete(name)
       if (!sshLinkBroke(r)) {
         const killedOnTheMachine = sessionIdOfTmux(r.stdout.toString().trim())
-        if (killedOnTheMachine) this.killedSessions.add(killedOnTheMachine)
+        if (killedOnTheMachine) this.killedSessions.set(killedOnTheMachine, kill)
         return undefined
       }
       for (const id of killedIds) this.killedSessions.delete(id)
       return problemOf(r)
     })
     for (const name of namesItMayHave) this.kills.set(name, kill)
-    for (const id of killedIds) this.killedSessions.add(id)
+    for (const id of killedIds) this.killedSessions.set(id, kill)
     return kill
   }
 
@@ -1038,6 +1039,14 @@ exit ${CALLER_GONE_EXIT}`,
     return mode
   }
 
+  private forgetTheKillOnceARoundReachesTheMachine(sid: string): void {
+    const kill = this.killedSessions.get(sid)
+    if (!kill) return
+    void this.deps.tabs.nextRoundThatReachesIt().then(() => {
+      if (this.killedSessions.get(sid) === kill) this.killedSessions.delete(sid)
+    })
+  }
+
   private tabLaunchLine(
     machine: MachinePackage,
     tabDir: string,
@@ -1091,7 +1100,7 @@ exit ${CALLER_GONE_EXIT}`,
       resized: this.resized,
       launchCommand: (tabId, content) => {
         if (sessionKnownBeforeItStarts && mode === 'start')
-          this.killedSessions.delete(named.session)
+          this.forgetTheKillOnceARoundReachesTheMachine(named.session)
         const dir = tabPackageDir(tabs.userData, tabId)
         markStartedBeforeTabPasses(tabId, keyless)
         writeTabPackage(dir, { ...content, tabId, tmuxName, machineName: pkg.name })

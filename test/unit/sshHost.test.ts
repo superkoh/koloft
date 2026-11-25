@@ -40,6 +40,7 @@ const machine = (run = runOnMachine, tabs: Partial<TabsOnMachineDeps> = {}): Ssh
       machinePackage: () => ({ dir: home, name: 'm-0000000000000000' }),
       alive: () => new Set(),
       firstHeartbeatDone: async () => {},
+      nextRoundThatReachesIt: () => new Promise(() => {}),
       loginPath: async () => '',
       ...tabs
     }

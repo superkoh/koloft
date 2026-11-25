@@ -691,6 +691,20 @@ it('a wait for the next pull ends only after a round that started after it, sinc
   expect(done).toBe(true)
 })
 
+it('a wait for the next round that reaches the machine is not ended by a round that could not reach it, as that round leaves the list of running sessions as it was', async () => {
+  sync.start()
+  await tick(1)
+  let done = false
+  void sync.nextRoundThatReachesIt('devbox').then(() => (done = true))
+  answers.push(() => Promise.resolve({ code: 255, stdout: '', stderr: 'ssh: connect refused' }))
+  await tick(2000)
+  expect(sync.connected('devbox')).toBe(false)
+  expect(done).toBe(false)
+  await tick(60_000)
+  expect(sync.connected('devbox')).toBe(true)
+  expect(done).toBe(true)
+})
+
 it('a watched path is stamped on every heartbeat: the first stamp is only the baseline, a changed one fires once, and an unwatched path is no longer asked', async () => {
   const file = '/home/koh/api/notes.md'
   let stamp = '1.0 3'
