@@ -1067,8 +1067,6 @@
     ],
     "src/plugins/sessions/api.ts": ["type CodexApproval,", "type CodexQuestion,"],
     "src/plugins/sessions/main/appHelpers.ts": [
-      "CODEX_REPLY_LANGUAGE_SCRIPT,",
-      "export { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from '@agents/agy/main/agyHooks'",
       "export { agyBackend } from '@agents/agy/main/backend'",
       "export { claudeDialog, codexDialog, isAskedCall, questionsOf } from './dialog'",
       "export { codexBackend, trustCodexFolder } from '@agents/codex/main/backend'",

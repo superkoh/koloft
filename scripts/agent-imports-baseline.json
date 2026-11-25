@@ -161,7 +161,6 @@
     },
     "plugin-into-agent": {
       "src/plugins/sessions/main/appHelpers.ts": {
-        "src/agents/agy/main/agyHooks.ts": "C9",
         "src/agents/agy/main/backend.ts": "D1",
         "src/agents/claude/main/backend.ts": "D1",
         "src/agents/claude/main/crossSessionMessage.ts": "C2",
@@ -178,7 +177,6 @@
         "src/agents/claude/main/claudeCommandOutput.ts": "C3"
       },
       "src/plugins/sessions/main/start.ts": {
-        "src/agents/agy/main/agyHooks.ts": "C9",
         "src/agents/agy/main/agySessions.ts": "D1",
         "src/agents/agy/main/backend.ts": "D1",
         "src/agents/claude/main/backend.ts": "D1",

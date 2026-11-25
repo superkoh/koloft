@@ -1,4 +1,3 @@
-export { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from '@agents/agy/main/agyHooks'
 export { agyBackend } from '@agents/agy/main/backend'
 export { machineHookSettings, pickMachineAccount } from '@agents/claude/main/backend'
 export { codexBackend, trustCodexFolder } from '@agents/codex/main/backend'
@@ -11,8 +10,6 @@ export {
   savedByTheOwner as everyWorkspaceSavedByTheOwner
 } from './everyWorkspaceInstructions'
 export {
-  CODEX_REPLY_LANGUAGE_SCRIPT,
-  HOOK_SCRIPT,
   forgetAssistMarkers,
   localNotice,
   markAnswerable,

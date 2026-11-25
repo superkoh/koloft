@@ -26,7 +26,7 @@ import { makeWorld, type World } from './helpers/agentTabs'
 
 const PINNED = './machine-package'
 const PROMPT_TEXT = path.join(__dirname, 'prompt-text')
-const STATUS_LINE_BUNDLE = path.resolve('node_modules/ccstatusline/dist')
+const STATUS_LINE_BUNDLE = path.join(__dirname, '../../node_modules/ccstatusline/dist')
 const KOLOFT_SKILL = `${AGENT_PLUGIN_DIR}skills/koloft/SKILL.md`
 
 interface Built {
