@@ -86,12 +86,14 @@ export interface AccountKindFacts {
   storesAPastedKeyItself: boolean
   takesAnEndpoint: boolean
   asksItsFirstRunQuestionsForEachAccount: boolean
+  isATokenItsSignInPrints: boolean
 }
 
 export interface AgentManifest {
   id: string
   name: string
   productName: string
+  shortProductName: string
   maker: string
   command: string
   signInCommand: string

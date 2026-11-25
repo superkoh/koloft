@@ -376,6 +376,7 @@ import { koloftPrompt, type SessionsWithStore } from '@plugins/sessions/api'
 import { localFile } from './realFiles'
 import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
 import { koloftAssist } from './assist'
+import { endOneShots, oneShotsEnded } from './oneShotsAtQuit'
 import {
   AgentsMain,
   type AgentAccounts,
@@ -2291,6 +2292,7 @@ async function agyOneShotTarget(): Promise<OneShotTarget | null> {
   const binary = await agyBinary()
   if (!picked || !binary) return null
   const apiKey = await agyApiKeyOf(picked.name)
+  if (oneShotsEnded()) return null
   const shot = oneShotAgyHome(
     agyHomeFor(picked.name),
     path.join(app.getPath('userData'), 'agy-one-shots'),
@@ -3592,6 +3594,7 @@ app.on('before-quit', (e) => {
     return
   }
   worktreeExits.koloftQuits()
+  endOneShots()
   endAgyOneShots(path.join(app.getPath('userData'), 'agy-one-shots'))
   removeRemoteTabFilesNoLiveTabNeeds()
   stopScheduledTasks()
@@ -4856,7 +4859,7 @@ const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
 }
 
 // ADR-0007
-function shrinkAdoptedClaudePtysOneRowSoFitRepaints(tabs: TabInventoryReply['tabs']): void {
+function shrinkAdoptedAgentPtysOneRowSoFitRepaints(tabs: TabInventoryReply['tabs']): void {
   for (const t of tabs) {
     if (t.kind === 'shell') continue
     const h = ptyMgr.get(t.id)
@@ -4983,7 +4986,7 @@ function registerIpc(): void {
       tracked
     )
     // ADR-0007
-    shrinkAdoptedClaudePtysOneRowSoFitRepaints(tabs)
+    shrinkAdoptedAgentPtysOneRowSoFitRepaints(tabs)
     const asleep = [...sleepers].map(([id, t]): AdoptableTab => ({ id, ...t, asleep: true }))
     return { tabs: [...tabs, ...asleep], activeTabBeforeReload: active }
   })

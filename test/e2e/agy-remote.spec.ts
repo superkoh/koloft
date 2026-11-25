@@ -19,6 +19,7 @@ import {
   centerTerm,
   chooseBackend,
   closeActiveTab,
+  FAKE_SESSION_TITLE,
   gitCommitAll,
   gitInit,
   gitRepoWithAnIncludedEnv,
@@ -28,8 +29,11 @@ import {
   oneStillRunning,
   openWorktreeSession,
   processAlive,
+  readCalls,
   runIn,
   sendShortcut,
+  switchToRow,
+  waitForCalls,
   ERASED_BY_COMMAND_BACKSPACE,
   KEPT_AFTER_COMMAND_BACKSPACE,
   sendALineErasedByCommandBackspaceThenAnother,
@@ -313,6 +317,79 @@ test.describe('Antigravity sessions in a remote workspace, over the fake ssh wit
       const tree = path.join(remoteDir(env), '.claude', 'worktrees', 'agy-tree')
       expect(fs.realpathSync(machineAgyCalls(env)[0].cwd)).toBe(fs.realpathSync(tree))
       expect(fs.readFileSync(path.join(tree, '.env'), 'utf8')).toBe(INCLUDED_ENV)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('resuming a remote Claude Code worktree session while an Antigravity tab on the machine works in that worktree asks where to resume, naming the Antigravity session', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    setUp(env)
+    gitInit(remoteDir(env))
+    const app = await launchApp(env)
+    try {
+      const page = await app.firstWindow()
+      await waitBooted(page)
+      await expect
+        .poll(async () => (await wsMenuTexts(page, REMOTE_WS_NAME)).join(' | '), {
+          timeout: 60_000
+        })
+        .toContain('New worktree session')
+      await openWorktreeSession(page, REMOTE_WS_NAME)
+      await worktreeDialog(page).locator('input').fill('cc-shared')
+      await chooseBackend(page, 'Claude')
+      const claudeRow = wsRows(page, REMOTE_WS_NAME).filter({ hasText: FAKE_SESSION_TITLE })
+      await expect(claudeRow).toHaveClass(/st-waiting/, { timeout: 120_000 })
+      const [claude] = await waitForCalls(env, 1, 60_000)
+      expect(claude.argv.join(' ')).toContain('-w cc-shared')
+      const tree = path.join(remoteDir(env), '.claude', 'worktrees', 'cc-shared')
+
+      await switchToRow(page, claudeRow)
+      await closeActiveTab(app, page)
+      await expect(claudeRow).toHaveClass(/cold/, { timeout: 90_000 })
+      expect(fs.existsSync(path.join(tree, '.git'))).toBe(true)
+
+      await expect
+        .poll(
+          async () => {
+            const c8 = await openWorktreeSession(page, REMOTE_WS_NAME)
+            const shown = await c8
+              .locator('.cb-row', { has: page.locator('.wt-name', { hasText: 'cc-shared' }) })
+              .waitFor({ timeout: 3000 })
+              .then(() => true)
+              .catch(() => false)
+            if (shown) return true
+            await page.keyboard.press('Escape')
+            await expect(c8).toHaveCount(0)
+            return false
+          },
+          { timeout: 120_000 }
+        )
+        .toBe(true)
+      await worktreeDialog(page).locator('input').fill('cc-shared')
+      await chooseBackend(page, 'Antigravity')
+      await expect.poll(() => machineAgyCalls(env).length, { timeout: 90_000 }).toBe(1)
+      expect(fs.realpathSync(machineAgyCalls(env)[0].cwd)).toBe(fs.realpathSync(tree))
+      await expect(centerTerm(page)).toContainText('Do you trust the contents of this project?', {
+        timeout: 60_000
+      })
+      await centerTerm(page).click()
+      await page.keyboard.press('1')
+      await agyReady(page)
+      await runIn(page, centerTerm(page), 'agy at work')
+      await expect(wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'agy at work' })).toHaveClass(
+        /st-waiting/,
+        { timeout: 60_000 }
+      )
+
+      await claudeRow.click()
+      const resume = page.locator('.modal.lifecycle-modal')
+      await expect(resume.locator('.ev-danger')).toHaveText(/agy at work/, { timeout: 30_000 })
+      await page.keyboard.press('Escape')
+      await expect(resume).toHaveCount(0)
+      expect(readCalls(env)).toHaveLength(1)
     } finally {
       await quitAndClose(app)
     }

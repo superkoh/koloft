@@ -1178,7 +1178,7 @@ export class ClaudeBackend implements SessionBackend {
     )
     if (await rebuildsTheWorktree(req.mode, async () => !rebuildable || host.dirExists(cwd))) {
       const plan = home
-        ? await this.machineResumePlan(host, sid)
+        ? await this.machineResumePlan(host, sid, launch)
         : await this.localWorktreePlan(sid, launch)
       if (plan.action === 'rebuild') {
         const tree = host.keyed(plan.worktreePath)
@@ -1263,28 +1263,32 @@ export class ClaudeBackend implements SessionBackend {
 
   private localWorktreePlan(sessionId: string, itself?: StartingLaunch): Promise<ResumePlan> {
     const store = this.d.store()
-    const probes = this.d.resumeProbes
     return planResume(
       store?.findRow(sessionId),
-      itself
-        ? {
-            ...probes,
-            occupantOf: (dir) => this.notCountingItself(itself, () => probes.occupantOf(dir))
-          }
-        : probes,
+      { ...this.d.resumeProbes, occupantOf: this.occupantBesides(itself) },
       store?.bucketDirOf(sessionId)
     )
   }
 
-  private async machineResumePlan(host: Host, sessionId: string): Promise<ResumePlan> {
+  private occupantBesides(itself?: StartingLaunch): (dir: string) => string | null {
+    const ask = (dir: string): string | null => this.d.resumeProbes.occupantOf(dir)
+    return itself ? (dir) => this.notCountingItself(itself, () => ask(dir)) : ask
+  }
+
+  private async machineResumePlan(
+    host: Host,
+    sessionId: string,
+    itself?: StartingLaunch
+  ): Promise<ResumePlan> {
     const row = this.d.store()?.findRow(sessionId)
     if (!row) return { action: 'unavailable', reason: 'not-found' }
     if (!row.worktreeState) return { action: 'direct', cwd: row.cwd }
+    const occupantOf = this.occupantBesides(itself)
     return planResume(
       row,
       {
         dirExists: (p) => host.dirExists(host.keyed(p)),
-        occupantOf: (dir) => this.machineOccupantOf(host.keyed(dir)),
+        occupantOf: (dir) => occupantOf(host.keyed(dir)),
         ...gitProbes(hostGit(host))
       },
       this.d.store()?.bucketDirOf(sessionId)

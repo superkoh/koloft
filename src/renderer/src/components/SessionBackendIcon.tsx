@@ -1,5 +1,5 @@
 import { BACKEND_LABEL } from '@shared/sessionBackend'
-import { AGENT_UIS } from '@agents/uis'
+import { agentUi } from '@agents/uis'
 import type { BackendId } from '@shared/types'
 
 export function SessionBackendIcon({
@@ -11,7 +11,7 @@ export function SessionBackendIcon({
   size?: number
   decorative?: boolean
 }) {
-  const Icon = AGENT_UIS.find((ui) => ui.id === backend)!.mark
+  const Icon = agentUi(backend).mark
   if (decorative) return <Icon size={size} aria-hidden="true" />
   return (
     <span

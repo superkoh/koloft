@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
 import type { BackendId, UsageRead } from '@shared/types'
-import { BACKEND_PRODUCT } from '@shared/sessionBackend'
+import { BACKEND_PRODUCT, SESSION_BACKENDS, shortProductList } from '@shared/sessionBackend'
 import { isRemoteKey } from '@shared/remoteKey'
 import { basename } from '@shared/preview'
 import { formatCost, formatTokens, localDayKey } from '@shared/usageFormat'
@@ -343,8 +343,7 @@ export function UsagePane(): JSX.Element {
 
       <div className="costs-foot">
         <span className="acct-note">
-          Claude Code, Codex and Antigravity sessions are read from the files each tool keeps, on
-          this Mac and on your SSH machines, so days before this version count too.
+          {`${shortProductList(SESSION_BACKENDS, 'and')} sessions are read from the files each tool keeps, on this Mac and on your SSH machines, so days before this version count too.`}
         </span>
         <span className="acct-note">
           Cost uses the list price Koloft keeps for each model. A model with no price shows its
