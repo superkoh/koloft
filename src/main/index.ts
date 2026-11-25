@@ -1652,14 +1652,8 @@ async function liveClaudeRegistryOn(host: string): Promise<string> {
 }
 
 const messaging = sessionMessaging({
-  get tracker() {
-    return tracker
-  },
   get hosts() {
     return hosts
-  },
-  get codexSessions() {
-    return codexSessions
   },
   get hookRegDir() {
     return hookRegDir
@@ -1670,27 +1664,17 @@ const messaging = sessionMessaging({
   get sessionBackends() {
     return sessionBackends
   },
-  get writeLineInTurn() {
-    return writeLineInTurn
-  },
-  get noteOfWhatKoloftSends() {
-    return noteOfWhatKoloftSends
-  },
   get noteSent() {
     return noteSent
+  },
+  get opensAsOnlyKoloftSends() {
+    return opensAsOnlyKoloftSends
   },
   get buildHandOver() {
     return buildHandOver
   },
   ptyMgr,
-  startupErrors,
-  remoteControlDir,
-  sessionOfTab,
-  machineOfTab,
-  storedOwnerOf,
-  liveClaudeRegistryOn,
-  whenMessagingSocket,
-  whenMessagingSocketOnMachine
+  machineOfTab
 })
 
 const syncRepoKeys = new GitRepoKeys(undefined, (machine, paths) =>
@@ -3360,7 +3344,9 @@ app.whenReady().then(() => {
       .catch((error) => sendToRenderer(CH.toast.show, String(error)))
   }
   if (codexSessions) {
-    sessionBackends.register(codexBackend(codexSessions, resumeProbes, machineProbes))
+    sessionBackends.register(
+      codexBackend(codexSessions, resumeProbes, machineProbes, messaging.noteKoloftSent)
+    )
     void codexSessions
       .availability()
       .then((codex) => {
@@ -5235,6 +5221,17 @@ const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
   messaged: (tabId, fromSessionId) => sessionCommand.messaged(tabId, fromSessionId),
   error: (message) => sendToRenderer(CH.toast.show, message),
   machineOfTab,
+  messages: {
+    get writeLineInTurn() {
+      return writeLineInTurn
+    },
+    remoteControlDir,
+    sessionOfTab,
+    liveClaudeRegistryOn,
+    whenMessagingSocket,
+    whenMessagingSocketOnMachine,
+    noteKoloftSent: (tabId, note) => messaging.noteKoloftSent(tabId, note)
+  },
   otherTabOnMachine: (machine, tmuxName, launchTab) =>
     storedSessions()
       .map((s) => s.tabOnMachine?.(machine, tmuxName, launchTab))
@@ -6062,8 +6059,8 @@ const {
   localNotice,
   markAnswerable,
   markOwnerAsleep,
-  noteOfWhatKoloftSends,
   noteSent,
+  opensAsOnlyKoloftSends,
   noticeFile,
   pruneStale,
   quotedPrompt,
