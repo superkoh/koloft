@@ -1,8 +1,16 @@
 import os from 'os'
-import type { AccountKind, AccountMeta, AccountView, LoginProgress } from '@shared/types'
+import {
+  takesAnEndpoint,
+  type AccountAddResult,
+  type AccountKind,
+  type AccountMeta,
+  type AccountView,
+  type LoginProgress
+} from '@shared/types'
 import { CH, type Channel } from '@shared/ipcChannels'
-import { noAccountLine } from '@shared/accountUsage'
+import { ACCOUNT_KINDS_OF, noAccountLine } from '@shared/accountUsage'
 import { stripTerminalCodes } from '@core/terminalCodes'
+import type { AgentAccounts, StartAsk } from '@core/agent/agentsMain'
 import {
   findAccount,
   keychainRead,
@@ -12,7 +20,6 @@ import {
   upsertAccountMeta
 } from '../../../main/accounts'
 import { loadSettings } from '../../../main/settings'
-import { writeWholeBeforeVisible } from '../../../main/jsonDrops'
 import {
   MARK_OUTPUT_START,
   afterOutputStart,
@@ -46,7 +53,7 @@ const INSTALL_SILENCE_LONGER_THAN_EITHER_SILENT_DOWNLOAD_AT_2_MBIT_MS = 30 * 60_
 const INSTALL_STALLED = `The Claude Code install did not finish: it printed nothing for ${INSTALL_SILENCE_LONGER_THAN_EITHER_SILENT_DOWNLOAD_AT_2_MBIT_MS / 60_000} minutes`
 const LOGIN_BUF_MAX = 8192
 const LOGIN_PTY_COLS_WIDER_THAN_TOKEN = 800
-export const ACCOUNT_PROBE_TIMEOUT_MS = 10_000
+const ACCOUNT_PROBE_TIMEOUT_MS = 10_000
 // CC§7
 const AUTH_URL_RE = /https?:\/\/[^\s'"`<>\x00-\x1f\x7f]+(?=[\s'"`<>\x00-\x1f\x7f])/
 // CC§7
@@ -68,6 +75,7 @@ export interface ClaudeAccountDeps {
   ptyMgr: Pick<PtyManager, 'create' | 'get' | 'kill'>
   usageViews: Map<string, Omit<AccountView, keyof AccountMeta>>
   viewKey(name: string, kind: AccountKind): string
+  accountViews(): AccountView[]
   pushAccounts(): void
   notifyExpired(name: string): void
   sendToRenderer(channel: Channel, ...args: unknown[]): boolean
@@ -92,6 +100,7 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
     ptyMgr,
     usageViews,
     viewKey,
+    accountViews,
     pushAccounts,
     notifyExpired,
     sendToRenderer,
@@ -178,12 +187,8 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
 
   const shimAccountRefusals = new Map<string, string>()
 
-  async function answerPickRequest(
-    obj: { tabId: string },
-    tab: { resumeSessionId?: string },
-    resPath: string
-  ): Promise<void> {
-    const { res, endpoint } = await pickForLaunch(obj.tabId, tab.resumeSessionId)
+  async function pickForThisStart(obj: StartAsk): Promise<object> {
+    const { res, endpoint } = await pickForLaunch(obj.tabId, obj.resumeSessionId)
     const accountIssue = res.account === null && noAccountLine(listAccounts(), 'claude')
     if (accountIssue) shimAccountRefusals.set(obj.tabId, accountIssue)
     else shimAccountRefusals.delete(obj.tabId)
@@ -195,10 +200,59 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
       payload.model = endpoint.model
       if (claudeCodeGuessesWindowOf(endpoint.model)) payload.disable1mContext = true
     }
-    try {
-      writeWholeBeforeVisible(resPath, JSON.stringify(payload))
-    } catch {}
+    return payload
+  }
+
+  async function probeAll(): Promise<void> {
+    const claude = listAccounts().filter(
+      (a) => a.enabled && ACCOUNT_KINDS_OF.claude.includes(a.kind)
+    )
+    await Promise.all(
+      claude.map(async (a) => {
+        const secret = await keychainRead(a.kind, a.name)
+        if (!secret) return
+        const result = await probeAccount(a.kind, secret, {
+          timeoutMs: ACCOUNT_PROBE_TIMEOUT_MS,
+          skipFable: shouldSkipFable(a, Date.now()),
+          baseUrl: a.baseUrl,
+          model: a.model
+        })
+        foldProbeResult(a.name, a.kind, result)
+        picker.probed(a.kind, a.name, result)
+      })
+    )
+  }
+
+  async function addSecret(
+    kind: AccountKind,
+    name: string,
+    trimmed: string,
+    endpoint?: { baseUrl?: string; model?: string }
+  ): Promise<AccountAddResult> {
+    const { baseUrl, model } = endpoint ?? {}
+    if (!(await keychainWrite(kind, name, trimmed))) return { ok: false, error: 'unknown' }
+    const result = await probeAccount(kind, trimmed, {
+      timeoutMs: ACCOUNT_PROBE_TIMEOUT_MS,
+      baseUrl,
+      model
+    })
+    const meta: AccountMeta = {
+      name,
+      kind,
+      enabled: true,
+      fable: result.ok && result.fable ? result.fable : 'unknown',
+      status: result.ok ? 'ok' : 'unverified',
+      addedAt: Date.now(),
+      ...(takesAnEndpoint(kind) ? { baseUrl, model } : {})
+    }
+    upsertAccountMeta(meta)
+    if (result.ok && result.fable) recordFableCapability(name, kind, result.fable)
+    const key = viewKey(name, kind)
+    if (result.ok) usageViews.set(key, { usage: result.usage })
+    else usageViews.set(key, { probeError: result.error })
     pushAccounts()
+    const account = accountViews().find((a) => a.kind === kind && a.name === name)
+    return result.ok ? { ok: true, account } : { ok: false, error: result.error, account }
   }
 
   function loginTimeoutMs(): number {
@@ -361,13 +415,20 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
     } catch {}
   }
 
+  const accounts: AgentAccounts = {
+    pickForThisStart,
+    probeAll,
+    addSecret,
+    forget: (kind, name) => picker.forget(kind, name),
+    folderSaysItRunsOnAKey: () => false
+  }
+
   return {
-    foldProbeResult,
     picker,
     pickForLaunch,
     pickedAccountEnv,
     shimAccountRefusals,
-    answerPickRequest,
+    accounts,
     loginWatchers,
     loginPtys,
     feedLoginWatcher,

@@ -1,4 +1,5 @@
 import { AgentsMain, type AgentCatalog } from '../../../src/core/agent/agentsMain'
+import { accountsThatAreNeverAsked } from './agentAccounts'
 import type { AgentId } from '../../../src/core/agent/registry'
 import { isGitCheckoutAsync } from '../../../src/main/projectInfo'
 import { claudeCatalog } from '../../../src/agents/claude/main/claudeCatalog'
@@ -25,6 +26,7 @@ export function agentsWithTheirCatalogs(owners: OwnersSettings): AgentsMain {
       oneShotTarget: async () => null,
       catalog,
       tools: EVERY_AGENTS_TOOLS[id],
+      accounts: accountsThatAreNeverAsked,
       ...NOTHING_TO_READ_OR_SEARCH
     })
   return agents

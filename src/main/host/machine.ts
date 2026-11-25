@@ -9,6 +9,7 @@ export interface TabProgram {
   run: string
   ensureTool?: string
   beforeTmux: string
+  whenItEnds: string
   files: Record<string, string>
 }
 

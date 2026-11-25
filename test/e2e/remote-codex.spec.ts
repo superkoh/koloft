@@ -38,7 +38,9 @@ import {
   terminalText,
   termIds,
   TWO_LINE_PROMPT,
+  waitForCalls,
   worktreeDialog,
+  wsMenuTexts,
   wsRows,
   picksFor
 } from './helpers/p1'
@@ -682,6 +684,76 @@ test.describe('Codex on a remote workspace: its app-server runs on the machine, 
       await expect.poll(() => tuiCalls(env).length, { timeout: 60_000 }).toBe(1)
       expect(tuiCalls(env)[0].argv.join(' ')).toContain('-a never -s danger-full-access')
       expect(tuiCalls(env)[0].argv).toContain(STATUS_LINE_CONFIG)
+    } finally {
+      await quitAndClose(app)
+    }
+  })
+
+  test('closing a remote Codex worktree tab keeps its untouched worktree while a Claude Code tab on the machine works in it, and resuming that Codex session asks where to resume, naming the Claude Code session', async ({
+    env
+  }) => {
+    test.setTimeout(300_000)
+    installCodexOnFakeRemote(env)
+    fs.mkdirSync(remoteDir(env), { recursive: true })
+    gitInit(remoteDir(env))
+    const { app, page } = await launchWithRemote(env)
+    try {
+      await addRemoteWorkspace(page, env)
+      await expect
+        .poll(async () => (await wsMenuTexts(page, REMOTE_WS_NAME)).join(' | '), {
+          timeout: 60_000
+        })
+        .toContain('New worktree session')
+      await openWorktreeSession(page, REMOTE_WS_NAME)
+      await worktreeDialog(page).locator('input').fill('rc-shared')
+      await chooseBackend(page, 'Codex')
+      const codexRow = wsRows(page, REMOTE_WS_NAME).filter({ hasText: 'Codex fixture session' })
+      await expect(codexRow).toHaveClass(/st-waiting/, { timeout: 60_000 })
+      const tree = path.join(remoteDir(env), '.claude', 'worktrees', 'rc-shared')
+
+      const listed = (c8: Locator): Locator =>
+        c8.locator('.cb-row', { has: page.locator('.wt-name', { hasText: 'rc-shared' }) })
+      await expect
+        .poll(
+          async () => {
+            const c8 = await openWorktreeSession(page, REMOTE_WS_NAME)
+            const shown = await listed(c8)
+              .waitFor({ timeout: 3000 })
+              .then(() => true)
+              .catch(() => false)
+            if (shown) return true
+            await page.keyboard.press('Escape')
+            await expect(c8).toHaveCount(0)
+            return false
+          },
+          { timeout: 120_000 }
+        )
+        .toBe(true)
+      fs.writeFileSync(path.join(machineHome(env), 'fake-claude-lazy'), '')
+      await listed(worktreeDialog(page)).click()
+      await expect(worktreeDialog(page)).toHaveCount(0)
+      const [claude] = await waitForCalls(env, 1, 60_000)
+      expect(fs.realpathSync(claude.cwd)).toBe(fs.realpathSync(tree))
+      await expect(wsRows(page, REMOTE_WS_NAME)).toHaveCount(2, { timeout: 60_000 })
+      await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
+
+      await switchToRow(page, codexRow)
+      await sendShortcut(app, 'shortcut:close-tab')
+      await expect(codexRow).toHaveClass(/cold/, { timeout: 30_000 })
+      await codexRow.click()
+      const resume = page.locator('.modal.lifecycle-modal')
+      await expect(resume.locator('.ev-danger')).toHaveText(claude.sessionId, {
+        timeout: 30_000
+      })
+      await page.keyboard.press('Escape')
+      await expect(resume).toHaveCount(0)
+      expect(fs.existsSync(path.join(tree, '.git'))).toBe(true)
+      expect(
+        execFileSync('git', ['branch', '--list', 'worktree-rc-shared'], {
+          cwd: remoteDir(env),
+          encoding: 'utf8'
+        }).trim()
+      ).not.toBe('')
     } finally {
       await quitAndClose(app)
     }

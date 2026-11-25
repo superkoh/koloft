@@ -8,6 +8,7 @@ import { claudeTools } from '../../../src/agents/claude/main/claudeShim'
 import { CODEX_SANDBOX_IS_READ_ONLY, codexTools } from '../../../src/agents/codex/main/codexShim'
 import { COULD_NOT_REACH_KOLOFT } from '../../../src/core/command'
 import { agyTools } from '../../../src/agents/agy/main/agyShim'
+import { accountsThatAreNeverAsked } from './agentAccounts'
 import { NOTHING_TO_READ_OR_SEARCH } from './agentMainParts'
 
 export const EVERY_AGENTS_TOOLS: Record<AgentId, AgentTools> = {
@@ -32,6 +33,7 @@ export function everyAgentsShimScripts(): AgentShimScript[] {
         mcpServersOn: async () => []
       },
       tools: EVERY_AGENTS_TOOLS[id],
+      accounts: accountsThatAreNeverAsked,
       ...NOTHING_TO_READ_OR_SEARCH
     })
   return agents.shimScripts()

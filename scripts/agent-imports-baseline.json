@@ -47,10 +47,6 @@
       }
     },
     "common-into-agent": {
-      "src/main/homeKeyOnDisk.ts": {
-        "src/agents/agy/main/agyAccounts.ts": "C4",
-        "src/agents/codex/main/codexAccounts.ts": "C4"
-      },
       "src/main/index.ts": {
         "src/agents/agy/main/agyAccounts.ts": "D1",
         "src/agents/agy/main/agyCatalog.ts": "D1",
@@ -59,7 +55,6 @@
         "src/agents/agy/main/agyStore.ts": "D1",
         "src/agents/agy/main/agyUsage.ts": "D1",
         "src/agents/claude/main/claudeAccountEnv.ts": "D1",
-        "src/agents/claude/main/claudeAccountProbe.ts": "D1",
         "src/agents/claude/main/claudeAccounts.ts": "D1",
         "src/agents/claude/main/claudeCatalog.ts": "D1",
         "src/agents/claude/main/claudeDialogWatch.ts": "D1",

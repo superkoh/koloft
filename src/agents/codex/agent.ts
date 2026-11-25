@@ -114,8 +114,10 @@ export const agent = {
     // CODEX§6
     removesItsWorktreeAsItExits: false,
     turnEndCanComeBeforeItsReplyIsWritten: false,
+    // CODEX§17
     typesASkillOnlyByTheNameInItsFile: false,
-    refusesATypedSkillMarkedNotUserInvocable: true
+    // CODEX§17
+    refusesATypedSkillMarkedNotUserInvocable: false
   },
   pureFunctions: {
     effortsAModelTakes: () => CRON_EFFORTS,

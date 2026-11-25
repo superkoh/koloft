@@ -132,6 +132,7 @@ export const EXEC_ARGS_THROUGH_THE_STATUS_RELAY = [
 ]
 
 const AGENT_EXIT_255_PASSED_AS = SSH_LINK_BROKE_EXIT - 1
+const EXIT_OF_A_SHELL_HUNG_UP_ON = 129
 
 export function tabScript(spec: TabSpec): string {
   const program = spec.program
@@ -156,10 +157,10 @@ ${loginPathToo}  KOLOFT_TAB_ID=${spec.tabId}; PATH="$M/${SESSION_BIN_DIR}:$PATH"
   ${sourceTabPass(spec.tabId)}
   ${tabPassIntoTmux(T, spec.tmuxName, spec.tabId)}
 ${spec.portOffset ? `  KOLOFT_PORT_OFFSET=${spec.portOffset}; export KOLOFT_PORT_OFFSET\n` : ''}  trap : INT QUIT
-  (
+${program.whenItEnds ? `  trap ${shq(`${program.whenItEnds}; exit ${EXIT_OF_A_SHELL_HUNG_UP_ON}`)} HUP\n` : ''}  (
 ${program.run}  )
   c=$?
-  [ $c = 0 ] || tmux -L koloft capture-pane -p -t "$TMUX_PANE" > "${T}.screen" 2>/dev/null
+${program.whenItEnds ? `  ${program.whenItEnds}\n` : ''}  [ $c = 0 ] || tmux -L koloft capture-pane -p -t "$TMUX_PANE" > "${T}.screen" 2>/dev/null
   echo $c > "${T}.exit"
   exit
 fi
