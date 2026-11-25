@@ -557,8 +557,10 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
 
   usagePlaces(): UsagePlaces {
     const placeOf = this.sessionPlaces()
-    const scope = this.rowScope()
-    return placedByOwnRowThenFolder(placeOf, (folder) => this.workspaceFor(folder, scope))
+    let scope: RowScope | undefined
+    return placedByOwnRowThenFolder(placeOf, (folder) =>
+      this.workspaceFor(folder, (scope ??= this.rowScope()))
+    )
   }
 
   rows(workspace: string): BackendSessionRow[] {
