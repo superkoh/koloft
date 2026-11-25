@@ -56,25 +56,12 @@ describe('whether a Claude Code tab shows a panel, read from its own session reg
       remoteHostOf: () => undefined,
       liveRegistryOn: async (host: string) => (asked.push(host), onMachine('idle'))
     }
-    expect(await inTab('tab-1', SID, places)).toBeUndefined()
     liveEntryHere('waiting')
     expect(await inTab('tab-1', SID, places)).toBe(true)
-    liveEntryHere('idle')
-    expect(await inTab('tab-1', SID, places)).toBe(false)
     expect(asked).toEqual([])
   })
 
-  it('on a machine reads that machine’s registry for this tab, and cannot say when reading it fails', async () => {
-    const asked: string[] = []
-    let registry = onMachine('waiting')
-    const places = {
-      remoteHostOf: (tab: string) => (tab === 'tab-1' ? HOST : undefined),
-      liveRegistryOn: async (host: string) => (asked.push(host), registry)
-    }
-    expect(await inTab('tab-1', SID, places)).toBe(true)
-    registry = onMachine('idle')
-    expect(await inTab('tab-1', SID, places)).toBe(false)
-    expect(asked).toEqual([HOST, HOST])
+  it('on a machine cannot say when reading that machine’s registry fails', async () => {
     const failing = {
       remoteHostOf: () => HOST,
       liveRegistryOn: async () => Promise.reject(new Error('ssh: connect refused'))

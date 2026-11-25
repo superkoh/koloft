@@ -207,9 +207,9 @@ export class SessionBackends {
   }
 
   showsAPanel(tabId: string, screen?: string[]): Promise<boolean | undefined> {
-    const session = this.list().find((s) => s.tabId === tabId)
-    return session
-      ? this.get(session.backendId).showsAPanel(tabId, screen)
+    const owner = this.ownerOfTab(tabId)
+    return owner?.list().some((s) => s.tabId === tabId)
+      ? owner.showsAPanel(tabId, screen)
       : Promise.resolve(undefined)
   }
 

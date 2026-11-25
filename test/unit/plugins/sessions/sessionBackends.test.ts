@@ -167,21 +167,21 @@ describe('session backend boundary', () => {
     ).resolves.toMatchObject({ ok: true })
   })
 
-  it('asks whether a panel is open only of the agent that lists a session in that tab, with the screen it was handed, and cannot say for a tab no agent lists', async () => {
+  it('asks whether a panel is open only of the agent that lists a session in that tab, with the screen it was handed, and cannot say for a tab whose session is not listed yet', async () => {
     const registry = new SessionBackends(lifecycle())
     const asked: string[] = []
-    const listing = (id: BackendId, tabId: string): SessionBackend => ({
+    const listing = (id: BackendId, tabId: string, alsoHolds?: string): SessionBackend => ({
       ...stubBackend(id, undefined, [
         { tabId, sessionId: `${id}-session`, cwd: '/repo' } as BackendSessionInfo
       ]),
-      hasTab: () => true,
+      hasTab: (tab) => tab === tabId || tab === alsoHolds,
       showsAPanel: async (tab, screen) => {
         asked.push(`${id} ${tab} ${screen?.join('|') ?? 'no screen'}`)
         return true
       }
     })
     registry.register(listing('claude', 'tab-c'))
-    registry.register(listing('codex', 'tab-x'))
+    registry.register(listing('codex', 'tab-x', 'tab-starting'))
     expect(await registry.showsAPanel('tab-x', ['a screen'])).toBe(true)
     expect(await registry.showsAPanel('tab-c')).toBe(true)
     expect(await registry.showsAPanel('tab-starting')).toBeUndefined()
