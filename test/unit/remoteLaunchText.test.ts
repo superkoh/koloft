@@ -52,7 +52,7 @@ vi.mock('../../src/agents/codex/main/codexTransport', async (importOriginal) => 
 import type { CreateTabOptions } from '@shared/types'
 import { agySessionKey } from '../../src/agents/kit/main/sessionStore'
 import { BackgroundFile } from '../../src/main/backgroundFile'
-import type { MachineAccount } from '../../src/main/host/sshHost'
+import type { MachineAccount } from '../../src/agents/claude/main/claudeLaunch'
 import { tabPackageDir } from '../../src/main/remote/paths'
 import {
   isStartedBeforeTabPasses,

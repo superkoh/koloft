@@ -4,8 +4,10 @@ import os from 'os'
 import path from 'path'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { SessionEvent } from '@shared/sessionEvent'
+import { docsWritingOn } from '@plugins/docs-writing/api'
 import { AgySessions, type AgySessionDeps } from '../../../src/agents/agy/main/agySessions'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../../src/agents/claude/main/backend'
+import type { MachineAccount } from '../../../src/agents/claude/main/claudeLaunch'
 import { trustCodexFolder } from '../../../src/agents/codex/main/backend'
 import { CodexSessions, type CodexSessionDeps } from '../../../src/agents/codex/main/codexSessions'
 import { SessionRuntime } from '../../../src/core/agent/sessionRuntime'
@@ -13,11 +15,7 @@ import { GithubRepos } from '../../../src/main/githubRepos'
 import type { RemoteTab } from '../../../src/main/host/host'
 import { Hosts } from '../../../src/main/host/hosts'
 import { localHost } from '../../../src/main/host/localHost'
-import {
-  SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST,
-  SshHost,
-  type MachineAccount
-} from '../../../src/main/host/sshHost'
+import { SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST, SshHost } from '../../../src/main/host/sshHost'
 import { answerOf, type BytesResult } from '../../../src/main/remote/ssh'
 
 export const MACHINE = 'devbox'
@@ -229,7 +227,7 @@ export function machineIn(world: World, name: string, m: MachineSetup): SshHost 
     watch: () => {},
     unwatch: () => {},
     github: {},
-    claude: {
+    tabs: {
       userData: world.userData,
       controlDir: world.controlDir,
       machinePackage: () => ({
@@ -238,12 +236,6 @@ export function machineIn(world: World, name: string, m: MachineSetup): SshHost 
       }),
       alive: m.alive ?? (() => new Set()),
       firstHeartbeatDone: m.firstHeartbeatDone ?? (async () => {}),
-      realPath: (p) => p,
-      settings: () => ({ skipPermissions: m.skipPermissions ?? false }),
-      agentTools: () => m.agentTools ?? true,
-      pickAccount: m.pickAccount ?? (async () => ({ env: {}, banner: '' })),
-      noAccountMessage: m.noAccountMessage ?? (() => NO_USABLE_ACCOUNT.claude),
-      hookSettings: m.hookSettings ?? (() => ({})),
       loginPath: m.loginPath ?? (async () => '')
     }
   })
@@ -272,17 +264,26 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
       ...c.tracker
     },
     hosts: new Hosts(
-      localHost(new GithubRepos(), {
-        hookRegDir: () => world.regDir,
-        agentPlugin: () =>
-          c.withPlugin === false ? undefined : path.join(world.home, 'koloft', 'agent-plugin'),
-        docsPlugin: () => path.join(world.home, 'koloft', 'docs-plugin'),
-        assistOf: () => undefined,
-        agentHomes: () => ({ codexHome: '/nowhere' }),
-        pastedPicturesDir: () => path.join(world.userData, 'palette-pictures')
-      }),
+      localHost(new GithubRepos(), { agentHomes: () => ({ codexHome: '/nowhere' }) }),
       (machine) => machineIn(world, machine, c.machine)
     ),
+    launchHere: {
+      hookRegDir: () => world.regDir,
+      agentPlugin: () =>
+        c.withPlugin === false ? undefined : path.join(world.home, 'koloft', 'agent-plugin'),
+      docsPlugin: () => path.join(world.home, 'koloft', 'docs-plugin'),
+      assistOf: () => undefined,
+      pastedPicturesDir: () => path.join(world.userData, 'palette-pictures')
+    },
+    launchOnMachine: {
+      realPath: (_machine: string, p: string) => p,
+      settings: () => ({ skipPermissions: c.machine.skipPermissions ?? false }),
+      agentTools: () => c.machine.agentTools ?? true,
+      docsWritingOn,
+      pickAccount: c.machine.pickAccount ?? (async () => ({ env: {}, banner: '' })),
+      noAccountMessage: c.machine.noAccountMessage ?? (() => NO_USABLE_ACCOUNT.claude),
+      hookSettings: c.machine.hookSettings ?? (() => ({}))
+    },
     store: () =>
       c.workspaceOfEverySession ? { workspaceOf: () => c.workspaceOfEverySession } : null,
     remoteSync: () => null,

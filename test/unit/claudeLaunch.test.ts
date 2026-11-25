@@ -15,6 +15,7 @@ vi.mock('electron', async () => {
 afterAll(() => fs.rmSync(app.getPath('userData'), { recursive: true, force: true }))
 
 import type { CreateTabOptions } from '@shared/types'
+import { machineClaudeArgs } from '../../src/agents/claude/main/claudeLaunch'
 import { AccountPicker, type LaunchedSession } from '../../src/main/accountPicker'
 import { REMOTE_ENV_LINES } from '../../src/main/remote/install'
 import { mirrorHookDir, mirrorProjectsRoot, tabPackageDir } from '../../src/main/remote/paths'
@@ -176,6 +177,91 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
     })
   }
 )
+
+describe('what a remote launch hands claude', () => {
+  const root = ON_THE_MACHINE
+
+  // CC§9
+  it('carries the model, effort, permission, name and first prompt a local launch carries', () => {
+    expect(
+      machineClaudeArgs(
+        {
+          root,
+          worktree: 'nightly-1',
+          model: 'sonnet',
+          effort: 'high',
+          permission: 'acceptEdits',
+          name: 'Nightly report',
+          firstPrompt: '/daily-report'
+        },
+        'sid1',
+        true
+      )
+    ).toEqual({
+      ok: true,
+      args: [
+        '--session-id',
+        'sid1',
+        '-w',
+        'nightly-1',
+        '--model',
+        'sonnet',
+        '--effort',
+        'high',
+        '--permission-mode',
+        'acceptEdits',
+        '--name',
+        'Nightly report',
+        '--',
+        '/daily-report'
+      ]
+    })
+  })
+
+  // CC§18
+  it('a first prompt whose picture sits in any other folder than Koloft’s own on the machine hands claude no --add-dir, as claude would stop on its question about that folder', () => {
+    const firstPrompt =
+      'fix it\n\nPicture: /Users/me/Library/Application Support/Koloft/palette-pictures/a.png'
+    expect(machineClaudeArgs({ root, firstPrompt }, 'sid1', false)).toEqual({
+      ok: true,
+      args: ['--session-id', 'sid1', '--', firstPrompt]
+    })
+  })
+
+  it('a first prompt that names a pasted picture also hands claude the picture’s folder on the machine with --add-dir, just before the prompt', () => {
+    const firstPrompt = 'fix it\n\nPicture: /home/me/.koloft/element-picks/a.png'
+    expect(machineClaudeArgs({ root, firstPrompt }, 'sid1', false)).toEqual({
+      ok: true,
+      pictures: '/home/me/.koloft/element-picks',
+      args: [
+        '--session-id',
+        'sid1',
+        '--add-dir',
+        '/home/me/.koloft/element-picks',
+        '--',
+        firstPrompt
+      ]
+    })
+  })
+
+  it('asks as a session you start does when the job keeps the usual permission, and a resume carries no name or prompt', () => {
+    expect(machineClaudeArgs({ root, permission: 'default' }, 'sid1', true)).toEqual({
+      ok: true,
+      args: ['--session-id', 'sid1', '--dangerously-skip-permissions']
+    })
+    expect(machineClaudeArgs({ root, permission: 'default' }, 'sid1', false)).toEqual({
+      ok: true,
+      args: ['--session-id', 'sid1']
+    })
+    expect(
+      machineClaudeArgs(
+        { root, resumeSessionId: 'old1', name: 'n', firstPrompt: 'x' },
+        'sid1',
+        false
+      )
+    ).toEqual({ ok: true, args: ['--resume', 'old1'] })
+  })
+})
 
 describe('a Claude Code session started on another machine', () => {
   const scriptOf = (tabId: string): string =>

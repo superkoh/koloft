@@ -20,11 +20,10 @@ import { passOf, TAB_PASS_ENV } from '../tabPass'
 import { OWNING_TAB_ENV } from '../owningTabEnv'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
 import { ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE } from '../agentLift'
-import { AGENT_PROMPT_FILE, KOLOFT_DOCS_SKILL, KOLOFT_SKILL, pluginSkillDir } from '../agentPlugin'
+import { KOLOFT_DOCS_SKILL, KOLOFT_SKILL, pluginSkillDir } from '../agentPlugin'
 import { docsWritingOn } from '@plugins/docs-writing/api'
 import { saidFile, seedHandedOverOwnerWords, STATUS_LOG_SUFFIX } from '@plugins/sessions/main/hooks'
 import { STATUS_RELAY_FILE } from './statusRelay'
-import { TRUST_CWD_JS } from '@agents/claude/main/claudeTrustJs'
 import type { TabContent } from '../host/machine'
 
 export const CLAUDE_AUTH_ENV_VARS = [
@@ -143,17 +142,6 @@ export interface TabSpec extends TabContent {
   machineName: string
 }
 
-export interface ClaudeTab {
-  settings: Record<string, unknown>
-  agentPlugin?: boolean
-  docsPlugin?: boolean
-  projectPrompt?: string
-  ownerText?: string
-  claudeArgs: string[]
-  trustFolder?: boolean
-  pictureFolder?: string
-}
-
 export const MACHINE_PICTURES_DIR_TAIL = '/.koloft/element-picks'
 export const MACHINE_PICTURES_DIR = `$HOME${MACHINE_PICTURES_DIR_TAIL}`
 
@@ -165,22 +153,6 @@ const SETTINGS_ON_A_TMUX_ALREADY_RUNNING = `tmux -L koloft ${[
   .map((option) => `set -gq ${option}`)
   .join(' \\; ')} 2>/dev/null; `
 
-export const claudeTabSpec = (tab: Omit<TabSpec, 'program'>, c: ClaudeTab): TabSpec => ({
-  ...tab,
-  program: {
-    run: claudeRun(tab.tabId, c),
-    beforeEnsure: '',
-    beforeTmux: `${c.trustFolder ? trustOnTheMachine(tab.cwd) : ''}${c.pictureFolder ? trustOnTheMachine(c.pictureFolder) : ''}${claudeFirstRun(tab)}`,
-    files: {
-      [`${tab.tabId}.json`]: JSON.stringify(c.settings),
-      [`${tab.tabId}.tmux`]: tab.tmuxName,
-      ...(c.agentPlugin &&
-        c.projectPrompt && { [`${tab.tabId}${PROJECT_PROMPT_SUFFIX}`]: c.projectPrompt }),
-      ...(c.ownerText && { [`${tab.tabId}${OWNER_TEXT_SUFFIX}`]: c.ownerText })
-    }
-  }
-})
-
 export const POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE = '/bin/zsh'
 
 const tabPath = (tabId: string): string => `$HOME/.koloft/tabs/${tabId}`
@@ -188,50 +160,12 @@ const tabPath = (tabId: string): string => `$HOME/.koloft/tabs/${tabId}`
 export const TAB_TMUX_NAME_SH = `cat "$HOME/.koloft/tabs/$1.tmux" 2>/dev/null
 exit 0`
 
-const PROJECT_PROMPT_SUFFIX = '.prompt.md'
-const OWNER_TEXT_SUFFIX = '.owner.md'
-
-// CC§12 CC§13
-function claudeRun(tabId: string, c: ClaudeTab): string {
-  const T = tabPath(tabId)
-  const prompt = c.projectPrompt
-    ? `${T}${PROJECT_PROMPT_SUFFIX}`
-    : `$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}`
-  const ownerText = c.ownerText ? ` --append-system-prompt "$(cat "${T}${OWNER_TEXT_SUFFIX}")"` : ''
-  return `  PATH="$M/${CLAUDE_BIN_DIR}:$PATH"; export PATH
-  set -- claude --settings "${T}.json"${c.docsPlugin ? ` --plugin-dir "$M/${DOCS_PLUGIN_DIR}"` : ''}${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "${prompt}"` : ''}${ownerText} ${c.claudeArgs.map(shq).join(' ')}
-  ${EXEC_ARGS_THROUGH_THE_STATUS_RELAY.join('\n  ')}\n`
-}
-
 // PLATFORM§35
 export const EXEC_ARGS_THROUGH_THE_STATUS_RELAY = [
   ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE,
   `${PYTHON3_HAS_PTY} && exec python3 "$M/${STATUS_RELAY_FILE}" "$@"`,
   'exec "$@"'
 ]
-
-// CC§9 CC§18 ADR-0026
-const trustOnTheMachine = (folder: string): string =>
-  `( cd ${shq(folder)} 2>/dev/null && node -e ${shq(TRUST_CWD_JS)} "$HOME/.claude.json" "$(pwd -P)" ) >/dev/null 2>&1\n`
-
-function claudeFirstRun(spec: Omit<TabSpec, 'program'>): string {
-  const T = tabPath(spec.tabId)
-  return `${spec.ownerWords ? `mkdir -p "$HOME/.koloft/hook-sessions" && mv -f "${T}".said* "$HOME/.koloft/hook-sessions/"\n` : ''}# CC§10
-CJ="$HOME/.claude.json"
-if [ -f "${T}.env" ]; then
-  if [ ! -f "$CJ" ]; then printf '{"hasCompletedOnboarding":true}\\n' > "$CJ"
-  elif ! grep -q hasCompletedOnboarding "$CJ" && [ "$(head -n1 "$CJ")" = "{" ]; then
-    sed -i.koloft-bak '1s/^{/{"hasCompletedOnboarding":true,/' "$CJ" && rm -f "$CJ.koloft-bak"
-  fi
-  # CC§10
-  if ! grep -q cachedGrowthBookFeatures "$CJ"; then
-    echo '[Koloft] first run on this machine: fetching Claude settings (a few seconds)'
-    ( set -a; . "${T}.env"; set +a
-      if command -v timeout >/dev/null 2>&1; then timeout 60 claude -p ok --max-turns 1; else claude -p ok --max-turns 1; fi ) >/dev/null 2>&1
-  fi
-fi
-`
-}
 
 const AGENT_EXIT_255_PASSED_AS = SSH_LINK_BROKE_EXIT - 1
 

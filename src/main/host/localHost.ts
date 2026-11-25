@@ -1,7 +1,6 @@
 import { execFile } from 'child_process'
 import fs from 'fs'
 import os from 'os'
-import path from 'path'
 import { dirExists, listDir, search, searchContent } from '../fileTree'
 import { watchFile, unwatchFile, watchDir, unwatchDir } from '../fileWatch'
 import { MAX_READ_BYTES, createFile, looksBinary, openForEdit, writeText } from '../fileEdit'
@@ -19,26 +18,9 @@ import { GIT_STEP_TIMEOUT_MS, readHead, type GitRunResult } from '../gitSteps'
 import { coalesce } from '@core/coalesce'
 import { resolveSpawnCwd } from '../projectInfo'
 import { leaveForOS, osOpenFallback } from '../osOpen'
-import { aboveItsTools } from '../agentLift'
-import { claudeArgv } from '@agents/claude/main/claudeArgs'
-import {
-  acceptClaudeTrust,
-  claudeJsonPath,
-  claudeTrustsFolder,
-  markClaudeOnboarded
-} from '@agents/claude/main/claudeTrust'
-import { dirExistsSync, worktreeNameAround } from '../resumePlan'
-import { portOffset } from '@shared/worktreeName'
-import { pictureFolderIn } from '@shared/pastedPictures'
+import { dirExistsSync } from '../resumePlan'
 import { listSkills, type SkillFs } from '../skillList'
-import { AGENT_PROMPT_FILE, projectPromptFile } from '../agentPlugin'
-import {
-  saidFile,
-  seedHandedOverOwnerWords,
-  writeConductorMarker
-} from '@plugins/sessions/main/hooks'
-import type { ClaudeLaunch, ClaudeLaunchPlan, Host } from './host'
-import { ownerTextOver, type LaunchIdentity } from '../launchPrompt'
+import type { Host } from './host'
 
 const skillFs: SkillFs = {
   readdir: (p) => fs.readdirSync(p),
@@ -97,101 +79,8 @@ export function localGitRun(cwd: string, args: string[], network = false): Promi
   })
 }
 
-export interface LocalClaudeDeps {
-  hookRegDir(): string
-  agentPlugin(): string | undefined
-  docsPlugin(): string | undefined
-  assistOf(cwd: string, resumeKey?: string): LaunchIdentity | undefined
+export interface LocalHostDeps {
   agentHomes(): { codexHome: string }
-  pastedPicturesDir(): string
-}
-
-async function launchClaude(d: LocalClaudeDeps, spec: ClaudeLaunch): Promise<ClaudeLaunchPlan> {
-  const args = claudeArgv(process.env.KOLOFT_CLAUDE_CMD || 'claude', {
-    resumeSessionId: spec.resumeSessionId,
-    worktree: spec.worktree,
-    model: spec.model,
-    effort: spec.effort,
-    permission: spec.permission
-  })
-  if (!args.ok) return args
-  try {
-    markClaudeOnboarded(claudeJsonPath())
-  } catch (err) {
-    console.error('[koloft] could not mark Claude onboarding done', err)
-  }
-  if (spec.trustFolder) trustFolder(spec.cwd ?? spec.root)
-  // CC§18 ADR-0026
-  const pictures = spec.resumeSessionId
-    ? undefined
-    : pictureFolderIn(spec.firstPrompt ?? '', (folder) => folder === d.pastedPicturesDir())
-  if (pictures) trustFolder(pictures)
-  const cwd = resolveSpawnCwd(spec.cwd ?? spec.root)
-  const launchCommand = `exec ${aboveItsTools(args.argv).join(' ')}`
-  const worktree = spec.worktree ?? worktreeNameAround(cwd)
-  // ADR-0029
-  const assist = d.assistOf(cwd, spec.resumeSessionId)
-  const conductor = !!spec.conductor || !!assist
-  const role = spec.role ?? assist?.role
-  // CC§23
-  const ownerText = ownerTextOver(
-    spec.ownerText ?? assist?.ownerText,
-    conductor,
-    spec.workspaceParts
-  )
-  const agentPlugin = d.agentPlugin()
-  const prompt =
-    agentPlugin && !conductor
-      ? (spec.projectRules && projectPromptFile(path.dirname(agentPlugin), spec.projectRules)) ||
-        path.join(agentPlugin, AGENT_PROMPT_FILE)
-      : undefined
-  return {
-    ok: true,
-    spawnCwd: cwd,
-    cwd,
-    conductor,
-    launchCommand: (tabId) => {
-      const regDir = d.hookRegDir()
-      if (role) writeConductorMarker(regDir, tabId, role)
-      if (spec.ownerWords) seedHandedOverOwnerWords(saidFile(regDir, tabId), spec.ownerWords)
-      return launchCommand
-    },
-    extraEnv: {
-      // CC§9
-      ...(spec.firstPrompt !== undefined || spec.name
-        ? {
-            KOLOFT_FIRST_PROMPT: spec.firstPrompt ?? '',
-            KOLOFT_SESSION_NAME: spec.name ?? '',
-            KOLOFT_PICTURE_FOLDER: pictures
-          }
-        : {}),
-      ...(worktree ? { KOLOFT_PORT_OFFSET: String(portOffset(worktree)) } : {}),
-      KOLOFT_DOCS_PLUGIN: d.docsPlugin(),
-      // CC§13
-      ...(ownerText ? { KOLOFT_OWNER_TEXT: ownerText } : {}),
-      ...(agentPlugin
-        ? {
-            KOLOFT_AGENT_PLUGIN: agentPlugin,
-            KOLOFT_AGENT_PROMPT: prompt
-          }
-        : {})
-    },
-    envSetForThisTab: {
-      // CC§12
-      CLAUDE_CODE_FORCE_SYNC_OUTPUT: '1',
-      CLAUDE_CODE_DECSTBM: '1'
-    }
-  }
-}
-
-// ADR-0026
-function trustFolder(dir: string): void {
-  if (!fs.existsSync(dir)) return
-  try {
-    acceptClaudeTrust(claudeJsonPath(), dir)
-  } catch (err) {
-    console.error('[koloft] could not record Claude trust for', dir, err)
-  }
 }
 
 async function readText(p: string): Promise<string> {
@@ -207,7 +96,7 @@ async function readText(p: string): Promise<string> {
   return buf.toString('utf8')
 }
 
-export function localHost(github: GithubRepos, claude: LocalClaudeDeps): Host {
+export function localHost(github: GithubRepos, deps: LocalHostDeps): Host {
   return {
     listDir,
     dirExists,
@@ -254,10 +143,8 @@ export function localHost(github: GithubRepos, claude: LocalClaudeDeps): Host {
       const spawnCwd = resolveSpawnCwd(cwd)
       return { spawnCwd, cwd: spawnCwd }
     },
-    launch: (spec) => launchClaude(claude, spec),
-    trustsFolder: async (dir) => claudeTrustsFolder(claudeJsonPath(), dir),
     listSkills: async (root, backend) =>
-      listSkills(skillFs, backend, { workspace: root, home: os.homedir(), ...claude.agentHomes() }),
+      listSkills(skillFs, backend, { workspace: root, home: os.homedir(), ...deps.agentHomes() }),
     keyed: (p) => p,
     gitOut: localGitOut,
     gitRun: localGitRun,
