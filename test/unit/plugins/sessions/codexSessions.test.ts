@@ -50,8 +50,8 @@ const mocks = vi.hoisted(() => ({
   rpcOptions: [] as CodexProcessOptions[],
   crashLeftoverMarkers: [] as string[]
 }))
-vi.mock('../../../../src/main/leftovers', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../../src/main/leftovers')>()),
+vi.mock('../../../../src/agents/codex/main/codexLeftovers', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../../../src/agents/codex/main/codexLeftovers')>()),
   endCodexAppServersLeftByACrash: async (marker: string) => {
     mocks.crashLeftoverMarkers.push(marker)
   }

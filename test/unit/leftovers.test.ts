@@ -4,12 +4,12 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import {
-  CODEX_TMP_FOLDER,
   ownedByThisRun,
   removeFoldersLeftByEndedRuns,
   scanLeftovers,
   stopLeftover
 } from '../../src/main/leftovers'
+import { CODEX_TMP_FOLDER } from '../../src/agents/codex/main/codexLeftovers'
 import { parseProcessTable } from '../../src/main/processTable'
 
 const SID = '1b6fa18b-8f8d-44ae-8ff1-718bb0f9556d'
