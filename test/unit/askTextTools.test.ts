@@ -43,6 +43,7 @@ import {
   pinSituation,
   pinWhenACardIsPosted,
   pinWhenAMessageAnswers,
+  pinWhenARoomOpensAgain,
   titleOf,
   useAskTable
 } from './helpers/askTable'
@@ -67,6 +68,11 @@ describe('when each kind of tab posts its Discord card, and when a Discord messa
   it(
     'a reply "yes" in Discord, with a card posted for the ask, and with none posted',
     pinWhenAMessageAnswers,
+    A_SITUATION_TAKES_UP_TO_MS
+  )
+  it(
+    'the room opening again while the same ask is still open',
+    pinWhenARoomOpensAgain,
     A_SITUATION_TAKES_UP_TO_MS
   )
 })

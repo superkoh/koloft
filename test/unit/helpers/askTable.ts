@@ -1048,6 +1048,25 @@ export async function pinWhenACardIsPosted(): Promise<void> {
   await expect(parts.join('\n\n') + '\n').toMatchFileSnapshot(`${PINNED}/when-a-card-is-posted.txt`)
 }
 
+export async function pinWhenARoomOpensAgain(): Promise<void> {
+  const parts: string[] = [
+    '# When the session’s room opens again while the same ask to run a command is still open'
+  ]
+  for (const kind of KINDS) {
+    await raise(kind, RUN_A_COMMAND)
+    await settledDiscordCard()
+    const before = surfaces.cards.length
+    surfaces.relay.roomOpened(surfaces.liveTab!)
+    await sleep(SETTLES_MS)
+    parts.push(
+      `## ${SECTION_TITLE[kind]}\n${field('cards posted before', String(before))}\n${field('cards posted after the room opened again', String(surfaces.cards.length))}`
+    )
+  }
+  await expect(parts.join('\n\n') + '\n').toMatchFileSnapshot(
+    `${PINNED}/when-a-room-opens-again.txt`
+  )
+}
+
 export async function pinWhenAMessageAnswers(): Promise<void> {
   const parts: string[] = [
     '# When a Discord message counts as an answer, for one ask to run a command'
