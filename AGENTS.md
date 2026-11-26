@@ -373,7 +373,7 @@ Working principles:
     report success.
   - Quote a spaced path: '/a b', never /a\ b.
   - Never git -C another checkout: diff origin/<branch>; gh pr diff <n> takes no path.
-  - A path no tool printed is a guess: grep -rl 'word' src.
+  - A path no tool printed is a guess (ADRs too): grep -rl.
   - No gh api -o or --comments with --json; strings -o is offsets: use > file.
   - Read ends at 25,000 tokens (~50KB), not lines: wc -c, offset+limit.
   - {0,N} spans: /usr/bin/grep -o -E, never bare grep (ugrep); N ≤ 255.
