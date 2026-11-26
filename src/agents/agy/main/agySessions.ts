@@ -105,6 +105,7 @@ import type { Machine } from '../../../main/host/machine'
 import { seedAssistMemory } from '../../../main/assistMemory'
 import { NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from '@plugins/sessions/main/hooks'
 import { formatRemoteKey, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
+import { identityOf } from '@shared/sessionBackend'
 import { AGY_ARTIFACT_SIDECAR } from '../shared/agyBrain'
 import { noteWrite, shellWrittenFiles, wroteEvent, type FileAcc } from '../../../main/touchedFiles'
 import { agySessionKey } from '@agents/kit/main/sessionStore'
@@ -163,6 +164,9 @@ export interface AgySessionDeps extends StoredSessionDeps {
   remote: AgyRemoteDeps
 }
 
+const couldNotStopOn = (host: string, problem: string): string =>
+  `Could not stop Antigravity on ${host}: ${problem}. It is still running there.`
+
 export interface AgyRemoteDeps {
   machine(host: string): Machine
   saidWhenTheMachineWantsAPasswordFirst: string
@@ -171,6 +175,7 @@ export interface AgyRemoteDeps {
   mirrorDir(host: string): string
   mirrorGemini(host: string): string
   gone(host: string, sessionId: string): boolean
+  alive(host: string): ReadonlySet<string>
   connected(host: string): boolean
   nextPull(host: string): Promise<void>
   setupLine(): string | undefined
@@ -1141,10 +1146,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     // ADR-0044
     const named = await machine.runScript(TAB_TMUX_NAME_SH, [run.tabId])
     const problem = await machine.tmux.end(named?.trim() || tmuxName, run.tabId)
-    if (problem)
-      this.deps.error(
-        `Could not stop Antigravity on ${host}: ${problem}. It is still running there.`
-      )
+    if (problem) this.deps.error(couldNotStopOn(host, problem))
   }
 
   private tick(): void {
@@ -1554,14 +1556,29 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       )
   }
 
-  sessionsRunningOnTheMachine(): string[] {
-    return []
+  // AGY§29
+  sessionsRunningOnTheMachine(workspace: string): string[] {
+    const host = parseRemoteKey(workspace)?.host
+    if (!host) return []
+    const running = this.deps.remote.alive(host)
+    return this.rows(workspace).flatMap((r) =>
+      r.nativeSessionId && running.has(r.nativeSessionId) ? [r.id] : []
+    )
   }
 
-  endOnTheMachine(): void {}
+  endOnTheMachine(host: string, key: string): void {
+    void this.deps.remote
+      .machine(host)
+      .tmux.end(tmuxSessionName(this.nativeId(key)))
+      .then((problem) => {
+        if (problem) this.deps.error(couldNotStopOn(host, problem))
+        void this.deps.remote.nextPull(host)
+      })
+  }
 
-  goneFromTheMachine(): boolean {
-    return true
+  goneFromTheMachine(host: string, key: string): boolean {
+    const id = identityOf(key)?.nativeSessionId
+    return !id || !this.deps.remote.alive(host).has(id)
   }
 
   // AGY§11 AGY§12

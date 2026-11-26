@@ -1449,6 +1449,7 @@ const machineRemoteDeps = {
   mirrorDir: (host: string) => mirrorHookDir(app.getPath('userData'), host),
   gone: (host: string, sessionId: string) =>
     !!remoteSync?.connected(host) && !remoteSync.alive(host).has(sessionId),
+  alive: (host: string) => remoteSync?.alive(host) ?? new Set<string>(),
   connected: (host: string) => !!remoteSync?.connected(host),
   setupLine: () => setupLine(playwrightCliBin),
   hookSettings: PLAIN_KOLOFT_SHIM.hookSettings

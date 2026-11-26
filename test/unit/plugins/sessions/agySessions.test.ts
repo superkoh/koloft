@@ -347,6 +347,7 @@ beforeEach(() => {
       mirrorDir: () => mirror,
       mirrorGemini: () => path.join(home, 'mirror-gemini'),
       gone: (_host, id) => !machine.alive.has(id),
+      alive: () => machine.alive,
       connected: () => true,
       nextPull: async () => undefined,
       setupLine: () => undefined,
@@ -3434,6 +3435,25 @@ describe('Antigravity in a remote workspace (AGY§4 AGY§11 AGY§12)', () => {
     machine.rows = []
     await sessions.refreshHistory()
     expect(sessions.rows(REMOTE_WS)).toEqual([])
+  })
+
+  // AGY§29
+  it('a conversation of the workspace whose tmux session that machine still lists is one running there, and ending it there ends that tmux session; one the machine does not list, or another agent’s session the machine lists, is not', async () => {
+    remoteMember(A)
+    remoteMember(B)
+    machine.rows = undefined as never
+    await sessions.availability()
+    await sessions.refreshHistory()
+    machine.alive.add(A)
+    machine.alive.add('a-claude-code-session-there')
+
+    expect(sessions.sessionsRunningOnTheMachine(REMOTE_WS)).toEqual([agySessionKey(A, 'devbox')])
+    expect(sessions.sessionsRunningOnTheMachine(path.join(home, 'proj'))).toEqual([])
+    expect(sessions.goneFromTheMachine('devbox', agySessionKey(A, 'devbox'))).toBe(false)
+    expect(sessions.goneFromTheMachine('devbox', agySessionKey(B, 'devbox'))).toBe(true)
+
+    sessions.endOnTheMachine('devbox', agySessionKey(A, 'devbox'))
+    await vi.waitFor(() => expect(machine.ended).toEqual([`k-${A}`]))
   })
 
   it("starts agy on that machine over ssh, on the account's own folder there with Koloft's title and hook scripts from its machine package, the owner's own settings and hooks kept, the API key in the tab's env, and the folder trusted when asked", async () => {
