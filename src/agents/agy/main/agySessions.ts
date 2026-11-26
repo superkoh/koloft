@@ -74,6 +74,8 @@ import {
   trustsIn
 } from './agyAccounts'
 import { readJson } from '../../../main/jsonDrops'
+import type { StatuslinePaths } from '../../../main/statuslineParts'
+import { setupAgyStatusline } from './agyStatusline'
 import { LineTail } from '../../../main/lineTail'
 import { bracketedPaste } from '@core/typeKeys'
 import { TAB_TMUX_NAME_SH, tmuxSessionName } from '../../../main/remote/launch'
@@ -103,7 +105,8 @@ import {
 } from './agyMachine'
 import type { Machine } from '../../../main/host/machine'
 import { seedAssistMemory } from '../../../main/assistMemory'
-import { NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from '@plugins/sessions/main/hooks'
+import { NOTICE_ENV, noticeFile } from '../../../main/hookFiles'
+import { SHELL_WROTE_FIELD } from '@agents/kit/main/hookScriptParts'
 import { formatRemoteKey, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import { identityOf } from '@shared/sessionBackend'
 import { AGY_ARTIFACT_SIDECAR } from '../shared/agyBrain'
@@ -154,7 +157,7 @@ export interface AgySessionDeps extends StoredSessionDeps {
   apiKeyOf(account: string): Promise<string | undefined>
   playwrightBin: string
   browserEndpoint(tabId: string): string
-  builtInStatusLine(account: string): string | undefined
+  builtInStatusLine(account: string): StatuslinePaths | undefined
   skipPermissions(): boolean
   assistOf(cwd: string, resumeKey?: string): LaunchIdentity | undefined
   agent: {
@@ -661,6 +664,15 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     return `Antigravity CLI ${version} is newer than the version Koloft was tested with (${TESTED_AGY_LINE}.x). It may misbehave.`
   }
 
+  private statusLineWritten?: string
+
+  private statusLineCommand(account: string): string | undefined {
+    const paths = this.deps.builtInStatusLine(account)
+    if (!paths) return undefined
+    this.statusLineWritten ??= setupAgyStatusline(paths)
+    return this.statusLineWritten
+  }
+
   private remoteHistory = new Map<string, HistoryEntry[]>()
 
   private get gemini(): string {
@@ -892,7 +904,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
             ? [cwd]
             : [],
       titleCommand: runWithSh(scripts.title),
-      statusLine: this.deps.builtInStatusLine(pick.account),
+      statusLine: this.statusLineCommand(pick.account),
       apiKey: !!apiKey,
       allowKoloft: !!agent,
       playwrightServers: ownersPlaywrightMcp(gemini),

@@ -20,7 +20,7 @@ import { GIT_CALL_TIMEOUT_MS, localHost } from '../../../../src/main/host/localH
 import { GithubRepos } from '../../../../src/main/githubRepos'
 import { gitOnPath, realGit, restorePath, seedRepo } from '../../helpers/gitShim'
 import { mirrorHookDir } from '../../../../src/main/remote/paths'
-import { START_IN_STATUS_LOG } from '../../../../src/plugins/sessions/main/hooks'
+import { START_IN_STATUS_LOG } from '../../../../src/agents/claude/main/claudeHooks'
 import { SessionBackends, type LeftTheMachine } from '../../../../src/core/agent/sessionBackends'
 import { lifecycle } from '../../helpers/sessionBackendStub'
 import { A_SESSION_LEAVES_THE_MACHINE_WITHIN_MS } from '../../../../src/core/agent/leavesTheMachine'

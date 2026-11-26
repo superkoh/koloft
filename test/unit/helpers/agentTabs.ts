@@ -5,11 +5,9 @@ import path from 'path'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { SessionEvent } from '@shared/sessionEvent'
 import { docsWritingOn } from '@plugins/docs-writing/api'
-import {
-  saidFile,
-  seedHandedOverOwnerWords,
-  writeConductorMarker
-} from '@plugins/sessions/main/hooks'
+import { saidFile, seedHandedOverOwnerWords } from '../../../src/main/hookFiles'
+import { writeConductorMarker } from '../../../src/agents/claude/main/claudeHooks'
+import type { StatuslinePaths } from '../../../src/main/statuslineParts'
 import { AgySessions, type AgySessionDeps } from '../../../src/agents/agy/main/agySessions'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../../src/agents/claude/main/backend'
 import type { MachineAccount } from '../../../src/agents/claude/main/claudeLaunch'
@@ -338,7 +336,7 @@ export interface AgySetup extends WiredIntoTheApp {
   agentTools?: boolean
   apiKey?: string
   signedInOnTheWeb?: boolean
-  builtInStatusLine?: string
+  builtInStatusLine?: StatuslinePaths
   events?: (tabId: string, event: SessionEvent) => void
   runtime?: SessionRuntime
 }

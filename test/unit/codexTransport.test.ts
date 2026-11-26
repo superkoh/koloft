@@ -240,7 +240,7 @@ require(${JSON.stringify(binary)});
     expect(reply.params).toEqual({ cursor: 'next' })
   })
 
-  it('preserves user auth/config but removes enclosing session markers', async () => {
+  it("preserves user auth/config, another agent's sign-in key included, but removes enclosing session markers", async () => {
     const client = new CodexRpc({
       binary,
       cwd: directory,
@@ -258,12 +258,12 @@ require(${JSON.stringify(binary)});
       CODEX_CUSTOM_CONFIG: 'keep',
       CLAUDE_CODE_OAUTH_TOKEN: 'remove',
       ANTIGRAVITY_CONVERSATION_ID: 'remove',
-      GEMINI_API_KEY: 'remove'
+      GEMINI_API_KEY: 'keep'
     })
     expect(config.CODEX_CUSTOM_CONFIG).toBe('keep')
     expect(config.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
     expect(config.ANTIGRAVITY_CONVERSATION_ID).toBeUndefined()
-    expect(config.GEMINI_API_KEY).toBeUndefined()
+    expect(config.GEMINI_API_KEY).toBe('keep')
   })
 
   it("runs the app-server, where Codex runs its commands, with the session's own port offset and never an inherited one", async () => {

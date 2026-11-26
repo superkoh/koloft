@@ -118,7 +118,7 @@ import { OWNER_TYPES_A_SECRET_WITHIN_MS } from './agentShim'
 import { passwordsOn } from '@plugins/passwords/api'
 import { agentsInLoginShell, sshEnvFromLogin } from './loginShell'
 import { oncePerName, watchAndSweepJsonDrops, writeWholeBeforeVisible } from './jsonDrops'
-import { setupStatusline, setupAgyStatusline, statusLineSetting } from './statusline'
+import { setupStatusline, statusLineSetting } from './statusline'
 import { setupPlaywrightCli } from './playwrightCli'
 import {
   bundledGcm,
@@ -2618,9 +2618,13 @@ app.whenReady().then(() => {
   startRelay()
   setRelayEnabled(loadSettings().browserControl, ptyTabIds())
 
-  const hookPaths = setupHooks((tabId) => anotherLiveInstanceOwns(tabId, pidAlive))
+  const hookDirs = setupHooks((tabId) => anotherLiveInstanceOwns(tabId, pidAlive))
+  const hookPaths = {
+    ...hookDirs,
+    hookScript: writeClaudeHookScript(hookDirs.hookDir),
+    codexReplyLanguage: writeCodexReplyLanguageScript(hookDirs.hookDir)
+  }
   const statusline = setupStatusline()
-  const agyStatusline = setupAgyStatusline(statusline)
   const playwrightBin = setupPlaywrightCli()
   playwrightCliBin = playwrightBin
   fallbackBin = bundledGhDir()
@@ -2913,7 +2917,7 @@ app.whenReady().then(() => {
       keepSkillsIn,
       pickHome: pickAgyHome,
       apiKeyOf: agyApiKeyOf,
-      builtInStatusLine: () => (loadSettings().statuslineBuiltin ? agyStatusline : undefined),
+      builtInStatusLine: () => (loadSettings().statuslineBuiltin ? statusline : undefined),
       skipPermissions: () => loadSettings().skipPermissions,
       assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
       browserEndpoint: relayEndpoint,
@@ -5628,6 +5632,8 @@ const {
   setupHooks,
   writeConductorMarker,
   writeTabHookSettings,
+  writeClaudeHookScript,
+  writeCodexReplyLanguageScript,
   resolveWorkspace,
   anotherSessionIn,
   closingTree,

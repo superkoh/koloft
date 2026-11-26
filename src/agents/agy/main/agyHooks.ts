@@ -1,27 +1,23 @@
 import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
-import { BUTLER_SAYS_OPENING } from '@shared/agentGuide'
+import { A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS } from '@shared/koloftOpenings'
 import { nonEmptyString, record } from '@core/unknownValue'
-import {
-  A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
-  FROM_A_SESSION,
-  FROM_KOLOFT
-} from '@plugins/sessions/main/messageOpenings'
+import { isAnOpeningRule, messageArrivesRules, textOf } from '@core/hookMoments'
 import {
   hookField,
+  insideAJsonString,
   JSON_STRING_BODY,
   KEEP_GOING_FOR_THE_NOTICE_FN,
   LANGUAGE_FNS,
-  NOTICE_ENV,
-  NOTICE_THIS_TURN,
   QUOTED_NOTE_BYTES,
   QUOTED_PROMPT_BYTES,
   SHELL_WRITES_FNS,
   STALE_PR_STATUS_FN,
   TAKE_NOTICE_FN,
   TRANSCRIPT_LINES_SEARCHED_FOR_THE_LAST_NOTE
-} from '@plugins/sessions/main/hooks'
+} from '@agents/kit/main/hookScriptParts'
+import { NOTICE_ENV, NOTICE_THIS_TURN } from '../../../main/hookFiles'
 import { UUID } from '@agents/kit/main/sessionStore'
 import { HANDOVER_OPENING } from '@core/handOver'
 
@@ -35,14 +31,15 @@ export const AGY_COST_ENV = 'KOLOFT_AGY_COST'
 const EVENTS = ['SessionStart', 'PreInvocation', 'PreToolUse', 'PostToolUse', 'Stop'] as const
 type AgyHookName = (typeof EVENTS)[number]
 
-// AGY§8 ADR-0031
+// AGY§8 ADR-0028 ADR-0031
 const NOT_THE_OWNERS_WORDS = [
-  FROM_A_SESSION,
-  FROM_KOLOFT,
-  BUTLER_SAYS_OPENING,
+  ...messageArrivesRules()
+    .filter(isAnOpeningRule)
+    .filter((r) => r.countsAs === 'not-the-owners-words')
+    .map(textOf),
   A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS
 ]
-  .map((opening) => `-e ${shq(`"content":"<USER_REQUEST>\\n${opening}`)}`)
+  .map((opening) => `-e ${shq(`"content":"<USER_REQUEST>\\n${insideAJsonString(opening)}`)}`)
   .join(' ')
 
 // AGY§12

@@ -32,7 +32,7 @@ import { SessionRuntime } from '../../../../src/core/agent/sessionRuntime'
 import {
   CODEX_REPLY_LANGUAGE_HOOKS,
   CODEX_SHELL_WRITES_HOOKS
-} from '../../../../src/plugins/sessions/main/hooks'
+} from '../../../../src/agents/codex/main/codexHooks'
 import { execFileSync } from 'child_process'
 import { dirExistsSync, gitProbes } from '../../../../src/main/resumePlan'
 import { localGitOut } from '../../../../src/main/host/localHost'
