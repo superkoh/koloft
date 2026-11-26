@@ -1560,7 +1560,9 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
   endOnTheMachine(host: string, key: string): void {
     const id = identityOf(key)?.nativeSessionId
     if (!id) return
-    void this.endTmuxThere(host, tmuxSessionName(id)).then(() => this.deps.remote.nextPull(host))
+    void this.endTmuxThere(host, tmuxSessionName(id)).catch((error) =>
+      this.deps.error(String(error))
+    )
   }
 
   goneFromTheMachine(host: string, key: string): boolean {
