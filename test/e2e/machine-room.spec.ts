@@ -124,7 +124,9 @@ test('at warning nothing is slowed; once memory stays critical the tools of the 
     await runIn(page, centerTerm(page), `/run ${watchedTool.command}`)
     await expect.poll(() => priorityOfSleep(watchedTool.first)).toBe(WHAT_ANY_OTHER_PROGRAM_GETS)
     const agents = readCalls(env).map((c) => c.pid)
-    expect(agents.map(mainThreadPriority)).toEqual([ABOVE_ITS_TOOLS, ABOVE_ITS_TOOLS])
+    await expect
+      .poll(() => agents.map(mainThreadPriority))
+      .toEqual([ABOVE_ITS_TOOLS, ABOVE_ITS_TOOLS])
 
     memoryPressure(env, 2)
     await expect
@@ -140,7 +142,9 @@ test('at warning nothing is slowed; once memory stays critical the tools of the 
     expect(priorityOfSleep(awayTool.first)).toBe(GIVING_WAY)
     expect(priorityOfSleep(watchedTool.first)).toBe(WHAT_ANY_OTHER_PROGRAM_GETS)
     expect(priorityOfSleep(ownersOwnCommand)).toBe(WHAT_ANY_OTHER_PROGRAM_GETS)
-    expect(agents.map(mainThreadPriority)).toEqual([ABOVE_ITS_TOOLS, ABOVE_ITS_TOOLS])
+    await expect
+      .poll(() => agents.map(mainThreadPriority))
+      .toEqual([ABOVE_ITS_TOOLS, ABOVE_ITS_TOOLS])
     await expect(slowedMark(rowOf(page, watched))).toHaveCount(0)
 
     awayTool.startTheSecond()
@@ -222,15 +226,17 @@ test('the tools of a Codex and an Antigravity session nobody looks at give way t
         timeout: TWO_READINGS_FIVE_SECONDS_APART_PLUS_ROOM_MS
       })
     expect(tools.map(priorityOfSleep)).toEqual(tools.map(() => GIVING_WAY))
-    expect({
-      codex: mainThreadPriority(codex.pid),
-      agy: mainThreadPriority(agySessionCalls(env)[0].pid),
-      codexServer: mainThreadPriority(codexServer.pid)
-    }).toEqual({
-      codex: ABOVE_ITS_TOOLS,
-      agy: ABOVE_ITS_TOOLS,
-      codexServer: WHAT_ANY_OTHER_PROGRAM_GETS
-    })
+    await expect
+      .poll(() => ({
+        codex: mainThreadPriority(codex.pid),
+        agy: mainThreadPriority(agySessionCalls(env)[0].pid),
+        codexServer: mainThreadPriority(codexServer.pid)
+      }))
+      .toEqual({
+        codex: ABOVE_ITS_TOOLS,
+        agy: ABOVE_ITS_TOOLS,
+        codexServer: WHAT_ANY_OTHER_PROGRAM_GETS
+      })
 
     memoryPressure(env, 1)
     await expect(page.locator('.ws-tab-parked', { hasText: /^slowed$/ })).toHaveCount(0, {
