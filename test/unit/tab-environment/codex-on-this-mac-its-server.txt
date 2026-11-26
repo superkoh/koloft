@@ -4,6 +4,7 @@ ANTHROPIC_AUTH_TOKEN=the-users-own-anthropic-token
 CODEX_API_KEY=the-users-own-codex-key
 CODEX_HOME=<home>/codex-home
 COLORTERM=24bit
+GEMINI_API_KEY=the-users-own-gemini-key
 HOME=<home>
 KOLOFT_CODEX_DISCORD_SAID=<home>/hook-sessions/pty-t1.discord-said
 KOLOFT_CODEX_REPLY_LANGUAGE=/koloft/codex-reply-language.sh
@@ -43,7 +44,6 @@ CODEX_SAGE_BACKFILL_TRACKER_TAB_REUSE
 CODEX_SESSION_ID
 CODEX_SHELL
 CODEX_THREAD_ID
-GEMINI_API_KEY
 KOLOFT_AGENT_DIR
 KOLOFT_AGENT_PLUGIN
 KOLOFT_AGENT_PROMPT
