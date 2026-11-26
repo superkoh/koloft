@@ -4,7 +4,7 @@
 the raw ask: PermissionRequest hook input: {"hook_event_name":"PermissionRequest","session_id":"11111111-1111-4111-8111-111111111111","tool_name":"mcp__probe__ping","tool_input":{"host":"example.com"}}
 the session row's small line: Wants to use: ping
 Discord card: body:
-    mcp__probe__ping asks to run:
+    Claude asks to use mcp__probe__ping:
     {"host":"example.com"}
 Discord card: footnote: -# Reply yes or no.
 Discord card: buttons: Yes | No
@@ -13,7 +13,7 @@ Inbox card: quote: (nothing)
 Inbox card: questions: (nothing)
 Inbox card: text: Koloft cannot show what it asks here. Open the session to answer it.
 Inbox card: buttons: (nothing)
-the butler's owner-asleep report, the part that says what was asked: asked to be allowed: "mcp__probe__ping asks to run: {"host":"example.com"}"
+the butler's owner-asleep report, the part that says what was asked: asked to be allowed: "Claude asks to use mcp__probe__ping: {"host":"example.com"}"
 this ask's id: the hook's own process id, only in the name of its file claude-tab.<pid>.ask.json; the "someone asked" moment is never announced for it
 --- pressed the Discord card's first button, "Yes" ---
 the card now says: -# ✅ Yes
@@ -45,16 +45,16 @@ what reached the agent: the hook printed to Claude Code: {"hookSpecificOutput":{
 the raw ask: PermissionRequest hook input: {"hook_event_name":"PermissionRequest","session_id":"11111111-1111-4111-8111-111111111111","tool_name":"mcp__probe__ping","tool_input":{"host":"example.com"}}
 the session row's small line: Wants to use: ping
 Discord card: body:
-    mcp__probe__ping asks to run:
+    Claude asks to use mcp__probe__ping:
     {"host":"example.com"}
 Discord card: footnote: -# Reply yes or no.
 Discord card: buttons: Yes | No
-Inbox card: title: “Fix the docs” wants to run a command
-Inbox card: quote: Command: mcp__probe__ping {"host":"example.com"}
+Inbox card: title: “Fix the docs” wants to use a tool
+Inbox card: quote: mcp__probe__ping: {"host":"example.com"}
 Inbox card: questions: (nothing)
 Inbox card: text: (nothing)
 Inbox card: buttons: Allow | Deny
-the butler's owner-asleep report, the part that says what was asked: asked to be allowed: "mcp__probe__ping asks to run: {"host":"example.com"}"
+the butler's owner-asleep report, the part that says what was asked: asked to be allowed: "Claude asks to use mcp__probe__ping: {"host":"example.com"}"
 this ask's id: Claude Code's hook reported an ask (id 1)
 --- pressed the Discord card's first button, "Yes" ---
 the card now says: -# ✅ Yes
@@ -75,11 +75,11 @@ what reached the agent: keys pressed: "\u001b"
 Koloft said: (taken, no refusal)
 what reached the agent: keys pressed: "\u001b"
 --- replied "maybe" in the session's Discord room ---
-Discord said: under the message: Koloft answers this dialog by its keys, so it can only answer yes or no.
+Discord said: under the message: Reply yes or no.
 handed to the session as a message: (nothing)
 what reached the agent: (nothing)
 --- answered "maybe" with koloft session answer ---
-Koloft said: Koloft answers this dialog by its keys, so it can only answer yes or no.
+Koloft said: Reply yes or no.
 what reached the agent: (nothing)
 
 ## Codex (its app-server's request, read on the TUI's connection; the tab runs on the stand-in machine of agentTabs)
@@ -123,16 +123,16 @@ the sample: the sample of agySessions.test.ts ("Approve Schedule" after a `sched
 the raw ask:
     PreToolUse hook input: {"conversationId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","workspacePaths":["<home>/repo"],"toolCall":{"name":"schedule","args":{"DurationSeconds":1800,"Prompt":"Look again"}}}
     7501 status: state=blocked, kind=permission, msg="Approve Schedule"
-the session row's small line: Wants to run: Approve Schedule
-Discord card: body: Antigravity asks to run: Approve Schedule
+the session row's small line: Asks: Approve Schedule
+Discord card: body: Antigravity asks for your approval: Approve Schedule
 Discord card: footnote: -# Reply yes or no.
 Discord card: buttons: Yes | No
-Inbox card: title: “Fix the docs” wants to run a command
-Inbox card: quote: Command: Approve Schedule
+Inbox card: title: “Fix the docs” asks for your approval
+Inbox card: quote: It said: Approve Schedule
 Inbox card: questions: (nothing)
 Inbox card: text: (nothing)
 Inbox card: buttons: Allow | Deny
-the butler's owner-asleep report, the part that says what was asked: asked to be allowed: "Approve Schedule"
+the butler's owner-asleep report, the part that says what was asked: asked to be allowed: "Antigravity asks for your approval: Approve Schedule"
 this ask's id: the ids it had, in turn: hook:<when it was read>
 --- pressed the Discord card's first button, "Yes" ---
 the card now says: -# ✅ Yes
@@ -153,11 +153,11 @@ what reached the agent: written to its terminal: "4"
 Koloft said: (taken, no refusal)
 what reached the agent: written to its terminal: "4"
 --- replied "maybe" in the session's Discord room ---
-Discord said: under the message: an Antigravity approval takes yes or no.
+Discord said: under the message: Reply yes or no.
 handed to the session as a message: (nothing)
 what reached the agent: (nothing)
 --- answered "maybe" with koloft session answer ---
-Koloft said: an Antigravity approval takes yes or no.
+Koloft said: Reply yes or no.
 what reached the agent: (nothing)
 
 ## Antigravity, read from its tool call and 7501 status only, its API not answering (a tab on another machine has no API client and reads this way: inferred, not checked): Koloft answers by keys
@@ -165,16 +165,16 @@ the sample: the sample of agySessions.test.ts ("Approve Schedule" after a `sched
 the raw ask:
     PreToolUse hook input: {"conversationId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","workspacePaths":["<home>/repo"],"toolCall":{"name":"schedule","args":{"DurationSeconds":1800,"Prompt":"Look again"}}}
     7501 status: state=blocked, kind=permission, msg="Approve Schedule"
-the session row's small line: Wants to run: Approve Schedule
-Discord card: body: Antigravity asks to run: Approve Schedule
+the session row's small line: Asks: Approve Schedule
+Discord card: body: Antigravity asks for your approval: Approve Schedule
 Discord card: footnote: -# Reply yes or no.
 Discord card: buttons: Yes | No
-Inbox card: title: “Fix the docs” wants to run a command
-Inbox card: quote: Command: Approve Schedule
+Inbox card: title: “Fix the docs” asks for your approval
+Inbox card: quote: It said: Approve Schedule
 Inbox card: questions: (nothing)
 Inbox card: text: (nothing)
 Inbox card: buttons: Allow | Deny
-the butler's owner-asleep report, the part that says what was asked: asked to be allowed: "Approve Schedule"
+the butler's owner-asleep report, the part that says what was asked: asked to be allowed: "Antigravity asks for your approval: Approve Schedule"
 this ask's id: the ids it had, in turn: hook:<when it was read>
 --- pressed the Discord card's first button, "Yes" ---
 the card now says: -# ✅ Yes
@@ -195,9 +195,9 @@ what reached the agent: written to its terminal: "4"
 Koloft said: (taken, no refusal)
 what reached the agent: written to its terminal: "4"
 --- replied "maybe" in the session's Discord room ---
-Discord said: under the message: an Antigravity approval takes yes or no.
+Discord said: under the message: Reply yes or no.
 handed to the session as a message: (nothing)
 what reached the agent: (nothing)
 --- answered "maybe" with koloft session answer ---
-Koloft said: an Antigravity approval takes yes or no.
+Koloft said: Reply yes or no.
 what reached the agent: (nothing)

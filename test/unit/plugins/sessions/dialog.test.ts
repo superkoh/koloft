@@ -50,7 +50,9 @@ describe('the conductor’s own dialog, asked in Discord and answered from there
         { label: '3. No', reply: '3', style: 'secondary' }
       ]
     })
-    expect(askHow(colour)).toBe('Reply with a number or your own answer.')
+    expect(askHow(colour, true)).toBe(
+      'Reply with the number or the name of one option, or with your own answer.'
+    )
     expect(claudeDialog(plan).text).toContain('Create plan-ok.txt.')
     expect(claudeDialog(plan).choices.map((c) => [c.label, c.reply])).toEqual([
       ['Approve', 'yes'],
@@ -154,16 +156,29 @@ describe('a managed session’s dialog: its full text, and the keys that answer 
       'Which colour?\n1. Red — The red one\n2. Green — The green one\n3. No'
     )
     expect(dialogText(plan)).toBe('Approve this plan?\n\nCreate plan-ok.txt.')
-    expect(dialogText(bash)).toBe('Bash asks to run:\nnpm test -- --all')
+    expect(dialogText(bash)).toBe('Claude asks to run: npm test -- --all')
     expect(dialogText({ tool_name: 'Write', tool_input: { file_path: '/a', content: 'x' } })).toBe(
-      'Write asks to run:\n{"file_path":"/a","content":"x"}'
+      'Claude asks to edit: /a\n{"file_path":"/a","content":"x"}'
+    )
+  })
+
+  it('a file ask whose input says more than its path, such as what a search looks for, keeps that input under the path', () => {
+    expect(dialogText({ tool_name: 'Read', tool_input: { file_path: '/a' } })).toBe(
+      'Claude asks to read: /a'
+    )
+    expect(dialogText({ tool_name: 'Grep', tool_input: { pattern: 'TOKEN', path: '/a' } })).toBe(
+      'Claude asks to read: /a\n{"pattern":"TOKEN","path":"/a"}'
     )
   })
 
   it('a plan another agent waits on reads like Claude’s: the whole plan under "Approve this plan?", with Approve and Reject; with its text unread, it says where to read it', () => {
     const asked = { id: 'plan:1', command: 'implementation_plan.md', plan: true as const }
-    expect(codexDialog({ ...asked, reason: 'Create plan-ok.txt.' })).toEqual(claudeDialog(plan))
-    expect(codexDialog(asked).text).toBe(`Approve this plan?\n\n${PLAN_IS_IN_ITS_SESSION}`)
+    expect(codexDialog({ ...asked, reason: 'Create plan-ok.txt.' }, 'Antigravity')).toEqual(
+      claudeDialog(plan)
+    )
+    expect(codexDialog(asked, 'Antigravity').text).toBe(
+      `Approve this plan?\n\n${PLAN_IS_IN_ITS_SESSION}`
+    )
   })
 
   const DOWN = '\x1b[B'
@@ -276,7 +291,7 @@ describe('a managed session’s dialog: its full text, and the keys that answer 
     })
     expect(claudeKeysFor(ask(q, fruit), '2')).toEqual({
       ok: false,
-      error: askHow(ask(q, fruit))
+      error: askHow(ask(q, fruit), false)
     })
   })
 

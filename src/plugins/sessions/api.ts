@@ -21,6 +21,7 @@ export {
 export { RepliesOwed, type ReplyListener } from './main/repliesOwed'
 export {
   ANSWER_NOT_TAKEN,
+  claudeToolAsk,
   planOf,
   questionsOf,
   type CodexApproval,

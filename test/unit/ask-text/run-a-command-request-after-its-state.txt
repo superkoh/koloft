@@ -21,7 +21,7 @@ Inbox card: quote: Command: npm test
 Inbox card: questions: (nothing)
 Inbox card: text: (nothing)
 Inbox card: buttons: Allow | Deny
-the butler's owner-asleep report, the part that says what was asked: asked to be allowed: "npm test"
+the butler's owner-asleep report, the part that says what was asked: asked to be allowed: "Codex asks to run: npm test"
 this ask's id: the app-server's request id: 7
 --- pressed the Discord card's first button, "Yes" ---
 the card now says: -# ✅ Yes
@@ -39,7 +39,7 @@ Discord said: under the message: Reply yes or no.
 handed to the session as a message: (nothing)
 what reached the agent: (nothing)
 --- answered "maybe" with koloft session answer ---
-Koloft said: a Codex approval takes yes or no.
+Koloft said: Reply yes or no.
 what reached the agent: (nothing)
 
 ## Antigravity, read through its API (a tab on this Mac)

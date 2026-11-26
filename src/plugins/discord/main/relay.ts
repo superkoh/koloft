@@ -27,15 +27,12 @@ import {
   claudeDialog,
   codexDialog,
   howToAnswer,
+  REPLY_YES_OR_NO,
   type CodexApproval,
   type CodexQuestion,
   type DialogView
 } from '@plugins/sessions/main/dialog'
-import {
-  answerKeysOf,
-  CODEX_NEEDS_YES_OR_NO,
-  type SessionAsks
-} from '@plugins/sessions/main/sessionAsks'
+import { answerKeysOf, type SessionAsks } from '@plugins/sessions/main/sessionAsks'
 
 export const OFFLINE_REPLY = 'Koloft was offline, this message was not delivered.'
 export const butlerAsks = (name: string): string => `❓ **${name}** is waiting for you.`
@@ -77,6 +74,7 @@ export interface RelayDeps {
     | 'typable'
     | 'takesCommand'
     | 'askOf'
+    | 'heldAsk'
     | 'stillAsks'
     | 'claudeAskAnswerable'
     | 'dropClaudeAsk'
@@ -347,11 +345,11 @@ export class DiscordRelay {
     return helper === undefined ? butler : this.d.inRoom(tab) ? helper : helperOf(helper, butler)
   }
 
-  private askCard(tab: string, view: DialogView, how: string, shown = view.text): Card {
+  private askCard(tab: string, view: DialogView, how: string): Card {
     const card: Card = {
       accent: CONDUCTOR_ACCENT,
       header: butlerAsks(this.askerName(tab)),
-      body: shown,
+      body: view.text,
       footer: `-# ${how}`
     }
     return view.choices.length ? this.d.withButtons(tab, view, card) : card
@@ -446,7 +444,7 @@ export class DiscordRelay {
       this.postAsk(
         tab,
         channelId,
-        this.askCard(tab, claudeDialog(payload), askHow(payload)),
+        this.askCard(tab, claudeDialog(payload), askHow(payload, !!this.d.asks.heldAsk(tab))),
         stillAsked
       )
   }
@@ -455,16 +453,12 @@ export class DiscordRelay {
     const channelId = this.d.askChannelOf(tab)
     if (!channelId || this.codexAsks.get(tab) === a.id || this.holds(tab)) return
     this.codexAsks.set(tab, a.id)
-    const view = codexDialog(a)
-    const question = 'questions' in a
-    const how = question ? howToAnswer(a) : CODEX_NEEDS_YES_OR_NO
-    const label = BACKEND_LABEL[this.d.backendOf(tab) ?? 'codex']
-    const shown =
-      question || a.plan ? view.text : `${label} asks to run: ${view.text || 'a command'}`
+    const view = codexDialog(a, BACKEND_LABEL[this.d.backendOf(tab) ?? 'codex'])
+    const how = 'questions' in a ? howToAnswer(a) : REPLY_YES_OR_NO
     this.postAsk(
       tab,
       channelId,
-      this.askCard(tab, view, how, shown),
+      this.askCard(tab, view, how),
       () => (this.d.pendingApproval(tab) ?? this.d.pendingQuestion(tab))?.id === a.id
     )
   }

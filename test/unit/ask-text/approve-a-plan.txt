@@ -53,7 +53,7 @@ Discord card: body:
     # Plan
     1. Read the docs
     2. Fix the links
-Discord card: footnote: -# Reply yes to approve, or say what to change.
+Discord card: footnote: -# Reply yes or no.
 Discord card: buttons: Approve | Reject
 Inbox card: title: “Fix the docs” asks you to approve a plan
 Inbox card: quote:
@@ -84,11 +84,11 @@ what reached the agent: keys pressed: "\u001b"
 Koloft said: (taken, no refusal)
 what reached the agent: keys pressed: "\u001b"
 --- replied "Add a step for the tests" in the session's Discord room ---
-Discord said: under the message: Koloft answers this dialog by its keys, so it can only answer yes or no.
+Discord said: under the message: Reply yes or no.
 handed to the session as a message: (nothing)
 what reached the agent: (nothing)
 --- answered "Add a step for the tests" with koloft session answer ---
-Koloft said: Koloft answers this dialog by its keys, so it can only answer yes or no.
+Koloft said: Reply yes or no.
 what reached the agent: (nothing)
 
 ## Codex (its app-server's request, read on the TUI's connection; the tab runs on the stand-in machine of agentTabs)
@@ -137,11 +137,11 @@ what reached the agent: through its API, SendUserCascadeMessage: {"cascadeId":"3
 Koloft said: (taken, no refusal)
 what reached the agent: through its API, SendUserCascadeMessage: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","items":[{"text":"[Rejected] plan.md"}],"cascadeConfig":{"plannerConfig":{"planModel":"M36"}}}
 --- replied "Add a step for the tests" in the session's Discord room ---
-Discord said: under the message: an Antigravity approval takes yes or no.
+Discord said: under the message: Reply yes or no.
 handed to the session as a message: (nothing)
 what reached the agent: (nothing)
 --- answered "Add a step for the tests" with koloft session answer ---
-Koloft said: an Antigravity approval takes yes or no.
+Koloft said: Reply yes or no.
 what reached the agent: (nothing)
 
 ## Antigravity, read from its tool call and 7501 status only, its API not answering (a tab on another machine has no API client and reads this way: inferred, not checked): Koloft answers by keys
@@ -186,9 +186,9 @@ what reached the agent: written to its terminal: "\u001b[200~[Rejected] plan.md\
 Koloft said: (taken, no refusal)
 what reached the agent: written to its terminal: "\u001b[200~[Rejected] plan.md\u001b[201~\r"
 --- replied "Add a step for the tests" in the session's Discord room ---
-Discord said: under the message: an Antigravity approval takes yes or no.
+Discord said: under the message: Reply yes or no.
 handed to the session as a message: (nothing)
 what reached the agent: (nothing)
 --- answered "Add a step for the tests" with koloft session answer ---
-Koloft said: an Antigravity approval takes yes or no.
+Koloft said: Reply yes or no.
 what reached the agent: (nothing)

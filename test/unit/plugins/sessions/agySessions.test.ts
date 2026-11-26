@@ -3101,9 +3101,7 @@ describe('answering what agy asks (AGY§14 AGY§16 AGY§19)', () => {
     }
     await ask('run_command', { CommandLine: 'rm -rf build' }, 'Approve RunCommand: rm -rf build')
     expect(sessions.openApproval(id)).toMatchObject({ command: 'rm -rf build' })
-    expect(await sessions.answer(id, 'maybe')).toEqual({
-      error: 'an Antigravity approval takes yes or no.'
-    })
+    expect(await sessions.answer(id, 'maybe')).toEqual({ error: 'Reply yes or no.' })
     expect(await sessions.answer(id, 'no')).toEqual({ watch: true })
     await ask('run_command', { CommandLine: 'ls' }, 'Approve RunCommand: ls')
     expect(await sessions.answer(id, 'yes')).toEqual({ watch: true })

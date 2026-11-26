@@ -43,6 +43,7 @@ export const SESSION_TITLE = 'Fix the docs'
 const ASKED_AT = 1_700_000_000_000
 
 export interface Stored {
+  readonly id: BackendId
   hasTab(tabId: string): boolean
   openApproval(tabId: string): ReturnType<SessionAsksDeps['pendingApproval']>
   openQuestion(tabId: string): ReturnType<SessionAsksDeps['pendingQuestion']>

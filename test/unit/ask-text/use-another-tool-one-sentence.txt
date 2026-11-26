@@ -10,15 +10,15 @@ never asks this: Claude Code's PermissionRequest hook always names its tool (too
 the sample: a file change approval whose item Koloft never saw start (`item/fileChange/requestApproval` carrying only `reason`), the one way a Codex approval reaches Koloft with a sentence only; not seen from a real Codex
 the raw ask: app-server frame: {"id":7,"method":"item/fileChange/requestApproval","params":{"threadId":"22222222-2222-4222-8222-222222222222","turnId":"t1","itemId":"call_unseen","reason":"Codex wants to write outside the workspace"}}
 the session row's small line: Asks: Codex wants to write outside the workspace
-Discord card: body: Codex asks to run: Codex wants to write outside the workspace
+Discord card: body: Codex asks for your approval: Codex wants to write outside the workspace
 Discord card: footnote: -# Reply yes or no.
 Discord card: buttons: Yes | No
-Inbox card: title: “Fix the docs” wants to run a command
-Inbox card: quote: Command: Codex wants to write outside the workspace
+Inbox card: title: “Fix the docs” asks for your approval
+Inbox card: quote: It said: Codex wants to write outside the workspace
 Inbox card: questions: (nothing)
 Inbox card: text: (nothing)
 Inbox card: buttons: Allow | Deny
-the butler's owner-asleep report, the part that says what was asked: asked to be allowed: "Codex wants to write outside the workspace"
+the butler's owner-asleep report, the part that says what was asked: asked to be allowed: "Codex asks for your approval: Codex wants to write outside the workspace"
 this ask's id: the app-server's request id: 7
 --- pressed the Discord card's first button, "Yes" ---
 the card now says: -# ✅ Yes
@@ -43,22 +43,22 @@ Discord said: under the message: Reply yes or no.
 handed to the session as a message: (nothing)
 what reached the agent: (nothing)
 --- answered "maybe" with koloft session answer ---
-Koloft said: a Codex approval takes yes or no.
+Koloft said: Reply yes or no.
 what reached the agent: (nothing)
 
 ## Antigravity, read through its API (a tab on this Mac)
 the sample: the 7501 msg with `AGY_CLI_OSC7501_MESSAGES=brief`, "Approve RunCommand" (AGY§10), with no tool call before it
 the raw ask: 7501 status: state=blocked, kind=permission, msg="Approve RunCommand"
-the session row's small line: Wants to run: Approve RunCommand
-Discord card: body: Antigravity asks to run: Approve RunCommand
+the session row's small line: Asks: Approve RunCommand
+Discord card: body: Antigravity asks for your approval: Approve RunCommand
 Discord card: footnote: -# Reply yes or no.
 Discord card: buttons: Yes | No
-Inbox card: title: “Fix the docs” wants to run a command
-Inbox card: quote: Command: Approve RunCommand
+Inbox card: title: “Fix the docs” asks for your approval
+Inbox card: quote: It said: Approve RunCommand
 Inbox card: questions: (nothing)
 Inbox card: text: (nothing)
 Inbox card: buttons: Allow | Deny
-the butler's owner-asleep report, the part that says what was asked: asked to be allowed: "Approve RunCommand"
+the butler's owner-asleep report, the part that says what was asked: asked to be allowed: "Antigravity asks for your approval: Approve RunCommand"
 this ask's id: the ids it had, in turn: hook:<when it was read>
 --- pressed the Discord card's first button, "Yes" ---
 the card now says: -# ✅ Yes
@@ -79,26 +79,26 @@ what reached the agent: written to its terminal: "4"
 Koloft said: (taken, no refusal)
 what reached the agent: written to its terminal: "4"
 --- replied "maybe" in the session's Discord room ---
-Discord said: under the message: an Antigravity approval takes yes or no.
+Discord said: under the message: Reply yes or no.
 handed to the session as a message: (nothing)
 what reached the agent: (nothing)
 --- answered "maybe" with koloft session answer ---
-Koloft said: an Antigravity approval takes yes or no.
+Koloft said: Reply yes or no.
 what reached the agent: (nothing)
 
 ## Antigravity, read from its tool call and 7501 status only, its API not answering (a tab on another machine has no API client and reads this way: inferred, not checked): Koloft answers by keys
 the sample: the 7501 msg with `AGY_CLI_OSC7501_MESSAGES=brief`, "Approve RunCommand" (AGY§10), with no tool call before it
 the raw ask: 7501 status: state=blocked, kind=permission, msg="Approve RunCommand"
-the session row's small line: Wants to run: Approve RunCommand
-Discord card: body: Antigravity asks to run: Approve RunCommand
+the session row's small line: Asks: Approve RunCommand
+Discord card: body: Antigravity asks for your approval: Approve RunCommand
 Discord card: footnote: -# Reply yes or no.
 Discord card: buttons: Yes | No
-Inbox card: title: “Fix the docs” wants to run a command
-Inbox card: quote: Command: Approve RunCommand
+Inbox card: title: “Fix the docs” asks for your approval
+Inbox card: quote: It said: Approve RunCommand
 Inbox card: questions: (nothing)
 Inbox card: text: (nothing)
 Inbox card: buttons: Allow | Deny
-the butler's owner-asleep report, the part that says what was asked: asked to be allowed: "Approve RunCommand"
+the butler's owner-asleep report, the part that says what was asked: asked to be allowed: "Antigravity asks for your approval: Approve RunCommand"
 this ask's id: the ids it had, in turn: hook:<when it was read>
 --- pressed the Discord card's first button, "Yes" ---
 the card now says: -# ✅ Yes
@@ -119,9 +119,9 @@ what reached the agent: written to its terminal: "4"
 Koloft said: (taken, no refusal)
 what reached the agent: written to its terminal: "4"
 --- replied "maybe" in the session's Discord room ---
-Discord said: under the message: an Antigravity approval takes yes or no.
+Discord said: under the message: Reply yes or no.
 handed to the session as a message: (nothing)
 what reached the agent: (nothing)
 --- answered "maybe" with koloft session answer ---
-Koloft said: an Antigravity approval takes yes or no.
+Koloft said: Reply yes or no.
 what reached the agent: (nothing)

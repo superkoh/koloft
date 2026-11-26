@@ -12,6 +12,7 @@ import {
 import type { AskPayload } from '@shared/sessionEvent'
 import type { AnswerResult, Inbox, InboxCaller } from './inbox'
 import {
+  claudeToolAsk,
   planOf,
   questionsOf,
   type CodexApproval,
@@ -33,9 +34,15 @@ export const CARRY_ON =
 export const CLOSE_YOURSELF =
   'Wrap up and close this session: commit what is still open, then run koloft session close as your very last step. If Koloft refuses, say why and stop.'
 
+type Approval =
+  | { plan: string }
+  | { command: string }
+  | { file: string; read: boolean; input?: string }
+  | { tool: string; input: string }
+  | { said?: string }
+
 export type KoloftAsk =
-  | { kind: 'question'; questions: Question[] }
-  | { kind: 'approval'; command?: string; plan?: string }
+  { kind: 'question'; questions: Question[] } | ({ kind: 'approval' } & Approval)
 
 export interface AskedSession {
   sessionId: string
@@ -60,20 +67,28 @@ export function askFromClaude(p: AskPayload): KoloftAsk {
   if (p.tool_name === 'AskUserQuestion') return { kind: 'question', questions: questionsOf(p) }
   const plan = planOf(p)
   if (plan !== undefined) return { kind: 'approval', plan }
-  const command = p.tool_input?.command
-  return {
-    kind: 'approval',
-    command:
-      typeof command === 'string'
-        ? command
-        : `${p.tool_name ?? 'A tool'} ${JSON.stringify(p.tool_input ?? {})}`
-  }
+  return { kind: 'approval', ...claudeToolAsk(p) }
 }
 
 export function askFromCodex(a: CodexApproval | CodexQuestion): KoloftAsk {
   if ('questions' in a) return { kind: 'question', questions: a.questions }
   if (a.plan) return { kind: 'approval', plan: a.reason ?? 'Open the session to read the plan.' }
-  return { kind: 'approval', command: a.command ?? a.file ?? a.reason }
+  if (a.file) return { kind: 'approval', file: a.file, read: !!a.read }
+  if (a.command) return { kind: 'approval', command: a.command }
+  return { kind: 'approval', said: a.reason }
+}
+
+function approvalShown(a: Approval): { asks: string; who: string; text?: string } {
+  if ('plan' in a) return { asks: 'asks you to approve a plan', who: PLAN_QUOTE, text: a.plan }
+  if ('command' in a) return { asks: 'wants to run a command', who: 'Command', text: a.command }
+  if ('file' in a)
+    return {
+      asks: `wants to ${a.read ? 'read' : 'edit'} a file`,
+      who: 'File',
+      text: a.input === undefined ? a.file : `${a.file}\n${a.input}`
+    }
+  if ('tool' in a) return { asks: 'wants to use a tool', who: a.tool, text: a.input }
+  return { asks: 'asks for your approval', who: 'It said', text: a.said }
 }
 
 export const ASKED_BEFORE_IT_STOPPED =
@@ -236,14 +251,12 @@ export function askCard(
     }
   }
   if (ask?.kind === 'approval') {
-    const plan = ask.plan !== undefined
-    const what = ask.plan ?? ask.command
+    const plan = 'plan' in ask
+    const { asks, who, text } = approvalShown(ask)
     return {
       ...base,
-      title: plan
-        ? `“${s.title}” asks you to approve a plan`
-        : `“${s.title}” wants to run a command`,
-      blocks: what ? [{ type: 'quote', who: plan ? PLAN_QUOTE : 'Command', text: what }] : [],
+      title: `“${s.title}” ${asks}`,
+      blocks: text ? [{ type: 'quote', who, text }] : [],
       actions: [
         {
           id: plan ? APPROVE_PLAN : 'allow',

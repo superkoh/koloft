@@ -1,4 +1,6 @@
 import type { AskPayload } from '@shared/sessionEvent'
+import type { BackendId } from '@shared/types'
+import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { sleep } from '@core/sleep'
 import type { SessionRuntime } from '@core/agent/sessionRuntime'
 import type { ToolCall } from '@core/moment'
@@ -7,6 +9,7 @@ import { claudeAskLine, storedAskLine } from './rowActivity'
 
 type CodexAsk = CodexApproval | CodexQuestion
 interface StoredAsks {
+  readonly id: BackendId
   openApproval(tabId: string): CodexApproval | undefined
   openQuestion(tabId: string): CodexQuestion | undefined
 }
@@ -16,7 +19,7 @@ interface DialogView {
 
 export interface AskReaders<View extends DialogView> {
   claudeDialog(p: AskPayload): View
-  codexDialog(a: CodexAsk): View
+  codexDialog(a: CodexAsk, label: string): View
   questionsOf(p: AskPayload): unknown[]
   isAskedCall(p: AskPayload, call: ToolCall): boolean
 }
@@ -36,21 +39,30 @@ export interface AskWiringDeps<View extends DialogView> {
 const CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS = 8
 const CODEX_REQUEST_POLL_MS = 250
 
+interface StoredAsk {
+  ask: CodexAsk
+  of: BackendId
+}
+
 export function askWiring<View extends DialogView>(d: AskWiringDeps<View>) {
   const { storedOwnerOf } = d
   const claudeAsks = new Map<string, AskPayload>()
 
   // CODEX§3 CODEX§20
-  async function pendingAskOf(tabId: string): Promise<CodexAsk | undefined> {
+  async function pendingStoredAsk(tabId: string): Promise<StoredAsk | undefined> {
     for (let polls = CODEX_REQUEST_TRAILS_ITS_STATUS_POLLS; ; polls--) {
       const owner = storedOwnerOf(tabId)
       const ask = owner?.openApproval(tabId) ?? owner?.openQuestion(tabId)
-      if (ask || !polls || !owner) return ask
+      if (owner && ask) return { ask, of: owner.id }
+      if (!polls || !owner) return undefined
       const runtime = d.runtime()
       if (runtime.statusOf(tabId) !== 'approval' && !runtime.awaitsInput(tabId)) return undefined
       await sleep(CODEX_REQUEST_POLL_MS)
     }
   }
+
+  const storedDialog = ({ ask, of }: StoredAsk): View =>
+    d.readers().codexDialog(ask, BACKEND_LABEL[of])
 
   return {
     claudeAsked: (tabId: string, ask: AskPayload, id: string): void => {
@@ -76,15 +88,16 @@ export function askWiring<View extends DialogView>(d: AskWiringDeps<View>) {
       const ask = claudeAsks.get(tabId) ?? sessionAsks?.heldAsk(tabId)
       return ask && claudeAskLine(ask)
     },
-    pendingAskOf,
+    pendingAskOf: async (tabId: string): Promise<CodexAsk | undefined> =>
+      (await pendingStoredAsk(tabId))?.ask,
     ownerAsleepAsked: async (tabId: string) => {
-      const stored = await pendingAskOf(tabId)
+      const stored = await pendingStoredAsk(tabId)
       const runtime = d.runtime()
       const sessionAsks = d.sessionAsks()
-      const { claudeDialog, codexDialog, questionsOf } = d.readers()
+      const { claudeDialog, questionsOf } = d.readers()
       if (stored) {
-        const questions = 'questions' in stored ? stored.questions.length : 0
-        return { question: questions > 0, questions, text: codexDialog(stored).text }
+        const questions = 'questions' in stored.ask ? stored.ask.questions.length : 0
+        return { question: questions > 0, questions, text: storedDialog(stored).text }
       }
       const claude =
         sessionAsks?.heldAsk(tabId) ??
@@ -94,9 +107,8 @@ export function askWiring<View extends DialogView>(d: AskWiringDeps<View>) {
       return { question: questions > 0, questions, text: claudeDialog(claude).text }
     },
     dialogOf: async (tabId: string): Promise<View | undefined> => {
-      const ask = await pendingAskOf(tabId)
-      const { codexDialog } = d.readers()
-      return ask ? codexDialog(ask) : d.sessionAsks()?.dialog(tabId)
+      const stored = await pendingStoredAsk(tabId)
+      return stored ? storedDialog(stored) : d.sessionAsks()?.dialog(tabId)
     }
   }
 }
