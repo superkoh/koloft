@@ -268,10 +268,14 @@ async function withLab(
 const filesHoldingTheKeyOn = (
   lab: SshLab,
   user: string,
-  key = E2E_CLAUDE_ACCOUNT_KEY,
+  keys = [E2E_CLAUDE_ACCOUNT_KEY],
   under = '.koloft'
 ): string[] =>
-  runOnTarget(lab, user, `grep -rl -e '${key}' ${under} 2>/dev/null || true`)
+  runOnTarget(
+    lab,
+    user,
+    `grep -rl ${keys.map((key) => `-e '${key}'`).join(' ')} ${under} 2>/dev/null || true`
+  )
     .split('\n')
     .filter(Boolean)
 
@@ -2362,10 +2366,13 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     addCodexAccount(env, A_MADE_UP_API_KEY_CODEX_READS_AS_SIGNED_IN)
     const turns = '/home/kuser/stand-in-model.jsonl'
     const config = Buffer.from(STAND_IN_MODEL_CONFIG).toString('base64')
-    const keyHolders = (lab: SshLab): string[] => [
-      ...filesHoldingTheKeyOn(lab, 'kuser', MADE_UP_CODEX_API_KEY, '.'),
-      ...filesHoldingTheKeyOn(lab, 'kuser', AN_OLDER_KOLOFTS_CODEX_API_KEY, '.')
-    ]
+    const keyHolders = (lab: SshLab): string[] =>
+      filesHoldingTheKeyOn(
+        lab,
+        'kuser',
+        [MADE_UP_CODEX_API_KEY, AN_OLDER_KOLOFTS_CODEX_API_KEY],
+        '.'
+      )
     const leftByAnOlderKoloft = JSON.stringify({
       auth_mode: 'apikey',
       OPENAI_API_KEY: AN_OLDER_KOLOFTS_CODEX_API_KEY
@@ -2408,6 +2415,13 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         const whileOpen = keyHolders(lab)
         await sendShortcut(app, 'shortcut:close-tab')
         await expect.poll(() => termIds(page), { timeout: 30_000 }).not.toContain(tabId)
+        await expect
+          .poll(
+            () =>
+              runOnTarget(lab, 'kuser', 'ps -eo args= | grep -e "app-server [-]-listen" || true'),
+            { timeout: 30_000 }
+          )
+          .toBe('')
         const afterClose = keyHolders(lab)
         await quitKoloft()
         expect({ whileOpen, afterClose, afterQuit: keyHolders(lab) }).toEqual({

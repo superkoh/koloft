@@ -2202,10 +2202,7 @@ did not change. A real refresh token on the machine was not probed.
 `account/login/completed {success:true}` and `account/updated {authMode:"apikey"}`; the
 home then held `auth.json` (mode 600, keys `auth_mode` and `OPENAI_API_KEY`), the only file
 under `HOME` holding the key, and it stayed after the server was stopped. Unlike
-`chatgptAuthTokens`, such a login outlives the process. Seen through Koloft too on
-2026-11-25: E-SSH-24 (the Docker SSH lab, the Mac's codex-cli 0.169.0, a made-up key)
-left `~/.koloft/codex-home/auth.json` holding the key while the tab was open, after it
-closed and after Koloft quit.
+`chatgptAuthTokens`, such a login outlives the process.
 
 **`cli_auth_credentials_store="ephemeral"` keeps an API-key login in the process.**
 Measured 2026-11-25, `@openai/codex@0.169.0` by npm in `node:22-bookworm-slim` (Docker,
