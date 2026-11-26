@@ -16,6 +16,7 @@ export const SENT_WORDS_SUFFIX = '.discord-said'
 export const SENT_IDS_SUFFIX = '.discord-ids'
 
 export const HANDED_OVER_TASK_COMES_FIRST = '.task-first'
+export const SAID_TO_THE_STARTER = '.said-to-the-starter'
 
 export const STATUS_LOG_SUFFIX = '.status.jsonl'
 
@@ -30,11 +31,16 @@ function quotedOwnerWords(ownerWords: string): string {
 // ADR-0031
 export function seedOwnerWords(said: string, ownerWords: string): void {
   fs.writeFileSync(said, quotedOwnerWords(ownerWords))
+  fs.rmSync(said + SAID_TO_THE_STARTER, { force: true })
 }
 
 // ADR-0031
 export function handedOverOwnerWordsFiles(ownerWords: string): Record<string, string> {
-  return { '': quotedOwnerWords(ownerWords), [HANDED_OVER_TASK_COMES_FIRST]: '' }
+  return {
+    '': quotedOwnerWords(ownerWords),
+    [HANDED_OVER_TASK_COMES_FIRST]: '',
+    [SAID_TO_THE_STARTER]: ''
+  }
 }
 
 // ADR-0031

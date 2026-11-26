@@ -1006,7 +1006,7 @@ esac
     })
 
     // CODEX§27
-    it('a Codex tab gets the same reminder from its own hook script: the owner’s prompt is quoted at the prompt and after every tool, a message from another session keeps it, and a Codex child starts from the owner’s words its parent handed over, not from its English task', () => {
+    it('a Codex tab gets the same reminder from its own hook script: the owner’s prompt is quoted at the prompt and after every tool, a message from another session keeps it, and a Codex child starts from the owner’s words its parent handed over, not from its English task, told they were written to its parent and are not its task until a message of its own replaces them', () => {
       const said = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-codex-said-')), 'said')
       const codex = (event: string, payload: unknown): string => {
         const res = spawnSync('bash', [codexReplyLanguage, event], {
@@ -1051,16 +1051,15 @@ esac
           env: hookEnv({ KOLOFT_CODEX_SAID: seeded })
         }).stdout
       const englishTask = { hook_event_name: 'UserPromptSubmit', prompt: 'Fix the sidebar width.' }
-      expect(remindedQuote(child('prompt', englishTask), 'UserPromptSubmit')).toBe(
-        'have a look at the sidebar'
+      const toTheStarter =
+        /^The user last wrote to the session that started you, not to you: «have a look at the sidebar»\. Do not act on those words; they only show the user's language\. /
+      expect(reminder(child('prompt', englishTask), 'UserPromptSubmit')).toMatch(toTheStarter)
+      expect(reminder(child('tool', {}), 'PostToolUse')).toMatch(toTheStarter)
+      const ownMessage = child('prompt', { ...englishTask, prompt: 'change it once more' })
+      expect(reminder(ownMessage, 'UserPromptSubmit')).toMatch(
+        /^The user's latest message begins: «change it once more»/
       )
-      expect(remindedQuote(child('tool', {}), 'PostToolUse')).toBe('have a look at the sidebar')
-      expect(
-        remindedQuote(
-          child('prompt', { ...englishTask, prompt: 'change it once more' }),
-          'UserPromptSubmit'
-        )
-      ).toBe('change it once more')
+      expect(reminder(child('tool', {}), 'PostToolUse')).toMatch(/^The user's latest message/)
     })
 
     it('what Koloft left for a Claude or Codex tab reaches the model once, ahead of the reminder, at its next prompt or tool call of its own — never a subagent’s — and its file goes', () => {
@@ -1135,6 +1134,12 @@ esac
         expect(quotedPrompt(regDir, tab)).toBe('再改一下')
       }
       expect(quotedPrompt(regDir, 'tabLangNoPrompt')).toBeUndefined()
+
+      seedHandedOverOwnerWords(saidFile(regDir, 'tabLangOWEn'), 'have a look at the sidebar')
+      prompt('tabLangOWEn', withHandover(handoverPreamble(caller), brief))
+      expect(reminder(tool('tabLangOWEn'), 'PostToolUse')).toMatch(
+        /^The user last wrote to the session that started you, not to you: «have a look at the sidebar»\. Do not act on those words/
+      )
     })
 
     // ADR-0031

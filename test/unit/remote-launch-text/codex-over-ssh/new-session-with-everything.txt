@@ -40,6 +40,7 @@ S="$HOME/.koloft/cx/table-instance/pty-t1"
 rm -f "$S".* "$HOME/.koloft/hook-sessions/pty-t1.shell-wrote.jsonl"
 printf '%s' 'The owner'\''s own words, with a '\'' in them' > "$S.said"
 printf '%s' '' > "$S.said.task-first"
+printf '%s' '' > "$S.said.said-to-the-starter"
 PATH="$PATH":'/opt/login-shell/bin:/home/linuxbrew/.linuxbrew/bin'
 (
   KOLOFT_TAB_ID='pty-t1'; export KOLOFT_TAB_ID

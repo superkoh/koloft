@@ -11,6 +11,8 @@ KOLOFT_OWNER_TEXT=OWNER TEXT
 KOLOFT_SESSION_NAME=PinnedName
 === file pty-t1.said ===
 The owner's own words, with a ' in them
+=== file pty-t1.said.said-to-the-starter ===
+
 === file pty-t1.said.task-first ===
 
 === Claude Code's own file in the home folder ===

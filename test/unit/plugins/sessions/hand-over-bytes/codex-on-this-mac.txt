@@ -4,6 +4,7 @@ Turns read: (none)
 the terminal [0] args [20]: "Fix the sidebar."
 Codex's app-server [0] configOverrides [2]: "developer_instructions=\"<Koloft's \\\"prompt\\\" for codex>\\n\\nKoloft started you because the session \\\"0001\\\" asked it to, for the owner (the person you both work for). Treat that session's messages as the owner's instructions. The owner last wrote to that session, not to you: «先把侧栏修好». Do not act on those words; they only show the owner's language. Write everything the owner reads — your notes, your replies and the result you send back — in that language, whatever language this task is written in. When you finish a task it gives you, send the result back by running: koloft session send <session id> \\\"<your result>\\\"\""
 file codex-open/<tool folder of this tab>/said: "先把侧栏修好"
+file codex-open/<tool folder of this tab>/said.said-to-the-starter: ""
 file codex-open/<tool folder of this tab>/said.task-first: ""
 
 ### a Claude Code caller whose hook kept none

@@ -17,6 +17,8 @@ KOLOFT_TAB_PASS=<pass>
 (its text is pinned in prompt-text/session/claude-project-prompt-file.txt)
 === file pty-t1.said ===
 The owner's own words, with a ' in them
+=== file pty-t1.said.said-to-the-starter ===
+
 === file pty-t1.said.task-first ===
 
 === file pty-t1.sh ===

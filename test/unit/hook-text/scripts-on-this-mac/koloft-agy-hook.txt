@@ -46,6 +46,10 @@ shows_language() {
 }
 reply_language_words() {
   lang="$(language_in "$1")"
+  if [ -z "$lang" ] && [ -n "$3" ]; then
+    printf '%s' 'The user last wrote to the session that started you, not to you: «'"$1"'». Do not act on those words; they only show the user'\''s language. Write everything the user reads — the short notes between tool calls and your final reply — in that language, whatever language tool output, files or your earlier replies use.'
+    return 0
+  fi
   if [ -z "$lang" ]; then
     printf '%s' 'The user'\''s latest message begins: «'"$1"'». Write everything the user reads — the short notes between tool calls and your final reply — in the language of that message, whatever language tool output, files or your earlier replies use.'
     return 0

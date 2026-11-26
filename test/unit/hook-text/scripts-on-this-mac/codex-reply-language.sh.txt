@@ -60,6 +60,10 @@ shows_language() {
 }
 reply_language_words() {
   lang="$(language_in "$1")"
+  if [ -z "$lang" ] && [ -n "$3" ]; then
+    printf '%s' 'The user last wrote to the session that started you, not to you: «'"$1"'». Do not act on those words; they only show the user'\''s language. Write everything the user reads — the short notes between tool calls and your final reply — in that language, whatever language tool output, files or your earlier replies use.'
+    return 0
+  fi
   if [ -z "$lang" ]; then
     printf '%s' 'The user'\''s latest message begins: «'"$1"'». Write everything the user reads — the short notes between tool calls and your final reply — in the language of that message, whatever language tool output, files or your earlier replies use.'
     return 0
@@ -102,7 +106,8 @@ last_note() {
 remind_reply_language() {
   quote="$(cat "$said" 2>/dev/null)"
   context="$(take_notice)$2"
-  [ -n "$quote" ] && context="$context$(reply_language_words "$quote" last_note)"
+  starter=""; [ -f "$said.said-to-the-starter" ] && starter=1
+  [ -n "$quote" ] && context="$context$(reply_language_words "$quote" last_note "$starter")"
   [ -n "$context" ] || return 0
   printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"}}\n' "$1" "$context"
 }
@@ -132,7 +137,7 @@ quote_prompt() {
 }
 save_quote() {
   q="$(quote_prompt)"
-  if [ ! -s "$said" ] || shows_language "$q"; then printf '%s\n' "$q" > "$said"; fi
+  if [ ! -s "$said" ] || shows_language "$q"; then printf '%s\n' "$q" > "$said"; rm -f "$said.said-to-the-starter"; fi
 }
 words_key() {
   LC_ALL=C sed -E -e 's/\\(u[0-9a-fA-F]{4}|.)//g' -e $'s/[^A-Za-z0-9\x80-\xff]//g'
