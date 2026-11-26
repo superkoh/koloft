@@ -36,7 +36,11 @@ import {
   type PickResponse,
   type UsageSnapshots
 } from './claudeAccountPicker'
-import { claudeCodeGuessesWindowOf, pickMachineAccount } from './claudeAccountEnv'
+import {
+  CLAUDE_AUTH_ENV_VARS,
+  claudeCodeGuessesWindowOf,
+  pickMachineAccount
+} from './claudeAccountEnv'
 
 // CC§7
 interface LoginWatch {
@@ -93,7 +97,6 @@ export interface ClaudeAccountDeps {
     availability(): Promise<{ available: boolean }>
   }
   loginEnvReady(): Promise<void>
-  CLAUDE_AUTH_ENV_VARS: readonly string[]
   cronTestMs(name: string, dflt: number): number
   setupLine(): string | undefined
   PLAIN_KOLOFT_SHIM: Parameters<PtyManager['create']>[0]['koloftShim']
@@ -115,7 +118,6 @@ export function claudeAccountsOf(deps: ClaudeAccountDeps) {
     sessionAccounts,
     claudeBackend,
     loginEnvReady,
-    CLAUDE_AUTH_ENV_VARS,
     cronTestMs,
     setupLine,
     PLAIN_KOLOFT_SHIM,

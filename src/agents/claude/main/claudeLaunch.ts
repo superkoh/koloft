@@ -28,6 +28,7 @@ import {
 import { mirrorProjectsRoot } from './claudeMirror'
 import { worktreeNameAround } from '../../../main/resumePlan'
 import { claudeArgv } from './claudeArgs'
+import { CLAUDE_AUTH_ENV_VARS } from './claudeAccountEnv'
 import {
   acceptClaudeTrust,
   claudeJsonPath,
@@ -296,6 +297,7 @@ export const claudeTabProgram = (tab: ClaudeTabPlace, c: ClaudeTab): TabProgram 
   run: claudeRun(tab.tabId, c),
   beforeTmux: `${c.trustFolder ? trustOnTheMachine(tab.cwd) : ''}${c.pictureFolder ? trustOnTheMachine(c.pictureFolder) : ''}${claudeFirstRun(tab)}`,
   whenItEnds: pushesProjectPrompt(c) ? `rm -f ${projectPromptOfThisRun(tab.tabId)}` : '',
+  envThatWouldSignItInAsAnotherAccount: CLAUDE_AUTH_ENV_VARS,
   files: {
     [`${tab.tabId}.tmux`]: tab.tmuxName,
     ...(!tab.attaches && {

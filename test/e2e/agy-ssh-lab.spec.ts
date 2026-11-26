@@ -586,6 +586,41 @@ test.describe('Antigravity sessions on real sshd machines behind a company jump 
     )
   })
 
+  test('E-SSH-A11: a login variable of another agent that the user set on the machine, such as ANTHROPIC_API_KEY, reaches the Antigravity session there as it reaches any other program there', async ({
+    env
+  }) => {
+    const anotherAgentsLogin = {
+      name: 'ANTHROPIC_API_KEY',
+      value: 'made-up-anthropic-key-on-the-machine'
+    }
+    const nobodysLogin = {
+      name: 'LAB_PLAIN_SETTING',
+      value: 'made-up-plain-setting-on-the-machine'
+    }
+    await withLab(
+      env,
+      async ({ page, lab }) => {
+        await addMachine(page, 'kt-key', 'kuser')
+        await agyTabAtItsPromptOn(page, 'kt-key')
+        const environ = runOnTarget(
+          lab,
+          'kuser',
+          `tr '\\000' '\\n' < /proc/${agyPidOn(lab, 'kuser')}/environ`
+        )
+        expect(
+          [anotherAgentsLogin, nobodysLogin].map(({ name, value }) =>
+            environ.split('\n').includes(`${name}=${value}`)
+          )
+        ).toEqual([true, true])
+      },
+      (lab) => {
+        fakeAgyOnTheMachine(lab, ['kuser'])
+        for (const { name, value } of [anotherAgentsLogin, nobodysLogin])
+          everyLoginOnTargetGets(lab, name, value)
+      }
+    )
+  })
+
   // AGY§2 AGY§3 AGY§5 AGY§6 AGY§29
   test('E-SSH-A6: a REAL agy, which Koloft installs on the Linux machine with Google’s installer, starts there in tmux with no Google account (the key of the Mac’s account, made up, and a stand-in model on the machine), binds, takes the title its model gave, answers a turn that shows working then done, and closing its tab ends it there with the key in no file; a worktree session started there next opens agy in the worktree made on the machine, straight on its prompt, though agy’s trust of the project does not reach into that folder (downloads agy and gh, spends nothing)', async ({
     env

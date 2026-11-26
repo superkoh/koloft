@@ -31,7 +31,7 @@ koloft_git="'include.path=$HOME/.koloft/git-accounts/config'"; case "$GIT_CONFIG
 if [ "$1" = run ]; then
   KOLOFT_TMUX_FOLLOW=1; export KOLOFT_TMUX_FOLLOW
   KOLOFT_TAB_ID=pty-t1; PATH="$M/bin/:$PATH"; export KOLOFT_TAB_ID PATH
-  unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN KOLOFT_TAB_PASS
+  unset KOLOFT_TAB_PASS
   [ -f "$HOME/.koloft/tabs/pty-t1.env" ] && { set -a; . "$HOME/.koloft/tabs/pty-t1.env"; set +a; rm -f "$HOME/.koloft/tabs/pty-t1.env"; }
   [ -f "$HOME/.koloft/tabs/pty-t1.pass" ] && { set -a; . "$HOME/.koloft/tabs/pty-t1.pass"; set +a; rm -f "$HOME/.koloft/tabs/pty-t1.pass"; }
   [ -n "$KOLOFT_TAB_PASS" ] && ( umask 077; printf 'set-environment -t %s KOLOFT_TAB_ID %s\nset-environment -t %s KOLOFT_TAB_PASS %s\n' "k-<session id>" pty-t1 "k-<session id>" "$KOLOFT_TAB_PASS" > "$HOME/.koloft/tabs/pty-t1.keys" ) && tmux -L koloft source-file "$HOME/.koloft/tabs/pty-t1.keys"; rm -f "$HOME/.koloft/tabs/pty-t1.keys"

@@ -3,6 +3,12 @@ import { keychainRead } from '../../../main/accounts'
 import type { PickResponse } from './claudeAccountPicker'
 import type { MachineAccount } from './claudeLaunch'
 
+export const CLAUDE_AUTH_ENV_VARS = [
+  'CLAUDE_CODE_OAUTH_TOKEN',
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN'
+]
+
 // CC§7
 export function claudeCodeGuessesWindowOf(model: string): boolean {
   return !/claude/i.test(model) && !/\[1m\]$/i.test(model)

@@ -144,6 +144,7 @@ export function agyTab(s: AgyTabSpec): TabProgram {
     ensureTool: 'agy',
     beforeTmux: '',
     whenItEnds: s.start ? `rm -f ${START_OF_THIS_RUN}` : '',
+    envThatWouldSignItInAsAnotherAccount: [],
     files: {
       [file('settings.json')]: s.settings,
       [file('hooks.json')]: s.hooks,

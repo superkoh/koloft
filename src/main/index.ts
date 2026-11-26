@@ -98,7 +98,6 @@ import {
   removeTabPackagesNoTabNeeds,
   utilShellLine,
   writeTabPassFile,
-  CLAUDE_AUTH_ENV_VARS,
   type MachinePackage
 } from './remote/launch'
 import {
@@ -1331,7 +1330,6 @@ const {
     availability: () => claudeBackend.availability()
   },
   loginEnvReady,
-  CLAUDE_AUTH_ENV_VARS,
   cronTestMs,
   setupLine,
   PLAIN_KOLOFT_SHIM,
