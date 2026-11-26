@@ -312,7 +312,7 @@ export async function agyReady(page: Page): Promise<void> {
     .toBe(true)
 }
 
-const itsFirstTurnHasEndedOnItsRow = (page: Page, tabId: string): Promise<void> =>
+export const itsFirstTurnHasEndedOnItsRow = (page: Page, tabId: string): Promise<void> =>
   expect(page.locator(`.ws .ws-tab[data-tab-id="${tabId}"] .ws-tab-unread`)).toHaveCount(1, {
     timeout: 60_000
   })
