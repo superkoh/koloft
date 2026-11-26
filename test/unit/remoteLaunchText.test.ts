@@ -706,7 +706,7 @@ describe('the order a launch on another machine keeps', () => {
       recordingSsh(() => SSH_WANTS_A_PASSWORD)
     )
     await expect(agyTabOn(tab)).rejects.toThrow(
-      'sign in through a Claude Code or Codex session there first'
+      'This machine wants a password or a new host key first, and an Antigravity tab cannot ask for it yet: sign in through a Claude Code or Codex session there first'
     )
     expect(tab.started).toHaveLength(0)
     expect(tab.ssh.ran).toHaveLength(1)
