@@ -49,7 +49,7 @@ import {
 import { seedSettings, type E2EEnv } from './helpers/env'
 import { codexCalls } from './helpers/codex'
 import { portFreeOnTheMac } from './helpers/fixtureServer'
-import { NOT_SENT_BY_KOLOFT } from '../../src/plugins/sessions/main/hooks'
+import { NOT_SENT_BY_KOLOFT } from '../../src/plugins/sessions/shared/hookRules'
 
 const LAYOUT_SAVE_DEBOUNCE_SETTLE_MS = 3000
 const SEVERAL_FAILED_2S_HEARTBEATS_MS = 8000

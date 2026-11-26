@@ -60,11 +60,8 @@ import type { Commands } from '@core/commands'
 import type { SessionStarted, SessionStarting } from '@core/moment'
 import { AGENT_SHIM_WAITS_MS } from '@core/command'
 import type { ModeClass, SessionBackends } from '@core/agent/sessionBackends'
-import {
-  A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
-  FROM_A_SESSION,
-  FROM_KOLOFT
-} from './messageOpenings'
+import { FROM_A_SESSION, FROM_KOLOFT } from '../shared/messageOpenings'
+import { A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS } from '@shared/koloftOpenings'
 import {
   OWNER_WORDS_QUOTED_CHARS,
   handoverInOwnersLanguage,

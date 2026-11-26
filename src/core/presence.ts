@@ -1,4 +1,5 @@
 export const AWAY_AFTER_MS = 5 * 60_000
+export const OWNER_ASLEEP_FILE = 'owner-asleep'
 // PLATFORM§60
 const INPUT_IS_THE_MACS_WITHIN_SECONDS = 1
 const HANDS_RECHECKED_AFTER_MS = 1000

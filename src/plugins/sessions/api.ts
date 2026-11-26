@@ -10,7 +10,7 @@ import {
 } from './prompts/text'
 
 export { PICKED_FLAGS, PICK_FOR_THE_TASK, WAITING_QUESTION_TOOL, withProjectRules }
-export { FROM_KOLOFT } from './main/messageOpenings'
+export { FROM_KOLOFT } from './shared/messageOpenings'
 export {
   SlashCommands,
   toCaller,

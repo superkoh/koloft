@@ -15,7 +15,7 @@ import {
   type Target
 } from '../../../../src/plugins/sessions/main/sessionVerbs'
 import type { PinnedWorkspace } from '../../../../src/plugins/sessions/api'
-import { A_HELPER_HAS_IT } from '../../../../src/plugins/sessions/main/messageOpenings'
+import { A_HELPER_HAS_IT } from '../../../../src/plugins/sessions/shared/messageOpenings'
 import { crossSessionLine } from '../../../../src/agents/claude/main/crossSessionMessage'
 import type { TranscriptPlaces } from '../../../../src/core/transcriptPlaces'
 import type { SentNote } from '../../../../src/core/agent/sessionBackends'
