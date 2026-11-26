@@ -14,7 +14,14 @@ import {
   TAB_PASS_FILE_SUFFIX,
   tmuxHoldsATabPass
 } from './install'
-import { remotePtsFile, remoteTabPath, REMOTE_TABS_DIR, tabPackagesBase } from './paths'
+import {
+  remotePtsFile,
+  remoteTabPath,
+  REMOTE_TABS_DIR,
+  SESSION_BIN_DIR,
+  tabPackagesBase,
+  UTIL_BIN_DIR
+} from './paths'
 import { passOf, TAB_PASS_ENV } from '../tabPass'
 import { OWNING_TAB_ENV } from '../owningTabEnv'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
@@ -36,8 +43,6 @@ export interface MachinePackage {
   name: string
 }
 
-export const UTIL_BIN_DIR = 'util-bin/'
-export const SESSION_BIN_DIR = 'bin/'
 export const CLAUDE_BIN_DIR = 'claude-bin/'
 export const AGENT_PLUGIN_DIR = 'agent-plugin/'
 export const DOCS_PLUGIN_DIR = 'docs-plugin/'

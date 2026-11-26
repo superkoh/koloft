@@ -2,21 +2,9 @@ import fs from 'fs'
 import path from 'path'
 import { STATUS_RELAY_FILE, STATUS_RELAY_PY } from './statusRelay'
 import { MACHINE_PLAYWRIGHT_CLI } from './playwrightCli'
-import {
-  ENSURE_CODEX_SH,
-  ENSURE_SH,
-  TMUX_CONF,
-  UTIL_BASH_LOGIN,
-  UTIL_BASH_LOGIN_FILE,
-  UTIL_SH
-} from './install'
-import {
-  AGENT_PLUGIN_DIR,
-  CLAUDE_BIN_DIR,
-  DOCS_PLUGIN_DIR,
-  SESSION_BIN_DIR,
-  UTIL_BIN_DIR
-} from './launch'
+import { ENSURE_SH, TMUX_CONF, UTIL_BASH_LOGIN, UTIL_BASH_LOGIN_FILE, UTIL_SH } from './install'
+import { AGENT_PLUGIN_DIR, CLAUDE_BIN_DIR, DOCS_PLUGIN_DIR } from './launch'
+import { SESSION_BIN_DIR, UTIL_BIN_DIR } from './paths'
 import { utilTerminalGuard } from '../utilTerminalGuard'
 import { machineGhWrapperScript } from '../gitCredentialScripts'
 import { REMOTE_AGENT_SHIM } from '../agentShim'
@@ -32,7 +20,11 @@ import { MACHINE_CLAUDE } from '@agents/claude/main/advisorOnFable'
 import { CLAUDE_UTIL_TERMINAL_REFUSAL } from '@agents/claude/main/claudeShim'
 import { CODEX_UTIL_TERMINAL_REFUSAL } from '@agents/codex/main/codexShim'
 import { AGY_UTIL_TERMINAL_REFUSAL } from '@agents/agy/main/agyShim'
-import { ENSURE_CODEX_FILE, replyLanguageFiles } from '@agents/codex/main/codexMachine'
+import {
+  ENSURE_CODEX_FILE,
+  ENSURE_CODEX_SH,
+  replyLanguageFiles
+} from '@agents/codex/main/codexMachine'
 import { AGY_LIST_JS } from '@agents/agy/main/agyStore'
 import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from '@agents/agy/main/agyHooks'
 import {

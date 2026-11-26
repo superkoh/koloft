@@ -5,7 +5,9 @@ import type { Socket } from 'net'
 import WebSocket from 'ws'
 import { shq } from '@shared/shellQuote'
 import {
-  CODEX_FIRST_ON_PATH,
+  INSTALL_GH,
+  INSTALL_PKG,
+  installNode,
   REMOTE_ENV_LINES,
   remoteAnswerCommand,
   remoteShCommand,
@@ -40,6 +42,50 @@ import {
 import { OWNING_TAB_ENV } from '../../../main/owningTabEnv'
 
 export const ENSURE_CODEX_FILE = 'ensure-codex.sh'
+
+const CODEX_CLI_DIR = '$HOME/.koloft/codex-cli'
+
+export const CODEX_FIRST_ON_PATH = `PATH="${CODEX_CLI_DIR}/bin:$PATH"; export PATH`
+
+const CA_BUNDLES = [
+  '/etc/ssl/certs/ca-certificates.crt',
+  '/etc/pki/tls/certs/ca-bundle.crt',
+  '/etc/ssl/cert.pem',
+  '/etc/ssl/ca-bundle.pem'
+]
+
+// CODEX§16
+export const ENSURE_CODEX_SH = `#!/bin/sh
+${REMOTE_ENV_LINES}
+${CODEX_FIRST_ON_PATH}
+want="$1"
+${INSTALL_PKG}
+have bash || install_pkg bash || exit 4
+ca_ok() {
+  for f in ${CA_BUNDLES.join(' ')}; do [ -s "$f" ] && return 0; done
+  return 1
+}
+if ! ca_ok; then
+  install_pkg ca-certificates && ca_ok || {
+    say "this machine has no CA certificates (the ca-certificates package), so Codex cannot reach OpenAI from here — it would only say \\"workspace routing discovery failed\\". Install ca-certificates there, then start the session again."
+    exit 4
+  }
+fi
+if ! have bwrap && [ "$(uname -s)" = Linux ] && { [ "$(id -u)" = 0 ] || sudo -n true >/dev/null 2>&1; }; then
+  install_pkg bubblewrap || :
+fi
+if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ] && ! grep -rqs /usr/bin/bwrap /etc/apparmor.d; then
+  say "this machine's AppArmor blocks the sandbox Codex runs commands in (kernel.apparmor_restrict_unprivileged_userns = 1 and no AppArmor profile for /usr/bin/bwrap), so each command Codex runs there fails with \\"bwrap: loopback\\". To fix it, load an AppArmor profile that allows userns for /usr/bin/bwrap on the machine (needs root), then start the session again."
+fi
+${INSTALL_GH}
+[ "$(codex --version 2>/dev/null)" = "codex-cli $want" ] && exit 0
+${installNode('Codex', 'Codex cannot be installed on this machine')}
+have npm || { say "Codex is installed with npm, and this machine has none: install Node.js 20 or newer there, then start the session again"; exit 4; }
+say "installing Codex $want on this machine (once per Codex version)"
+npm install -g --prefix "${CODEX_CLI_DIR}" "@openai/codex@$want" </dev/null || { say "Codex $want did not install; see the output above"; exit 4; }
+[ "$(codex --version 2>/dev/null)" = "codex-cli $want" ] || { say "Codex $want did not install; see the output above"; exit 4; }
+exit 0
+`
 
 // ADR-0039
 export const REMOTE_CODEX_HOME = `${REMOTE_HOME}/codex-home`
