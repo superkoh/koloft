@@ -1,7 +1,7 @@
 export { agyBackend } from '@agents/agy/main/backend'
 export { machineHookSettings } from '@agents/claude/main/backend'
 export { codexBackend } from '@agents/codex/main/backend'
-export { A_HELPER_HAS_IT } from './messageOpenings'
+export { A_HELPER_HAS_IT } from '../shared/messageOpenings'
 export { writeLineInTurn } from '@agents/claude/main/crossSessionMessage'
 export { claudeDialog, codexDialog, isAskedCall, questionsOf } from './dialog'
 export {
@@ -11,20 +11,26 @@ export {
 } from './everyWorkspaceInstructions'
 export {
   forgetAssistMarkers,
-  localNotice,
   markAnswerable,
   markOwnerAsleep,
   noteSent,
   opensAsOnlyKoloftSends,
-  noticeFile,
   pruneStale,
   quotedPrompt,
+  setupHooks
+} from './hooks'
+export {
+  localNotice,
+  noticeFile,
   saidFile,
-  seedHandedOverOwnerWords,
-  setupHooks,
+  seedHandedOverOwnerWords
+} from '../../../main/hookFiles'
+export {
+  writeClaudeHookScript,
   writeConductorMarker,
   writeTabHookSettings
-} from './hooks'
+} from '@agents/claude/main/claudeHooks'
+export { writeCodexReplyLanguageScript } from '@agents/codex/main/codexHooks'
 export { resolveWorkspace } from './placedRows'
 export {
   anotherSessionIn,

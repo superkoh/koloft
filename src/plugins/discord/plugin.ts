@@ -12,6 +12,7 @@ import {
 import { TEXT } from './prompts/text'
 import { TEXT as SKILL_TEXT } from './skill/text'
 import { CHANNELS } from './shared/ipc'
+import { DISCORD_HOOK_RULES } from './shared/hookRules'
 
 export const DISCORD_BIND = 'discord-bind'
 export const DISCORD_PAGE = 'discord'
@@ -32,6 +33,7 @@ export const plugin: PluginManifest = {
     { place: 'settings-page', id: DISCORD_PAGE }
   ],
   channels: Object.values(CHANNELS),
+  hookMomentRules: DISCORD_HOOK_RULES,
   moments: {
     listens: [
       FILE_OPENED.name,

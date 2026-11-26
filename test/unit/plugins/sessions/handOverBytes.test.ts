@@ -64,11 +64,8 @@ import { PtyManager } from '../../../../src/main/ptyManager'
 import { mirrorHookDir } from '../../../../src/main/remote/paths'
 import { sessionVerb, type Target } from '../../../../src/plugins/sessions/main/sessionVerbs'
 import { StartedSessions } from '../../../../src/plugins/sessions/main/startedSessions'
-import {
-  opensAsOnlyKoloftSends,
-  quotedPrompt,
-  saidFile
-} from '../../../../src/plugins/sessions/main/hooks'
+import { opensAsOnlyKoloftSends, quotedPrompt } from '../../../../src/plugins/sessions/main/hooks'
+import { saidFile } from '../../../../src/main/hookFiles'
 import { codexBackend } from '../../../../src/agents/codex/main/backend'
 import { agyBackend } from '../../../../src/agents/agy/main/backend'
 import type { ResumeProbes } from '../../../../src/main/resumePlan'
