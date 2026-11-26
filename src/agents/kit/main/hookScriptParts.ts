@@ -132,7 +132,7 @@ export const REMIND_AFTER_A_TOOL = `fields="$(grep -o -E '"(transcript_path|agen
   case "$fields" in *'"agent_id"'*) notice="" ;; esac
   remind_reply_language PostToolUse`
 
-const insideAJsonString = (text: string): string => JSON.stringify(text).slice(1, -1)
+export const insideAJsonString = (text: string): string => JSON.stringify(text).slice(1, -1)
 
 const inASingleQuotedSedProgram = (text: string): string =>
   insideAJsonString(text)
@@ -171,7 +171,8 @@ function armBody(rule: MessageArrivesRule, bodies: ArmBodies): string {
 export function messageArms(indent: string, bodies: ArmBodies): string {
   const arms: { patterns: string[]; body: string }[] = []
   for (const rule of messageArrivesRules()) {
-    const pattern = isAnOpeningRule(rule) ? `${shq(textOf(rule))}*` : shq(textOf(rule))
+    const text = shq(insideAJsonString(textOf(rule)))
+    const pattern = isAnOpeningRule(rule) ? `${text}*` : text
     const said = armBody(rule, bodies)
     const last = arms.at(-1)
     if (last?.body === said) last.patterns.push(pattern)
