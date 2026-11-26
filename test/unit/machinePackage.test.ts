@@ -14,6 +14,20 @@ vi.mock('electron', async () => {
 
 afterAll(() => fs.rmSync(app.getPath('userData'), { recursive: true, force: true }))
 
+const statusLineBundle = vi.hoisted(() => ({ unreadable: false }))
+
+vi.mock('../../src/main/statuslineParts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../src/main/statuslineParts')>()
+  const { app: mockedApp } = await import('electron')
+  return {
+    ...real,
+    bundlePath: () =>
+      statusLineBundle.unreadable
+        ? path.join(mockedApp.getPath('userData'), 'no-such-folder', 'ccstatusline.js')
+        : real.bundlePath()
+  }
+})
+
 import { knowPluginStates } from '@core/switches'
 import { plugin as passwordsPlugin } from '@plugins/passwords/plugin'
 import {
@@ -42,6 +56,8 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
+  statusLineBundle.unreadable = false
+  vi.restoreAllMocks()
   knowPluginStates({})
   await world.gone()
 })
@@ -121,6 +137,15 @@ describe('the machine package Koloft pushes once to every machine it has a tab o
     expect(off.name).toBe(nameFromTheFilesOnDisk(off))
     await expect(`passwords on: ${on.name}\npasswords off: ${off.name}\n`).toMatchFileSnapshot(
       `${PINNED}/names.txt`
+    )
+  })
+
+  it("when ccstatusline's bundle cannot be read, every file under statusline/ is left out, every agent's too, as they need the bundle to run", async () => {
+    statusLineBundle.unreadable = true
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const pkg = machinePackageWith(true)
+    await expect(`${pkg.files.join('\n')}\n`).toMatchFileSnapshot(
+      `${PINNED}/statusline-bundle-unreadable.txt`
     )
   })
 
