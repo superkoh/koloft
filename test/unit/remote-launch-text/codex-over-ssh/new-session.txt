@@ -45,8 +45,8 @@ PATH="$PATH":'/opt/login-shell/bin:/home/linuxbrew/.linuxbrew/bin'
   KOLOFT_SHELL_WROTE="$HOME/.koloft/hook-sessions/pty-t1.shell-wrote.jsonl"; KOLOFT_CODEX_DISCORD_SAID="$HOME/.koloft/hook-sessions/pty-t1.discord-said"
   export KOLOFT_CODEX_REPLY_LANGUAGE KOLOFT_CODEX_SAID KOLOFT_NOTICE KOLOFT_SHELL_WROTE KOLOFT_CODEX_DISCORD_SAID
   KOLOFT_HOLD_TAB=pty-t1; export KOLOFT_HOLD_TAB
-  command -v setsid >/dev/null 2>&1 && exec setsid nohup codex app-server --listen "unix://$S.sock" -c 'tui.status_line=["context-used","five-hour-limit","weekly-limit","git-branch","codex-version","model-with-reasoning","estimated-thread-cost","pull-request-number","current-dir"]' -c 'sandbox_workspace_write.network_access=true' -c 'developer_instructions="<Koloft'\''s \"prompt\" for codex>"' -c 'features.default_mode_request_user_input=true' -c 'allow_login_shell=false' -c "sandbox_workspace_write.writable_roots=[\"$HOME/.koloft/hook-sessions\"]"
-  exec nohup codex app-server --listen "unix://$S.sock" -c 'tui.status_line=["context-used","five-hour-limit","weekly-limit","git-branch","codex-version","model-with-reasoning","estimated-thread-cost","pull-request-number","current-dir"]' -c 'sandbox_workspace_write.network_access=true' -c 'developer_instructions="<Koloft'\''s \"prompt\" for codex>"' -c 'features.default_mode_request_user_input=true' -c 'allow_login_shell=false' -c "sandbox_workspace_write.writable_roots=[\"$HOME/.koloft/hook-sessions\"]"
+  command -v setsid >/dev/null 2>&1 && exec setsid nohup codex app-server --listen "unix://$S.sock" -c 'tui.status_line=["context-used","five-hour-limit","weekly-limit","git-branch","codex-version","model-with-reasoning","estimated-thread-cost","pull-request-number","current-dir"]' -c 'sandbox_workspace_write.network_access=true' -c 'developer_instructions="<Koloft'\''s \"prompt\" for codex>"' -c 'features.default_mode_request_user_input=true' -c 'allow_login_shell=false' -c 'cli_auth_credentials_store="ephemeral"' -c "sandbox_workspace_write.writable_roots=[\"$HOME/.koloft/hook-sessions\"]"
+  exec nohup codex app-server --listen "unix://$S.sock" -c 'tui.status_line=["context-used","five-hour-limit","weekly-limit","git-branch","codex-version","model-with-reasoning","estimated-thread-cost","pull-request-number","current-dir"]' -c 'sandbox_workspace_write.network_access=true' -c 'developer_instructions="<Koloft'\''s \"prompt\" for codex>"' -c 'features.default_mode_request_user_input=true' -c 'allow_login_shell=false' -c 'cli_auth_credentials_store="ephemeral"' -c "sandbox_workspace_write.writable_roots=[\"$HOME/.koloft/hook-sessions\"]"
 ) </dev/null >"$S.log" 2>&1 &
 echo $! > "$S.pid"
 i=0
@@ -110,6 +110,7 @@ stop_one() {
   rm -f "$D/$1".*
 }
 for p in "$D"/*.pid; do [ -f "$p" ] && stop_one "$(basename "$p" .pid)"; done
+rm -f "$HOME/.koloft/codex-home/auth.json"
 exit 0
 --- the next one ---
 sh -c 'echo koloft-answer-starts-here; eval "$(printf %s "$0" | base64 -d)"' <base64 of the script below>

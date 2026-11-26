@@ -68,6 +68,9 @@ const SERVER_START_TRIES = 150
 // CODEX§16
 const NO_LOGIN_SHELL = 'allow_login_shell=false'
 
+// CODEX§16
+const LOGIN_KEPT_IN_MEMORY_ONLY = 'cli_auth_credentials_store="ephemeral"'
+
 // CODEX§16 PLATFORM§33
 const BASH_LOGIN_PATH_WHEN_THE_USERS_SHELL_GAVE_NONE = `login_path=$(bash -lc 'printf "\\nKOLOFT_LOGIN_PATH=%s\\n" "$PATH"' </dev/null 2>/dev/null | sed -n 's/^KOLOFT_LOGIN_PATH=//p')
 [ -n "$login_path" ] && PATH="$PATH:$login_path"`
@@ -119,7 +122,7 @@ export function codexTabScript(s: CodexTabSpec): string {
     )
     .join('')
   const config = [
-    ...[...s.config, NO_LOGIN_SHELL].map((c) => `-c ${shq(c)}`),
+    ...[...s.config, NO_LOGIN_SHELL, LOGIN_KEPT_IN_MEMORY_ONLY].map((c) => `-c ${shq(c)}`),
     ...(s.agentTools
       ? [`-c "sandbox_workspace_write.writable_roots=[\\"${REMOTE_HOOK_DIR}\\"]"`]
       : [])
@@ -218,11 +221,13 @@ export function stopCodexServerCmd(instance: string, tabId: string): string {
   ])
 }
 
+// ADR-0039 CODEX§16
 export function sweepCodexServersCmd(instance: string): string {
   assertSafeNames(instance)
   return remoteShCommand(
     `D="${serversDir(instance)}"\n${STOP_SERVER_FN}\n` +
-      'for p in "$D"/*.pid; do [ -f "$p" ] && stop_one "$(basename "$p" .pid)"; done\nexit 0'
+      'for p in "$D"/*.pid; do [ -f "$p" ] && stop_one "$(basename "$p" .pid)"; done\n' +
+      `rm -f "${REMOTE_CODEX_HOME}/auth.json"\nexit 0`
   )
 }
 

@@ -2202,8 +2202,32 @@ did not change. A real refresh token on the machine was not probed.
 `account/login/completed {success:true}` and `account/updated {authMode:"apikey"}`; the
 home then held `auth.json` (mode 600, keys `auth_mode` and `OPENAI_API_KEY`), the only file
 under `HOME` holding the key, and it stayed after the server was stopped. Unlike
-`chatgptAuthTokens`, such a login outlives the process (what that means for Koloft's
-remote API-key accounts: issue #2454).
+`chatgptAuthTokens`, such a login outlives the process. Seen through Koloft too on
+2026-11-25: E-SSH-24 (the Docker SSH lab, the Mac's codex-cli 0.169.0, a made-up key)
+left `~/.koloft/codex-home/auth.json` holding the key while the tab was open, after it
+closed and after Koloft quit.
+
+**`cli_auth_credentials_store="ephemeral"` keeps an API-key login in the process.**
+Measured 2026-11-25, `@openai/codex@0.169.0` by npm in `node:22-bookworm-slim` (Docker,
+arm64) as a non-root user, `app-server --stdio` in a throwaway `HOME` and `CODEX_HOME`,
+`initialize` with `experimentalApi: true`, a stand-in Responses provider with
+`requires_openai_auth = true` that logged each request's `Authorization`, made-up keys and
+tokens:
+
+| home, server flags | what happened |
+|---|---|
+| empty, no flag | `account/login/start {type:"apiKey"}` wrote `auth.json` (plus `auth.json.lock`, `auth.lock`); the turn sent `Bearer <key>` |
+| empty, `-c cli_auth_credentials_store="ephemeral"` | the same login answers (`{type:"apiKey"}`, `login/completed success:true`, `account/updated {authMode:"apikey"}`), `account/read` `{type:"apiKey"}`, two turns each sent `Bearer <key>`; no file under `HOME` held the key while the server ran or after it stopped; a new server on that home, with or without the flag, answered `account: null` |
+| an old API-key `auth.json`, the flag | `account/read` before any login answered `account: null` and a turn sent no `Authorization`: the file is not read; after a login with another key the turn sent the new one, and `auth.json` stayed as it was, holding the old key |
+| empty, no flag / the flag, `chatgptAuthTokens` (`chatgpt_base_url` on a stub answering `wham/accounts/check` and `wham/config/bundle`) | the same both ways: `login/completed success:true`, `account/updated {authMode:"chatgptAuthTokens"}`, `account/read` `{type:"chatgpt"}`, the turn sent `Bearer <access token>`, no file held the token |
+| an old API-key `auth.json`, no flag / the flag, `chatgptAuthTokens` | before the login `account/read` answered `{type:"apiKey"}` without the flag, `account: null` with it; after it both read `chatgpt` and the turn sent the access token; `auth.json` stayed with the old key both ways |
+
+The 0.169.0 source (`codex-rs/login/src/auth/manager.rs`, tag `rust-v0.169.0`) agrees:
+`login_with_chatgpt_auth_tokens` saves with `AuthCredentialsStoreMode::Ephemeral`, and
+`storage_mode` picks `Ephemeral` for a `ChatgptAuthTokens` login whatever the config says.
+So the tab's app-server runs with that flag, and the first contact with a machine in each
+app run removes `~/.koloft/codex-home/auth.json`, which an older Koloft's API-key login
+left and which the flag would leave in place.
 
 **Turns over ssh.** Same frames as section 12: `thread/started`, `turn/started`,
 `item/started`/`item/completed`, `item/agentMessage/delta`, `turn/diff/updated`,
