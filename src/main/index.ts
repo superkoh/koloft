@@ -21,6 +21,7 @@ import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { TerminalOutput } from './flowControl'
 import type { CommandOutput } from '@core/agent/commandOutput'
+import type { MachineReach } from '@core/agent/sessionBackends'
 import type { TreeIo } from './sessionWorktrees'
 import { sharedProcessTable, type ProcessTable } from './processTable'
 import {
@@ -1442,13 +1443,16 @@ function machineTreeIo(cwd: string): TreeIo {
   }
 }
 
+const machineReach: MachineReach = {
+  poke: (host) => remoteSync?.pokeNow(host),
+  connected: (host) => !!remoteSync?.connected(host)
+}
+
 const machineRemoteDeps = {
   machine: (host: string) => hosts.machine(host),
   hosts: () => workspaceMgr?.remoteTargets().map((t) => t.host) ?? [],
   keyed: pinnedKeyOn,
   mirrorDir: (host: string) => mirrorHookDir(app.getPath('userData'), host),
-  gone: (host: string, sessionId: string) =>
-    !!remoteSync?.connected(host) && !remoteSync.alive(host).has(sessionId),
   alive: (host: string) => remoteSync?.alive(host) ?? new Set<string>(),
   connected: (host: string) => !!remoteSync?.connected(host),
   setupLine: () => setupLine(playwrightCliBin),
@@ -4265,10 +4269,7 @@ const STILL_RUNNING_ON_THE_MACHINE = 'still running on the machine'
 async function tidyRun(root: string, worktree: string, sessionId?: string): Promise<TidyResult> {
   const host = parseRemoteKey(root)?.host
   if (host && sessionId) {
-    const after = await sessionBackends.waitGoneFromTheMachine(host, sessionId, {
-      poke: () => remoteSync?.pokeNow(host),
-      connected: () => !!remoteSync?.connected(host)
-    })
+    const after = await sessionBackends.waitGoneFromTheMachine(host, sessionId, machineReach)
     if (after === 'alive') return { removed: false, kept: [STILL_RUNNING_ON_THE_MACHINE] }
     if (after === 'unreachable') return machineUnreachable()
   }

@@ -7,6 +7,7 @@ import { defaultControlDir } from '../../src/main/remote/ssh'
 import {
   addWorkspace,
   centerTerm,
+  machineAndItsOneRowShown,
   newSessionInWith,
   ONE_SESSION_WILL_BE_CLOSED,
   removeWorkspaceConfirming,
@@ -124,13 +125,6 @@ async function addMachine(page: Page, alias: LabAlias, user: string): Promise<vo
   await expect(wsGroup(page, alias).locator('.ws-conn')).toHaveClass(/\bon\b/, {
     timeout: BACKGROUND_CONNECT_MS
   })
-}
-
-async function machineAndItsRowShown(page: Page): Promise<void> {
-  await expect(wsGroup(page, 'kt-key').locator('.ws-conn')).toHaveClass(/\bon\b/, {
-    timeout: BACKGROUND_CONNECT_MS
-  })
-  await expect(wsRows(page, 'kt-key')).toHaveCount(1, { timeout: A_TURN_THROUGH_THE_MIRROR_MS })
 }
 
 const rowOfTab = (page: Page, tabId: string): Locator =>
@@ -340,7 +334,7 @@ test.describe('how a Claude Code and a Codex session on a real sshd machine behi
 
       koloftOpensAgainWithNoTabToTakeBack(env)
       const page = await openKoloftAgain()
-      await machineAndItsRowShown(page)
+      await machineAndItsOneRowShown(page, 'kt-key')
       expect(await termIds(page)).toEqual([])
       await removeWorkspaceConfirming(page, 'kt-key', ONE_SESSION_WILL_BE_CLOSED)
       await expect

@@ -34,6 +34,8 @@ import type {
   TabExit,
   WorktreeExitWatch
 } from '@core/agent/sessionBackends'
+import { A_SESSION_LEAVES_THE_MACHINE_WITHIN_MS } from '@core/agent/leavesTheMachine'
+import { machineOfItsTab, machinesWithItsTabs } from '@agents/kit/main/tabMachines'
 import { withHandover } from '@core/handOver'
 import { claudeWorktreeExitWatch } from './claudeWorktreeExitWatch'
 import {
@@ -180,7 +182,6 @@ const LOCAL_STATUS_LOG_POLL_MS = 1000
 const SESSION_END_SETTLE_MS = 800
 // CC§1
 const EVICTING_END_REASONS = new Set(['prompt_input_exit', 'logout'])
-const REMOTE_EXIT_WAIT_MS = 10_000
 const REMOTE_EXIT_SLACK_MS = 30_000
 const LIVENESS_SWEEP_MS = 2500
 const MISSED_SWEEPS_BEFORE_UNTRACK = 2
@@ -373,16 +374,11 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   machineOfTab(tabId: string): string | undefined {
-    const tab = this.d.pty.get(tabId)
-    return tab?.kind === 'claude' ? tab.remoteHost : undefined
+    return machineOfItsTab(this.d.pty, this.id, tabId)
   }
 
   machinesWithTabs(): string[] {
-    return this.d.pty
-      .list()
-      .flatMap((tab) =>
-        tab.alive && tab.kind === 'claude' && tab.remoteHost ? [tab.remoteHost] : []
-      )
+    return machinesWithItsTabs(this.d.pty, this.id)
   }
 
   sessionsRunningOnTheMachine(workspace: string): string[] {
@@ -925,7 +921,7 @@ export class ClaudeBackend implements SessionBackend {
           sessionId
         })
         tracker.untrack(tabId)
-      }, REMOTE_EXIT_WAIT_MS).unref()
+      }, A_SESSION_LEAVES_THE_MACHINE_WITHIN_MS).unref()
     }
   }
 
@@ -966,7 +962,7 @@ export class ClaudeBackend implements SessionBackend {
       }
       const lastLook = setTimeout(
         () => void remoteExitOnDisk(mirrorDir, sid, since).then(wait.settle),
-        REMOTE_EXIT_WAIT_MS
+        A_SESSION_LEAVES_THE_MACHINE_WITHIN_MS
       )
       this.remoteExitWaits.add(wait)
       void remoteExitOnDisk(mirrorDir, sid, since).then((hit) => hit && wait.settle(hit))

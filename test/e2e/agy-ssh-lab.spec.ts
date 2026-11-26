@@ -19,6 +19,7 @@ import {
   addWorkspace,
   centerTerm,
   chooseBackend,
+  machineAndItsOneRowShown,
   newSessionInWith,
   ONE_SESSION_WILL_BE_CLOSED,
   openWorktreeSession,
@@ -485,12 +486,7 @@ test.describe('Antigravity sessions on real sshd machines behind a company jump 
 
         koloftOpensAgainWithNoTabToTakeBack(env)
         const page = await openKoloftAgain()
-        await expect(wsGroup(page, 'kt-key').locator('.ws-conn')).toHaveClass(/\bon\b/, {
-          timeout: BACKGROUND_CONNECT_MS
-        })
-        await expect(wsRows(page, 'kt-key')).toHaveCount(1, {
-          timeout: A_TURN_THROUGH_THE_MIRROR_MS
-        })
+        await machineAndItsOneRowShown(page, 'kt-key')
         expect(await termIds(page)).toEqual([])
         await removeWorkspaceConfirming(page, 'kt-key', ONE_SESSION_WILL_BE_CLOSED)
         await nothingOfTheTabRunsOn(lab, 'kuser')

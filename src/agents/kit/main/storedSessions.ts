@@ -66,8 +66,6 @@ export const hostOfKey = (key: string): string | undefined => {
   return sourceId === 'local' ? undefined : sourceId
 }
 
-export const REMOTE_EXIT_WAIT_MS = 10_000
-
 // ADR-0025
 const seenMissing = (cwd: string): boolean => !isRemoteKey(cwd) && !dirExists(cwd)
 

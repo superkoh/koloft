@@ -28,6 +28,8 @@ import type { TabEnded } from '../moment'
 import type { TranscriptPlaces } from '../transcriptPlaces'
 import { rowsOfEveryAgent, type RowsOfEveryAgent, type SessionRowsSource } from './sessionRows'
 import type { MirrorFolder } from './mirrorFolders'
+import { sleep } from '../sleep'
+import { A_SESSION_LEAVES_THE_MACHINE_WITHIN_MS } from './leavesTheMachine'
 
 export type ModeClass = 'bypass' | 'prompting'
 
@@ -110,13 +112,12 @@ export interface SessionBackend extends SessionRowsSource, SessionMessages {
 }
 
 export interface MachineReach {
-  poke(): void
-  connected(): boolean
+  poke(host: string): void
+  connected(host: string): boolean
 }
 
 export type LeftTheMachine = 'gone' | 'alive' | 'unreachable'
 
-const A_SESSION_LEAVES_THE_MACHINE_WITHIN_MS = 10_000
 const MACHINE_LOOKED_AT_AGAIN_EVERY_MS = 500
 
 export interface SessionLifecycle {
@@ -428,8 +429,13 @@ export class SessionBackends {
     return this.builtInListOrder().flatMap((b) => b.sessionsRunningOnTheMachine(workspace))
   }
 
+  private builtOwnerOf(key: string): SessionBackend | undefined {
+    const identity = identityOf(key)
+    return identity && this.adapters.get(identity.backendId)
+  }
+
   endOnTheMachine(host: string, key: string): void {
-    this.ownerOfSession(key)?.endOnTheMachine(host, key)
+    this.builtOwnerOf(key)?.endOnTheMachine(host, key)
   }
 
   async waitGoneFromTheMachine(
@@ -437,15 +443,14 @@ export class SessionBackends {
     key: string,
     machine: MachineReach
   ): Promise<LeftTheMachine> {
-    const identity = identityOf(key)
-    const owner = identity && this.adapters.get(identity.backendId)
+    const owner = this.builtOwnerOf(key)
     const gone = (): boolean =>
-      machine.connected() && (!owner || owner.goneFromTheMachine(host, key))
-    machine.poke()
+      machine.connected(host) && (!owner || owner.goneFromTheMachine(host, key))
+    machine.poke(host)
     const deadline = Date.now() + A_SESSION_LEAVES_THE_MACHINE_WITHIN_MS
     while (!gone()) {
-      if (Date.now() >= deadline) return machine.connected() ? 'alive' : 'unreachable'
-      await new Promise((r) => setTimeout(r, MACHINE_LOOKED_AT_AGAIN_EVERY_MS))
+      if (Date.now() >= deadline) return machine.connected(host) ? 'alive' : 'unreachable'
+      await sleep(MACHINE_LOOKED_AT_AGAIN_EVERY_MS)
     }
     return 'gone'
   }

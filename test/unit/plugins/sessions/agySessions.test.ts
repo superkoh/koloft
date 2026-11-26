@@ -346,7 +346,6 @@ beforeEach(() => {
       keyed: (host, p) => `ssh://${host}${p}`,
       mirrorDir: () => mirror,
       mirrorGemini: () => path.join(home, 'mirror-gemini'),
-      gone: (_host, id) => !machine.alive.has(id),
       alive: () => machine.alive,
       connected: () => true,
       nextPull: async () => undefined,
