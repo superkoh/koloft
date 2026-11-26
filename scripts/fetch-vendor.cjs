@@ -20,13 +20,51 @@ const NOT_GIT_ITSELF = new Set([
   'uninstall.sh'
 ])
 
+const DOWNLOAD_ATTEMPTS = 5
+const FIRST_RETRY_WAIT_MS = 2_000
+const MAX_RETRY_WAIT_MS = 60_000
+
+const worthRetrying = (status) => status === 429 || status >= 500
+
+function retryWaitMs(retryAfter, attempt) {
+  const seconds = Number(retryAfter)
+  const wait =
+    retryAfter && Number.isFinite(seconds) && seconds >= 0
+      ? seconds * 1000
+      : FIRST_RETRY_WAIT_MS * 2 ** (attempt - 1)
+  return Math.min(wait, MAX_RETRY_WAIT_MS)
+}
+
+async function waitBeforeRetry(reason, url, wait) {
+  console.error(`download ${reason}, trying again in ${wait / 1000}s: ${url}`)
+  await new Promise((r) => setTimeout(r, wait))
+}
+
 async function download(url, sha256) {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`download failed: ${res.status} ${url}`)
-  const body = Buffer.from(await res.arrayBuffer())
-  const sum = createHash('sha256').update(body).digest('hex')
-  if (sum !== sha256) throw new Error(`checksum mismatch: ${sum} ${url}`)
-  return body
+  for (let attempt = 1; ; attempt++) {
+    let res
+    let body
+    try {
+      res = await fetch(url)
+      if (res.ok) body = Buffer.from(await res.arrayBuffer())
+      else await res.body?.cancel().catch(() => {})
+    } catch (err) {
+      const reason = `failed: ${err.cause?.code ?? err.cause?.message ?? err.message}`
+      if (attempt === DOWNLOAD_ATTEMPTS)
+        throw new Error(`download ${reason} ${url}`, { cause: err })
+      await waitBeforeRetry(reason, url, retryWaitMs(null, attempt))
+      continue
+    }
+    if (body) {
+      const sum = createHash('sha256').update(body).digest('hex')
+      if (sum !== sha256) throw new Error(`checksum mismatch: ${sum} ${url}`)
+      return body
+    }
+    if (!worthRetrying(res.status) || attempt === DOWNLOAD_ATTEMPTS)
+      throw new Error(`download failed: ${res.status} ${url}`)
+    const wait = retryWaitMs(res.headers.get('retry-after'), attempt)
+    await waitBeforeRetry(`got ${res.status}`, url, wait)
+  }
 }
 
 async function refresh(name, version, unpack) {
@@ -129,6 +167,7 @@ async function fetchVendor() {
 }
 
 exports.default = fetchVendor
+exports.download = download
 
 if (require.main === module) {
   fetchVendor().catch((err) => {
