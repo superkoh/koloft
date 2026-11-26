@@ -163,6 +163,23 @@ async function untilTheRowsTabIsBound(page: Page, row: Locator): Promise<void> {
     .toBe(true)
 }
 
+async function untilTheRowShowsTheTurnMainSaysIsOver(
+  page: Page,
+  wsName: string,
+  tabId: string
+): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const all = await page.evaluate(() => window.api.sessions.list())
+        return all.find((s) => s.tabId === tabId && s.alive)?.status
+      },
+      { timeout: 60_000 }
+    )
+    .toBe('waiting')
+  await expect(wsRows(page, wsName).first()).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+}
+
 async function startBound(page: Page, wsName: string, agent: AgentName): Promise<void> {
   if (agent === 'Claude') {
     await startSessionIn(page, wsName, { remote: wsName === REMOTE_WS_NAME })
@@ -173,7 +190,8 @@ async function startBound(page: Page, wsName: string, agent: AgentName): Promise
   if (agent === 'Antigravity') {
     await agyReady(page)
     await runIn(page, centerTerm(page), 'first words')
-    await agyConversationOnceFirstTurnEnded(page)
+    const { tabId } = await agyConversationOnceFirstTurnEnded(page)
+    await untilTheRowShowsTheTurnMainSaysIsOver(page, wsName, tabId)
   }
   await waitPanelAttached(page)
   await expect(page.locator('.ws .ws-tab.st-pending')).toHaveCount(0, { timeout: 60_000 })
