@@ -113,7 +113,8 @@ export function signInThroughATabThatCanAskFirst(refused: AgentId): string {
     AGENT_IDS.filter((id) => id !== refused),
     'or'
   )
-  return `This machine wants a password or a new host key first, and an ${agentManifest(refused).shortProductName} tab cannot ask for it yet: sign in through a ${others} session there first`
+  const name = agentManifest(refused).shortProductName
+  return `This machine wants a password or a new host key first, and ${/^[AEIOU]/.test(name) ? 'an' : 'a'} ${name} tab cannot ask for it yet: sign in through a ${others} session there first`
 }
 const WHOLE_FILE_MAX_BYTES = 32 * 1024 * 1024
 const WHOLE_FILE_READ_MS = 120_000
