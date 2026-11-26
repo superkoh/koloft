@@ -37,6 +37,7 @@ import {
 } from '../../src/main/remote/launch'
 import { machinePackageFiles } from '../../src/main/remote/machinePackageFiles'
 import { makeWorld, type World } from './helpers/agentTabs'
+import { everyAgentWithItsOwnTools } from './helpers/agentShims'
 
 const PINNED = './machine-package'
 const PROMPT_TEXT = path.join(__dirname, 'prompt-text')
@@ -64,7 +65,10 @@ afterEach(async () => {
 
 function machinePackageWith(passwords: boolean): Built {
   knowPluginStates({ [passwordsPlugin.id]: { on: passwords } })
-  const pkg = buildMachinePackage(path.join(world.userData, 'remote', 'pkg'), machinePackageFiles())
+  const pkg = buildMachinePackage(
+    path.join(world.userData, 'remote', 'pkg'),
+    machinePackageFiles(everyAgentWithItsOwnTools())
+  )
   const files = fs
     .readdirSync(pkg.dir, { recursive: true, encoding: 'utf8' })
     .filter((rel) => rel !== '.complete' && fs.statSync(path.join(pkg.dir, rel)).isFile())

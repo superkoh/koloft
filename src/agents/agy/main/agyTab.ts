@@ -1,5 +1,6 @@
 import { shq } from '@shared/shellQuote'
 import { record } from '@core/unknownValue'
+import { agent } from '../agent'
 import { AGY_APP_DIR, TOP_LEVEL_ROWS } from './agyStore'
 import { SHARED_FILES, SHARED_FOLDERS } from './agyAccounts'
 import { AGY_LOG_ENV, AGY_LOG_POINTER_SUFFIX, AGY_START_ENV } from './agyHooks'
@@ -141,7 +142,7 @@ export function agyTab(s: AgyTabSpec): TabProgram {
   const file = (name: string): string => `${s.tabId}.${name}`
   return {
     run: run.map((line) => `  ${line}\n`).join(''),
-    ensureTool: 'agy',
+    ensureTool: agent.command,
     beforeTmux: '',
     whenItEnds: s.start ? `rm -f ${START_OF_THIS_RUN}` : '',
     files: {

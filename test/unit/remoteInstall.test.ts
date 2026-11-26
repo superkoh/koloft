@@ -6,7 +6,7 @@ import readline from 'readline'
 import { spawn, spawnSync, type ChildProcess } from 'child_process'
 
 import {
-  ENSURE_SH,
+  ensureSh,
   HOOKS_CHANGED,
   NO_FILES_THERE,
   NODE_VERSION,
@@ -18,6 +18,10 @@ import { answerOf } from '../../src/main/remote/ssh'
 import { REMOTE_CLAUDE_PROJECTS } from '../../src/agents/claude/main/claudeMirror'
 import { MIN_AGY_VERSION } from '../../src/agents/agy/main/agyMinimum'
 import { MIN_CLAUDE_VERSION } from '../../src/agents/claude/main/claudeMinimum'
+import { everyAgentWithItsOwnTools } from './helpers/agentShims'
+
+const EVERY_AGENTS_ENSURE = everyAgentWithItsOwnTools().ensuresOnTheMachine()
+const ENSURE_SH = ensureSh(EVERY_AGENTS_ENSURE)
 
 const CLAUDE_PROJECTS_OF_API = [{ folder: REMOTE_CLAUDE_PROJECTS, subfolders: ['-home-koh-api'] }]
 
@@ -390,6 +394,12 @@ exit 0`
     expect(res.status).toBe(4)
     expect(m.calls(t.tool)).toEqual(['update'])
     expect(res.stderr).toContain(`Run "${t.tool} update"`)
+  })
+})
+
+describe('the agents ensure.sh installs', () => {
+  it("at most one agent's tab passes ensure.sh no word, as that agent's arm is the one taken when none is passed", () => {
+    expect(EVERY_AGENTS_ENSURE.filter((ensure) => ensure.word === undefined).length).toBeLessThan(2)
   })
 })
 

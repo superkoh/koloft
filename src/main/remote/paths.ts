@@ -27,6 +27,7 @@ export function remoteMachineDir(machineName: string): string {
 }
 export const UTIL_BIN_DIR = 'util-bin/'
 export const SESSION_BIN_DIR = 'bin/'
+export const STATUS_LINE_DIR = 'statusline/'
 export const REMOTE_HOOK_DIR = `${REMOTE_HOME}/hook-sessions`
 export const REMOTE_COMPILE_CACHE = `${REMOTE_HOME}/vcache`
 export function remotePtsFile(tabId: string): string {

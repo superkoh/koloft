@@ -50,6 +50,18 @@ export interface AgentShimScript {
   script: string
 }
 
+export interface EnsureOnTheMachine {
+  word: string | undefined
+  functions: string
+  install: string
+  whichNodeWillDo: string
+}
+
+export interface AgentMachinePackage {
+  filesForTheMachinePackage(): Record<string, string>
+  ensureOnTheMachine: EnsureOnTheMachine | null
+}
+
 export const NO_SUCH_ACTION = 'noSuchAction'
 
 export interface StartAsk {
@@ -80,6 +92,7 @@ export interface AgentMain {
   oneShotTarget(): Promise<OneShotTarget | null>
   catalog: AgentCatalog
   tools: AgentTools
+  machinePackage: AgentMachinePackage
   accounts: AgentAccounts
   usage: AgentUsage
   search: AgentSearch
@@ -117,6 +130,17 @@ export class AgentsMain {
       command: agentManifest(agent.id).command,
       script: agent.tools.shimScript()
     }))
+  }
+
+  filesForTheMachinePackage(): Record<string, string> {
+    return Object.assign(
+      {},
+      ...this.inListOrder().map((agent) => agent.machinePackage.filesForTheMachinePackage())
+    )
+  }
+
+  ensuresOnTheMachine(): EnsureOnTheMachine[] {
+    return this.inListOrder().flatMap((agent) => agent.machinePackage.ensureOnTheMachine ?? [])
   }
 
   async mcpServersOn(folders: readonly string[]): Promise<McpServer[]> {

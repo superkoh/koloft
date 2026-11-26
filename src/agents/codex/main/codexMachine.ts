@@ -14,7 +14,12 @@ import {
   sourceTabPass
 } from '../../../main/remote/install'
 import { assertSafeNames, skillsFromMachineLine } from '../../../main/remote/launch'
-import { REMOTE_HOME, REMOTE_HOOK_DIR, remoteMachineDir } from '../../../main/remote/paths'
+import {
+  REMOTE_HOME,
+  REMOTE_HOOK_DIR,
+  remoteMachineDir,
+  UTIL_BIN_DIR
+} from '../../../main/remote/paths'
 import { answerStreamOf, SSH_LINK_BROKE_EXIT } from '../../../main/remote/ssh'
 import {
   asError,
@@ -28,11 +33,16 @@ import { record } from '@core/unknownValue'
 import { hookStateHeader, trustedHashLine } from './codexConfigTables.mjs'
 import {
   CODEX_REPLY_LANGUAGE_ENV,
+  CODEX_REPLY_LANGUAGE_SCRIPT,
   CODEX_SAID_ENV,
   CODEX_SENT_WORDS_ENV,
   CODEX_SHELL_WROTE_ENV,
   SHELL_WROTE_SUFFIX
 } from './codexHooks'
+import type { AgentMachinePackage } from '@core/agent/agentsMain'
+import { agent } from '../agent'
+import { utilTerminalGuard } from '../../../main/utilTerminalGuard'
+import { CODEX_UTIL_TERMINAL_REFUSAL } from './codexShim'
 import {
   handedOverOwnerWordsFiles,
   NOTICE_ENV,
@@ -129,6 +139,18 @@ export function replyLanguageFiles(script: string): Record<string, string> {
     [REPLY_LANGUAGE_FILE]: `exec bash "$(dirname "$0")/${REPLY_LANGUAGE_IN_BASH}" "$@"\n`,
     [REPLY_LANGUAGE_IN_BASH]: script
   }
+}
+
+export const codexMachinePackage: AgentMachinePackage = {
+  filesForTheMachinePackage: () => ({
+    [ENSURE_CODEX_FILE]: ENSURE_CODEX_SH,
+    ...replyLanguageFiles(CODEX_REPLY_LANGUAGE_SCRIPT),
+    [`${UTIL_BIN_DIR}${agent.command}`]: utilTerminalGuard(
+      agent.command,
+      CODEX_UTIL_TERMINAL_REFUSAL
+    )
+  }),
+  ensureOnTheMachine: null
 }
 
 // CODEX§27

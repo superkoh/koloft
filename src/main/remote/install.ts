@@ -3,9 +3,7 @@ import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
 import { REMOTE_HOOK_DIR, REMOTE_TABS_DIR, remotePtsFile, remoteShellPidFile } from './paths'
 import { TAB_PASS_ENV } from '../tabPass'
 import { ECHO_THE_MARK } from './ssh'
-import { ENSURE_AGY_MINIMUM_FN } from '@agents/agy/main/agyMinimum'
-import { AGY_INSTALLER_URL } from '@agents/agy/shared/agyInstaller'
-import { ENSURE_CLAUDE_MINIMUM_FN } from '@agents/claude/main/claudeMinimum'
+import type { EnsureOnTheMachine } from '@core/agent/agentsMain'
 import VENDOR_RELEASE from '../../../scripts/vendor-release.json'
 
 export const NODE_VERSION = '22.12.0'
@@ -138,15 +136,9 @@ install_pkg() {
 export const installNode = (
   forWhat: string,
   without: string,
-  onlyOwnNodeWhen = ''
+  firstInNodeOk: string[] = []
 ): string => `NODE_VERSION=${NODE_VERSION}
-node_ok() {${
-  onlyOwnNodeWhen
-    ? `
-  # AGY§8
-  ${onlyOwnNodeWhen} && { node_runs; return; }`
-    : ''
-}
+node_ok() {${firstInNodeOk.map((lines) => `\n${lines}`).join('')}
   have node || return 1
   v="$(node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1)"
   [ "\${v:-0}" -ge 20 ] 2>/dev/null
@@ -221,17 +213,21 @@ fi`
 
 export const PYTHON3_HAS_PTY = "python3 -c 'import pty, termios' >/dev/null 2>&1"
 
+const caseArm = (ensure: EnsureOnTheMachine): string =>
+  `${ensure.word ?? '*'})\n${ensure.install}\n  ;;\n`
+
 // PLATFORM§37
-export const ENSURE_SH = `#!/bin/sh
+export function ensureSh(ensures: EnsureOnTheMachine[]): string {
+  const named = ensures.filter((ensure) => ensure.word !== undefined)
+  const takenWithNoWord = ensures.filter((ensure) => ensure.word === undefined)
+  return `#!/bin/sh
 ${REMOTE_ENV_LINES}
 ${INSTALL_PKG}
 
 have bash || install_pkg bash || exit 4
 
 program="$1"
-${ENSURE_CLAUDE_MINIMUM_FN}
-${ENSURE_AGY_MINIMUM_FN}
-official_install() {
+${ensures.map((ensure) => `${ensure.functions}\n`).join('')}official_install() {
   have curl || have wget || install_pkg curl || { say "need curl or wget to install $1"; exit 4; }
   say "installing $1 (official installer)"
   if have curl; then curl -fsSL "$2" | bash
@@ -239,18 +235,13 @@ official_install() {
   have "$1" || { say "$1 did not install; see the output above"; exit 4; }
 }
 case "$program" in
-agy)
-  # AGY§3
-  have agy || official_install agy ${AGY_INSTALLER_URL}
-  ensure_agy_minimum agy || exit 4
-  ;;
-*)
-  have claude || official_install claude https://claude.ai/install.sh
-  ensure_claude_minimum claude || exit 4
-  ;;
-esac
+${[...named, ...takenWithNoWord].map(caseArm).join('')}esac
 
-${installNode('the statusline', 'this machine gets no statusline', '[ "$program" = agy ]')}
+${installNode(
+  'the statusline',
+  'this machine gets no statusline',
+  ensures.map((ensure) => ensure.whichNodeWillDo).filter(Boolean)
+)}
 
 ${INSTALL_GH}
 
@@ -258,6 +249,7 @@ have tmux || install_pkg tmux || exit 4
 have rsync || install_pkg rsync || exit 4
 exit 0
 `
+}
 
 // CC§4 PLATFORM§35
 export const TMUX_PASSES_THE_PANE_TITLE_ON = ['set-titles on', "set-titles-string '#{pane_title}'"]

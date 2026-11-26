@@ -90,7 +90,7 @@ import { carriedTabIds, tabIdList } from './tabIds'
 import { BrowserTunnels } from './remote/browserTunnel'
 import { anyFreeMacPort, macPortFree, PageForwards } from './remote/portForward'
 import { remoteAnswerCommand, remoteShCommand } from './remote/install'
-import { codexMachineInstance } from '@agents/codex/main/codexMachine'
+import { codexMachineInstance, codexMachinePackage } from '@agents/codex/main/codexMachine'
 import {
   buildMachinePackage,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
@@ -327,6 +327,8 @@ import { agyCatalog } from '@agents/agy/main/agyCatalog'
 import { claudeTools } from '@agents/claude/main/claudeShim'
 import { codexTools } from '@agents/codex/main/codexShim'
 import { agyTools } from '@agents/agy/main/agyShim'
+import { claudeMachinePackage } from '@agents/claude/main/claudeMachinePackage'
+import { agyMachinePackage } from '@agents/agy/main/agyMachinePackage'
 import { claudeSearch, claudeUsage } from '@agents/claude/main/claudeUsage'
 import { codexSearch, codexUsage } from '@agents/codex/main/codexUsage'
 import { agySearch, agyUsage } from '@agents/agy/main/agyUsage'
@@ -379,6 +381,7 @@ import {
   NO_SUCH_ACTION,
   type AgentAccounts,
   type AgentCatalog,
+  type AgentMachinePackage,
   type AgentMain,
   type AgentTools,
   type OneShotTarget
@@ -1154,7 +1157,7 @@ function loginEnvReady(): Promise<void> {
 
 function machinePackage(): MachinePackage {
   if (machinePkg) return machinePkg
-  const pkgFiles = machinePackageFiles()
+  const pkgFiles = machinePackageFiles(agentsMain)
   return (machinePkg = buildMachinePackage(machinePackageBase(app.getPath('userData')), pkgFiles))
 }
 
@@ -1552,6 +1555,11 @@ const tools: Record<BackendId, AgentTools> = {
   codex: codexTools,
   agy: agyTools
 }
+const machinePackages: Record<BackendId, AgentMachinePackage> = {
+  claude: claudeMachinePackage,
+  codex: codexMachinePackage,
+  agy: agyMachinePackage
+}
 const accountsOf: Record<BackendId, AgentAccounts> = {
   claude: claudeAccounts,
   codex: codexAccounts.accounts,
@@ -1596,6 +1604,7 @@ for (const id of SESSION_BACKENDS)
     oneShotTarget: oneShotTargets[id],
     catalog: catalogs[id],
     tools: tools[id],
+    machinePackage: machinePackages[id],
     accounts: accountsOf[id],
     usage: usages[id],
     search: searches[id]
