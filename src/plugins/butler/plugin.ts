@@ -12,6 +12,7 @@ import {
 } from '@core/moment'
 import { TEXT } from './prompts/text'
 import { ASSIST_JOBS } from './shared/assistJobs'
+import { BUTLER_HOOK_RULES } from './shared/hookRules'
 import { CHANNELS } from './shared/ipc'
 
 export const BUTLER_ROW_PART = 'butler-row'
@@ -37,6 +38,7 @@ export const plugin: PluginManifest = {
   text: TEXT,
   channels: Object.values(CHANNELS),
   assistJobs: ASSIST_JOBS,
+  hookMomentRules: BUTLER_HOOK_RULES,
   moments: {
     listens: [
       SESSION_STARTING.name,

@@ -20,12 +20,11 @@ vi.mock('electron', async () => {
 import os from 'os'
 import {
   setupStatusline,
-  setupAgyStatusline,
   statusLineSetting,
   remoteWrapperScript,
-  DEFAULT_THEME,
-  AGY_STATUSLINE_JS
+  DEFAULT_THEME
 } from '../../src/main/statusline'
+import { AGY_STATUSLINE_JS, setupAgyStatusline } from '../../src/agents/agy/main/agyStatusline'
 import { AGY_COST_ENV } from '../../src/agents/agy/main/agyHooks'
 import { agyStatuslineScript } from '../../src/agents/agy/main/agyTab'
 

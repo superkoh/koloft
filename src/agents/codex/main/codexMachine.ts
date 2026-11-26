@@ -29,12 +29,14 @@ import {
   CODEX_SAID_ENV,
   CODEX_SENT_WORDS_ENV,
   CODEX_SHELL_WROTE_ENV,
+  SHELL_WROTE_SUFFIX
+} from './codexHooks'
+import {
   handedOverOwnerWordsFiles,
   NOTICE_ENV,
   remoteNoticeFile,
-  remoteSentWordsFile,
-  SHELL_WROTE_SUFFIX
-} from '@plugins/sessions/main/hooks'
+  remoteSentWordsFile
+} from '../../../main/hookFiles'
 import { OWNING_TAB_ENV } from '../../../main/owningTabEnv'
 
 export const ENSURE_CODEX_FILE = 'ensure-codex.sh'

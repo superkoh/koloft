@@ -13,10 +13,9 @@ import {
 } from '../../src/agents/codex/main/codexMachine'
 import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
-  CODEX_SENT_WORDS_ENV,
-  remoteSentWordsFile,
-  seedHandedOverOwnerWords
-} from '../../src/plugins/sessions/main/hooks'
+  CODEX_SENT_WORDS_ENV
+} from '../../src/agents/codex/main/codexHooks'
+import { remoteSentWordsFile, seedHandedOverOwnerWords } from '../../src/main/hookFiles'
 import { DEFAULT_MAX_FRAME } from '../../src/agents/codex/main/codexTransport'
 
 const FAKE_CODEX = path.join(__dirname, '..', 'e2e', 'fixtures', 'fake-codex.js')
