@@ -33,6 +33,7 @@ sh "$M/ensure-codex.sh" '999.0.0' || exit $?
 PATH="$HOME/.koloft/codex-cli/bin:$PATH"; export PATH
 H="$HOME/.koloft/codex-home"
 mkdir -p "$H" "$HOME/.koloft/cx/table-instance" && chmod 700 "$H" "$HOME/.koloft/cx/table-instance" || exit 3
+rm -f "$HOME/.koloft/codex-home/auth.json"
 mkdir -p "$H/skills"; { diff -r "$M/docs-plugin/skills/koloft-docs" "$H/skills/koloft-docs" >/dev/null 2>&1 || { rm -rf "$H/skills/koloft-docs.new-$$" && cp -R "$M/docs-plugin/skills/koloft-docs" "$H/skills/koloft-docs.new-$$" && rm -rf "$H/skills/koloft-docs" && mv "$H/skills/koloft-docs.new-$$" "$H/skills/koloft-docs"; }; }; rm -rf "$H/skills/koloft"
 cd '/home/me/proj' || exit 3
 if d=$(cd '/home/me/proj' 2>/dev/null && pwd -P); then grep -qxF "[projects.\"$d\"]" "$H/config.toml" 2>/dev/null || printf '\n[projects."%s"]\ntrust_level = "trusted"\n' "$d" >> "$H/config.toml"; fi
@@ -113,5 +114,4 @@ stop_one() {
   rm -f "$D/$1".*
 }
 for p in "$D"/*.pid; do [ -f "$p" ] && stop_one "$(basename "$p" .pid)"; done
-rm -f "$HOME/.koloft/codex-home/auth.json"
 exit 0

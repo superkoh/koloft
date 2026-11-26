@@ -2222,12 +2222,15 @@ tokens:
 | empty, no flag / the flag, `chatgptAuthTokens` (`chatgpt_base_url` on a stub answering `wham/accounts/check` and `wham/config/bundle`) | the same both ways: `login/completed success:true`, `account/updated {authMode:"chatgptAuthTokens"}`, `account/read` `{type:"chatgpt"}`, the turn sent `Bearer <access token>`, no file held the token |
 | an old API-key `auth.json`, no flag / the flag, `chatgptAuthTokens` | before the login `account/read` answered `{type:"apiKey"}` without the flag, `account: null` with it; after it both read `chatgpt` and the turn sent the access token; `auth.json` stayed with the old key both ways |
 
-The 0.169.0 source (`codex-rs/login/src/auth/manager.rs`, tag `rust-v0.169.0`) agrees:
-`login_with_chatgpt_auth_tokens` saves with `AuthCredentialsStoreMode::Ephemeral`, and
-`storage_mode` picks `Ephemeral` for a `ChatgptAuthTokens` login whatever the config says.
-So the tab's app-server runs with that flag, and the first contact with a machine in each
-app run removes `~/.koloft/codex-home/auth.json`, which an older Koloft's API-key login
-left and which the flag would leave in place.
+The same script gave the same answers in every row on 0.161.0 (Koloft's lowest) and on
+0.172.0 (npm's latest that day). The 0.169.0 source (`codex-rs/login/src/auth/manager.rs`,
+tag `rust-v0.169.0`) agrees: `login_with_chatgpt_auth_tokens` saves with
+`AuthCredentialsStoreMode::Ephemeral`, and `storage_mode` picks `Ephemeral` for a
+`ChatgptAuthTokens` login whatever the config says. So the tab's app-server runs with that
+flag, and every start of a tab's or the side app-server removes
+`~/.koloft/codex-home/auth.json`, which an older Koloft's API-key login left and which the
+flag would leave in place; a server already running keeps the login it read when it
+started (§15).
 
 **Turns over ssh.** Same frames as section 12: `thread/started`, `turn/started`,
 `item/started`/`item/completed`, `item/agentMessage/delta`, `turn/diff/updated`,

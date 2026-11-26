@@ -9,8 +9,7 @@ import {
   MachineCodexUpstream,
   codexTabScript,
   machineAppServerCmd,
-  ownerWordsLines,
-  sweepCodexServersCmd
+  ownerWordsLines
 } from '../../src/agents/codex/main/codexMachine'
 import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
@@ -183,10 +182,14 @@ describe('the side app-server on a machine', () => {
   })
 })
 
-describe('the first contact with a machine in each app run', () => {
+describe('the side app-server starting on a machine', () => {
   // ADR-0039 CODEX§16
   it("removes the API key an older Koloft's Codex login left in the machine's shared Codex home, and leaves the rest of that home", () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'kcm-sweep-'))
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'kcm-left-'))
+    stops.push(() => fs.rmSync(home, { recursive: true, force: true }))
+    const bin = path.join(home, '.koloft', 'codex-cli', 'bin')
+    fs.mkdirSync(bin, { recursive: true })
+    fs.writeFileSync(path.join(bin, 'codex'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
     const codexHome = path.join(home, '.koloft', 'codex-home')
     fs.mkdirSync(codexHome, { recursive: true })
     fs.writeFileSync(
@@ -194,12 +197,11 @@ describe('the first contact with a machine in each app run', () => {
       JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: 'sk-left-by-an-older-koloft' })
     )
     fs.writeFileSync(path.join(codexHome, 'config.toml'), 'model = "m"\n')
-    const swept = spawnSync('/bin/sh', ['-c', sweepCodexServersCmd('inst')], {
+    const started = spawnSync('/bin/sh', ['-c', `exec ${machineAppServerCmd('inst')}`], {
       env: { PATH: process.env.PATH, HOME: home }
     })
-    expect(swept.status).toBe(0)
+    expect(started.status).toBe(0)
     expect(fs.readdirSync(codexHome)).toEqual(['config.toml'])
-    fs.rmSync(home, { recursive: true, force: true })
   })
 })
 

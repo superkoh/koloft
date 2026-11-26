@@ -71,6 +71,9 @@ const NO_LOGIN_SHELL = 'allow_login_shell=false'
 // CODEX§16
 const LOGIN_KEPT_IN_MEMORY_ONLY = 'cli_auth_credentials_store="ephemeral"'
 
+// ADR-0039 CODEX§16
+const REMOVE_THE_LOGIN_AN_OLDER_KOLOFT_LEFT = `rm -f "${REMOTE_CODEX_HOME}/auth.json"`
+
 // CODEX§16 PLATFORM§33
 const BASH_LOGIN_PATH_WHEN_THE_USERS_SHELL_GAVE_NONE = `login_path=$(bash -lc 'printf "\\nKOLOFT_LOGIN_PATH=%s\\n" "$PATH"' </dev/null 2>/dev/null | sed -n 's/^KOLOFT_LOGIN_PATH=//p')
 [ -n "$login_path" ] && PATH="$PATH:$login_path"`
@@ -142,6 +145,7 @@ sh "$M/${ENSURE_CODEX_FILE}" ${shq(s.version)} || exit $?
 ${CODEX_FIRST_ON_PATH}
 H="${REMOTE_CODEX_HOME}"
 mkdir -p "$H" "${serversDir(s.instance)}" && chmod 700 "$H" "${serversDir(s.instance)}" || exit 3
+${REMOVE_THE_LOGIN_AN_OLDER_KOLOFT_LEFT}
 ${skill}cd ${shq(s.cwd)} || exit 3
 ${trust}${hookTrustLines(s.hookTrust)}S="${serversDir(s.instance)}/${s.tabId}"
 rm -f "$S".* "${REMOTE_HOOK_DIR}/${s.tabId}${SHELL_WROTE_SUFFIX}"
@@ -221,13 +225,11 @@ export function stopCodexServerCmd(instance: string, tabId: string): string {
   ])
 }
 
-// ADR-0039 CODEX§16
 export function sweepCodexServersCmd(instance: string): string {
   assertSafeNames(instance)
   return remoteShCommand(
     `D="${serversDir(instance)}"\n${STOP_SERVER_FN}\n` +
-      'for p in "$D"/*.pid; do [ -f "$p" ] && stop_one "$(basename "$p" .pid)"; done\n' +
-      `rm -f "${REMOTE_CODEX_HOME}/auth.json"\nexit 0`
+      'for p in "$D"/*.pid; do [ -f "$p" ] && stop_one "$(basename "$p" .pid)"; done\nexit 0'
   )
 }
 
@@ -248,7 +250,7 @@ export function machineAppServerCmd(instance: string): string {
   assertSafeNames(instance)
   return remoteAnswerCommand(
     `D="${serversDir(instance)}"\n${STOP_SERVER_FN}\n` +
-      `mkdir -p "$D" && chmod 700 "$D" || exit 3\n` +
+      `mkdir -p "$D" && chmod 700 "$D" || exit 3\n${REMOVE_THE_LOGIN_AN_OLDER_KOLOFT_LEFT}\n` +
       `stop_one ${SIDE_SERVER}\necho $$ > "$D/${SIDE_SERVER}.pid"\n` +
       `${CODEX_FIRST_ON_PATH}\nCODEX_HOME="${REMOTE_CODEX_HOME}"; export CODEX_HOME\n` +
       'exec codex app-server --stdio -c check_for_update_on_startup=false'
