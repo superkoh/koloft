@@ -170,6 +170,7 @@ export class DiscordRelay {
   roomOpened(tab: string): void {
     this.answersDiscord(tab, 'turn')
     this.held.delete(tab)
+    this.codexAsks.delete(tab)
     this.postOpenAsk(tab)
   }
 
@@ -467,13 +468,12 @@ export class DiscordRelay {
     if (this.d.asks.claudeAskAnswerable(tab)) return this.d.asks.answerSession(tab, m.content)
     this.d.asks.dropClaudeAsk(tab)
     const asked = this.codexAsks.get(tab)
-    if (asked === undefined) return undefined
     const open = this.d.pendingApproval(tab) ?? this.d.pendingQuestion(tab)
-    if (!open || open.id !== asked || !answerKeysOf(this.d.backendOf(tab))) {
+    if (open?.id !== asked) {
       this.codexAsks.delete(tab)
-      return undefined
     }
-    return this.d.asks.answerSession(tab, m.content, { toItsCard: true })
+    if (!open || !answerKeysOf(this.d.backendOf(tab))) return undefined
+    return this.d.asks.answerSession(tab, m.content, { toItsCard: open.id === asked })
   }
 
   forget(tab: string): void {

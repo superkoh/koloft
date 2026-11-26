@@ -11,11 +11,14 @@ Discord card: body:
     2. Fix the links
 Discord card: footnote: -# Reply yes to approve, or say what to change.
 Discord card: buttons: Approve | Reject
-Inbox card: title: “Fix the docs” is waiting for you in its tab
-Inbox card: quote: (nothing)
+Inbox card: title: “Fix the docs” asks you to approve a plan
+Inbox card: quote:
+    Plan: # Plan
+    1. Read the docs
+    2. Fix the links
 Inbox card: questions: (nothing)
-Inbox card: text: Koloft cannot show what it asks here. Open the session to answer it.
-Inbox card: buttons: (nothing)
+Inbox card: text: (nothing)
+Inbox card: buttons: Approve | Reject
 the butler's owner-asleep report, the part that says what was asked: asked to be allowed: "Approve this plan? # Plan 1. Read the docs 2. Fix the links"
 this ask's id: the hook's own process id, only in the name of its file claude-tab.<pid>.ask.json; the "someone asked" moment is never announced for it
 --- pressed the Discord card's first button, "Approve" ---

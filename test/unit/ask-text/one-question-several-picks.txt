@@ -10,11 +10,11 @@ Discord card: body:
     3. Olives
 Discord card: footnote: -# Reply with the numbers of the options you pick, split by commas, or your own answer.
 Discord card: buttons: (nothing)
-Inbox card: title: “Fix the docs” is waiting for you in its tab
+Inbox card: title: “Fix the docs” asks a question
 Inbox card: quote: (nothing)
-Inbox card: questions: (nothing)
-Inbox card: text: Koloft cannot show what it asks here. Open the session to answer it.
-Inbox card: buttons: (nothing)
+Inbox card: questions: “Which toppings?”: options Cheese | Ham | Olives; several picks: yes; own-words box: yes
+Inbox card: text: (nothing)
+Inbox card: buttons: Send answers
 the butler's owner-asleep report, the part that says what was asked: asked the owner "Which toppings? 1. Cheese 2. Ham 3. Olives"
 this ask's id: the hook's own process id, only in the name of its file claude-tab.<pid>.ask.json; the "someone asked" moment is never announced for it
 --- replied "1, 3" in the session's Discord room ---
@@ -102,23 +102,23 @@ Inbox card: buttons: Send answers
 the butler's owner-asleep report, the part that says what was asked: asked the owner "Which toppings? 1. Cheese 2. Ham 3. Olives"
 this ask's id: the ids it had, in turn: hook:<when it was read> → t9:2
 --- replied "1, 3" in the session's Discord room ---
-Discord said: reacted ⏳
-handed to the session as a message: [Discord] 1, 3
-what reached the agent: (nothing)
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which toppings?","selectedOptionIds":["a","c"]}]}}}
 --- answered "1, 3" with koloft session answer ---
 Koloft said: (taken, no refusal)
 what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which toppings?","selectedOptionIds":["a","c"]}]}}}
 --- replied "Cheese" in the session's Discord room ---
-Discord said: reacted ⏳
-handed to the session as a message: [Discord] Cheese
-what reached the agent: (nothing)
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which toppings?","selectedOptionIds":["a"]}]}}}
 --- answered "Cheese" with koloft session answer ---
 Koloft said: (taken, no refusal)
 what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which toppings?","selectedOptionIds":["a"]}]}}}
 --- replied "Anchovies" in the session's Discord room ---
-Discord said: reacted ⏳
-handed to the session as a message: [Discord] Anchovies
-what reached the agent: (nothing)
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which toppings?","writeInResponse":"Anchovies"}]}}}
 --- answered "Anchovies" with koloft session answer ---
 Koloft said: (taken, no refusal)
 what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which toppings?","writeInResponse":"Anchovies"}]}}}

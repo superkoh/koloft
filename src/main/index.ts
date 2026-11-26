@@ -485,6 +485,7 @@ const {
   claudeAsked,
   forgetClaudeAsk,
   claudeAskOf,
+  openAsk,
   endsTheAsk: claudeToolEndsTheAsk,
   askingOf,
   pendingAskOf,
@@ -1970,7 +1971,7 @@ const inboxKoloft: PluginStartDeps['inbox']['koloft'] = {
     const s = liveSessionOf(ref)
     return s && { tabId: s.tabId, backend: s.backendId }
   },
-  claudeAskOf,
+  claudeAskOf: openAsk,
   pendingAskOf,
   answer: answerSession,
   butlerSide,
@@ -3147,6 +3148,7 @@ app.whenReady().then(() => {
     regDir: hookPaths.regDir
   })
   sessionAsks = asks
+  asks.listen({ asked: (tabId) => koloftInbox.asked(tabId) })
   const waitsBesidesInstructions = (tabId: string): boolean =>
     runtime.statusOf(tabId) === 'approval' || !!secretAsks?.views().some((a) => a.tabId === tabId)
   const ownerWaits = {

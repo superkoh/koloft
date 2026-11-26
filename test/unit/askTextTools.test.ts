@@ -1,6 +1,7 @@
-import { afterAll, describe, it, vi } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
 import fs from 'fs'
 import { app } from 'electron'
+import type { InboxAnswers } from '@shared/inbox'
 
 vi.mock('electron', async () => {
   const nfs = await import('node:fs')
@@ -40,9 +41,11 @@ vi.mock('../../src/agents/codex/main/codexTransport', async (importOriginal) => 
 
 import {
   A_SITUATION_TAKES_UP_TO_MS,
+  heldAskAnsweredFromTheInbox,
   pinSituation,
   pinWhenACardIsPosted,
   pinWhenAMessageAnswers,
+  pinWhenARoomOpensAgain,
   titleOf,
   useAskTable
 } from './helpers/askTable'
@@ -69,4 +72,68 @@ describe('when each kind of tab posts its Discord card, and when a Discord messa
     pinWhenAMessageAnswers,
     A_SITUATION_TAKES_UP_TO_MS
   )
+  it(
+    'the room opening again while the same ask is still open',
+    pinWhenARoomOpensAgain,
+    A_SITUATION_TAKES_UP_TO_MS
+  )
+})
+
+describe('a Claude Code ask its hook holds is answered from its Inbox card, through the hook', () => {
+  const cases: [string, string, string, InboxAnswers, string][] = [
+    [
+      'Allow',
+      'run-a-command-no-reason',
+      'allow',
+      {},
+      '"decision":{"behavior":"allow","updatedInput":{"command":"npm test"}}'
+    ],
+    [
+      'Deny',
+      'run-a-command-no-reason',
+      'deny',
+      {},
+      '"decision":{"behavior":"deny","message":"no"}'
+    ],
+    [
+      'a pick',
+      'one-question-own-words',
+      'answer',
+      { q: { q0: ['o1'] } },
+      '"answers":{"Which colour do you prefer?":"Green"}'
+    ],
+    [
+      'the owner’s own words',
+      'one-question-own-words',
+      'answer',
+      { q: { q0: { own: 'Blue, please' } } },
+      '"answers":{"Which colour do you prefer?":"Blue, please"}'
+    ],
+    [
+      'several picks',
+      'one-question-several-picks',
+      'answer',
+      { q: { q0: ['o0', 'o2'] } },
+      '"answers":{"Which toppings?":"Cheese, Olives"}'
+    ],
+    [
+      'Approve on a plan',
+      'approve-a-plan',
+      'approve',
+      {},
+      '"decision":{"behavior":"allow","updatedInput":{"plan":"# Plan'
+    ]
+  ]
+  for (const [what, file, action, answers, printed] of cases)
+    it(
+      `${what}: ${titleOf(file)}`,
+      async () => {
+        const reached = await heldAskAnsweredFromTheInbox(file, action, answers)
+        expect(reached.join('\n')).toContain(
+          `the hook printed to Claude Code: {"hookSpecificOutput":{"hookEventName":"PermissionRequest",`
+        )
+        expect(reached.join('\n')).toContain(printed)
+      },
+      A_SITUATION_TAKES_UP_TO_MS
+    )
 })

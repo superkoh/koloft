@@ -3711,6 +3711,15 @@ below was one run.
 - **The `Notification` hook (`permission_prompt`) comes about 6 s after
   `PermissionRequest`** for the same dialog (7.7→13.8 s, 6.4→12.4 s, 7.0→13.0 s in three
   runs), also for a plan in `bypassPermissions`.
+- **A `PermissionRequest` hook that holds the ask does not hide it: the session reads as
+  waiting on the person the whole time.** 2026-11-26, CC 2.1.332, python `pty.fork`, a
+  scratch `HOME` and `CLAUDE_CONFIG_DIR`, `apiKeyHelper` with a fake key, a local fake
+  Messages API answering one `AskUserQuestion`, a `PermissionRequest` hook (matcher `"*"`)
+  that slept 20 s and printed nothing, a logging `Notification` hook; 1 run. OSC 7501 went
+  `working` → `blocked:kind=question` at +6.64 s, the hook started at +6.72 s and ended at
+  +26.72 s, and `{"message":"Claude needs your permission","notification_type":"permission_prompt"}`
+  came at +12.72 s, while the hook still waited. So a held ask turns the row to
+  `approval` as an unheld one does.
 - **Plan mode in a session that has bypass permissions prints a notice, not a dialog.**
   2.1.299 adds the line "Session was started with bypass permissions, so plan mode won't
   ask before most edits or commands. Start a new session without bypass permissions for

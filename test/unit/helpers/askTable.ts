@@ -5,6 +5,7 @@ import http from 'http'
 import path from 'path'
 import { codexWires } from './codexWires'
 import type { BackendId } from '@shared/types'
+import { UNDO_MS, type InboxAnswers } from '@shared/inbox'
 import {
   agySessionsIn,
   claudeBackendIn,
@@ -1038,6 +1039,26 @@ export async function pinSituation(file: string): Promise<void> {
 
 export const titleOf = (file: string): string => SITUATIONS.find((s) => s.file === file)!.title
 
+export async function heldAskAnsweredFromTheInbox(
+  file: string,
+  action: string,
+  answers: InboxAnswers
+): Promise<string[]> {
+  const raised = await raise(
+    'claude-held',
+    SITUATIONS.find((s) => s.file === file)!
+  )
+  surfaces.markAsking(raised.tab)
+  await vi.waitFor(() => expect(surfaces.inboxCards()[0]?.actions.length).toBeGreaterThan(0), {
+    timeout: A_FIRST_INBOX_CARD_IS_ASKED_AGAIN_AFTER_MS + A_REPLY_IS_SEEN_WITHIN_MS
+  })
+  surfaces.pressInbox(surfaces.inboxCards()[0], action, answers)
+  await vi.waitFor(async () => expect(await raised.reached()).not.toEqual([]), {
+    timeout: UNDO_MS + A_REPLY_IS_SEEN_WITHIN_MS
+  })
+  return raised.reached()
+}
+
 export async function pinWhenACardIsPosted(): Promise<void> {
   const parts: string[] = ['# When the Discord card is posted, for one ask to run a command']
   for (const kind of KINDS) {
@@ -1046,6 +1067,25 @@ export async function pinWhenACardIsPosted(): Promise<void> {
     parts.push(sameOnEveryRun(`## ${SECTION_TITLE[kind]}\n${surfaces.timeline.join('\n')}`))
   }
   await expect(parts.join('\n\n') + '\n').toMatchFileSnapshot(`${PINNED}/when-a-card-is-posted.txt`)
+}
+
+export async function pinWhenARoomOpensAgain(): Promise<void> {
+  const parts: string[] = [
+    '# When the session’s room opens again while the same ask to run a command is still open'
+  ]
+  for (const kind of KINDS) {
+    await raise(kind, RUN_A_COMMAND)
+    await settledDiscordCard()
+    const before = surfaces.cards.length
+    surfaces.relay.roomOpened(surfaces.liveTab!)
+    await sleep(SETTLES_MS)
+    parts.push(
+      `## ${SECTION_TITLE[kind]}\n${field('cards posted before', String(before))}\n${field('cards posted after the room opened again', String(surfaces.cards.length))}`
+    )
+  }
+  await expect(parts.join('\n\n') + '\n').toMatchFileSnapshot(
+    `${PINNED}/when-a-room-opens-again.txt`
+  )
 }
 
 export async function pinWhenAMessageAnswers(): Promise<void> {

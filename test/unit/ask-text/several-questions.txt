@@ -13,11 +13,13 @@ Discord card: body:
     2. Large
 Discord card: footnote: -# Reply with one line per question: a number or your own answer.
 Discord card: buttons: (nothing)
-Inbox card: title: “Fix the docs” is waiting for you in its tab
+Inbox card: title: “Fix the docs” asks 2 questions
 Inbox card: quote: (nothing)
-Inbox card: questions: (nothing)
-Inbox card: text: Koloft cannot show what it asks here. Open the session to answer it.
-Inbox card: buttons: (nothing)
+Inbox card: questions:
+    “Which colour do you prefer?”: options Red | Green; several picks: no; own-words box: yes
+    “Which size?”: options Small | Large; several picks: no; own-words box: yes
+Inbox card: text: (nothing)
+Inbox card: buttons: Send answers
 the butler's owner-asleep report, the part that says what was asked: asked the owner "Which colour do you prefer? 1. Red — Choose red. 2. Green — Choose green. Which size? 1. Small 2. Large"
 this ask's id: the hook's own process id, only in the name of its file claude-tab.<pid>.ask.json; the "someone asked" moment is never announced for it
 --- replied "1\n2" in the session's Discord room ---
@@ -156,27 +158,23 @@ Inbox card: buttons: Send answers
 the butler's owner-asleep report, the part that says what was asked: asked the owner "Which colour do you prefer? 1. Red 2. Green Which size? 1. Small 2. Large"
 this ask's id: the ids it had, in turn: hook:<when it was read> → t9:2
 --- replied "1\n2" in the session's Discord room ---
-Discord said: reacted ⏳
-handed to the session as a message:
-    [Discord] 1
-    2
-what reached the agent: (nothing)
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which colour do you prefer?","selectedOptionIds":["a"]},{"question":"Which size?","selectedOptionIds":["b"]}]}}}
 --- answered "1\n2" with koloft session answer ---
 Koloft said: (taken, no refusal)
 what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which colour do you prefer?","selectedOptionIds":["a"]},{"question":"Which size?","selectedOptionIds":["b"]}]}}}
 --- replied "1" in the session's Discord room ---
-Discord said: reacted ⏳
-handed to the session as a message: [Discord] 1
+Discord said: under the message: Reply with one line per question: a number or your own answer.
+handed to the session as a message: (nothing)
 what reached the agent: (nothing)
 --- answered "1" with koloft session answer ---
 Koloft said: Reply with one line per question: a number or your own answer.
 what reached the agent: (nothing)
 --- replied "Blue\nLarge" in the session's Discord room ---
-Discord said: reacted ⏳
-handed to the session as a message:
-    [Discord] Blue
-    Large
-what reached the agent: (nothing)
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which colour do you prefer?","writeInResponse":"Blue"},{"question":"Which size?","selectedOptionIds":["b"]}]}}}
 --- answered "Blue\nLarge" with koloft session answer ---
 Koloft said: (taken, no refusal)
 what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which colour do you prefer?","writeInResponse":"Blue"},{"question":"Which size?","selectedOptionIds":["b"]}]}}}
