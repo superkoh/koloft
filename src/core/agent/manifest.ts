@@ -52,6 +52,7 @@ export interface AgentFlags {
   typesASkillOnlyByTheNameInItsFile: boolean
   refusesATypedSkillMarkedNotUserInvocable: boolean
   listsTheModelsAnAccountCanRun: boolean
+  itsRemoteTabCanAskForTheMachinesPassword: boolean
 }
 
 export interface SkillFolderNames {

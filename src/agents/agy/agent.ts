@@ -123,7 +123,8 @@ export const agent = {
     // AGY§31
     refusesATypedSkillMarkedNotUserInvocable: false,
     // AGY§21
-    listsTheModelsAnAccountCanRun: true
+    listsTheModelsAnAccountCanRun: true,
+    itsRemoteTabCanAskForTheMachinesPassword: false
   },
   pureFunctions: {
     effortsAModelTakes: agyEffortsAModelTakes,
