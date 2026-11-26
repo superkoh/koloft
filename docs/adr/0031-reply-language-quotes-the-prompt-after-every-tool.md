@@ -47,9 +47,9 @@ A Codex tab gets the same quote, at the prompt and after every tool, through Cod
 starts "(From the session …" and keeps the owner's quote.
 A message the butler passes on ("(From the butler, Koloft's AI, …") keeps the owner's
 quote too, in every agent's tab, even once Koloft has proved it sent it: the reminder
-follows only what the owner typed in that tab. That is the owner's decision (issue
-#2436); before it, a Codex tab took a proven butler message as the owner's words and an
-Antigravity tab took any message with that opening, while a Claude tab did not. How far Codex's models drift
+follows only the owner's own words, typed in that tab or sent through Koloft's Discord
+relay. Rejected: taking a butler message Koloft proved it sent as the owner's words,
+though it carries them in « »; the owner decided the butler's messages never count. How far Codex's models drift
 was not measured: the rule is carried over because the owner reads both kinds of tab.
 A session another session starts (`koloft session new`) is quoted by the owner's words,
 not by its task: the task is written by an AI, often in English (a path to a brief, or
