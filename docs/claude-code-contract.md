@@ -1124,17 +1124,21 @@ file with the field kept carries on both builds.
   `ExitWorktree` and the worktree exit dialog deleting a worktree that another running
   Claude Code session was working in". Not probed: Keep on 2.1.330, a second session
   started with `-w` or `-p`, a remote (Linux, tmux) tab. Koloft dependent:
-  `src/agents/claude/main/claudeWorktreeExit.ts` reads the kept line as a removal that did not happen
-  (the row comes back, the line shows in the "did not remove" toast), but the removal it
-  finishes after Koloft quits does not check for another session (issue #2343).
+  `src/agents/claude/main/claudeWorktreeExit.ts` and `claudeWorktreeExitWatch.ts` read the kept
+  line as a removal that did not happen (the row comes back, the line shows in the "did not
+  remove" toast), but the removal they finish after Koloft quits does not check for another
+  session (issue #2343).
 
 Evidence: experiments E2/E8, 2026-08-10, claude 2.1.227; four live worktree exits on
 2026-09-03, claude 2.1.259 (`-w n5/n6/n7/n8/n9` in a throwaway repo, driven in a pty,
 checked with `git worktree list`, `git branch` and `ls ~/.claude/projects/<slug>`); the
 unchanged-tree removal on 2026-09-08, claude 2.1.265.
 Koloft dependents: the §1 whitelist eviction path; `fake-claude.js`'s dirty-tree exit
-prompt and removal emulation; `src/agents/claude/main/claudeWorktreeExit.ts`, which hides a tab, on this Mac or on a machine, the
-moment its CC starts removing, and on this Mac finishes the removal if Koloft quits first.
+prompt and removal emulation; `removesItsWorktreeAsItExits` in `src/agents/claude/agent.ts`,
+which makes `src/main/worktreeExitFollow.ts` hide a tab, on this Mac or on a machine, the
+moment its CC starts removing; `src/agents/claude/main/claudeWorktreeExit.ts`, which sees that
+moment, and `src/agents/claude/main/claudeWorktreeExitWatch.ts`, which on this Mac finishes
+the removal if Koloft quits first.
 
 ## §5 fork and background sessions (claude daemon)
 
@@ -1299,6 +1303,31 @@ moment its CC starts removing, and on this Mac finishes the removal if Koloft qu
   - The tab's hooks got a SessionStart `source=startup` carrying a third
     `session_id`, which never wrote a transcript, at the same second. Every later
     Stop / UserPromptSubmit carried the new id.
+- **After `/background` the background process reads the `--settings` file by its path
+  once the window's claude has already exited; with the file gone it never starts.**
+  2026-11-25, CC 2.1.332 linux-arm64 in the e2e SSH lab image (Docker, `--network none`,
+  user `kuser`), claude in a plain tmux pane with `--settings <tabs>/T.json
+  --append-system-prompt-file <tabs>/T.prompt.md`, `ANTHROPIC_API_KEY` (pre-approved) and
+  `ANTHROPIC_BASE_URL` at a local stand-in Messages API, a logging hook on every event;
+  one prompt, then `/background`. The window's claude fired SessionEnd and exited; the
+  daemon gave the job to a spare (`bg claimed-spare … (slash)`), whose SessionStart came
+  about 0.2 s after that SessionEnd; its command line held `--settings <tabs>/T.json` and
+  no `--append-system-prompt-file`. With the file left in place the background session
+  started, 3 of 3 runs. With `rm -f` of both files run right after the window's claude
+  exited, it crashed, 3 of 3: `bg settled <id> (crashed): exit 1 before init — Error:
+  Settings file not found: <tabs>/T.json` in `~/.claude/daemon.log`. Not measured:
+  whether a settled or stopped background job is ever started again from that path, and
+  which account kinds Anthropic's own address lets into the background (above: an OAuth
+  token is let in, an API key or auth token may be refused).
+- **A running claude reads its `--settings` file and its `--append-system-prompt-file`
+  once, at start.** Same day, binary and lab: changing both files' content, or deleting
+  both, after the first turn changed nothing — every hook kept its first command
+  (UserPromptSubmit, Stop, the SessionEnd and SessionStart of `/clear`, PreCompact and the
+  compact SessionStart of `/compact`, the SessionEnd of `kill-session`), and every request
+  after it, the compaction's summary requests too, held the first prompt file's word; the
+  screen showed no error. One run each way. Only hooks and the prompt text were looked
+  at: whether `env`, `permissions`, the status line and subagents also take the first
+  read is not measured.
 - **Fork subagents (`subagent_type: "fork"`) in a `-p` run: off on 2.1.301, gated since
   2.1.302.** `strings`, 2026-10-17, not run: 2.1.301 returns `"disabled"` for every
   non-interactive run; 2.1.302 does so only when `CLAUDE_CODE_FORK_SUBAGENT` is not set
@@ -1311,7 +1340,9 @@ background-move bullets and the `/fork` copy probe (2026-10-27, CC 2.1.311) as d
 above. Koloft dependents: the fork gate and session_id
 extraction in `src/plugins/sessions/main/hooks.ts`'s injected script (marked `CC§5`);
 `src/main/hookRouting.ts`, where a tab follows `continued-in` or leaves a start that
-never wrote a transcript.
+never wrote a transcript; `src/agents/claude/main/claudeLaunch.ts`, where a tab on
+another machine removes its owner text once read and its project prompt once claude
+ends, and leaves its settings file there.
 
 ## §6 Settings precedence & the statusLine protocol
 
@@ -1549,7 +1580,7 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` itself; it steps aside when either name is already
   in the env, so the pins the shim passes for a custom endpoint with a model set stay
   (`strings`, not run: inferred, not checked). A custom-endpoint account with no model
-  gets no pins from the shim (`src/main/shim.ts`), so there the mix could pick a
+  gets no pins from the shim (`src/agents/claude/main/claudeShim.ts`), so there the mix could pick a
   subagent model the endpoint does not serve; whether the server sends the mix to such
   an endpoint is not probed yet.
   `CLAUDE_CODE_DISABLE_NESTED_SESSION_ID` (2.1.317 changelog: a `claude -p` run inside
@@ -1557,7 +1588,7 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
   `CLAUDE_CODE_CHILD_SESSION` and `CLAUDE_CODE_REMOTE_SESSION_ID` are set (`strings`
   only, inferred, not checked). Koloft sets neither; a terminal tab drops every
   inherited `CLAUDE_CODE_*` (§9), but Assist's one-shot passes on Koloft's own env with
-  only the auth names removed (`pickedAccountEnv` in `src/main/index.ts`), so it would
+  only the auth names removed (`pickedAccountEnv` in `src/agents/claude/main/claudeAccounts.ts`), so it would
   carry them only if Koloft itself were started inside such a runner session.
   2.1.302 is the
   first build that reads `CLAUDE_CODE_AUTO_MODE_MODEL` (2.1.301 only names it in the env
@@ -1778,9 +1809,9 @@ ccstatusline side is platform ledger §36), `writeTabHookSettings` in
 
 Evidence: probe edge shapes curl-verified 2026-08-17; latency measured 2026-08-19–20;
 classifier fallback seen 2026-08-20. Koloft dependents:
-`src/main/usageProbe.ts` (marked `CC§7`; its parse rules are this section),
-`src/main/accountPicker.ts`, `src/shared/accountUsage.ts`, the shim's inject section
-in `src/main/shim.ts` and `accountEnv` in `src/main/remote/launch.ts` (the remote
+`src/agents/claude/main/claudeAccountProbe.ts` (marked `CC§7`; its parse rules are this section),
+`src/agents/claude/main/claudeAccountPicker.ts`, `src/shared/accountUsage.ts`, the shim's inject section
+in `src/agents/claude/main/claudeShim.ts` and `accountEnv` in `src/agents/claude/main/claudeAccountEnv.ts` (the remote
 launch pins the same six slots and the same FORCE flag); pinned by `usageProbe.parse/score`, `accountPicker`,
 `accountUsage` unit suites and `test/e2e/multi-account.spec.ts`.
 
@@ -2537,10 +2568,10 @@ other bullets of §9 were not re-measured on this build.
   Desktop app or VS Code.
 
 Koloft dependents: the scheduled-jobs runner's launch line and the shim's new-session
-branch (`src/main/shim.ts`), `src/agents/claude/main/claudeArgs.ts`, `src/main/skillList.ts`,
+branch (`src/agents/claude/main/claudeShim.ts`), `src/agents/claude/main/claudeArgs.ts`, the skill folders in `src/agents/claude/agent.ts`,
 `src/agents/claude/main/claudeTrust.ts`, the env scrubs in `src/main/ptyManager.ts` and
 `scripts/code-review.mjs`,
-`src/main/leftovers.ts`, the warm-up `claude -p ok --max-turns 1` in
+`src/main/leftoverProcesses.ts`, the warm-up `claude -p ok --max-turns 1` in
 `src/main/remote/launch.ts`, the remote launch and trust check in
 `src/main/host/sshHost.ts`, and the remote trust write, which the tab script in
 `src/main/remote/launch.ts` runs with node once `ensure.sh` has put node there.
@@ -2695,7 +2726,7 @@ never through `sudo`, and treats node as a separate, non-fatal step); `tabs/<tab
 onboarding flag and runs `claude -p ok --max-turns 1` once when
 `cachedGrowthBookFeatures` is missing. Locally, `src/main/toolInstall.ts` runs the script
 in a terminal tab and puts `~/.local/bin` at the end of Koloft's own PATH, the hidden
-Claude sign-in stops an install that prints nothing for 30 minutes (`src/main/index.ts`:
+Claude sign-in stops an install that prints nothing for 30 minutes (`src/agents/claude/main/claudeAccounts.ts`:
 while the installer runs, the timer starts over at every byte it prints, so it has to
 outlast only the longest silent download above — the script's own, at most 338.4 MB
 on 2.1.322 and 359.1 MB on 2.1.323 for darwin-x64 without `zstd` by the manifests, about
@@ -3520,7 +3551,8 @@ sessions.
   bullet above (Koloft's `claudeTabSpec` + `writeTabPackage` rendered from this repo, run
   as `ssh -tt <lab> 'sh "$HOME/.koloft/tabs/<tab>.sh" start 120 40'`, packages in with
   `docker cp`), the text handed as Koloft hands it, in the tab's `.owner.md` file that the
-  tab script reads into `--append-system-prompt "$(cat …)"`. It was two blocks of 9,845
+  tab script then read into `--append-system-prompt "$(cat …)"` (since 2026-11-25 it reads
+  the file into a shell variable, removes it, and passes the same bytes). It was two blocks of 9,845
   and 9,844 bytes under their headings, each at the 10,000-byte limit as Koloft counts
   it, made of lines holding Chinese, `$HOME`, backticks, `{{x}}`, `'`, `"`, `%s`, `!!`,
   `$(id)`, curly quotes and an emoji (19,691 bytes). The request's last `system` block
@@ -4750,7 +4782,7 @@ servers `globalprobe` (top-level `mcpServers` of `~/.claude.json`), `localprobe`
   approval` until the folder's trust was accepted and its name was in
   `enabledMcpjsonServers` (which claude moves into `<A>/.claude/settings.local.json`).
 
-Koloft dependents: `claudeServers` in `src/main/mcpServers.ts`, which `koloft todo` lists,
+Koloft dependents: `claudeServers` in `src/agents/claude/main/claudeCatalog.ts`, which `koloft todo` lists,
 and `claudeProjectKey` in `src/agents/claude/main/claudeTrust.ts`, which picks the `projects` key it reads.
 
 ## §23 A resumed conversation keeps its first system prompt, until its next compaction
@@ -4859,7 +4891,7 @@ listed in the result's `permission_denials`. One interactive claude in a pty (py
   the top-level `mcpServers`, and the folder's own `.mcp.json` over one in the folder
   above it.
 
-Koloft dependents: `ownersClaudePlaywrightMcp` in `src/main/mcpServers.ts` and
+Koloft dependents: `ownersClaudePlaywrightMcp` in `src/agents/claude/main/claudeCatalog.ts` and
 `writeTabHookSettings` in `src/plugins/sessions/main/hooks.ts`.
 
 ## §25 A Bash call's `description` is its title on screen
@@ -5001,3 +5033,16 @@ a git repo's parent folders.
 
 Koloft dependents: the repo's own `CLAUDE.md` and `test/CLAUDE.md` are symlinks to the
 `AGENTS.md` beside them (`test/unit/devRules.test.ts`, ADR-0053).
+
+## §31 `claude --help` names no command that lists models
+
+2026-11-25, CC 2.1.332, read from `claude --help` on this Mac: none of its commands
+(`agents`, `attach`, `auth`, `auto-mode`, `doctor`, `gateway`, `import`, `install`, `logs`,
+`mcp`, `plugin`, `purge`, `respawn`, `rm`, `setup-token`, `stop`, `ultrareview`, `update`)
+lists models, and `--model` says "Use an alias for the latest model (e.g. 'fable', 'opus',
+or 'sonnet') or a model's full name." So a launch names a model by its alias and CC picks
+the newest one itself. Not probed: whether an account's models can be read some other way
+(the Messages API's model list, a slash command inside a session).
+
+Koloft dependents: Claude Code's manifest answers no to
+`listsTheModelsAnAccountCanRun`, and its catalog reads no model list.

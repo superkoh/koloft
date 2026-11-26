@@ -1,6 +1,12 @@
 import type { AgentManifest } from '@core/agent/manifest'
 import { CRON_EFFORTS } from '@shared/efforts'
+import { EMPTY_THE_BOX, ESC } from '@shared/lineEditKeys'
 import { SLOT_ADDITIONS, SLOT_FILLS } from './prompts/text'
+import { codexComposerDraft } from './shared/inputBox'
+import { codexPriceOf } from './shared/codexPrices'
+
+// CODEX§21
+const CLOSE_PAGER = 'q'
 
 // CODEX§15
 const MODEL_EVERY_ACCOUNT_TAKES = 'gpt-6-luna'
@@ -9,8 +15,13 @@ export const agent = {
   id: 'codex',
   name: 'Codex',
   productName: 'Codex',
+  shortProductName: 'Codex',
   maker: 'OpenAI',
   command: 'codex',
+  // CODEX§15
+  signInCommand: 'codex login',
+  // CODEX§22
+  installCommand: 'curl -fsSL https://chatgpt.com/codex/install.sh | CODEX_NON_INTERACTIVE=1 sh',
   nodePackageFolderNames: ['codex'],
   wordsThatNameMe: {
     anyCase: ['codex', 'openai', 'gpt'],
@@ -28,6 +39,11 @@ export const agent = {
   },
   // CODEX§17
   skillPrefix: '$',
+  // CODEX§17
+  skillFolders: {
+    inTheWorkspace: { skills: ['.agents/skills', '.codex/skills'], commands: [] },
+    inTheHome: { skills: ['.agents/skills'], commands: [] }
+  },
   questionToolName: 'request_user_input',
   // CODEX§17
   instructionFileNames: ['AGENTS.md'],
@@ -75,6 +91,13 @@ export const agent = {
   ownSettings: {},
   slotFills: SLOT_FILLS,
   slotAdditions: SLOT_ADDITIONS,
+  // CODEX§21
+  inputBoxKeys: {
+    clearALeftoverCommand: [EMPTY_THE_BOX],
+    makeEnterRunTheTypedText: [ESC],
+    backToAnEmptyBox: [ESC, CLOSE_PAGER, EMPTY_THE_BOX]
+  },
+  howToStopItsBackgroundTasks: 'Stop these tasks in the Codex session to free the resources.',
   flags: {
     // CODEX§9
     resumeCanWaitOnAQuestionBeforeAnySign: true,
@@ -82,14 +105,30 @@ export const agent = {
     pasteKeepsItsLastLineFeeds: true,
     // CODEX§17
     passedOnMessageShowsAsFromAnotherSession: false,
+    sessionsOfItsKindOnOneMachineTalkWithTheirOwnTool: false,
+    // CODEX§17
+    mightNotTakeAMessageWhileItsTurnRuns: false,
     // CODEX§12
     commandsItRunsCanHaveATerminalOfTheirOwn: true,
     // CODEX§12
     runsCommandsInASandboxWhereSudoCannotStart: true,
     // CODEX§20
-    questionToolTakesNoOptionDescriptions: false
+    questionToolTakesNoOptionDescriptions: false,
+    // CODEX§6
+    removesItsWorktreeAsItExits: false,
+    turnEndCanComeBeforeItsReplyIsWritten: false,
+    // CODEX§17
+    typesASkillOnlyByTheNameInItsFile: false,
+    // CODEX§17
+    refusesATypedSkillMarkedNotUserInvocable: false,
+    // CODEX§14
+    listsTheModelsAnAccountCanRun: true
   },
-  pureFunctions: { effortsAModelTakes: () => CRON_EFFORTS },
+  pureFunctions: {
+    effortsAModelTakes: () => CRON_EFFORTS,
+    draftInItsInputBox: codexComposerDraft,
+    priceOf: codexPriceOf
+  },
   // CODEX§15
   accountKinds: [
     {
@@ -98,7 +137,9 @@ export const agent = {
       isASignInFolder: true,
       signsInThroughABrowser: true,
       storesAPastedKeyItself: true,
-      takesAnEndpoint: false
+      takesAnEndpoint: false,
+      asksItsFirstRunQuestionsForEachAccount: false,
+      isATokenItsSignInPrints: false
     }
   ]
 } as const satisfies AgentManifest

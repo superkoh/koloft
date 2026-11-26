@@ -26,6 +26,7 @@ const flagVal = (f) => {
   const i = rest.indexOf(f)
   return i >= 0 ? rest[i + 1] : undefined
 }
+const sessionNamedExactly = () => flagVal('-t').replace(/^=(.*):$/, '$1')
 
 const openFifoNeverSeeingEof = (fifo) => fs.openSync(fifo, fs.constants.O_RDWR)
 
@@ -49,7 +50,7 @@ const rawPaneMark = (io) => path.join(ioDir, `${io}.raw`)
 function recordOf(name) {
   try {
     const rec = JSON.parse(fs.readFileSync(aliveFile(name), 'utf8'))
-    return { pid: Number(rec.pid), io: String(rec.io) }
+    return { pid: Number(rec.pid), io: String(rec.io), cmd: String(rec.cmd ?? '') }
   } catch {
     return null
   }
@@ -163,7 +164,7 @@ if (verb === 'new-session') {
       }
     })
     child.unref()
-    fs.writeFileSync(aliveFile(name), JSON.stringify({ pid: child.pid, io }))
+    fs.writeFileSync(aliveFile(name), JSON.stringify({ pid: child.pid, io, cmd }))
   }
   attach(name, paneJustStarted)
 } else if (verb === 'attach') {
@@ -177,6 +178,16 @@ if (verb === 'new-session') {
       } catch {}
   }
   process.exit(0)
+} else if (verb === 'list-panes' && rest.includes('#{pane_start_command}')) {
+  // PLATFORM§35
+  const name = sessionNamedExactly()
+  const rec = recordOf(name)
+  if (!rec || !alive(rec.pid)) {
+    process.stderr.write(`can't find session: ${name}\n`)
+    process.exit(1)
+  }
+  process.stdout.write(`"${rec.cmd.replace(/["\\$]/g, '\\$&')}"\n`)
+  process.exit(0)
 } else if (verb === 'list-panes' && rest.includes('-a')) {
   for (const name of fs.readdirSync(aliveDir)) {
     const pid = pidOf(name)
@@ -184,7 +195,7 @@ if (verb === 'new-session') {
   }
   process.exit(0)
 } else if (verb === 'list-panes') {
-  const pid = pidOf(flagVal('-t').replace(/^=(.*):$/, '$1'))
+  const pid = pidOf(sessionNamedExactly())
   if (!alive(pid)) process.exit(1)
   process.stdout.write(pid + '\n')
   process.exit(0)

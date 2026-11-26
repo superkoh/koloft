@@ -6,11 +6,7 @@ import { shq } from '@shared/shellQuote'
 import { portOffset } from '@shared/worktreeName'
 import { pictureFolderIn } from '@shared/pastedPictures'
 import { aboveItsTools } from '../../../main/agentLift'
-import {
-  AGENT_PROMPT_FILE,
-  claudeProjectPrompt,
-  projectPromptFile
-} from '../../../main/agentPlugin'
+import { AGENT_PROMPT_FILE } from '../../../main/agentPromptFile'
 import type { RemoteTab } from '../../../main/host/host'
 import type { Machine, TabProgram } from '../../../main/host/machine'
 import { ownerTextOver, type LaunchIdentity } from '../../../main/launchPrompt'
@@ -25,11 +21,11 @@ import {
 } from '../../../main/remote/launch'
 import {
   mirrorHookDir,
-  mirrorProjectsRoot,
   REMOTE_HOOK_DIR,
   remoteMachineDir,
   remoteTabPath
 } from '../../../main/remote/paths'
+import { mirrorProjectsRoot } from './claudeMirror'
 import { worktreeNameAround } from '../../../main/resumePlan'
 import { claudeArgv } from './claudeArgs'
 import {
@@ -103,6 +99,7 @@ export interface ClaudeHereDeps {
   writeConductorMarker(tabId: string, role: string): void
   handOverOwnerWords(tabId: string, words: string): void
   agentPlugin(): string | undefined
+  projectPromptFile(userData: string, rules: string): string | undefined
   docsPlugin(): string | undefined
   assistOf(cwd: string, resumeKey?: string): LaunchIdentity | undefined
   pastedPicturesDir(): string
@@ -112,6 +109,7 @@ export interface ClaudeOnMachineDeps {
   realPath(machine: string, p: string): string
   settings(): { skipPermissions: boolean }
   agentTools(): boolean
+  projectPrompt(rules: string): string
   docsWritingOn(): boolean
   pickAccount(launchKey: string, resumeSessionId?: string): Promise<MachineAccount | undefined>
   noAccountMessage(): string
@@ -157,7 +155,7 @@ export async function launchClaudeHere(
   const agentPlugin = d.agentPlugin()
   const prompt =
     agentPlugin && !conductor
-      ? (spec.projectRules && projectPromptFile(path.dirname(agentPlugin), spec.projectRules)) ||
+      ? (spec.projectRules && d.projectPromptFile(path.dirname(agentPlugin), spec.projectRules)) ||
         path.join(agentPlugin, AGENT_PROMPT_FILE)
       : undefined
   return {
@@ -282,32 +280,43 @@ interface ClaudeTabPlace {
   tmuxName: string
   cwd: string
   ownerWords?: string
+  attaches?: boolean
 }
 
 const PROJECT_PROMPT_SUFFIX = '.prompt.md'
 const OWNER_TEXT_SUFFIX = '.owner.md'
+const OWNER_TEXT_VAR = 'koloft_owner_text'
 
+const projectPromptOfThisRun = (tabId: string): string => `"${remoteTabPath(tabId)}.prompt.$$.md"`
+
+const pushesProjectPrompt = (c: ClaudeTab): boolean => !!(c.agentPlugin && c.projectPrompt)
+
+// CC§5
 export const claudeTabProgram = (tab: ClaudeTabPlace, c: ClaudeTab): TabProgram => ({
   run: claudeRun(tab.tabId, c),
   beforeTmux: `${c.trustFolder ? trustOnTheMachine(tab.cwd) : ''}${c.pictureFolder ? trustOnTheMachine(c.pictureFolder) : ''}${claudeFirstRun(tab)}`,
+  whenItEnds: pushesProjectPrompt(c) ? `rm -f ${projectPromptOfThisRun(tab.tabId)}` : '',
   files: {
-    [`${tab.tabId}.json`]: JSON.stringify(c.settings),
     [`${tab.tabId}.tmux`]: tab.tmuxName,
-    ...(c.agentPlugin &&
-      c.projectPrompt && { [`${tab.tabId}${PROJECT_PROMPT_SUFFIX}`]: c.projectPrompt }),
-    ...(c.ownerText && { [`${tab.tabId}${OWNER_TEXT_SUFFIX}`]: c.ownerText })
+    ...(!tab.attaches && {
+      [`${tab.tabId}.json`]: JSON.stringify(c.settings),
+      ...(c.agentPlugin &&
+        c.projectPrompt && { [`${tab.tabId}${PROJECT_PROMPT_SUFFIX}`]: c.projectPrompt }),
+      ...(c.ownerText && { [`${tab.tabId}${OWNER_TEXT_SUFFIX}`]: c.ownerText })
+    })
   }
 })
 
 // CC§12 CC§13
 function claudeRun(tabId: string, c: ClaudeTab): string {
   const T = remoteTabPath(tabId)
-  const prompt = c.projectPrompt
-    ? `${T}${PROJECT_PROMPT_SUFFIX}`
-    : `$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}`
-  const ownerText = c.ownerText ? ` --append-system-prompt "$(cat "${T}${OWNER_TEXT_SUFFIX}")"` : ''
-  return `  PATH="$M/${CLAUDE_BIN_DIR}:$PATH"; export PATH
-  set -- claude --settings "${T}.json"${c.docsPlugin ? ` --plugin-dir "$M/${DOCS_PLUGIN_DIR}"` : ''}${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file "${prompt}"` : ''}${ownerText} ${c.claudeArgs.map(shq).join(' ')}
+  const ownerFile = `"${T}${OWNER_TEXT_SUFFIX}"`
+  const prompt = pushesProjectPrompt(c)
+    ? projectPromptOfThisRun(tabId)
+    : `"$M/${AGENT_PLUGIN_DIR}${AGENT_PROMPT_FILE}"`
+  const ownerText = c.ownerText ? ` --append-system-prompt "$${OWNER_TEXT_VAR}"` : ''
+  return `${c.ownerText ? `  ${OWNER_TEXT_VAR}=$(cat ${ownerFile}); rm -f ${ownerFile}\n` : ''}${pushesProjectPrompt(c) ? `  mv -f "${T}${PROJECT_PROMPT_SUFFIX}" ${prompt}\n` : ''}  PATH="$M/${CLAUDE_BIN_DIR}:$PATH"; export PATH
+  set -- claude --settings "${T}.json"${c.docsPlugin ? ` --plugin-dir "$M/${DOCS_PLUGIN_DIR}"` : ''}${c.agentPlugin ? ` --plugin-dir "$M/${AGENT_PLUGIN_DIR}" --append-system-prompt-file ${prompt}` : ''}${ownerText} ${c.claudeArgs.map(shq).join(' ')}
   ${EXEC_ARGS_THROUGH_THE_STATUS_RELAY.join('\n  ')}\n`
 }
 
@@ -363,7 +372,7 @@ export async function launchClaudeOnMachine(
   // CC§9
   const model = spec.model && account?.env.ANTHROPIC_MODEL ? args.args.indexOf('--model') : -1
   const claudeArgs = args.args.filter((_, i) => model < 0 || (i !== model && i !== model + 1))
-  const projectPrompt = spec.projectRules && claudeProjectPrompt(spec.projectRules)
+  const projectPrompt = spec.projectRules && d.projectPrompt(spec.projectRules)
   return {
     ok: true,
     spawnCwd: opened.spawnCwd,
@@ -380,7 +389,13 @@ export async function launchClaudeOnMachine(
         ownerWords: spec.ownerWords,
         loginPath,
         program: claudeTabProgram(
-          { tabId, tmuxName: opened.tmuxName, cwd, ownerWords: spec.ownerWords },
+          {
+            tabId,
+            tmuxName: opened.tmuxName,
+            cwd,
+            ownerWords: spec.ownerWords,
+            attaches: !starts
+          },
           {
             settings: d.hookSettings(tabId, machineDir, agentTools),
             agentPlugin: agentTools,

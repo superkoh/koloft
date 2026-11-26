@@ -16,33 +16,22 @@ import path from 'path'
 import fs from 'fs'
 import os from 'os'
 import { pathToFileURL } from 'url'
-import { anotherLiveInstanceOwns, PtyManager, type PtyHandle } from './ptyManager'
+import { anotherLiveInstanceOwns, PtyManager, tabInstancePid, type PtyHandle } from './ptyManager'
 import { adoptableTabs } from './tabInventory'
 import { allowCrashReload } from './crashGuard'
 import { TerminalOutput } from './flowControl'
-import type { CommandOutput } from '@agents/claude/main/claudeCommandOutput'
-import { codexShowsAPanel } from './inputBox'
+import type { CommandOutput } from '@core/agent/commandOutput'
 import type { TreeIo } from './sessionWorktrees'
 import { sharedProcessTable, type ProcessTable } from './processTable'
 import {
   agyAccountEnv,
-  agyApiKeyRoute,
   agyHomeAccounts,
   endAgyOneShots,
-  oneShotAgyHome,
-  readAgyModels
+  oneShotAgyHome
 } from '@agents/agy/main/agyAccounts'
-import { AGY_APP_DIR, ownersGeminiDir } from '@agents/agy/main/agyStore'
-import { AGY_BRAIN_FLAGS, AGY_REMOTE_BRAIN } from '@agents/agy/main/agyTab'
-import { homeKeyOnDisk } from './homeKeyOnDisk'
+import { ownersGeminiDir } from '@agents/agy/main/agyStore'
 import { watchHistoryOf } from './historyWatch'
-import {
-  MARK_OUTPUT_START,
-  SignInOutput,
-  afterOutputStart,
-  outputStartCarry,
-  plainTerminalTail
-} from './signInOutput'
+import { terminalSignInsOf } from './terminalSignIn'
 import type { SessionEvent } from '@shared/sessionEvent'
 import { askWiring } from './askWiring'
 import {
@@ -61,7 +50,7 @@ import {
   backendIdOf,
   capabilitiesFor,
   identityOf,
-  reachedBySendMessage,
+  talksWithItsOwnTool,
   effectiveBackend,
   turnedOffLine,
   SESSION_BACKENDS
@@ -82,7 +71,6 @@ import { setupShim } from './shim'
 import { openDropTarget, type OpenDrop } from '@core/openDrop'
 import { leaveForOS, openUrlExternally, osOpenFallback } from './osOpen'
 import { enforceGuestAttach, isAppNavigation } from './browserSecurity'
-import { stripTerminalCodes } from '@core/terminalCodes'
 import type { InstructionsVersion } from '@core/ownerInstructions'
 import { formatRemoteKey, isRemoteKey, parseRemoteKey } from '@shared/remoteKey'
 import {
@@ -98,6 +86,7 @@ import {
   sshOptions
 } from './remote/ssh'
 import { sessionMessaging } from './sessionMessaging'
+import { carriedTabIds, tabIdList } from './tabIds'
 import { BrowserTunnels } from './remote/browserTunnel'
 import { anyFreeMacPort, macPortFree, PageForwards } from './remote/portForward'
 import { remoteAnswerCommand, remoteShCommand } from './remote/install'
@@ -106,24 +95,24 @@ import {
   buildMachinePackage,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
   tmuxSessionName,
+  removeTabPackagesNoTabNeeds,
   utilShellLine,
   writeTabPassFile,
   CLAUDE_AUTH_ENV_VARS,
-  claudeCodeGuessesWindowOf,
   type MachinePackage
 } from './remote/launch'
 import {
   browserForwardFile,
   machinePackageBase,
   pageForwardsFile,
-  mirrorAgyGemini,
   mirrorHookDir,
-  mirrorProjectsRoot,
   remoteShellPidFile,
   tabPackageDir
 } from './remote/paths'
+import { mirrorAgyGemini } from '@agents/agy/main/agyMirror'
+import { mirrorProjectsRoot } from '@agents/claude/main/claudeMirror'
 import { RemoteSync } from './remote/sync'
-import { machineUsageDirs, usagePulls } from './remote/usageMirror'
+import { syncMirrorsOf } from './remote/syncMirrors'
 import { machinePackageFiles } from './remote/machinePackageFiles'
 import { OWNER_TYPES_A_SECRET_WITHIN_MS } from './agentShim'
 import { passwordsOn } from '@plugins/passwords/api'
@@ -161,8 +150,6 @@ import {
   keychainDelete,
   keychainRead,
   keychainWrite,
-  recordFableCapability,
-  recordProbeOutcome,
   removeAccountMeta,
   setAccountEnabled,
   listAccounts,
@@ -170,13 +157,7 @@ import {
   upsertAccountMeta,
   validateNewAccount
 } from './accounts'
-import { probeAccount, shouldSkipFable } from './usageProbe'
-import {
-  AccountPicker,
-  PROBE_TIMEOUT_MS,
-  allLimitedNotice,
-  type PickResponse
-} from './accountPicker'
+import { allLimitedNotice } from './accountPicker'
 import { flushLayout, loadLayout, saveLayout } from './layout'
 import { ensureNotesFile, notesBaseDir } from './notes'
 import { rowsToAdopt } from '@shared/firstRun'
@@ -242,14 +223,16 @@ import {
 } from '@shared/browserRoute'
 import { PASTED_PICTURE_EXTENSIONS, pastedPicturesIn, withPictures } from '@shared/pastedPictures'
 import { sanitizeSettingsPatch } from '@shared/settingsOps'
-import { pidAlive, scanLeftovers, stopLeftover } from './leftovers'
+import { pidAlive } from './leftovers'
+import { scanLeftovers, stopLeftover } from './leftoverProcesses'
 import { parseSessionPorts, scanPortsHere, scanPortsOnMachine } from './sessionPorts'
 import { reachesThisMacsServer } from '@core/thisMacsServers'
 import { mapAtMost } from '@core/mapAtMost'
 import { SessionSearch } from './sessionSearch'
-import createTranscriptSearchWorker from './transcriptSearchWorker?nodeWorker'
+import createTranscriptSearchWorker from '@agents/claude/main/transcriptSearchWorker?nodeWorker'
 import createUsageScanWorker from './usageScanWorker?nodeWorker'
-import { UsageCache, listUsageFiles, statOf, type ScannedFile } from './usageCache'
+import { UsageCache, usageFilesOf, statOf } from './usageCache'
+import type { ScannedFile } from '@core/agent/usage'
 import { applyWindowCommand } from '@shared/shortcutDispatch'
 import {
   attentionReason,
@@ -263,7 +246,7 @@ import {
   keepsSecretInKeychain,
   takesAnEndpoint,
   BACKEND_OF_SIGN_IN_FOLDER,
-  isSignInFolderKind,
+  isAccountKind,
   type SignInFolderKind,
   type GitPlatform,
   type GitTokenAdd
@@ -271,7 +254,6 @@ import {
 import {
   ACCOUNT_KINDS_OF,
   launchUsageProbe,
-  noAccountLine,
   noAccountMessage,
   SHIM_FOUND_NO_ACCOUNT_EXIT,
   type LaunchUsageProbe
@@ -284,14 +266,12 @@ import type {
   AccountView,
   ArtifactView,
   BackendId,
-  SignInResult,
-  SignInFailure,
+  SignInStart,
   ScreenAnswer,
   ScreenRequest,
   TerminalExit,
   UnexpectedExitScreen,
   BrowserOpenRequest,
-  LoginProgress,
   CreateTabOptions,
   CreateTabResult,
   ConductorOpenResult,
@@ -317,6 +297,7 @@ import type {
 } from '@shared/types'
 import { copyWorktreeIncludes } from './sessionWorktrees'
 import { AgentRequests, tabSpokenFor } from './agentRequests'
+import { MachineRequests } from './remote/machineRequests'
 import { errorText } from '@core/errorText'
 import { projectRulesForTheButler } from '@shared/agentGuide'
 import {
@@ -340,24 +321,20 @@ import { within } from '@core/within'
 import { clicksTheMouse, pressesAKey, typeKeys } from '@core/typeKeys'
 import { CH, type Channel } from '@shared/ipcChannels'
 import { sleep } from '@core/sleep'
-import { claudeJsonPath, claudeProjectKey } from '@agents/claude/main/claudeTrust'
-import {
-  AGY_PROJECT_MCP_FILE,
-  PROJECT_MCP_FILE,
-  claudeServers,
-  codexServers,
-  foldersUpToRepoTop,
-  foldersUpToRoot,
-  jsonServers,
-  ownersClaudePlaywrightMcp,
-  textOrNull,
-  type ConfigText
-} from './mcpServers'
+import { claudeCatalog, ownersClaudePlaywrightMcp } from '@agents/claude/main/claudeCatalog'
+import { codexCatalog } from '@agents/codex/main/codexCatalog'
+import { agyCatalog } from '@agents/agy/main/agyCatalog'
+import { claudeTools } from '@agents/claude/main/claudeShim'
+import { codexTools } from '@agents/codex/main/codexShim'
+import { agyTools } from '@agents/agy/main/agyShim'
+import { claudeSearch, claudeUsage } from '@agents/claude/main/claudeUsage'
+import { codexSearch, codexUsage } from '@agents/codex/main/codexUsage'
+import { agySearch, agyUsage } from '@agents/agy/main/agyUsage'
+import type { AgentUsage } from '@core/agent/usage'
+import type { AgentSearch } from '@core/agent/search'
 import type { McpServer } from '@shared/types'
 import {
   LIVE_REGISTRY_ON_A_MACHINE_SH,
-  claudeShowsAPanel,
-  claudeShowsAPanelOnMachine,
   whenMessagingSocket,
   whenMessagingSocketOnMachine
 } from '@agents/claude/main/claudeSessionRegistry'
@@ -389,21 +366,40 @@ import {
 import type { MainIpc } from '@core/ipc'
 import type { WorktreeResource } from '@core/agent/worktreeRecords'
 import { ClaudeDialogWatch } from '@agents/claude/main/claudeDialogWatch'
+import { claudeAccountsOf } from '@agents/claude/main/claudeAccounts'
+import { pickMachineAccount } from '@agents/claude/main/claudeAccountEnv'
 import { docsWritingOn } from '@plugins/docs-writing/api'
 import { koloftPrompt, type SessionsWithStore } from '@plugins/sessions/api'
 import { localFile } from './realFiles'
 import { isHandsOn, OwnerPresence, type OwnerWhere } from '@core/presence'
 import { koloftAssist } from './assist'
-import { AgentsMain, type AgentMain, type OneShotTarget } from '@core/agent/agentsMain'
+import { endOneShots, oneShotsEnded } from './oneShotsAtQuit'
+import {
+  AgentsMain,
+  NO_SUCH_ACTION,
+  type AgentAccounts,
+  type AgentCatalog,
+  type AgentMain,
+  type AgentTools,
+  type OneShotTarget
+} from '@core/agent/agentsMain'
+import { AGENT_OF_UNNAMED_OLD_DATA } from '@core/agent/registry'
 import { createProject } from './newProject'
 import { routeSession } from './sessionRouter'
 import { TreeRemovals } from './treeRemovals'
-import {
-  finishAfterKoloftQuits,
-  WorktreeRemovalWatch
-} from '@agents/claude/main/claudeWorktreeExit'
+import { removeUntouchedWorktreeWith } from './untouchedWorktreeRemoval'
+import { removingTheWorktree, type WorktreesBeingPrepared } from './worktreesBeingPrepared'
+import { worktreeExitFollow } from './worktreeExitFollow'
 import { discordTokenRead, discordTokenWrite } from './accounts'
-import { checkSkillsAgain, pluginSkills, writeAgentPlugin, writeDocsPlugin } from './agentPlugin'
+import {
+  checkSkillsAgain,
+  claudeProjectPrompt,
+  keepSkillsIn,
+  pluginSkills,
+  projectPromptFile,
+  writeAgentPlugin,
+  writeDocsPlugin
+} from './agentPlugin'
 import { installThen, pathWithDirFirst, pathWithDirLast, pathWithInstallDir } from './toolInstall'
 
 type SessionsStarted = PluginsStarted['sessions']
@@ -577,43 +573,13 @@ function asksTheOwner(tabId: string): boolean {
   return runtime.statusOf(tabId) === 'approval' || !!sessionAsks?.dialogOpen(tabId)
 }
 
-type PanelOpen = (
-  tabId: string,
-  sessionId: string,
-  screen?: string[]
-) => Promise<boolean | undefined>
-
-function panelOnScreen(shows: (lines: string[]) => boolean | undefined): PanelOpen {
-  return async (tabId, _sessionId, screen) => {
-    const lines = screen ?? (await screenLines(tabId))
-    const somethingDrawn = lines?.some((line) => line.trim())
-    return lines && somethingDrawn ? shows(lines) : undefined
-  }
-}
-
-const panelOpenOn: Record<BackendId, PanelOpen> = {
-  claude: async (tabId, sessionId) => {
-    if (!sessionId) return undefined
-    const host = tracker.remoteOf(tabId)?.host
-    if (!host) return claudeShowsAPanel(sessionId)
-    const registry = await liveClaudeRegistryOn(host).catch(() => undefined)
-    return registry === undefined ? undefined : claudeShowsAPanelOnMachine(registry, sessionId)
-  },
-  codex: panelOnScreen(codexShowsAPanel),
-  agy: async () => undefined
-}
-
 const slashDeps: PluginStartDeps['sessions']['slash'] = {
   backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
   keyOf: (tabId) => sessionOfTab(tabId)?.sessionId || undefined,
   turnOver: (tabId) => runtime.turnOver(tabId),
   asking: asksTheOwner,
   takesTyping: (tabId) => !!sessionAsks?.takesCommand(tabId),
-  panelOpen: async (tabId, screen) => {
-    const s = sessionOfTab(tabId)
-    if (!s || capabilitiesFor(s.backendId, s.host).panelSeen !== true) return undefined
-    return panelOpenOn[s.backendId](tabId, s.sessionId, screen)
-  },
+  panelOpen: (tabId, screen) => sessionBackends.showsAPanel(tabId, screen),
   screen: screenLines,
   nextMirrorPull: (tabId) => {
     const host = remoteHostOfTab(tabId)
@@ -686,35 +652,15 @@ if (process.platform !== 'win32') {
 }
 let quitCommitted = false
 
-interface ClaudeTabExit {
-  watch: WorktreeRemovalWatch
-  leaving?: { sessionId?: string; claudePid?: number; treeRoot?: string }
-}
-const claudeTabExits = new Map<string, ClaudeTabExit>()
+const worktreeExits = worktreeExitFollow({
+  ptyMgr,
+  watchOf: (backend, tabId, host) => sessionBackends.get(backend).worktreeExitWatch(tabId, host),
+  hostOfTab,
+  sendToRenderer
+})
 const closedTabs = new Map<string, LeftTab | null>()
 const treeRemovals = new TreeRemovals()
-
-function watchForWorktreeRemoval(tabId: string, data: string): void {
-  let exit = claudeTabExits.get(tabId)
-  if (!exit) {
-    const backend = backendIdOf(ptyMgr.get(tabId)?.kind)
-    if (!backend || capabilitiesFor(backend, hostOfTab(tabId)).worktreeRemovalFollowed !== true)
-      return
-    claudeTabExits.set(tabId, (exit = { watch: new WorktreeRemovalWatch() }))
-  }
-  if (!exit.watch.started(data)) return
-  const session = tracker.infoOf(tabId)
-  const removalOutlivesKoloftsQuit = hostOfTab(tabId) === 'ssh'
-  exit.leaving = {
-    sessionId: session?.sessionId,
-    ...(!removalOutlivesKoloftsQuit && {
-      claudePid: ptyMgr.pidOf(tabId),
-      treeRoot: session?.treeRoot
-    })
-  }
-  if (session?.sessionId) claudeStore?.leavingWorktree(session.sessionId, tabId)
-  sendToRenderer(CH.tab.killedByMain, tabId)
-}
+const worktreesBeingPrepared: WorktreesBeingPrepared = new Map()
 
 const attentionDeps: PluginStartDeps['sessions']['attention'] = {
   onChange: (pending, event) => {
@@ -768,19 +714,13 @@ let sessionAccounts: SessionAccounts | undefined
 let savedOpenTabs: OpenTabs = { tabs: [] }
 let openTabsRestored = false
 const RESUMED_TAB_READY_MS = 30_000
-const TAB_IDS_KEPT_PER_TAB = 8
 const earlierTabIds = new Map<string, string[]>()
 
 const tabIdsOf = (tabId: string): string[] =>
-  [tabId, ...(earlierTabIds.get(tabId) ?? sleepers.get(tabId)?.tabIds ?? [])].slice(
-    0,
-    TAB_IDS_KEPT_PER_TAB
-  )
+  tabIdList(tabId, earlierTabIds.get(tabId) ?? sleepers.get(tabId)?.tabIds ?? [])
 
 function carryTabIds(newId: string, ids: string[]): void {
-  const merged = new Set([...(earlierTabIds.get(newId) ?? []), ...ids])
-  merged.delete(newId)
-  earlierTabIds.set(newId, [...merged].slice(0, TAB_IDS_KEPT_PER_TAB - 1))
+  earlierTabIds.set(newId, carriedTabIds(newId, earlierTabIds.get(newId) ?? [], ids))
 }
 
 function openTabOf(s: SessionInfo): OpenTab {
@@ -1360,43 +1300,44 @@ function notifyExpired(name: string, label = 'Claude'): void {
   )
 }
 
-function foldProbeResult(
-  name: string,
-  kind: AccountKind,
-  result: Awaited<ReturnType<typeof probeAccount>>
-): void {
-  const prevStatus = findAccount(name, kind)?.status
-  const key = viewKey(name, kind)
-  if (result.ok) {
-    recordProbeOutcome(name, kind, 'ok')
-    if (result.fable) recordFableCapability(name, kind, result.fable)
-    usageViews.set(key, { usage: result.usage ?? usageViews.get(key)?.usage })
-  } else {
-    const status = recordProbeOutcome(name, kind, result.error === 'expired' ? '401' : 'fail')
-    usageViews.set(key, { ...usageViews.get(key), probeError: result.error })
-    if (status === 'expired' && prevStatus !== 'expired') notifyExpired(name)
-  }
-  pushAccounts()
-}
-
 const savedUsage = new SavedUsage(path.join(app.getPath('userData'), 'usage-snapshots.json'))
-const picker = new AccountPicker(
-  {
-    listAccounts,
-    fablePriority: () => loadSettings().fablePriority,
-    readSecret: (kind, name) => keychainRead(kind, name),
-    probe: (a, secret) =>
-      probeAccount(a.kind, secret, {
-        timeoutMs: PROBE_TIMEOUT_MS,
-        skipFable: shouldSkipFable(a, Date.now())
-      }),
-    onProbeOutcome: foldProbeResult,
+const {
+  picker,
+  pickForLaunch,
+  pickedAccountEnv,
+  shimAccountRefusals,
+  accounts: claudeAccounts,
+  loginWatchers,
+  loginPtys,
+  feedLoginWatcher,
+  failLogin
+} = claudeAccountsOf({
+  ptyMgr,
+  usageViews,
+  viewKey,
+  accountViews,
+  pushAccounts,
+  notifyExpired,
+  signInChanged: (progress) => agentsMain.signInChanged(progress),
+  savedUsage,
+  tracker: {
     launchedSessions: () => tracker.launchedSessions(),
-    recordPick: (tabId, account) => tracker.setPickedAccount(tabId, account),
-    now: () => Date.now()
+    setPickedAccount: (tabId, account) => tracker.setPickedAccount(tabId, account)
   },
-  savedUsage
-)
+  sessionAccounts: { of: (backend, sessionId) => sessionAccounts?.of(backend, sessionId) },
+  claudeBackend: {
+    picked: (tabId, skipFlag) => claudeBackend.picked(tabId, skipFlag),
+    forgetAvailability: () => claudeBackend.forgetAvailability(),
+    availability: () => claudeBackend.availability()
+  },
+  loginEnvReady,
+  CLAUDE_AUTH_ENV_VARS,
+  cronTestMs,
+  setupLine,
+  PLAIN_KOLOFT_SHIM,
+  installThen,
+  toolInstallPtys: { add: (id) => toolInstallPtys.add(id) }
+})
 
 const savedHomeUsage = new SavedUsage<HomeUsage>(
   path.join(app.getPath('userData'), 'home-usage-snapshots.json')
@@ -1412,6 +1353,36 @@ function pushHomeAccount(name: string, kind: SignInFolderKind): void {
     saveHomeUsage(savedHomeUsage, key, usageViews.get(key))
   pushAccounts()
 }
+
+const homeAccountsDeps = {
+  app,
+  accountViews,
+  allLimitedNotice,
+  findAccount,
+  foldHomeSignIn,
+  listAccounts,
+  noteHomeAccount,
+  pushHomeAccount,
+  savedHomeUsageOf,
+  usageViews,
+  viewKey,
+  sessionAccounts: () => sessionAccounts,
+  signInInATab: (...signIn: Parameters<typeof signInToHome>) => signInToHome(...signIn)
+}
+const codexAccounts = codexHomeAccounts({
+  ...homeAccountsDeps,
+  codexSharedConfig,
+  codexSessions: () => codexSessions
+})
+const { pickCodexHome, probeCodexAccounts } = codexAccounts
+const agyAccounts = agyHomeAccounts({
+  ...homeAccountsDeps,
+  keychainRead,
+  keychainWrite,
+  ownersGemini,
+  agySessions: () => agySessions
+})
+const { agyPicker, agyHomeFor, agyApiKeyOf, pickAgyHome, agyBinary, probeAgyAccounts } = agyAccounts
 
 function watchPickRequests(pickDir: string): fs.FSWatcher | null {
   return watchAndSweepJsonDrops(
@@ -1519,38 +1490,7 @@ async function mcpServersNow(): Promise<McpServer[]> {
     ...(workspaceMgr?.pinnedPathList() ?? []).filter((p) => !isRemoteKey(p)),
     conductorFolder(app.getPath('userData'))
   ]
-  const walks = await Promise.all(
-    folders.map(async (onlyIn) => ({
-      onlyIn,
-      toRoot: foldersUpToRoot(onlyIn),
-      toRepoTop: await foldersUpToRepoTop(onlyIn, isGitCheckoutAsync)
-    }))
-  )
-  const inFolders = (file: string, walk: 'toRoot' | 'toRepoTop'): Promise<ConfigText[]> =>
-    Promise.all(
-      walks.flatMap((w) =>
-        w[walk].map(async (folder) => ({
-          onlyIn: w.onlyIn,
-          text: await textOrNull(path.join(folder, file))
-        }))
-      )
-    )
-  const [claudeJson, projectFiles, agyProjectFiles, codexToml, agy] = await Promise.all([
-    textOrNull(claudeJsonPath()),
-    inFolders(PROJECT_MCP_FILE, 'toRoot'),
-    inFolders(AGY_PROJECT_MCP_FILE, 'toRepoTop'),
-    textOrNull(codexSharedConfig()),
-    textOrNull(path.join(ownersGemini(), 'config', 'mcp_config.json'))
-  ])
-  const claudeFolders = folders.map((folder) => ({
-    folder,
-    projectKey: claudeProjectKey(folder)
-  }))
-  return [
-    ...claudeServers(claudeJson, projectFiles, claudeFolders),
-    ...codexServers(codexToml),
-    ...jsonServers('agy', [{ text: agy }, ...agyProjectFiles])
-  ]
+  return agentsMain.mcpServersOn(folders)
 }
 
 function pinnedWorkspaceOfTab(tabId: string): string | undefined {
@@ -1602,12 +1542,69 @@ const oneShotTargets: Record<BackendId, AgentMain['oneShotTarget']> = {
   },
   agy: () => agyOneShotTarget()
 }
+const catalogs: Record<BackendId, AgentCatalog> = {
+  claude: claudeCatalog,
+  codex: codexCatalog(codexSharedConfig, codexAccounts.listedModels),
+  agy: agyCatalog(ownersGemini, isGitCheckoutAsync, oneShotTargets.agy)
+}
+const tools: Record<BackendId, AgentTools> = {
+  claude: claudeTools,
+  codex: codexTools,
+  agy: agyTools
+}
+const accountsOf: Record<BackendId, AgentAccounts> = {
+  claude: claudeAccounts,
+  codex: codexAccounts.accounts,
+  agy: agyAccounts.accounts
+}
+const usages: Record<BackendId, AgentUsage> = {
+  claude: claudeUsage(() => claudeStore),
+  codex: codexUsage(
+    () => codexSessions,
+    () => path.dirname(codexSharedConfig()),
+    () => app.getPath('userData')
+  ),
+  agy: agyUsage(
+    () => agySessions,
+    ownersGemini,
+    () => app.getPath('userData')
+  )
+}
+const searches: Record<BackendId, AgentSearch> = {
+  claude: claudeSearch(
+    () => claudeStore,
+    (files, term, found) => {
+      // PLATFORM§4
+      const worker = createTranscriptSearchWorker({ workerData: { files, term } })
+      worker.on('message', (hit: { id: string; snippet: SearchSnippet }) =>
+        found(hit.id, hit.snippet)
+      )
+      worker.on('error', (error) => console.error('[koloft] session search failed', error))
+      return {
+        done: new Promise((resolve) => worker.once('exit', () => resolve())),
+        stop: () => void worker.terminate()
+      }
+    }
+  ),
+  codex: codexSearch(() => codexSessions),
+  agy: agySearch(() => agySessions)
+}
 const agentsMain = new AgentsMain()
-for (const id of SESSION_BACKENDS) agentsMain.register({ id, oneShotTarget: oneShotTargets[id] })
+for (const id of SESSION_BACKENDS)
+  agentsMain.register({
+    id,
+    oneShotTarget: oneShotTargets[id],
+    catalog: catalogs[id],
+    tools: tools[id],
+    accounts: accountsOf[id],
+    usage: usages[id],
+    search: searches[id]
+  })
 const assist = koloftAssist({
   picks: loadSettings,
   enabled: (backend) => !turnedOffNow(backend),
   target: (backend) => agentsMain.oneShotTarget(backend),
+  oneShot: (backend) => agentsMain.oneShot(backend),
   onThisAccount: assistJobPick
 })
 const assistRuns = new Map<number, AbortController>()
@@ -1674,14 +1671,8 @@ async function liveClaudeRegistryOn(host: string): Promise<string> {
 }
 
 const messaging = sessionMessaging({
-  get tracker() {
-    return tracker
-  },
   get hosts() {
     return hosts
-  },
-  get codexSessions() {
-    return codexSessions
   },
   get hookRegDir() {
     return hookRegDir
@@ -1692,27 +1683,18 @@ const messaging = sessionMessaging({
   get sessionBackends() {
     return sessionBackends
   },
-  get writeLineInTurn() {
-    return writeLineInTurn
-  },
-  get noteOfWhatKoloftSends() {
-    return noteOfWhatKoloftSends
-  },
   get noteSent() {
     return noteSent
+  },
+  get opensAsOnlyKoloftSends() {
+    return opensAsOnlyKoloftSends
   },
   get buildHandOver() {
     return buildHandOver
   },
   ptyMgr,
-  startupErrors,
-  remoteControlDir,
-  sessionOfTab,
   machineOfTab,
-  storedOwnerOf,
-  liveClaudeRegistryOn,
-  whenMessagingSocket,
-  whenMessagingSocketOnMachine
+  tabIdsOf
 })
 
 const syncRepoKeys = new GitRepoKeys(undefined, (machine, paths) =>
@@ -1744,7 +1726,7 @@ function syncSessionsOf(all: SessionInfo[]): SyncSession[] {
 
 function noticeOf(tabId: string): NoticeFile | undefined {
   const host = machineOfTab(tabId)
-  if (host) return hosts.machine(host).notice(tabId)
+  if (host) return hosts.machine(host).notice(tabIdsOf(tabId))
   return hookRegDir ? localNotice(noticeFile(hookRegDir, tabId)) : undefined
 }
 
@@ -1757,20 +1739,10 @@ const sessionSyncDeps: PluginStartDeps['sessions']['sessionSync'] = {
 const A_MODEL_LIST_IS_READ_AGAIN_AFTER_MS = 3_600_000
 const modelLists = new Map<BackendId, { at: number; listed: Promise<ListedModel[] | undefined> }>()
 
-async function readModelList(backend: BackendId): Promise<ListedModel[] | undefined> {
-  if (backend === 'codex') {
-    const picked = codexPicker.peek(accountViews())
-    return codexSessions?.listedModels(picked && codexHomeOf(app.getPath('userData'), picked.name))
-  }
-  const target = await agentsMain.oneShotTarget(backend)
-  if (!target) return undefined
-  return readAgyModels(target.binary, target.env, target.args ?? []).finally(() => target.done())
-}
-
 function listedModels(backend: BackendId): Promise<ListedModel[] | undefined> {
   const kept = modelLists.get(backend)
   if (kept && Date.now() - kept.at < A_MODEL_LIST_IS_READ_AGAIN_AFTER_MS) return kept.listed
-  const listed = readModelList(backend).catch(() => undefined)
+  const listed = agentsMain.listedModels(backend).catch(() => undefined)
   modelLists.set(backend, { at: Date.now(), listed })
   void listed.then((models) => {
     if (models?.length) modelsLastRead.set(backend, models)
@@ -1872,6 +1844,8 @@ const sessionDeps: SessionVerbDeps = {
     const title = options.name ?? BACKEND_LABEL[options.kind]
     return launchQuietTab(options, title, { launch: options })
   },
+  handOverLaunch: (backend, handOver, task) =>
+    sessionBackends.handOverLaunch(backend, handOver, task),
   assist,
   ...messaging.forSessionVerbs,
   get startedSessions() {
@@ -2166,68 +2140,6 @@ const agentRequests = new AgentRequests({
   alive: pidAlive
 })
 
-async function pickForLaunch(
-  tabId?: string,
-  resumeSessionId?: string
-): Promise<{
-  res: PickResponse
-  endpoint?: { baseUrl?: string; model?: string }
-}> {
-  let res: PickResponse
-  try {
-    res = await picker.pick(tabId, sessionAccounts?.of('claude', resumeSessionId))
-  } catch {
-    res = { account: null, reason: 'no-usable' }
-  }
-  if (!res.account || res.kind !== 'custom') return { res }
-  const meta = findAccount(res.account, 'custom')
-  return { res, endpoint: { baseUrl: meta?.baseUrl, model: meta?.model } }
-}
-
-async function pickedAccountEnv(): Promise<NodeJS.ProcessEnv | null> {
-  await loginEnvReady()
-  const picked = await pickMachineAccount(() => pickForLaunch())
-  if (!picked) return null
-  const env = { ...process.env }
-  for (const k of CLAUDE_AUTH_ENV_VARS) delete env[k]
-  // ADR-0030
-  return { ...env, ...picked.env, KOLOFT_ACCOUNT_PICKED: '1' }
-}
-
-interface UtilTerminalPick {
-  account: string
-  home: string
-  banner?: string
-  warning?: string
-  kind?: 'apikey'
-}
-
-const utilTerminalPicks: Record<
-  Exclude<BackendId, 'claude'>,
-  () => UtilTerminalPick | undefined
-> = {
-  codex: () => terminalPickOf(pickCodexHome()),
-  agy: () => {
-    const picked = terminalPickOf(pickAgyHome())
-    return picked && (agyApiKeyRoute(picked.home) ? { ...picked, kind: 'apikey' } : picked)
-  }
-}
-
-function terminalPickOf(
-  picked: { account: string; home: string; banner?: string; notice?: string } | undefined
-): UtilTerminalPick | undefined {
-  return (
-    picked && {
-      account: picked.account,
-      home: picked.home,
-      banner: picked.banner,
-      warning: picked.notice
-    }
-  )
-}
-
-const shimAccountRefusals = new Map<string, string>()
-
 async function handlePickRequest(pickDir: string, reqName: string, raw: unknown): Promise<void> {
   const obj = raw as { tabId?: string; ts?: number; backend?: string }
   const tab = obj.tabId ? ptyMgr.get(obj.tabId) : undefined
@@ -2242,219 +2154,14 @@ async function handlePickRequest(pickDir: string, reqName: string, raw: unknown)
     } catch {}
     return
   }
-  if (backend && backend !== 'claude') {
-    let picked: UtilTerminalPick | undefined
-    try {
-      picked = utilTerminalPicks[backend]()
-    } catch (err) {
-      console.error(`[koloft] picking a ${backend} account for a terminal failed:`, err)
-    }
-    try {
-      writeWholeBeforeVisible(resPath, JSON.stringify(picked ?? {}))
-    } catch {}
-    pushAccounts()
-    return
-  }
-  const { res, endpoint } = await pickForLaunch(obj.tabId, tab.resumeSessionId)
-  const accountIssue = res.account === null && noAccountLine(listAccounts(), 'claude')
-  if (accountIssue) shimAccountRefusals.set(obj.tabId, accountIssue)
-  else shimAccountRefusals.delete(obj.tabId)
-  const payload: Record<string, unknown> = { ...res }
-  if (res.account && loadSettings().skipPermissions) payload.skipFlag = true
-  claudeBackend.picked(obj.tabId, payload.skipFlag === true)
-  if (endpoint?.baseUrl) payload.baseUrl = endpoint.baseUrl
-  if (endpoint?.model) {
-    payload.model = endpoint.model
-    if (claudeCodeGuessesWindowOf(endpoint.model)) payload.disable1mContext = true
-  }
+  const picked = await agentsMain.pickForThisStart(backend ?? AGENT_OF_UNNAMED_OLD_DATA, {
+    tabId: obj.tabId,
+    resumeSessionId: tab.resumeSessionId
+  })
   try {
-    writeWholeBeforeVisible(resPath, JSON.stringify(payload))
+    writeWholeBeforeVisible(resPath, JSON.stringify(picked))
   } catch {}
   pushAccounts()
-}
-
-// CC§7
-interface LoginWatch {
-  name: string
-  buf: string
-  sawUrl: boolean
-  done: boolean
-  giveUp: NodeJS.Timeout
-  installing?: { carry: string }
-}
-const loginWatchers = new Map<string, LoginWatch>()
-const loginPtys = new Set<string>()
-const LOGIN_TIMEOUT_MS = 10 * 60_000
-const LOGIN_TIMED_OUT = 'Sign-in timed out'
-// CC§10
-const INSTALL_SILENCE_LONGER_THAN_EITHER_SILENT_DOWNLOAD_AT_2_MBIT_MS = 30 * 60_000
-const INSTALL_STALLED = `The Claude Code install did not finish: it printed nothing for ${INSTALL_SILENCE_LONGER_THAN_EITHER_SILENT_DOWNLOAD_AT_2_MBIT_MS / 60_000} minutes`
-const LOGIN_BUF_MAX = 8192
-const LOGIN_PTY_COLS_WIDER_THAN_TOKEN = 800
-const ACCOUNT_PROBE_TIMEOUT_MS = 10_000
-// CC§7
-const AUTH_URL_RE = /https?:\/\/[^\s'"`<>\x00-\x1f\x7f]+(?=[\s'"`<>\x00-\x1f\x7f])/
-// CC§7
-const TOKEN_RE = /sk-ant-[A-Za-z0-9]{2,12}-[A-Za-z0-9_-]{24,}/
-
-function loginTimeoutMs(): number {
-  return cronTestMs('KOLOFT_LOGIN_TIMEOUT_MS', LOGIN_TIMEOUT_MS)
-}
-
-function sendLoginProgress(p: LoginProgress): void {
-  sendToRenderer(CH.accounts.loginProgress, p)
-}
-
-function feedLoginWatcher(tabId: string, data: string): void {
-  const w = loginWatchers.get(tabId)
-  if (!w || w.done) return
-  if (w.installing) {
-    const seen = w.installing.carry + data
-    const rest = afterOutputStart(seen)
-    if (rest === null) {
-      w.installing.carry = outputStartCarry(seen)
-      w.giveUp.refresh()
-      w.buf = (w.buf + stripTerminalCodes(data)).slice(-LOGIN_BUF_MAX)
-      return
-    }
-    clearTimeout(w.giveUp)
-    w.giveUp = giveUpLoginAfter(tabId, loginTimeoutMs(), LOGIN_TIMED_OUT)
-    w.installing = undefined
-    w.buf = ''
-    data = rest
-  }
-  w.buf = (w.buf + stripTerminalCodes(data)).slice(-LOGIN_BUF_MAX)
-  const m = TOKEN_RE.exec(w.buf)
-  if (!m) {
-    if (!w.sawUrl) {
-      const u = AUTH_URL_RE.exec(w.buf)
-      if (u) {
-        w.sawUrl = true
-        sendLoginProgress({ phase: 'browser', name: w.name, url: u[0] })
-      }
-    }
-    return
-  }
-  endLoginWatch(tabId, w)
-  void completeLogin(tabId, w.name, m[0])
-}
-
-function endLoginWatch(tabId: string, w: LoginWatch): void {
-  w.done = true
-  loginWatchers.delete(tabId)
-  clearTimeout(w.giveUp)
-}
-
-function failLogin(tabId: string, why: string, terminalKept = true): void {
-  const w = loginWatchers.get(tabId)
-  if (!w || w.done) return
-  endLoginWatch(tabId, w)
-  const tail = plainTerminalTail(w.buf)
-  sendLoginProgress({
-    phase: 'failed',
-    name: w.name,
-    tail: `${why}${tail ? `\n${tail}` : ''}`,
-    ...(terminalKept && { tabId, cwd: ptyMgr.get(tabId)?.cwd })
-  })
-}
-
-function giveUpLoginAfter(tabId: string, ms: number, why: string): NodeJS.Timeout {
-  return setTimeout(() => {
-    failLogin(tabId, why, false)
-    try {
-      ptyMgr.kill(tabId)
-    } catch {}
-  }, ms)
-}
-
-function cancelGuidedLogin(tabId: string): void {
-  const w = loginWatchers.get(tabId)
-  if (!w) return
-  endLoginWatch(tabId, w)
-  try {
-    ptyMgr.kill(tabId)
-  } catch {}
-}
-
-function startGuidedLogin(name: string, installFirst: boolean): string {
-  const handle = ptyMgr.create({
-    kind: 'shell',
-    koloftShim: PLAIN_KOLOFT_SHIM,
-    cwd: os.homedir(),
-    // CC§7
-    cols: LOGIN_PTY_COLS_WIDER_THAN_TOKEN,
-    rows: 50,
-    setupCommand: setupLine(),
-    launchCommand: installFirst
-      ? installThen(
-          'claude',
-          (claude) => `${MARK_OUTPUT_START}; exec ${claude} setup-token`,
-          process.env.KOLOFT_TEST_TOOL_INSTALLER
-        )
-      : 'claude setup-token'
-  })
-  loginWatchers.set(handle.id, {
-    name,
-    buf: '',
-    sawUrl: false,
-    done: false,
-    giveUp: installFirst
-      ? giveUpLoginAfter(
-          handle.id,
-          cronTestMs(
-            'KOLOFT_INSTALL_SILENCE_MS',
-            INSTALL_SILENCE_LONGER_THAN_EITHER_SILENT_DOWNLOAD_AT_2_MBIT_MS
-          ),
-          INSTALL_STALLED
-        )
-      : giveUpLoginAfter(handle.id, loginTimeoutMs(), LOGIN_TIMED_OUT),
-    ...(installFirst && { installing: { carry: '' } })
-  })
-  loginPtys.add(handle.id)
-  if (installFirst) toolInstallPtys.add(handle.id)
-  sendLoginProgress({ phase: 'starting', name })
-  return handle.id
-}
-
-async function completeLogin(tabId: string, name: string, token: string): Promise<void> {
-  const result = await probeAccount('oauth', token, { timeoutMs: ACCOUNT_PROBE_TIMEOUT_MS })
-  if (!result.ok && result.error === 'expired') {
-    sendLoginProgress({
-      phase: 'failed',
-      name,
-      tail:
-        'The captured token was rejected — usually that means the capture was incomplete. ' +
-        'Use “Paste token” instead, or “Show terminal” to see the raw output.',
-      tabId,
-      cwd: ptyMgr.get(tabId)?.cwd
-    })
-    return
-  }
-  const stored = await keychainWrite('oauth', name, token)
-  if (!stored) return
-  const prev = findAccount(name, 'oauth')
-  upsertAccountMeta({
-    name,
-    kind: 'oauth',
-    enabled: prev ? prev.enabled : true,
-    fable: result.ok && result.fable ? result.fable : (prev?.fable ?? 'unknown'),
-    ...(prev?.fableCheckedAt !== undefined ? { fableCheckedAt: prev.fableCheckedAt } : {}),
-    status: result.ok ? 'ok' : 'unverified',
-    addedAt: prev?.addedAt ?? Date.now()
-  })
-  if (result.ok && result.fable) recordFableCapability(name, 'oauth', result.fable)
-  const key = viewKey(name, 'oauth')
-  if (result.ok) {
-    usageViews.set(key, { usage: result.usage })
-    picker.probed('oauth', name, result)
-  } else {
-    usageViews.set(key, { probeError: result.error })
-  }
-  pushAccounts()
-  sendLoginProgress({ phase: 'saved', name })
-  try {
-    ptyMgr.kill(tabId)
-  } catch {}
 }
 
 let probeAllInFlight: Promise<AccountView[]> | null = null
@@ -2467,24 +2174,7 @@ function probeSignInFolderAccounts(): Promise<void> {
 function probeAllForPanel(): Promise<AccountView[]> {
   if (probeAllInFlight) return probeAllInFlight
   const round = (async (): Promise<AccountView[]> => {
-    const claude = listAccounts().filter(
-      (a) => a.enabled && ACCOUNT_KINDS_OF.claude.includes(a.kind)
-    )
-    await Promise.all([
-      probeSignInFolderAccounts(),
-      ...claude.map(async (a) => {
-        const secret = await keychainRead(a.kind, a.name)
-        if (!secret) return
-        const result = await probeAccount(a.kind, secret, {
-          timeoutMs: ACCOUNT_PROBE_TIMEOUT_MS,
-          skipFable: shouldSkipFable(a, Date.now()),
-          baseUrl: a.baseUrl,
-          model: a.model
-        })
-        foldProbeResult(a.name, a.kind, result)
-        picker.probed(a.kind, a.name, result)
-      })
-    ])
+    await agentsMain.probeAllAccounts()
     pushAccounts()
     return accountViews()
   })()
@@ -2511,33 +2201,10 @@ async function addAccount(
   if (v !== 'ok') return { ok: false, error: v }
   const trimmed = typeof secret === 'string' ? secret.trim() : ''
   if (!trimmed) return { ok: false, error: 'unknown' }
-  if (isSignInFolderKind(kind)) return addHomeKey(kind, name, trimmed)
   const baseUrl = endpoint?.baseUrl?.trim()
   const model = endpoint?.model?.trim() || undefined
   if (takesAnEndpoint(kind) && !isHttpUrl(baseUrl)) return { ok: false, error: 'invalid-endpoint' }
-  if (!(await keychainWrite(kind, name, trimmed))) return { ok: false, error: 'unknown' }
-  const result = await probeAccount(kind, trimmed, {
-    timeoutMs: ACCOUNT_PROBE_TIMEOUT_MS,
-    baseUrl,
-    model
-  })
-  const meta: AccountMeta = {
-    name,
-    kind,
-    enabled: true,
-    fable: result.ok && result.fable ? result.fable : 'unknown',
-    status: result.ok ? 'ok' : 'unverified',
-    addedAt: Date.now(),
-    ...(takesAnEndpoint(kind) ? { baseUrl, model } : {})
-  }
-  upsertAccountMeta(meta)
-  if (result.ok && result.fable) recordFableCapability(name, kind, result.fable)
-  const key = viewKey(name, kind)
-  if (result.ok) usageViews.set(key, { usage: result.usage })
-  else usageViews.set(key, { probeError: result.error })
-  pushAccounts()
-  const account = accountViews().find((a) => a.kind === kind && a.name === name)
-  return result.ok ? { ok: true, account } : { ok: false, error: result.error, account }
+  return agentsMain.addSecret(kind, name, trimmed, { baseUrl, model })
 }
 
 function foldHomeSignIn(name: string, kind: SignInFolderKind, signedIn: boolean): void {
@@ -2550,74 +2217,16 @@ function foldHomeSignIn(name: string, kind: SignInFolderKind, signedIn: boolean)
   if (status === 'expired') notifyExpired(name, BACKEND_LABEL[BACKEND_OF_SIGN_IN_FOLDER[kind]])
 }
 
-const homeAccountsDeps = {
-  app,
-  accountViews,
-  allLimitedNotice,
-  findAccount,
-  foldHomeSignIn,
-  listAccounts,
-  pushHomeAccount,
-  savedHomeUsageOf,
-  usageViews,
-  viewKey,
-  sessionAccounts: () => sessionAccounts
-}
-const codexAccounts = codexHomeAccounts({
-  ...homeAccountsDeps,
-  codexSharedConfig,
-  codexSessions: () => codexSessions
-})
-const { codexPicker, pickCodexHome, codexUseReset, probeCodexAccounts } = codexAccounts
-const agyAccounts = agyHomeAccounts({
-  ...homeAccountsDeps,
-  keychainRead,
-  keychainWrite,
-  ownersGemini,
-  agySessions: () => agySessions
-})
-const { agyPicker, agyHomeFor, agyApiKeyOf, pickAgyHome, agyBinary, probeAgyAccounts } = agyAccounts
-
 function codexSharedConfig(): string {
   return codexConfigFile(codexSessions?.defaultEnv)
-}
-
-interface HomeSignInTab {
-  kind: SignInFolderKind
-  name: string
-  again: boolean
-  output: SignInOutput
-}
-const signInPtys = new Map<string, HomeSignInTab>()
-let signInFailure: SignInFailure | null = null
-
-function setSignInFailure(f: SignInFailure | null): void {
-  signInFailure = f
-  sendToRenderer(CH.accounts.signInFailure, f)
 }
 
 function forgetAccount(name: string, kind: AccountKind): void {
   removeAccountMeta(name, kind)
   usageViews.delete(viewKey(name, kind))
   savedHomeUsage.delete(viewKey(name, kind))
-  picker.forget(kind, name)
+  agentsMain.forgetAccount(kind, name)
   pushAccounts()
-}
-
-async function endHomeSignIn(s: HomeSignInTab): Promise<void> {
-  const probeAnswered = await probeHomeAccount[s.kind](s.name).then(
-    () => !usageViews.get(viewKey(s.name, s.kind))?.probeError,
-    () => false
-  )
-  const account = findAccount(s.name, s.kind)
-  if (!probeAnswered || !account || account.status === 'ok') return
-  if (!s.again) forgetAccount(s.name, s.kind)
-  setSignInFailure({
-    backend: BACKEND_OF_SIGN_IN_FOLDER[s.kind],
-    name: s.name,
-    again: s.again,
-    tail: s.output.tail()
-  })
 }
 
 function noteHomeAccount(name: string, kind: SignInFolderKind): void {
@@ -2633,54 +2242,21 @@ function noteHomeAccount(name: string, kind: SignInFolderKind): void {
   pushAccounts()
 }
 
-const homeLogin: Record<
-  SignInFolderKind,
-  (name: string) => Promise<{ binary?: string; env: Record<string, string>; args?: string[] }>
-> = {
-  'codex-home': codexAccounts.homeLogin,
-  'agy-home': agyAccounts.homeLogin
-}
+const { signInPtys, endHomeSignIn, signInToHome } = terminalSignInsOf({
+  usageViews,
+  viewKey,
+  forgetAccount,
+  noteHomeAccount,
+  homeShellTab,
+  toolInstallPtys: { add: (id) => toolInstallPtys.add(id) },
+  signInChanged: (progress) => agentsMain.signInChanged(progress),
+  heldSignInFailure: () => agentsMain.heldSignInFailure(),
+  forgetHeldSignInFailure: () => agentsMain.forgetHeldSignInFailure()
+})
 
-const probeHomeAccount: Record<SignInFolderKind, (name: string) => Promise<void>> = {
-  'codex-home': codexAccounts.probeHomeAccount,
-  'agy-home': agyAccounts.probeHomeAccount
-}
-
-async function signInToHome(
-  kind: SignInFolderKind,
-  name: string,
-  again: boolean
-): Promise<SignInResult> {
-  const v = again
-    ? findAccount(name, kind)
-      ? 'ok'
-      : 'invalid-name'
-    : validateNewAccount(name, kind)
-  if (v !== 'ok') return { ok: false, error: v }
-  if (!again && keepsSecretInKeychain(kind) && !(await keychainDelete(kind, name)))
-    return { ok: false, error: 'keychain' }
-  if (signInFailure) setSignInFailure(null)
-  const login = await homeLogin[kind](name)
-  noteHomeAccount(name, kind)
-  const assignments = Object.entries(login.env).map(([k, val]) => `${k}=${shq(val)}`)
-  const args = (login.args ?? ['login']).map(shq).join(' ')
-  // PLATFORM§63
-  const signIn = (quotedBinary: string): string =>
-    `exec env ${assignments.join(' ')} ${quotedBinary} ${args}`
-  const tab = homeShellTab(
-    `${MARK_OUTPUT_START}; ` +
-      (login.binary
-        ? signIn(shq(login.binary))
-        : installThen(
-            BACKEND_OF_SIGN_IN_FOLDER[kind],
-            signIn,
-            process.env.KOLOFT_TEST_TOOL_INSTALLER
-          ))
-  )
-  signInPtys.set(tab.tabId, { kind, name, again, output: new SignInOutput() })
-  if (!login.binary) toolInstallPtys.add(tab.tabId)
-  return { ok: true, ...tab }
-}
+agentsMain.watchSignIns((news) => {
+  sendToRenderer(CH.accounts.signInProgress, news)
+})
 
 function ownersGemini(): string {
   return ownersGeminiDir(agySessions?.defaultEnv ?? process.env)
@@ -2688,29 +2264,8 @@ function ownersGemini(): string {
 
 function markKeyAccountsSavedOnDisk(): void {
   for (const a of listAccounts())
-    if (isSignInFolderKind(a.kind) && homeKeyOnDisk[a.kind](app.getPath('userData'), a.name))
+    if (agentsMain.folderSaysItRunsOnAKey(a.kind, a.name))
       usageViews.set(viewKey(a.name, a.kind), { apiKey: true })
-}
-
-const storeHomeKey: Record<SignInFolderKind, (name: string, key: string) => Promise<void>> = {
-  'codex-home': codexAccounts.storeHomeKey,
-  'agy-home': agyAccounts.storeHomeKey
-}
-
-async function addHomeKey(
-  kind: SignInFolderKind,
-  name: string,
-  key: string
-): Promise<AccountAddResult> {
-  try {
-    await storeHomeKey[kind](name, key)
-  } catch {
-    return { ok: false, error: 'unknown' }
-  }
-  noteHomeAccount(name, kind)
-  await probeHomeAccount[kind](name)
-  const account = accountViews().find((a) => a.kind === kind && a.name === name)
-  return { ok: account?.status === 'ok', account }
 }
 
 // AGY§6 AGY§20
@@ -2719,6 +2274,7 @@ async function agyOneShotTarget(): Promise<OneShotTarget | null> {
   const binary = await agyBinary()
   if (!picked || !binary) return null
   const apiKey = await agyApiKeyOf(picked.name)
+  if (oneShotsEnded()) return null
   const shot = oneShotAgyHome(
     agyHomeFor(picked.name),
     path.join(app.getPath('userData'), 'agy-one-shots'),
@@ -3004,7 +2560,8 @@ app.whenReady().then(() => {
   const gitRequestDir = newGitRequestDir()
   const { shimDir, regDir, openDir, pickDir, agentDir, gitHelper, ghWrapper } = setupShim(
     gitRequestDir,
-    conductorFolder(app.getPath('userData'))
+    conductorFolder(app.getPath('userData')),
+    agentsMain.shimScripts()
   )
   ptyMgr.shimDir = shimDir
   ptyMgr.regDir = regDir
@@ -3039,8 +2596,15 @@ app.whenReady().then(() => {
     }
     butlerHearsSoon()
   })
-  claudeBackend.agentReply = (tabId, raw, stillWaiting) =>
-    agentRequests.replyFor(tabId, raw, stillWaiting)
+  const machineRequests = new MachineRequests({
+    pty: ptyMgr,
+    hosts,
+    remoteTargets: () => workspaceMgr?.remoteTargets() ?? [],
+    userData: () => app.getPath('userData'),
+    machineOfTab,
+    tabOfTmuxSession: (host, name) => sessionBackends.tabOfTmuxSession(host, name),
+    agentReply: (tabId, raw, stillWaiting) => agentRequests.replyFor(tabId, raw, stillWaiting)
+  })
   claudeBackend.watchShimRegistrations(regDir)
   if (watchOpenRequests(openDir)) ptyMgr.openDir = openDir
   if (watchPickRequests(pickDir)) ptyMgr.pickDir = pickDir
@@ -3072,6 +2636,7 @@ app.whenReady().then(() => {
   linkOrUnlink(path.join(shimDir, 'git'), gitFirstBin && path.join(gitFirstBin, 'git'))
   removeStaleLoginDirs(app.getPath('userData'))
   endAgyOneShots(path.join(app.getPath('userData'), 'agy-one-shots'))
+  removeRemoteTabFilesNoLiveTabNeeds()
   gitAccounts = new GitAccountService({
     userData: app.getPath('userData'),
     requestDir: gitRequestDir,
@@ -3138,7 +2703,7 @@ app.whenReady().then(() => {
     claudeDialogs.data(d.id, d.data)
     if (loginWatchers.size) feedLoginWatcher(d.id, d.data)
     if (signInPtys.size) signInPtys.get(d.id)?.output.feed(d.data)
-    watchForWorktreeRemoval(d.id, d.data)
+    worktreeExits.watchForWorktreeRemoval(d.id, d.data)
     terminalOutput.push(d.id, d.data)
   })
   ptyMgr.on('process-title', (t: { id: string; name: string }) => {
@@ -3208,15 +2773,7 @@ app.whenReady().then(() => {
           ? 'Installing Claude Code failed'
           : 'setup-token exited without printing a token'
       )
-    const claudeExit = claudeTabExits.get(e.id)
-    claudeTabExits.delete(e.id)
-    if (claudeExit?.leaving) {
-      const { sessionId } = claudeExit.leaving
-      const claudeSaid = claudeExit.watch.failure()
-      if (sessionId) claudeStore?.leftWorktree(sessionId, !claudeSaid)
-      if (claudeSaid)
-        sendToRenderer(CH.toast.show, `Claude Code did not remove the worktree: ${claudeSaid}`)
-    }
+    worktreeExits.tabExited(e)
     // PLATFORM§21
     terminalOutput.end(e.id, !sleepers.has(e.id) && !signInNobodyOpened)
     forgetClaudeAsk(e.id)
@@ -3236,7 +2793,7 @@ app.whenReady().then(() => {
     syncAnswerable
   })
   tracker.on('update', sessionsChanged)
-  tracker.on('relocated', (e: { tabId: string; dir: string }) => {
+  tracker.on('relocated', (e: { tabId: string; dir: string; backendId: BackendId }) => {
     pushToSessions.relocated(e)
   })
   runtime.on('auto-close', ({ tabId }: { tabId: string }) => sleepTab(tabId))
@@ -3275,6 +2832,10 @@ app.whenReady().then(() => {
     workspaceInstructions: instructionsOf,
     remoteDirExists: (dir: string) => hosts.machineOf(dir)!.sessionDirThere(dir),
     remoteTreeIo: machineTreeIo,
+    worktreesOfEveryAgent: {
+      recorded: (dir: string) => sessionBackends.worktreeRecords.recorded(dir),
+      preparing: worktreesBeingPrepared
+    },
     realFilesOn,
     changed: sessionsChanged,
     pinnedWorkspaces: () => workspaceMgr?.pinnedPathList() ?? [],
@@ -3298,7 +2859,6 @@ app.whenReady().then(() => {
         nextPull: (host) => remoteSync?.nextPullDone(host) ?? Promise.resolve()
       },
       leftWorktree: (resource) => removeUntouchedWorktree(codexSessions, resource),
-      trustFolder: trustCodexFolder,
       pickHome: pickCodexHome,
       homeOf: (sessionId) => {
         const name = sessionAccounts?.of('codex', sessionId)
@@ -3352,6 +2912,7 @@ app.whenReady().then(() => {
       openShimRoot: path.join(userData, 'agy-open'),
       scriptsDir: path.join(userData, 'agy-scripts'),
       ownersGemini,
+      keepSkillsIn,
       pickHome: pickAgyHome,
       apiKeyOf: agyApiKeyOf,
       builtInStatusLine: () => (loadSettings().statuslineBuiltin ? agyStatusline : undefined),
@@ -3381,7 +2942,15 @@ app.whenReady().then(() => {
       .catch((error) => sendToRenderer(CH.toast.show, String(error)))
   }
   if (codexSessions) {
-    sessionBackends.register(codexBackend(codexSessions, resumeProbes, machineProbes))
+    sessionBackends.register(
+      codexBackend(
+        codexSessions,
+        resumeProbes,
+        machineProbes,
+        messaging.noteKoloftSent,
+        screenLines
+      )
+    )
     void codexSessions
       .availability()
       .then((codex) => {
@@ -3423,6 +2992,7 @@ app.whenReady().then(() => {
       void gitAccounts?.refreshRepoKeys(wsPaths).then(() => workspaceMgr?.restampLive())
       startedPlugins.github.sweepNow()
       claudeBackend.watchRemoteHookMirrors()
+      machineRequests.watchRemoteHookMirrors()
     },
     jobCountFor: (wsPath) => cronRunner?.jobCountFor(wsPath) ?? 0,
     remoteRunning,
@@ -3493,7 +3063,7 @@ app.whenReady().then(() => {
           permission: ownersPermission(),
           trustFolder: true,
           firstPrompt: l.firstPrompt,
-          name: reachedBySendMessage(l.backend) ? asPeerName(l.title) : l.title,
+          name: talksWithItsOwnTool(l.backend) ? asPeerName(l.title) : l.title,
           model: l.model,
           effort: l.effort
         },
@@ -3785,23 +3355,7 @@ app.whenReady().then(() => {
       )
       return (workspaceMgr?.remoteTargets() ?? []).map((t) => ({
         host: t.host,
-        mirrorProjectsRoot: mirrorProjectsRoot(userData, t.host),
-        mirrorHookDir: mirrorHookDir(userData, t.host),
-        extraPulls: [
-          ...(agySessions?.usesHost(t.host)
-            ? [
-                {
-                  from: AGY_REMOTE_BRAIN,
-                  to: path.join(mirrorAgyGemini(userData, t.host), AGY_APP_DIR, 'brain'),
-                  flags: AGY_BRAIN_FLAGS
-                }
-              ]
-            : []),
-          ...usagePulls(userData, t.host, {
-            codex: codexMachines.has(t.host) || !!codexSessions?.hasHistoryOn(t.host),
-            agy: !!agySessions?.usesHost(t.host)
-          })
-        ],
+        ...syncMirrorsOf(t.host, userData, sessionBackends),
         paths: t.paths,
         hasTabs: live.has(t.host),
         agentTabs: agentTabsOn.has(t.host),
@@ -4021,12 +3575,10 @@ app.on('before-quit', (e) => {
     e.preventDefault()
     return
   }
-  for (const { leaving } of claudeTabExits.values()) {
-    if (leaving?.claudePid && leaving.treeRoot)
-      finishAfterKoloftQuits(leaving.claudePid, leaving.treeRoot)
-  }
-  claudeTabExits.clear()
+  worktreeExits.koloftQuits()
+  endOneShots()
   endAgyOneShots(path.join(app.getPath('userData'), 'agy-one-shots'))
+  removeRemoteTabFilesNoLiveTabNeeds()
   stopScheduledTasks()
   discordLink?.stop()
   discordBinding?.flush()
@@ -4399,6 +3951,14 @@ async function isRegularFile(file: string): Promise<boolean> {
   return !!stat?.isFile()
 }
 
+// ADR-0004
+function removeRemoteTabFilesNoLiveTabNeeds(): void {
+  removeTabPackagesNoTabNeeds(
+    app.getPath('userData'),
+    (name) => tabInstancePid(name) === null || anotherLiveInstanceOwns(name, pidAlive)
+  )
+}
+
 function killTabFromMain(tabId: string): void {
   sendToRenderer(CH.tab.killedByMain, tabId)
   void killTabPty(tabId)
@@ -4516,7 +4076,7 @@ async function leftOnceRemovalsEnd(
   if (!tree) return []
   const sharing = aliveSessionsIn(tree.treeRoot, target.tabId)
   return [
-    ...sharing.map((s) => `The session "${s.title}" is still open in ${tree.treeRoot}.`),
+    ...sharing.map((s) => stillOpenIn(s.title, tree.treeRoot)),
     ...leftText(await whatIsLeft(hostGitOut, tree, mergedHeads))
   ]
 }
@@ -4536,7 +4096,13 @@ async function closeSessionFully(
     await treeRemovals.settled(target.treeRoot)
     const where = info ?? projectInfoFor(target.treeRoot)
     const close = (): Promise<boolean> => endAndRemove(target, where, tell)
-    return await (where.worktreeName ? treeRemovals.run(where.treeRoot, close) : close())
+    return await (where.worktreeName
+      ? removingTheWorktree(
+          { preparing: worktreesBeingPrepared, treeRemovals },
+          where.treeRoot,
+          close
+        )
+      : close())
   } finally {
     workspaceMgr?.closingEnded(target.sessionId)
   }
@@ -4559,8 +4125,11 @@ async function endAndRemove(
   const alreadyRemoved =
     !!tree && !tree.branches.length && !(await hosts.of(info.treeRoot).dirExists(info.treeRoot))
   const leftSinceTheCheck =
-    tabId && tree && !alreadyRemoved
-      ? leftText(await whatIsLeft(hostGitOut, tree, mergedHeads))
+    tree && !alreadyRemoved
+      ? [
+          ...anotherSessionIn((dir) => sessionBackends.occupantOf(dir), tree.treeRoot),
+          ...(tabId ? leftText(await whatIsLeft(hostGitOut, tree, mergedHeads)) : [])
+        ]
       : []
   if (leftSinceTheCheck.length) {
     tell(
@@ -4586,24 +4155,25 @@ async function endAndRemove(
   return true
 }
 
-async function removeUntouchedWorktree(
+function removeUntouchedWorktree(
   owner: { readonly id: BackendId } | null | undefined,
   resource: WorktreeResource
 ): Promise<void> {
-  const tree = resource.worktreePath
-  if (sleeperTrees().includes(tree) || cronRunner?.tidiesFolder(tree)) return
-  if (sessionBackends.occupantOf(tree)) return
-  if (!owner || !(await sessionBackends.worktreeRecords.untouched(owner.id, resource))) return
-  if (treeRemovals.has(tree)) return
-  const problem = await treeRemovals.run(tree, () =>
-    removeTree(hostGitOut, {
-      root: resource.originalCwd,
-      treeRoot: tree,
-      worktreeName: resource.worktreeName,
-      branches: [`worktree-${resource.worktreeName}`]
-    })
+  return removeUntouchedWorktreeWith(
+    {
+      sleeperTrees,
+      cronRunner,
+      sessionBackends,
+      worktreesOfEveryAgent: { preparing: worktreesBeingPrepared },
+      treeRemovals,
+      removeTree,
+      hostGitOut,
+      dirExists: (dir) => hosts.of(dir).dirExists(dir),
+      toast: (text) => sendToRenderer(CH.toast.show, text)
+    },
+    owner,
+    resource
   )
-  if (problem && (await hosts.of(tree).dirExists(tree))) sendToRenderer(CH.toast.show, problem)
 }
 
 function cronRunTree(root: string, worktree?: string): ProjectInfo {
@@ -5170,9 +4740,8 @@ const githubOptions: GithubReposOptions = {
 
 const hosts = new Hosts(
   localHost(new GithubRepos(githubOptions), {
-    agentHomes: () => ({
-      codexHome: path.dirname(codexSharedConfig())
-    })
+    moreSkillFoldersEveryAccountReads: (backend) =>
+      agentsMain.moreSkillFoldersEveryAccountReadsOnThisMac(backend)
   }),
   (machine) =>
     new SshHost(machine, {
@@ -5223,6 +4792,7 @@ const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
     handOverOwnerWords: (tabId, words) =>
       seedHandedOverOwnerWords(saidFile(hookRegDir ?? '', tabId), words),
     agentPlugin: () => (agentToolsOn() ? claudeAgentPlugin : undefined),
+    projectPromptFile,
     docsPlugin: docsPluginWhileOn,
     assistOf: (cwd, resumeKey) => butler?.identityOfLaunch(cwd, resumeKey),
     pastedPicturesDir
@@ -5234,10 +4804,12 @@ const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
       pickMachineAccount(() => pickForLaunch(launchKey, resumeSessionId)),
     noAccountMessage: () => noAccountNow('claude'),
     agentTools: agentToolsOn,
+    projectPrompt: claudeProjectPrompt,
     docsWritingOn,
     hookSettings: (tabId, dir, allowKoloft) =>
       machineHookSettings(tabId, dir, loadSettings().statuslineBuiltin, allowKoloft)
   },
+  liveRegistryOn: liveClaudeRegistryOn,
   remoteTargets: () => workspaceMgr?.remoteTargets() ?? [],
   sessionRebound: (prevId, nextId, source) => workspaceMgr?.onSessionRebind(prevId, nextId, source),
   remoteSync: () => remoteSync,
@@ -5251,18 +4823,25 @@ const claudeBackendDeps: PluginStartDeps['sessions']['claude'] = {
     loadSettings().browserControl ? ownersClaudePlaywrightMcp(cwd) : [],
   ptysChanged: () => writeRelayEnv(ptyTabIds()),
   resumeProbes,
+  worktreesBeingPrepared,
   events: (tabId, event) => sessionBackends.observe(tabId, event),
   messaged: (tabId, fromSessionId) => sessionCommand.messaged(tabId, fromSessionId),
   error: (message) => sendToRenderer(CH.toast.show, message),
-  machineOfTab,
-  otherTabOnMachine: (machine, tmuxName, launchTab) =>
-    storedSessions()
-      .map((s) => s.tabOnMachine?.(machine, tmuxName, launchTab))
-      .find(Boolean)
+  messages: {
+    get writeLineInTurn() {
+      return writeLineInTurn
+    },
+    remoteControlDir,
+    sessionOfTab,
+    liveClaudeRegistryOn,
+    whenMessagingSocket,
+    whenMessagingSocketOnMachine,
+    noteKoloftSent: (tabId, note) => messaging.noteKoloftSent(tabId, note)
+  }
 }
 
 // ADR-0007
-function shrinkAdoptedClaudePtysOneRowSoFitRepaints(tabs: TabInventoryReply['tabs']): void {
+function shrinkAdoptedAgentPtysOneRowSoFitRepaints(tabs: TabInventoryReply['tabs']): void {
   for (const t of tabs) {
     if (t.kind === 'shell') continue
     const h = ptyMgr.get(t.id)
@@ -5389,7 +4968,7 @@ function registerIpc(): void {
       tracked
     )
     // ADR-0007
-    shrinkAdoptedClaudePtysOneRowSoFitRepaints(tabs)
+    shrinkAdoptedAgentPtysOneRowSoFitRepaints(tabs)
     const asleep = [...sleepers].map(([id, t]): AdoptableTab => ({ id, ...t, asleep: true }))
     return { tabs: [...tabs, ...asleep], activeTabBeforeReload: active }
   })
@@ -5423,32 +5002,24 @@ function registerIpc(): void {
     pushAccounts()
   })
   ipcMain.handle(CH.accounts.probe, () => probeAllForPanel())
-  ipcMain.handle(CH.accounts.startLogin, async (_e, name: string, reauth?: boolean) => {
-    const v = reauth
-      ? findAccount(name, 'oauth')
-        ? 'ok'
-        : 'unknown'
-      : validateNewAccount(name, 'oauth')
-    if (v !== 'ok') return v
-    claudeBackend.forgetAvailability()
-    const installFirst = !(await claudeBackend.availability()).available
-    for (const id of loginWatchers.keys()) cancelGuidedLogin(id)
-    startGuidedLogin(name, installFirst)
-    return 'ok'
-  })
   ipcMain.handle(
-    CH.accounts.signIn,
-    async (_e, kind: unknown, name: string, again?: boolean): Promise<SignInResult> =>
-      isSignInFolderKind(kind)
-        ? signInToHome(kind, name, again === true)
+    CH.accounts.beginSignIn,
+    (_e, kind: unknown, name: unknown, again: unknown): Promise<SignInStart> | SignInStart =>
+      isAccountKind(kind) && typeof name === 'string'
+        ? agentsMain.signIn(kind, name, again === true)
         : { ok: false, error: 'invalid-name' }
   )
-  ipcMain.handle(CH.accounts.signInFailure, () => signInFailure)
-  ipcMain.on(CH.accounts.dismissSignInFailure, () => setSignInFailure(null))
-  ipcMain.handle(CH.accounts.codexUseReset, (_e, name: string) => codexUseReset(name))
-  ipcMain.on(CH.accounts.cancelLogin, () => {
-    for (const id of [...loginWatchers.keys()]) cancelGuidedLogin(id)
+  ipcMain.handle(CH.accounts.signInProgress, () => agentsMain.heldSignInFailure())
+  ipcMain.on(CH.accounts.endSignIn, (_e, kind: unknown, name: unknown) => {
+    if (isAccountKind(kind) && typeof name === 'string') agentsMain.endSignIn(kind, name)
   })
+  ipcMain.handle(
+    CH.accounts.act,
+    (_e, kind: unknown, name: unknown, action: unknown): Promise<string> | string =>
+      isAccountKind(kind) && typeof name === 'string' && typeof action === 'string'
+        ? agentsMain.act(kind, name, action)
+        : NO_SUCH_ACTION
+  )
 
   ipcMain.handle(CH.settings.get, () => loadSettings())
   ipcMain.handle(CH.app.version, () => app.getVersion())
@@ -5616,14 +5187,10 @@ function registerIpc(): void {
     cacheFile: () => path.join(app.getPath('userData'), 'usage-cache-4.json'),
     listFiles: async () => {
       await workspaceMgr?.firstScan
-      const userData = app.getPath('userData')
-      return listUsageFiles(claudeStore?.transcriptFiles() ?? [], [
-        {
-          codexHome: path.dirname(codexSharedConfig()),
-          geminiDir: ownersGemini()
-        },
-        ...(workspaceMgr?.remoteTargets() ?? []).map(({ host }) => machineUsageDirs(userData, host))
-      ])
+      return usageFilesOf(
+        agentsMain.inListOrder(),
+        (workspaceMgr?.remoteTargets() ?? []).map(({ host }) => host)
+      )
     },
     stat: statOf,
     scan: (files, scanned, ended) => {
@@ -5633,13 +5200,7 @@ function registerIpc(): void {
       worker.on('error', (error) => console.error('[koloft] usage read failed', error))
       worker.once('exit', ended)
     },
-    codexWorkspaces: (cwds) => codexSessions?.workspacesFor(cwds) ?? cwds,
-    sessionPlaces: () => {
-      const claude = claudeStore?.sessionPlaces()
-      const stored = new Map(storedSessions().map((s) => [s.id, s.sessionPlaces()]))
-      return (backend, id, host) =>
-        backend === 'claude' ? claude?.get(id) : stored.get(backend)?.(id, host)
-    },
+    agents: () => agentsMain.inListOrder(),
     changed: (read) => sendToRenderer(CH.usage.changed, read)
   })
   ipcMain.handle(CH.usage.read, () => usageCache.read())
@@ -5723,28 +5284,9 @@ function registerIpc(): void {
 }
 
 const sessionSearch = new SessionSearch({
-  candidates: () => {
-    const pins = workspaceMgr?.pinnedPathList() ?? []
-    return [
-      ...(claudeStore?.searchableRows() ?? []),
-      ...storedSessions().flatMap((s) => s.searchable(pins))
-    ]
-  },
-  backendSnippets: async (term, signal) =>
-    (await Promise.all(storedSessions().map((s) => s.searchSnippets(term, signal)))).flat(),
+  agents: () => agentsMain.inListOrder(),
+  workspaces: () => workspaceMgr?.pinnedPathList() ?? [],
   hidden: (id) => sessionBackends.isKoloftsOwnSession(id),
-  scan: (files, term, found) => {
-    // PLATFORM§4
-    const worker = createTranscriptSearchWorker({ workerData: { files, term } })
-    worker.on('message', (hit: { id: string; snippet: SearchSnippet }) =>
-      found(hit.id, hit.snippet)
-    )
-    worker.on('error', (error) => console.error('[koloft] session search failed', error))
-    return {
-      done: new Promise((resolve) => worker.once('exit', () => resolve())),
-      stop: () => void worker.terminate()
-    }
-  },
   send: (found) => pushToSessions.searchHits(found)
 })
 
@@ -6066,9 +5608,7 @@ const {
   pushToSessions,
   agyBackend,
   machineHookSettings,
-  pickMachineAccount,
   codexBackend,
-  trustCodexFolder,
   A_HELPER_HAS_IT,
   writeLineInTurn,
   claudeDialog,
@@ -6082,8 +5622,8 @@ const {
   localNotice,
   markAnswerable,
   markOwnerAsleep,
-  noteOfWhatKoloftSends,
   noteSent,
+  opensAsOnlyKoloftSends,
   noticeFile,
   pruneStale,
   quotedPrompt,
@@ -6093,10 +5633,12 @@ const {
   writeConductorMarker,
   writeTabHookSettings,
   resolveWorkspace,
+  anotherSessionIn,
   closingTree,
   leftText,
   machineUnreachable,
   removeTree,
+  stillOpenIn,
   tidyTree,
   whatIsLeft,
   envMs,

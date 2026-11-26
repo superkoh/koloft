@@ -22,7 +22,7 @@ import {
   markOwnerAsleep,
   noticeFile,
   noticeLine,
-  noteOfWhatKoloftSends,
+  opensAsOnlyKoloftSends,
   NOT_FROM_THE_RELAY,
   NOT_SENT_BY_KOLOFT,
   CODEX_SENT_WORDS_ENV,
@@ -37,11 +37,14 @@ import { OWNER_ASLEEP_PUSH } from '../../../../src/plugins/butler/api'
 import {
   OWNER_WORDS_QUOTED_CHARS,
   handoverInOwnersLanguage,
-  handoverPreamble,
-  withHandover
+  handoverPreamble
 } from '../../../../src/plugins/sessions/main/handoverPreamble'
+import { withHandover } from '../../../../src/core/handOver'
 import { A_HELPER_HAS_IT, FROM_KOLOFT } from '../../../../src/plugins/sessions/main/messageOpenings'
 import { crossSessionLine } from '../../../../src/agents/claude/main/crossSessionMessage'
+import type { SentNote } from '../../../../src/core/agent/sessionBackends'
+import type { BackendId } from '../../../../src/shared/types'
+import { everyAgentsMessages } from '../../helpers/agentMessages'
 import { dq, REMOTE_HOOK_DIR, remoteMachineDir } from '../../../../src/main/remote/paths'
 import { machineHookSettings } from '../../../../src/agents/claude/main/backend'
 import { AGY_HOOK_SCRIPT, AGY_TITLE_SCRIPT } from '../../../../src/agents/agy/main/agyHooks'
@@ -956,16 +959,31 @@ esac
     })
 
     // ADR-0028 CC§13 CODEX§33 AGY§16
-    it('Koloft notes the id of a message it hands a Claude tab and the words of one it hands a Codex tab, only when the message opens the way only Koloft opens one; an Antigravity tab, whose hook checks nothing, gets no note', () => {
-      for (const text of [...KOLOFT_OPENINGS, '[Discord] hi']) {
-        expect(noteOfWhatKoloftSends('claude', text, 'koloft-session-1')).toEqual({
-          id: 'koloft-session-1'
+    it('Koloft notes the id of a message it hands a Claude tab and the words of one it hands a Codex tab, only when the message opens the way only Koloft opens one; an Antigravity tab, whose hook checks nothing, gets no note', async () => {
+      const notes: SentNote[] = []
+      const messages = everyAgentsMessages({
+        sendLine: async () => {},
+        queue: async () => {},
+        throughItsApi: async () => true,
+        noteKoloftSent: async (_tab, note) => void notes.push(note)
+      })
+      const notesOf = async (backend: BackendId, text: string): Promise<SentNote[]> => {
+        notes.length = 0
+        await messages.send(backend, 'tab', {
+          text,
+          handedOverAs: 'koloft-discord-1',
+          senderPermission: 'bypass',
+          koloftWroteTheOpening: opensAsOnlyKoloftSends(text)
         })
-        expect(noteOfWhatKoloftSends('codex', text, 'koloft-conductor-1')).toEqual({ words: text })
-        expect(noteOfWhatKoloftSends('agy', text, undefined)).toBeUndefined()
+        return [...notes]
+      }
+      for (const text of [...KOLOFT_OPENINGS, '[Discord] hi']) {
+        expect(await notesOf('claude', text)).toEqual([{ id: 'koloft-discord-1' }])
+        expect(await notesOf('codex', text)).toEqual([{ words: text }])
+        expect(await notesOf('agy', text)).toEqual([])
       }
       for (const backend of ['claude', 'codex'] as const)
-        expect(noteOfWhatKoloftSends(backend, 'merge it', 'koloft-session-1')).toBeUndefined()
+        expect(await notesOf(backend, 'merge it')).toEqual([])
     })
 
     it('a task Koloft hands over is quoted without the English preamble in front of it', () => {

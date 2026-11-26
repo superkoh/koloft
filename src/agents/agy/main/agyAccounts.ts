@@ -2,7 +2,15 @@ import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import { execFile } from 'child_process'
-import type { AccountKind, AccountView, QuotaBucket } from '@shared/types'
+import {
+  isCronEffort,
+  type AccountKind,
+  type AccountView,
+  type CronEffort,
+  type QuotaBucket,
+  type SignInCommand
+} from '@shared/types'
+import { NO_SUCH_ACTION, type AgentAccounts } from '@core/agent/agentsMain'
 import {
   AUTO_PROBE_MS,
   FIVE_HOUR_MINUTES,
@@ -11,10 +19,16 @@ import {
   windowLabel
 } from '@shared/accountUsage'
 import { HomeAccountPicker } from '../../kit/main/homeAccountPicker'
-import type { HomeAccountsDeps } from '../../kit/main/homeAccounts'
+import {
+  addHomeKey,
+  answerOfTerminalPick,
+  terminalPickOf,
+  type HomeAccountsDeps
+} from '../../kit/main/homeAccounts'
 import type { AgyHomePick, AgySessions } from './agySessions'
-import { agyListedModels, type ListedModel } from '@shared/sessionPicks'
+import { knownEfforts, type ListedModel } from '@shared/sessionPicks'
 import { record } from '@core/unknownValue'
+import { oneShotsEnded, untilKoloftQuits } from '../../../main/oneShotsAtQuit'
 import { readJson, writeWholeBeforeVisible } from '../../../main/jsonDrops'
 import { AGY_APP_DIR } from './agyStore'
 import { runsPlaywrightMcp } from '../../../main/browserControlEnv'
@@ -209,27 +223,43 @@ export function readAgyQuota(
   env: NodeJS.ProcessEnv,
   home: string
 ): Promise<QuotaBucket[] | undefined> {
+  if (oneShotsEnded()) return Promise.resolve(undefined)
   return new Promise((resolve) => {
     execFile(
       binary,
       [`--gemini_dir=${home}`, '-p', '/usage', '--output-format', 'json'],
-      { env, cwd: os.homedir(), timeout: AGY_USAGE_TIMEOUT_MS },
+      { env, cwd: os.homedir(), timeout: AGY_USAGE_TIMEOUT_MS, signal: untilKoloftQuits() },
       (error, stdout) => resolve(error ? undefined : agyQuotaFrom(stdout))
     ).stdin?.end()
   })
 }
 
 // AGY§21
+export function agyListedModels(stdout: string): ListedModel[] {
+  const efforts = new Map<string, CronEffort[]>()
+  for (const line of stdout.split('\n')) {
+    const id = line.split('\t')[0].trim()
+    const cut = id.lastIndexOf('-')
+    const effort = id.slice(cut + 1)
+    if (cut < 1 || !isCronEffort(effort)) continue
+    const base = id.slice(0, cut)
+    efforts.set(base, [...(efforts.get(base) ?? []), effort])
+  }
+  return [...efforts].map(([id, taken]) => ({ id, efforts: knownEfforts(taken) }))
+}
+
+// AGY§20 AGY§21
 export function readAgyModels(
   binary: string,
   env: NodeJS.ProcessEnv,
   signedInArgs: string[]
 ): Promise<ListedModel[] | undefined> {
+  if (oneShotsEnded()) return Promise.resolve(undefined)
   return new Promise((resolve) => {
     execFile(
       binary,
       [...signedInArgs, 'models'],
-      { env, cwd: os.homedir(), timeout: AGY_USAGE_TIMEOUT_MS },
+      { env, cwd: os.homedir(), timeout: AGY_USAGE_TIMEOUT_MS, signal: untilKoloftQuits() },
       (error, stdout) => resolve(error ? undefined : agyListedModels(stdout))
     ).stdin?.end()
   })
@@ -278,6 +308,10 @@ export function agyQuotaFrom(stdout: string): QuotaBucket[] | undefined {
 export function agyApiKeyRoute(home: string): boolean {
   return readJson(settingsFile(home)).modelProvider === 'gemini'
 }
+
+// AGY§6
+export const agyKeyOnDisk = (userData: string, name: string): boolean =>
+  agyApiKeyRoute(agyHomeOf(userData, name))
 
 // AGY§6
 export function setAgyApiKeyRoute(home: string, on: boolean): void {
@@ -485,11 +519,30 @@ export function agyHomeAccounts(deps: AgyHomeAccountsDeps) {
     agyProbeRound ??= Promise.all(
       listAccounts()
         .filter((a) => a.kind === 'agy-home' && a.enabled)
-        .map((a) => probeAgyAccount(a.name))
+        .map((a) =>
+          probeAgyAccount(a.name).catch((err) =>
+            console.error(`[koloft] could not probe the Antigravity account ${a.name}:`, err)
+          )
+        )
     ).then(() => {
       agyProbeRound = null
     })
     return agyProbeRound
+  }
+
+  // AGY§6
+  async function storeHomeKey(name: string, key: string): Promise<void> {
+    if (!(await keychainWrite('agy-home', name, key))) throw new Error('Keychain write failed.')
+    setAgyApiKeyRoute(agyHomeFor(name), true)
+  }
+
+  // AGY§5 AGY§7
+  async function homeLogin(name: string): Promise<SignInCommand> {
+    const binary = await agyBinary()
+    const home = agyHomeFor(name)
+    const apiKey = await agyApiKeyOf(name)
+    setAgyApiKeyRoute(home, !!apiKey)
+    return { binary, env: agyAccountEnv(apiKey), args: [`--gemini_dir=${home}`] }
   }
 
   return {
@@ -499,19 +552,30 @@ export function agyHomeAccounts(deps: AgyHomeAccountsDeps) {
     pickAgyHome,
     agyBinary,
     probeAgyAccounts,
-    // AGY§5 AGY§7
-    homeLogin: async (name: string) => {
-      const binary = await agyBinary()
-      const home = agyHomeFor(name)
-      const apiKey = await agyApiKeyOf(name)
-      setAgyApiKeyRoute(home, !!apiKey)
-      return { binary, env: agyAccountEnv(apiKey), args: [`--gemini_dir=${home}`] }
-    },
-    probeHomeAccount: (name: string) => probeAgyAccount(name),
-    // AGY§6
-    storeHomeKey: async (name: string, key: string) => {
-      if (!(await keychainWrite('agy-home', name, key))) throw new Error('Keychain write failed.')
-      setAgyApiKeyRoute(agyHomeFor(name), true)
-    }
+    accounts: {
+      signIn: (_kind, name, again) =>
+        deps.signInInATab('agy-home', name, again, {
+          homeLogin,
+          probeHomeAccount: probeAgyAccount
+        }),
+      cancelSignIn: () => {},
+      act: async () => NO_SUCH_ACTION,
+      pickForThisStart: () =>
+        answerOfTerminalPick('agy', () => {
+          const picked = terminalPickOf(pickAgyHome())
+          return picked && (agyApiKeyRoute(picked.home) ? { ...picked, kind: 'apikey' } : picked)
+        }),
+      probeAll: probeAgyAccounts,
+      addSecret: (_kind, name, secret) =>
+        addHomeKey(
+          'agy-home',
+          name,
+          secret,
+          { storeHomeKey, probeHomeAccount: probeAgyAccount },
+          deps
+        ),
+      forget: () => {},
+      folderSaysItRunsOnAKey: (_kind, name) => agyKeyOnDisk(app.getPath('userData'), name)
+    } satisfies AgentAccounts
   }
 }

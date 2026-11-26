@@ -71,11 +71,15 @@ afterEach(async () => {
 
 function everyAgent(built: readonly BackendId[] = SESSION_BACKENDS): EveryAgent {
   const kept = new Map<BackendId, Keeper>()
+  const registry = new SessionBackends(lifecycle())
+  const worktreesOfEveryAgent = {
+    recorded: (dir: string) => registry.worktreeRecords.recorded(dir),
+    preparing: new Map<string, Promise<unknown>>()
+  }
   for (const id of KEEPERS.filter((keeper) => built.includes(keeper))) {
     const store = new SessionStore(path.join(directory, `${id}-sessions.json`))
-    kept.set(id, { store, worktrees: new SessionWorktrees(store) })
+    kept.set(id, { store, worktrees: new SessionWorktrees(store, worktreesOfEveryAgent) })
   }
-  const registry = new SessionBackends(lifecycle())
   for (const id of [...built].reverse()) {
     const records = kept.get(id)?.worktrees.records
     registry.register({ ...stubBackend(id), ...(records && { worktreeRecords: records }) })
@@ -163,7 +167,13 @@ describe('what each agent says about worktrees', () => {
     }
     const backends: SessionBackend[] = [
       claudeBackendIn(world, pty, { machine }),
-      codexBackend(codex, probes, () => probes),
+      codexBackend(
+        codex,
+        probes,
+        () => probes,
+        async () => {},
+        async () => undefined
+      ),
       agyBackend(agy, probes, () => probes)
     ]
     expect(backends.map((backend) => backend.id)).toEqual(SESSION_BACKENDS)

@@ -130,6 +130,7 @@ import {
 import { UnsavedDialog } from './components/UnsavedDialog'
 import { ResumeDialog } from './components/ResumeDialog'
 import { basename } from '@shared/preview'
+import { relocatedNotice } from './relocatedNotice'
 import { NOTES_TAB, notesOwner } from '@shared/cwdKey'
 import { saveTab } from './editRegistry'
 import { commandTarget } from '@shared/shortcutDispatch'
@@ -150,7 +151,11 @@ import type { WorkbenchCommandSignal } from './components/workbenchCommands'
 import { ExtensionConfirm } from './components/ExtensionConfirm'
 import { tabLabel, type WorkbenchTab, type WorkbenchTabSet } from './components/workbenchTabs'
 import { SettingsModal } from './components/settings/SettingsModal'
-import { loginClearDelay, savedClearDue } from './components/settings/loginFlow'
+import {
+  loginClearDelay,
+  progressOfTheOpenBox,
+  savedClearDue
+} from './components/settings/loginFlow'
 import { TopbarUsage } from './components/TopbarUsage'
 import { WorldClock } from './components/WorldClock'
 import { UpdateModal } from './components/UpdateModal'
@@ -180,10 +185,6 @@ const LAUNCH_REFUSED_NOTICE = 'Could not start the session — invalid launch ar
 
 const NO_WORKSPACE_NOTICE = 'No workspace yet — add one first (⇧⌘O)'
 const NO_GIT_NOTICE = 'no git repository among your workspaces — no worktrees here'
-
-function relocatedNotice(dir: string): string {
-  return `Workbench followed Claude to ${basename(dir)}`
-}
 
 function caretInShell(): boolean {
   return !!document.activeElement?.closest('.xterm')
@@ -889,9 +890,10 @@ export default function App(): JSX.Element {
   )
 
   useEffect(() => {
-    return window.api.accounts.onLoginProgress((p) => {
+    return window.api.accounts.onSignInProgress((news) => {
       const st = useStore.getState()
-      if (!st.accountLogin) return
+      const p = progressOfTheOpenBox(st.accountLogin, news.progress)
+      if (!p) return
       st.setLoginProgress(p)
       const delay = loginClearDelay(p)
       if (delay !== null) {
@@ -952,7 +954,7 @@ export default function App(): JSX.Element {
     () =>
       window.api.sessions.onRelocated((e) => {
         const st = useStore.getState()
-        if (st.activeTabId === e.tabId) st.showToast(relocatedNotice(e.dir))
+        if (st.activeTabId === e.tabId) st.showToast(relocatedNotice(e.backendId, e.dir))
       }),
     []
   )

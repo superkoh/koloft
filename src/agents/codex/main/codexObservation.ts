@@ -1,16 +1,12 @@
 import { PLAN_READY, type BackgroundItem } from '@shared/types'
-import { codexEditTarget, codexItemDid, codexTaskName } from '../../../main/rowActivity'
+import { codexEditTarget, codexItemDid, codexTaskName } from './codexItemDid'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@core/agent/sessionRuntime'
 import { nonEmptyString, record } from '@core/unknownValue'
 import path from 'path'
 import { schemeOf } from '@shared/browserRoute'
-import {
-  costUsdOf,
-  longContextSurchargeUsd,
-  resolvePricing,
-  type TokenCounts
-} from '@shared/pricing'
+import { costUsdOf, longContextSurchargeUsd, type TokenCounts } from '@shared/pricing'
+import { resolvePricing } from '@core/agent/prices'
 import {
   capTouched,
   noteRead,
@@ -18,7 +14,7 @@ import {
   touchedItem,
   type FileAcc
 } from '../../../main/touchedFiles'
-import { CODEX_OPEN_SENT } from '../../../main/openShimScript'
+import { TAB_OPEN_SHIM_SENT } from '../../../main/openShimScript'
 import type { CodexFrameHead } from './codexTransport'
 import { TurnLog, type SaidLine } from '@shared/turns'
 import {
@@ -640,7 +636,7 @@ export class CodexObservation {
         typeof action.command === 'string' ? openTarget(action.command, item.cwd) : null
       return target ? [target] : []
     })
-    if (!targets.length || String(item.aggregatedOutput ?? '').includes(CODEX_OPEN_SENT)) return
+    if (!targets.length || String(item.aggregatedOutput ?? '').includes(TAB_OPEN_SHIM_SENT)) return
     for (const target of targets) this.emit({ type: 'open', target })
   }
 

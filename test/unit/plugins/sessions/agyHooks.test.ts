@@ -11,10 +11,8 @@ import {
   writeAgyScripts,
   type AgyScripts
 } from '../../../../src/agents/agy/main/agyHooks'
-import {
-  handoverPreamble,
-  withHandover
-} from '../../../../src/plugins/sessions/main/handoverPreamble'
+import { handoverPreamble } from '../../../../src/plugins/sessions/main/handoverPreamble'
+import { withHandover } from '../../../../src/core/handOver'
 import { LineTail } from '../../../../src/main/lineTail'
 import {
   A_HELPER_HAS_IT,
@@ -44,20 +42,28 @@ afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true })
 })
 
+const CHILD_TIMEOUT_MS = 20_000
 const BASE_ENV = { PATH: '/usr/bin:/bin', KOLOFT_AGY_LOG: '' }
 
 function run(command: string, input: string, env: Record<string, string> = {}): string {
   const res = spawnSync('/bin/sh', ['-c', command], {
     input,
     encoding: 'utf8',
-    env: { ...BASE_ENV, ...env }
+    env: { ...BASE_ENV, AGY_HOOK_UNDER_TEST: scripts.hook, ...env },
+    timeout: CHILD_TIMEOUT_MS
   })
+  if (res.error)
+    throw new Error(
+      `command did not finish (${res.error.message}, limit ${CHILD_TIMEOUT_MS} ms): ${command}\n${res.stderr}`
+    )
   if (res.status !== 0) throw new Error(`exited ${res.status}: ${res.stderr}`)
   return res.stdout
 }
 
 const entry = (): Record<string, unknown[]> =>
   koloftHookEntry(runWithSh(scripts.hook)) as Record<string, unknown[]>
+
+const HOOK_UNDER_DASH = '/bin/dash "$AGY_HOOK_UNDER_TEST"'
 
 function commandFor(event: string): string {
   const [first] = entry()[event] as Record<string, unknown>[]
@@ -213,13 +219,13 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
       ownerSays('先别改代码'),
       modelSays('Let me run the tests first.')
     )
-    expect(toldBeforeModelCall(transcript, `/bin/dash ${scripts.hook} PreInvocation`)).toMatch(
+    expect(toldBeforeModelCall(transcript, `${HOOK_UNDER_DASH} PreInvocation`)).toMatch(
       /^Your last note to the user, «Let me run the tests first\.», is not in Chinese\./
     )
     const start = path.join(dir, 'start.json')
     fs.writeFileSync(start, 'START')
     const underDash = (event: string): string =>
-      run(`/bin/dash ${scripts.hook} ${event}`, JSON.stringify({ conversationId: C1 }), {
+      run(`${HOOK_UNDER_DASH} ${event}`, JSON.stringify({ conversationId: C1 }), {
         KOLOFT_AGY_LOG: log,
         KOLOFT_AGY_START: start
       })
@@ -331,7 +337,7 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
   })
 
   // ADR-0031
-  it('leaves out the handover Koloft puts before a task it hands to a new session', () => {
+  it('leaves out only the English handover Koloft puts at the very start of a task it hands to a new session; a handover translated into the owner’s language stays and names that language, and an owner’s own message that quotes a hand-back line is judged whole', () => {
     const task = withHandover(
       handoverPreamble({ name: 'Global-conductor', id: 'abc-123', label: 'Claude' }),
       'revisa los permisos del mayordomo'
@@ -341,7 +347,10 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
       'Koloft 启动了你，因为会话 "Global-conductor" 让它这样做。完成后运行: koloft session send abc-123 "<your result>"',
       'no toques el código'
     )
-    expect(quoteBeforeModelCall(transcriptWith(translated))).toBe('no toques el código')
+    expect(toldBeforeModelCall(transcriptWith(translated))).toMatch(writesIn('Chinese'))
+    const ownerQuotesAHandBack =
+      '电脑是不是重启过了？照这一行发回：\nkoloft session send abc-123 "<your result>"\n\nok thanks'
+    expect(toldBeforeModelCall(transcriptWith(ownerQuotesAHandBack))).toMatch(writesIn('Chinese'))
   })
 
   // ADR-0031
@@ -367,7 +376,9 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
   it("a run_command's PostToolUse line carries the files the command changed in its Cwd's repository since its PreToolUse, and the agy log reads them, under dash as on a Linux machine", () => {
     const repo = path.join(dir, 'repo')
     fs.mkdirSync(repo)
-    spawnSync('git', ['init', '-q'], { cwd: repo })
+    const init = spawnSync('git', ['init', '-q'], { cwd: repo, timeout: CHILD_TIMEOUT_MS })
+    if (init.error || init.status !== 0)
+      throw new Error(`git init failed (${init.error?.message ?? init.status}): ${init.stderr}`)
     const call = {
       conversationId: C1,
       workspacePaths: [repo],
@@ -375,7 +386,7 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
       toolCall: { args: { CommandLine: 'printf x > made.txt', Cwd: repo }, name: 'run_command' }
     }
     const underDash = (event: string, input: unknown): string =>
-      run(commandFor(event).replace(/^\/bin\/sh /, '/bin/dash '), JSON.stringify(input), {
+      run(`${HOOK_UNDER_DASH} ${event}`, JSON.stringify(input), {
         KOLOFT_AGY_LOG: log,
         PATH: process.env.PATH!
       })
@@ -421,7 +432,7 @@ describe('after a gh pr command the status line asks GitHub again', () => {
   })
 
   it('does the same on a machine whose sh is dash', () => {
-    ran('gh pr merge 89 --squash', 'merge it', `/bin/dash ${scripts.hook}`)
+    ran('gh pr merge 89 --squash', 'merge it', HOOK_UNDER_DASH)
     expect(mtime()).toBeLessThan(OLDER_THAN_THE_CACHE_TTL)
   })
 

@@ -1,0 +1,18 @@
+- text: Codex
+
+- switch "In the pool" [checked]
+- text: plus
+- button "Delete account":
+  - img
+- text: 5h 25% 7d 61% 5h resets 14:00 2 resets saved, first expires 3-5 09:30
+- switch "In the pool" [checked]
+- text: byok API KEY
+- button "Delete account":
+  - img
+- text: Metered — used only when every subscription is rate-limited
+- button "Sign in to Codex":
+  - img
+  - text: Sign in to Codex
+- button "Paste API key":
+  - img
+  - text: Paste API key

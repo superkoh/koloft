@@ -4,9 +4,10 @@ import path from 'path'
 import type { StatusLineSetting } from '../../../main/statusline'
 import type { KoloftHook } from '@agents/codex/main/codexLaunchConfig'
 import { shq } from '@shared/shellQuote'
-import { HANDOVER_OPENING, OWNER_WORDS_QUOTED_CHARS } from './handoverPreamble'
+import { OWNER_WORDS_QUOTED_CHARS } from './handoverPreamble'
+import { HANDOVER_OPENING } from '@core/handOver'
 import { A_HELPER_HAS_IT, FROM_A_SESSION, FROM_KOLOFT } from './messageOpenings'
-import type { BackendId } from '@shared/types'
+import type { SentNote } from '@core/agent/sessionBackends'
 import { BUTLER_SAYS_OPENING } from '@shared/agentGuide'
 import { DISCORD_PREFIX } from '@plugins/discord/api'
 import { OWNER_ASLEEP_PUSH } from '@plugins/butler/api'
@@ -753,18 +754,9 @@ export function sentWordsFile(regDir: string, tabId: string): string {
   return path.join(regDir, `${tabId}${SENT_WORDS_SUFFIX}`)
 }
 
-export type SentNote = { id: string } | { words: string }
-
-// ADR-0028 CC§13 CODEX§33 AGY§16
-export function noteOfWhatKoloftSends(
-  backend: BackendId | undefined,
-  text: string,
-  id: string | undefined
-): SentNote | undefined {
-  if (![FROM_DISCORD, ...OPENINGS_ONLY_KOLOFT_SENDS].some((o) => text.startsWith(o)))
-    return undefined
-  if (backend === 'claude') return id === undefined ? undefined : { id }
-  return backend === 'codex' ? { words: text } : undefined
+// ADR-0028
+export function opensAsOnlyKoloftSends(text: string): boolean {
+  return [FROM_DISCORD, ...OPENINGS_ONLY_KOLOFT_SENDS].some((o) => text.startsWith(o))
 }
 
 export function noteSent(regDir: string, tabId: string, note: SentNote): void {

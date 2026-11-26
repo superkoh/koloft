@@ -12,13 +12,15 @@ interface AgentOnMachines {
   id: BackendId
   hears: Notice[]
   tmuxOfItsTabs: Record<string, string | undefined>
+  hostOfItsTabs: Record<string, string>
 }
 
 const agent = (
   id: BackendId,
   hears: Notice[] = [],
-  tmuxOfItsTabs: Record<string, string | undefined> = {}
-): AgentOnMachines => ({ id, hears, tmuxOfItsTabs })
+  tmuxOfItsTabs: Record<string, string | undefined> = {},
+  hostOfItsTabs: Record<string, string> = {}
+): AgentOnMachines => ({ id, hears, tmuxOfItsTabs, hostOfItsTabs })
 
 function backendsOf(said: string[], agents: AgentOnMachines[]): SessionBackends {
   const inListOrder = agents.map((a): SessionBackend => ({
@@ -31,7 +33,11 @@ function backendsOf(said: string[], agents: AgentOnMachines[]): SessionBackends 
       if (a.hears.includes('mirror pulled'))
         said.push(`${a.id} hears that the mirror of ${host} came`)
     },
-    tmuxOfTab: (tabId) => a.tmuxOfItsTabs[tabId]
+    tmuxOfTab: (tabId) => a.tmuxOfItsTabs[tabId],
+    tabOfTmuxSession: (host, name) =>
+      Object.keys(a.tmuxOfItsTabs).find(
+        (tabId) => a.hostOfItsTabs[tabId] === host && a.tmuxOfItsTabs[tabId] === name
+      )
   }))
   const backends = new SessionBackends(lifecycle())
   for (const backend of inListOrder.reverse()) backends.register(backend)
@@ -87,10 +93,29 @@ describe('the mirror of a machine that was just pulled, as the agents are told o
 
 describe('the tmux session a tab runs in on a machine', () => {
   const everyAgent = (): AgentOnMachines[] => [
-    agent('claude', [], { 't-claude': 'k-a-claude-session', 't-claude-here': undefined }),
-    agent('codex', [], { 't-codex': undefined }),
-    agent('agy', [], { 't-agy': 'k-an-agy-conversation' })
+    agent(
+      'claude',
+      [],
+      { 't-claude': 'k-a-claude-session', 't-claude-here': undefined },
+      { 't-claude': MACHINE }
+    ),
+    agent('codex', [], { 't-codex': undefined }, { 't-codex': MACHINE }),
+    agent('agy', [], { 't-agy': 'k-an-agy-conversation' }, { 't-agy': MACHINE })
   ]
+
+  it('the tab that runs it is the one its agent names, for the first agent of the list and for a later one; on another machine, or for a tmux session nobody runs, there is none', () => {
+    const backends = backendsOf([], everyAgent())
+    expect(backends.tabOfTmuxSession(MACHINE, 'k-a-claude-session')).toBe('t-claude')
+    expect(backends.tabOfTmuxSession(MACHINE, 'k-an-agy-conversation')).toBe('t-agy')
+    expect(backends.tabOfTmuxSession('otherbox', 'k-an-agy-conversation')).toBeUndefined()
+    expect(backends.tabOfTmuxSession(MACHINE, 'k-nobody')).toBeUndefined()
+    expect(
+      backendsOf(
+        [],
+        everyAgent().filter((a) => a.id !== 'agy')
+      ).tabOfTmuxSession(MACHINE, 'k-an-agy-conversation')
+    ).toBeUndefined()
+  })
 
   it('is the one the tab’s own agent names, for the first agent of the list and for a later one; a tab on this Mac, a tab whose agent runs it in no tmux session there and a tab of nobody have none', () => {
     const backends = backendsOf([], everyAgent())

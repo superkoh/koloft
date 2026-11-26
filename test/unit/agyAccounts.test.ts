@@ -3,6 +3,7 @@ import os from 'os'
 import path from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  agyHomeAccounts,
   agySignedIn,
   agyTokenFile,
   agyTrustsFolder,
@@ -15,6 +16,8 @@ import {
   prepareAgyHome,
   setAgyApiKeyRoute
 } from '../../src/agents/agy/main/agyAccounts'
+import type { AccountMeta } from '../../src/shared/types'
+import type { AgentAccounts } from '../../src/core/agent/agentsMain'
 
 let root: string
 let home: string
@@ -426,5 +429,101 @@ describe("ownersPlaywrightMcp (the owner's MCP entries that run Playwright, AGYÂ
 
   it('names none when the owner has no MCP config', () => {
     expect(ownersPlaywrightMcp(owners)).toEqual([])
+  })
+})
+
+describe('probeAgyAccounts (a probe round of every Antigravity account)', () => {
+  it('probes again on the next call after a round in which one account failed', async () => {
+    const acct: AccountMeta = {
+      name: 'work',
+      kind: 'agy-home',
+      enabled: true,
+      fable: 'unknown',
+      status: 'ok',
+      addedAt: 0
+    }
+    const blocker = path.join(owners, SHARED_FOLDERS[0])
+    fs.mkdirSync(path.dirname(blocker), { recursive: true })
+    fs.writeFileSync(blocker, '')
+    const keychainRead = vi.fn(async () => null)
+    const { probeAgyAccounts } = agyHomeAccounts({
+      app: { getPath: () => path.join(root, 'userData') },
+      accountViews: () => [],
+      allLimitedNotice: () => undefined,
+      findAccount: () => acct,
+      foldHomeSignIn: () => {},
+      listAccounts: () => [acct],
+      noteHomeAccount: () => {},
+      pushHomeAccount: () => {},
+      savedHomeUsageOf: () => undefined,
+      usageViews: new Map(),
+      viewKey: (name, kind) => `${kind}:${name}`,
+      sessionAccounts: () => undefined,
+      keychainRead,
+      keychainWrite: async () => true,
+      ownersGemini: () => owners,
+      agySessions: () => null,
+      signInInATab: async () => {
+        throw new Error('no sign-in here')
+      }
+    })
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await probeAgyAccounts()
+    expect(keychainRead).not.toHaveBeenCalled()
+    expect(logged).toHaveBeenCalledOnce()
+    logged.mockRestore()
+    fs.rmSync(blocker)
+    await probeAgyAccounts()
+    expect(keychainRead).toHaveBeenCalledWith('agy-home', 'work')
+  })
+})
+
+describe('signing in to an Antigravity account', () => {
+  it('signs in in a terminal tab, and has nothing running to cancel: the sign-in is that tab, which ends when the user closes it', async () => {
+    const touched: string[] = []
+    const signInInATab = vi.fn(async () => ({ ok: false as const, error: 'duplicate' as const }))
+    const touch = (dep: string) => (): undefined => {
+      touched.push(dep)
+      return undefined
+    }
+    const { accounts }: { accounts: AgentAccounts } = agyHomeAccounts({
+      app: { getPath: () => path.join(root, 'userData') },
+      accountViews: () => [],
+      allLimitedNotice: touch('allLimitedNotice'),
+      findAccount: touch('findAccount'),
+      foldHomeSignIn: touch('foldHomeSignIn'),
+      listAccounts: () => [],
+      noteHomeAccount: touch('noteHomeAccount'),
+      pushHomeAccount: touch('pushHomeAccount'),
+      savedHomeUsageOf: touch('savedHomeUsageOf'),
+      usageViews: new Map(),
+      viewKey: (name, kind) => `${kind}:${name}`,
+      sessionAccounts: touch('sessionAccounts'),
+      keychainRead: async () => {
+        touched.push('keychainRead')
+        return null
+      },
+      keychainWrite: async () => {
+        touched.push('keychainWrite')
+        return true
+      },
+      ownersGemini: () => owners,
+      agySessions: () => {
+        touched.push('agySessions')
+        return null
+      },
+      signInInATab
+    })
+
+    expect(await accounts.signIn('agy-home', 'work', false)).toEqual({
+      ok: false,
+      error: 'duplicate'
+    })
+    expect(signInInATab).toHaveBeenCalledWith('agy-home', 'work', false, {
+      homeLogin: expect.any(Function),
+      probeHomeAccount: expect.any(Function)
+    })
+    accounts.cancelSignIn('agy-home', 'work')
+    expect(touched).toEqual([])
   })
 })

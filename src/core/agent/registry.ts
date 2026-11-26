@@ -6,6 +6,8 @@ type ListedAgent = (typeof AGENTS)[number]
 
 export type AgentId = ListedAgent['id']
 
+export type AgentCommand = ListedAgent['command']
+
 export type AccountKindId = ListedAgent['accountKinds'][number]['id']
 
 type SignInFolderKindOf<Agent extends ListedAgent> = Extract<
@@ -23,6 +25,8 @@ export const AGENT_MANIFESTS: readonly AgentManifest[] = AGENTS
 
 export const AGENT_IDS: readonly AgentId[] = AGENTS.map((agent) => agent.id)
 
+export const AGENT_COMMANDS: readonly AgentCommand[] = AGENTS.map((agent) => agent.command)
+
 export function agentManifest(id: AgentId): AgentManifest {
   return AGENT_MANIFESTS.find((agent) => agent.id === id)!
 }
@@ -37,9 +41,21 @@ export function accountKindFacts(id: AccountKindId): AccountKindFacts {
   return ACCOUNT_KIND_FACTS.find((kind) => kind.id === id)!
 }
 
+export function agentOfAccountKind(kind: AccountKindId): AgentId | undefined {
+  return AGENT_IDS.find((id) => agentManifest(id).accountKinds.some((own) => own.id === kind))
+}
+
+export function signInKindOf(agent: AgentId): AccountKindFacts {
+  return agentManifest(agent).accountKinds.find((kind) => kind.signsInThroughABrowser)!
+}
+
 export function ofEachAgent<T>(value: (id: AgentId) => T): Record<AgentId, T> {
   return Object.fromEntries(AGENT_IDS.map((id) => [id, value(id)])) as Record<AgentId, T>
 }
+
+export const A_COMMAND_WITH_ITS_CHOICE_AFTER_IT: string | undefined = AGENT_MANIFESTS.find(
+  (agent) => agent.commandWithItsChoiceAfterIt
+)?.commandWithItsChoiceAfterIt
 
 export function agentsThatSay(flag: keyof AgentFlags): AgentId[] {
   return AGENT_IDS.filter((id) => agentManifest(id).flags[flag])

@@ -7,10 +7,9 @@ import type {
   BackendSessionInfo,
   BackendSessionRow,
   CreateTabOptions,
-  CodexResetOutcome,
   LaunchPermission
 } from '@shared/types'
-import { CODEX_RESET_OUTCOMES } from '@shared/types'
+import { CODEX_RESET_OUTCOMES, type CodexResetOutcome } from '../shared/savedResets'
 import { barePath, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
 import type { Turn } from '@shared/turns'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
@@ -45,6 +44,8 @@ import {
   type MachineLogin,
   type MachineUpstreamOptions
 } from './codexMachine'
+import { codexUsageFolders } from './codexMirror'
+import type { MirrorFolder } from '@core/agent/mirrorFolders'
 import { writeTabPassFile } from '../../../main/remote/launch'
 import { problemOf, sshLinkBroke } from '../../../main/remote/ssh'
 import type { Machine } from '../../../main/host/machine'
@@ -89,18 +90,20 @@ import {
   codexTrustsFolder,
   configTrusts,
   koloftHooksIn,
+  trustCodexFolder,
   type ListedHook
 } from './codexTrust'
 import { CodexSideServers } from './codexSideServers'
 import { mapAtMost } from '@core/mapAtMost'
 import { seedAssistMemory } from '../../../main/assistMemory'
 import { pipeSecretTo } from '../../../main/secretOnStdin'
-import { CODEX_TMP_DIR, removeFoldersLeftByEndedRuns } from '../../../main/leftovers'
+import { SHORT_TMP_DIR, removeFoldersLeftByEndedRuns } from '../../../main/leftovers'
 import { CODEX_TMP_FOLDER, endCodexAppServersLeftByACrash } from './codexLeftovers'
 import { codexSessionKey } from '@agents/kit/main/sessionStore'
 import { resolveCodexRuntime, updateCodex } from './codexRuntime'
-import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from '../../../main/cliMinimums'
+import { MIN_CODEX_VERSION, TESTED_CODEX_LINE } from './codexMinimum'
 import { startToolShim } from '../../../main/toolShim'
+import { CODEX_SANDBOX_IS_READ_ONLY } from './codexShim'
 import { passOf, TAB_PASS_ENV } from '../../../main/tabPass'
 import {
   bashEnvFileIn,
@@ -109,7 +112,7 @@ import {
 } from '../../../main/openShimScript'
 import { aboveItsTools } from '../../../main/agentLift'
 import { AGENT_SHIM_WAITS_MS } from '@core/command'
-import { codexListedModels, type ListedModel } from '@shared/sessionPicks'
+import { knownEfforts, type ListedModel } from '@shared/sessionPicks'
 import { browserControlEnv } from '../../../main/browserControlEnv'
 import { portOffset } from '@shared/worktreeName'
 import type { CodexApproval, CodexQuestion } from '@plugins/sessions/main/dialog'
@@ -124,6 +127,26 @@ import {
 } from '@agents/kit/main/storedSessions'
 import { promptParts, type LaunchIdentity } from '../../../main/launchPrompt'
 import type { HistoryStore } from '../../../main/historyWatch'
+
+// CODEX§14
+export function codexListedModels(reply: unknown): ListedModel[] {
+  const data = (reply as { data?: unknown } | null)?.data
+  if (!Array.isArray(data)) return []
+  return data.flatMap((m: { id?: unknown; supportedReasoningEfforts?: unknown }) =>
+    typeof m?.id !== 'string'
+      ? []
+      : [
+          {
+            id: m.id,
+            efforts: knownEfforts(
+              (Array.isArray(m.supportedReasoningEfforts) ? m.supportedReasoningEfforts : []).map(
+                (e: unknown) => (e as { reasoningEffort?: unknown })?.reasoningEffort ?? e
+              )
+            )
+          }
+        ]
+  )
+}
 
 const MACHINE_HISTORY_FRESH_MS = 15_000
 
@@ -288,7 +311,6 @@ function shellWritesFrom(file: string, pulled: () => Promise<void>): () => Promi
 
 export interface CodexSessionDeps extends StoredSessionDeps {
   machine?: CodexMachineDeps
-  trustFolder(root: string, env: NodeJS.ProcessEnv | undefined): void
   pickHome(resumeSessionId?: string): { account: string; home: string; notice?: string } | undefined
   homeOf(sessionId: string): string | undefined
   assistOf(cwd: string, resumeKey?: string): LaunchIdentity | undefined
@@ -377,7 +399,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     // CODEX§5
     await (this.crashLeftoversEnded ??= endCodexAppServersLeftByACrash(CODEX_ASKS_AND_WAITS)
       .catch(() => {})
-      .then(() => removeFoldersLeftByEndedRuns(CODEX_TMP_DIR, CODEX_TMP_FOLDER)))
+      .then(() => removeFoldersLeftByEndedRuns(SHORT_TMP_DIR, CODEX_TMP_FOLDER)))
     try {
       return await createCodexTransport(options)
     } catch (error) {
@@ -569,8 +591,19 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
 
   mirrorPulled(): void {}
 
+  foldersToMirrorFrom(host: string, landing: string): MirrorFolder[] {
+    return this.machinesWithTabs().includes(host) || this.hasHistoryOn(host)
+      ? codexUsageFolders(landing)
+      : []
+  }
+
   // ADR-0039 CODEX§16
   tmuxOfTab(): undefined {
+    return undefined
+  }
+
+  // ADR-0039 CODEX§16
+  tabOfTmuxSession(): undefined {
     return undefined
   }
 
@@ -893,7 +926,7 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     const trustedOnMachine: string[] = []
     const trust = (dir: string, env: NodeJS.ProcessEnv | undefined): void => {
       if (machine) trustedOnMachine.push(barePath(dir))
-      else this.deps.trustFolder(dir, env)
+      else trustCodexFolder(dir, env)
     }
     // ADR-0026 CODEX§11
     const trustNow = freshWorktree
@@ -1240,7 +1273,14 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   ): { shimDir: string; zdotDir: string; release(): void } {
     const { shim, release } = startToolShim(
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
-      { backend: 'codex', userZdotdir, open, agent, rules }
+      {
+        backend: 'codex',
+        cannotWriteTheRequest: CODEX_SANDBOX_IS_READ_ONLY,
+        userZdotdir,
+        open,
+        agent,
+        rules
+      }
     )
     return { shimDir: shim.shimDir, zdotDir: shim.zdotDir, release }
   }
@@ -1297,6 +1337,15 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
   }
 
   protected async endRun(run: CodexRun): Promise<void> {
+    if (run.machine)
+      try {
+        fs.rmSync(this.machine(run.machine).tabFiles(run.tabId).dir, {
+          recursive: true,
+          force: true
+        })
+      } catch (error) {
+        this.deps.error(`Could not remove the files of a Codex tab on ${run.machine}: ${error}`)
+      }
     await run.transport.stop()
   }
 

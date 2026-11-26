@@ -3,13 +3,19 @@ import path from 'path'
 import { randomUUID } from 'crypto'
 import { isValidWorktreeName, SESSION_WORKTREES_FOLDER } from '@shared/worktreeName'
 import { barePath, isRemoteKey } from '@shared/remoteKey'
-import type { WorktreeRecords, WorktreeResource } from '@core/agent/worktreeRecords'
+import {
+  A_FOLDER_BEING_PREPARED,
+  A_NAME_WITH_A_RECOVERY_RECORD,
+  type WorktreeRecords,
+  type WorktreeResource
+} from '@core/agent/worktreeRecords'
 import {
   copyWorktreeIncludes,
   TREE_IO_ON_THIS_MAC,
   type TreeIo
 } from '../../../main/sessionWorktrees'
 import { worktreeHomeRoot } from '../../../main/resumePlan'
+import { preparedKeyOf, whenNobodyPrepares } from '../../../main/worktreesBeingPrepared'
 import type { SessionStore } from './sessionStore'
 
 interface Checkout {
@@ -100,8 +106,13 @@ async function ignoredFilesSameAsRoot(io: TreeIo, root: string, tree: string): P
   return true
 }
 
+export interface WorktreesOfEveryAgent {
+  recorded(worktreePath: string): boolean
+  readonly preparing: Map<string, Promise<unknown>>
+}
+
 export class SessionWorktrees {
-  private readonly preparing = new Set<string>()
+  private readonly preparingHere = new Set<string>()
   readonly records: WorktreeRecords = {
     of: (workspace) => this.store.listResources().filter((r) => r.originalCwd === workspace),
     at: (dir) => this.store.listResources().find((r) => r.worktreePath === dir),
@@ -111,6 +122,7 @@ export class SessionWorktrees {
 
   constructor(
     private readonly store: SessionStore,
+    private readonly everyAgent: WorktreesOfEveryAgent,
     private readonly remoteIo?: (cwd: string) => TreeIo
   ) {}
 
@@ -126,10 +138,28 @@ export class SessionWorktrees {
     return this.createAt(root, name, await io.git(originalCwd, ['rev-parse', 'HEAD']))
   }
 
+  whenSettled(worktreePath: string): Promise<void> {
+    return whenNobodyPrepares(this.everyAgent.preparing, preparedKeyOf(worktreePath))
+  }
+
   async adopt(originalCwd: string, checkoutPath: string): Promise<WorktreeResource> {
+    const { preparing } = this.everyAgent
+    const target = this.io(originalCwd).real(checkoutPath)
+    const key = preparedKeyOf(target)
+    for (let p = preparing.get(key); p; p = preparing.get(key)) await p.catch(() => undefined)
+    const work = this.adoptSettled(originalCwd, target)
+    const held = work.catch(() => null)
+    preparing.set(key, held)
+    try {
+      return await work
+    } finally {
+      if (preparing.get(key) === held) preparing.delete(key)
+    }
+  }
+
+  private async adoptSettled(originalCwd: string, target: string): Promise<WorktreeResource> {
     const io = this.io(originalCwd)
     const root = await rootOf(io, originalCwd)
-    const target = io.real(checkoutPath)
     if (target === root) throw new Error('Select a linked worktree')
     const checkout = (await checkouts(io, root)).find((c) => c.path === target)
     if (!checkout) throw new Error('The checkout is not a worktree of this repository')
@@ -182,12 +212,9 @@ export class SessionWorktrees {
     }
   }
 
-  recorded(worktreePath: string): boolean {
-    return this.store.listResources().some((r) => r.worktreePath === worktreePath)
-  }
-
   async rebuild(resourceId: string): Promise<WorktreeResource> {
     const resource = this.requiredResource(resourceId)
+    await this.afterOtherAgentsPreparing(resource.worktreePath)
     if (await this.io(resource.worktreePath).exists(resource.worktreePath)) {
       return this.adopt(resource.originalCwd, resource.worktreePath)
     }
@@ -203,6 +230,7 @@ export class SessionWorktrees {
     const io = this.io(listedRoot)
     const root = io.real(listedRoot)
     const worktreePath = `${root}/${SESSION_WORKTREES_FOLDER}/${name}`
+    await this.afterOtherAgentsPreparing(worktreePath)
     if (await io.exists(worktreePath)) return this.adopt(root, worktreePath)
     return this.materialize({
       id: randomUUID(),
@@ -231,6 +259,11 @@ export class SessionWorktrees {
     return this.createAt(resource.originalCwd, name, base)
   }
 
+  private async afterOtherAgentsPreparing(worktreePath: string): Promise<void> {
+    if (this.preparingHere.has(worktreePath)) throw new Error(A_FOLDER_BEING_PREPARED)
+    await this.everyAgent.preparing.get(preparedKeyOf(worktreePath))
+  }
+
   private requiredResource(id: string): WorktreeResource {
     const resource = this.store.getResource(id)
     if (!resource) throw new Error('Worktree recovery information is unavailable')
@@ -240,14 +273,12 @@ export class SessionWorktrees {
   private async createAt(root: string, name: string, base: string): Promise<WorktreeResource> {
     const io = this.io(root)
     const target = `${root}/${SESSION_WORKTREES_FOLDER}/${name}`
+    if (this.everyAgent.preparing.has(preparedKeyOf(target)))
+      throw new Error(A_FOLDER_BEING_PREPARED)
     if (await io.exists(target)) throw new Error('Worktree directory already exists')
     const branch = `worktree-${name}`
     if (await branchExists(io, root, branch)) throw new Error('Worktree branch already exists')
-    if (this.recorded(target)) {
-      throw new Error(
-        'This worktree name has a recovery record; recover it or choose a different name'
-      )
-    }
+    if (this.everyAgent.recorded(target)) throw new Error(A_NAME_WITH_A_RECOVERY_RECORD)
     const resource: WorktreeResource = {
       id: randomUUID(),
       originalCwd: root,
@@ -265,15 +296,28 @@ export class SessionWorktrees {
     resource: WorktreeResource,
     reuseBranch = true
   ): Promise<WorktreeResource> {
-    if (this.preparing.has(resource.worktreePath))
-      throw new Error('Worktree preparation is already in progress')
-    this.preparing.add(resource.worktreePath)
+    const { preparing } = this.everyAgent
+    const at = resource.worktreePath
+    const key = preparedKeyOf(at)
+    if (this.preparingHere.has(at)) throw new Error(A_FOLDER_BEING_PREPARED)
+    const running = preparing.get(key)
+    if (running) {
+      if (!reuseBranch) throw new Error(A_FOLDER_BEING_PREPARED)
+      await running
+      return this.materialize(resource, reuseBranch)
+    }
     const pending: WorktreeResource = { ...resource, state: 'creating', error: undefined }
-    try {
+    const work = (async () => {
       this.store.putResource(pending)
-      return await this.materializeRecorded(pending, reuseBranch)
+      return this.materializeRecorded(pending, reuseBranch)
+    })()
+    preparing.set(key, work)
+    this.preparingHere.add(at)
+    try {
+      return await work
     } finally {
-      this.preparing.delete(resource.worktreePath)
+      if (preparing.get(key) === work) preparing.delete(key)
+      this.preparingHere.delete(at)
     }
   }
 
@@ -286,8 +330,18 @@ export class SessionWorktrees {
     try {
       const root = await rootOf(io, resource.originalCwd)
       if (root !== resource.originalCwd) throw new Error('The recorded repository has changed')
-      if (await io.exists(resource.worktreePath))
-        throw new Error('Worktree directory already exists')
+      if (await io.exists(resource.worktreePath)) {
+        const checkout =
+          reuseBranch && (await checkouts(io, root)).find((c) => c.path === resource.worktreePath)
+        if (!checkout) throw new Error('Worktree directory already exists')
+        const ready: WorktreeResource = {
+          ...pending,
+          worktreeBranch: checkout.branch,
+          state: 'ready'
+        }
+        this.store.putResource(ready)
+        return ready
+      }
       const stale = (await checkouts(io, root)).find((c) => c.path === resource.worktreePath)
       if (stale) {
         if (stale.locked)

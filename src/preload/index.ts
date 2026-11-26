@@ -16,8 +16,7 @@ import type {
   AccountView,
   GitAccountView,
   GitLoginProgress,
-  LoginProgress,
-  SignInFailure,
+  SignInNews,
   Settings,
   UpdateProgress,
   UpdateCheckResult,
@@ -191,22 +190,16 @@ const api: KoloftApi = {
     remove: (name, kind) => ipcRenderer.invoke(CH.accounts.remove, name, kind),
     toggle: (name, kind, enabled) => ipcRenderer.invoke(CH.accounts.toggle, name, kind, enabled),
     probe: () => ipcRenderer.invoke(CH.accounts.probe),
-    startLogin: (name, reauth) => ipcRenderer.invoke(CH.accounts.startLogin, name, reauth),
-    cancelLogin: () => ipcRenderer.send(CH.accounts.cancelLogin),
-    signIn: (kind, name, again) => ipcRenderer.invoke(CH.accounts.signIn, kind, name, again),
-    signInFailure: () => ipcRenderer.invoke(CH.accounts.signInFailure),
-    dismissSignInFailure: () => ipcRenderer.send(CH.accounts.dismissSignInFailure),
-    onSignInFailure: (cb) => {
-      const handler = (_e: unknown, f: SignInFailure | null): void => cb(f)
-      ipcRenderer.on(CH.accounts.signInFailure, handler)
-      return () => ipcRenderer.removeListener(CH.accounts.signInFailure, handler)
+    act: (kind, name, action) => ipcRenderer.invoke(CH.accounts.act, kind, name, action),
+    beginSignIn: (kind, name, again) =>
+      ipcRenderer.invoke(CH.accounts.beginSignIn, kind, name, again),
+    heldSignInFailure: () => ipcRenderer.invoke(CH.accounts.signInProgress),
+    onSignInProgress: (cb) => {
+      const handler = (_e: unknown, news: SignInNews): void => cb(news)
+      ipcRenderer.on(CH.accounts.signInProgress, handler)
+      return () => ipcRenderer.removeListener(CH.accounts.signInProgress, handler)
     },
-    codexUseReset: (name) => ipcRenderer.invoke(CH.accounts.codexUseReset, name),
-    onLoginProgress: (cb) => {
-      const handler = (_e: unknown, p: LoginProgress): void => cb(p)
-      ipcRenderer.on(CH.accounts.loginProgress, handler)
-      return () => ipcRenderer.removeListener(CH.accounts.loginProgress, handler)
-    },
+    endSignIn: (kind, name) => ipcRenderer.send(CH.accounts.endSignIn, kind, name),
     onUpdate: (cb) => {
       const handler = (_e: unknown, a: AccountView[]): void => cb(a)
       ipcRenderer.on(CH.accounts.update, handler)

@@ -12,8 +12,10 @@ vi.mock('electron', async () => {
   return { app: { getPath: () => base, getName: () => 'koloft-dev', isPackaged: false } }
 })
 
-import { registeredByTabRoot, setupShim } from '../../src/main/shim'
-import { MIN_CLAUDE_VERSION } from '../../src/main/cliMinimums'
+import { setupShim } from '../../src/main/shim'
+import { everyAgentsShimScripts } from './helpers/agentShims'
+import { registeredByTabRoot } from '../../src/agents/claude/main/claudeShim'
+import { MIN_CLAUDE_VERSION } from '../../src/agents/claude/main/claudeMinimum'
 import { NO_USABLE_ACCOUNT, SHIM_FOUND_NO_ACCOUNT_EXIT } from '../../src/shared/accountUsage'
 
 let shimDir: string
@@ -30,7 +32,8 @@ beforeAll(() => {
   gitAuthDir = path.join(os.tmpdir(), `koloft-shim-git-${process.pid}`)
   ;({ shimDir, regDir, pickDir, gitHelper, ghWrapper } = setupShim(
     gitAuthDir,
-    '/nonexistent-butler-folder'
+    '/nonexistent-butler-folder',
+    everyAgentsShimScripts()
   ))
   base = path.dirname(shimDir)
   realBin = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-realbin-'))
@@ -1303,6 +1306,42 @@ exit 127
   )
 })
 
+describe('every program the shim folder stands in for, with a folder of the same name ahead of the real one on PATH', () => {
+  it.each(['claude', 'codex', 'agy', 'sudo', 'open', 'gh'] as const)(
+    '%s passes the folder by and runs the real program after it',
+    (bin) => {
+      const decoys = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-decoy-folders-'))
+      const real = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-real-after-'))
+      try {
+        fs.mkdirSync(path.join(decoys, bin))
+        fs.copyFileSync(path.join(realBin, 'claude'), path.join(real, bin))
+        fs.chmodSync(path.join(real, bin), 0o755)
+        const cwd = os.tmpdir()
+        const argsOut = path.join(base, `args-${Math.random().toString(36).slice(2)}`)
+        const envOut = path.join(base, `env-${Math.random().toString(36).slice(2)}`)
+        const res = spawnSync(path.join(shimDir, bin), ['--version'], {
+          cwd,
+          env: pinnedShimEnvNeverSpreadingProcessEnv(cwd, argsOut, envOut, {
+            ...ACCOUNT_MAIN_ALREADY_PICKED,
+            SUDO_ASKPASS: '/nonexistent-askpass',
+            PATH: `${shimDir}:${decoys}:${real}:/usr/bin:/bin`
+          }),
+          encoding: 'utf8',
+          timeout: 15_000
+        })
+        const r = collect(cwd, argsOut, envOut, res.status ?? -1, res.stderr ?? '')
+        expect(r.stderr).toBe('')
+        expect(r.status).toBe(0)
+        expect(r.realArgs).toEqual(['--version'])
+      } finally {
+        fs.rmSync(decoys, { recursive: true, force: true })
+        fs.rmSync(real, { recursive: true, force: true })
+      }
+    },
+    30_000
+  )
+})
+
 describe('git credential helper and gh wrapper', () => {
   it("are written next to the claude shim, so the shim dir puts Koloft's gh first on a session's PATH, and both reach Koloft through this launch's git request dir", () => {
     expect(ghWrapper).toBe(path.join(shimDir, 'gh'))
@@ -1361,7 +1400,7 @@ describe('claude shim (Koloft browser endpoint)', () => {
   it('removes a retired muse guard left in the shim folder from an earlier Koloft', () => {
     const retired = path.join(shimDir, 'muse')
     fs.writeFileSync(retired, '#!/bin/sh\nexit 1\n', { mode: 0o755 })
-    setupShim(gitAuthDir, '/nonexistent-butler-folder')
+    setupShim(gitAuthDir, '/nonexistent-butler-folder', everyAgentsShimScripts())
     expect(fs.existsSync(retired)).toBe(false)
   })
 })

@@ -1,17 +1,14 @@
 import net from 'net'
 import { setTimeout as sleep } from 'timers/promises'
 import type { ModeClass } from '@core/agent/sessionBackends'
+import { agent } from '../agent'
 
-const CLOSING_TAG = '</cross-session-message>'
+const CLOSING_TAG = agent.textItsMessagesCannotHold
 const SOCKET_WRITE_TIMEOUT_MS = 3000
 export const MESSAGE_SOCKET_SHOWS_WITHIN_MS = 10_000
 // CC§13
 const MESSAGES_A_SENDER_MAY_BURST = 30
 const MS_UNTIL_A_SENDER_MAY_SEND_ONE_MORE = 2000
-
-export function fitsACrossSessionMessage(body: string): boolean {
-  return !body.includes(CLOSING_TAG)
-}
 
 // CC§13
 export function crossSessionLine(mode: ModeClass, body: string, id: string): string {

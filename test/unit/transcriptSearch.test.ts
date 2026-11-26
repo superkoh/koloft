@@ -3,7 +3,8 @@ import os from 'os'
 import path from 'path'
 import { execFileSync } from 'child_process'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { searchTranscript, searchTranscripts, snippetAround } from '../../src/main/transcriptSearch'
+import { searchTranscript, searchTranscripts } from '../../src/agents/claude/main/transcriptSearch'
+import { snippetAround } from '../../src/core/snippetAround'
 
 let dir: string
 

@@ -7,6 +7,7 @@ import type {
   CreateTabOptions,
   CreateTabResult,
   DocVerdict,
+  HostId,
   ResumePlan,
   SessionInfo,
   SessionResumeRequest,
@@ -26,12 +27,39 @@ import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import type { TabEnded } from '../moment'
 import type { TranscriptPlaces } from '../transcriptPlaces'
 import { rowsOfEveryAgent, type RowsOfEveryAgent, type SessionRowsSource } from './sessionRows'
+import type { MirrorFolder } from './mirrorFolders'
 
 export type ModeClass = 'bypass' | 'prompting'
 
+export type SentNote = { id: string } | { words: string }
+
+export type MessageToSend = {
+  text: string
+  senderPermission: ModeClass
+  koloftWroteTheOpening: boolean
+} & ({ handedOverAs: string } | { sentBy: string; until: number })
+
+export type SendOutcome = 'taken' | 'only-its-terminal-takes-it'
+
+export interface SessionMessages {
+  send(tabId: string, m: MessageToSend): Promise<SendOutcome>
+  mightNotTakeAMessageNow(
+    tabId: string,
+    turnHasEnded: (tabId: string) => Promise<boolean>
+  ): Promise<boolean>
+}
+
+export type HandOverLaunch = { role: string; firstPrompt: string } | { firstPrompt: string }
+
 export type TabExit = Pick<TabEnded, 'tabId' | 'exitCode' | 'signal' | 'crashed'>
 
-export interface SessionBackend extends SessionRowsSource {
+export interface WorktreeExitWatch {
+  startedRemoving(printed: string): boolean
+  terminalEnded(): string | undefined
+  koloftQuits(): void
+}
+
+export interface SessionBackend extends SessionRowsSource, SessionMessages {
   id: BackendId
   recoversWorktrees?: true
   availability(): Promise<BackendAvailability>
@@ -39,6 +67,7 @@ export interface SessionBackend extends SessionRowsSource {
   list(): BackendSessionInfo[]
   historyRows(workspacePath: string): Promise<BackendSessionRow[]>
   create(spec: CreateTabOptions): Promise<CreateTabResult>
+  handOverLaunch(handOver: string, task: string): HandOverLaunch
   resume(request: SessionResumeRequest): Promise<SessionResumeResult>
   resumePlan(key: string): Promise<ResumePlan>
   hasTab(tabId: string): boolean
@@ -59,6 +88,7 @@ export interface SessionBackend extends SessionRowsSource {
   runningElsewhere(key: string): boolean | Promise<boolean>
   workStillRunning(tabId: string): Promise<boolean>
   worktreeRecords: WorktreeRecords
+  worktreeExitWatch(tabId: string, hostOfTab: () => HostId): WorktreeExitWatch | undefined
   tabExited(exit: TabExit): void | Promise<void>
   quitWaitsForIt(): boolean
   endBeforeQuit(): Promise<void>
@@ -68,7 +98,10 @@ export interface SessionBackend extends SessionRowsSource {
   sessionGone(key: string): boolean
   noticeRemoteExits(host: string, sessionIds: string[]): void
   mirrorPulled(host: string): void
+  foldersToMirrorFrom(host: string, landing: string): MirrorFolder[]
   tmuxOfTab(tabId: string): string | undefined
+  tabOfTmuxSession(host: string, name: string): string | undefined
+  showsAPanel(tabId: string, screen?: string[]): Promise<boolean | undefined>
 }
 
 export interface SessionLifecycle {
@@ -205,6 +238,13 @@ export class SessionBackends {
     return this.ownerOfTab(tabId)?.workspaceOfTab(tabId)
   }
 
+  showsAPanel(tabId: string, screen?: string[]): Promise<boolean | undefined> {
+    const session = this.list().find((s) => s.tabId === tabId)
+    return session
+      ? this.get(session.backendId).showsAPanel(tabId, screen)
+      : Promise.resolve(undefined)
+  }
+
   availability(
     unregistered: (id: BackendId) => BackendAvailability
   ): Promise<BackendAvailability[]> {
@@ -245,6 +285,22 @@ export class SessionBackends {
 
   permissionClass(tabId: string): ModeClass {
     return this.ownerOfTab(tabId)?.permissionClass(tabId) ?? 'prompting'
+  }
+
+  send(backend: BackendId, tabId: string, m: MessageToSend): Promise<SendOutcome> {
+    return this.get(backend).send(tabId, m)
+  }
+
+  mightNotTakeAMessageNow(
+    backend: BackendId,
+    tabId: string,
+    turnHasEnded: (tabId: string) => Promise<boolean>
+  ): Promise<boolean> {
+    return this.get(backend).mightNotTakeAMessageNow(tabId, turnHasEnded)
+  }
+
+  handOverLaunch(backend: BackendId, handOver: string, task: string): HandOverLaunch {
+    return this.get(backend).handOverLaunch(handOver, task)
   }
 
   peerNames(): (s: { backendId: BackendId; sessionId: string }) => Promise<string | null> {
@@ -317,10 +373,26 @@ export class SessionBackends {
     for (const backend of this.builtInListOrder()) backend.mirrorPulled(host)
   }
 
+  foldersToMirrorFrom(host: string, landing: string): MirrorFolder[] {
+    const folders = this.builtInListOrder().flatMap((b) => b.foldersToMirrorFrom(host, landing))
+    return [
+      ...folders.filter((f) => f.holds === 'records'),
+      ...folders.filter((f) => f.holds === 'usage')
+    ]
+  }
+
   tmuxOfTab(tabId: string): string | undefined {
     for (const backend of this.builtInListOrder()) {
       const name = backend.tmuxOfTab(tabId)
       if (name !== undefined) return name
+    }
+    return undefined
+  }
+
+  tabOfTmuxSession(host: string, name: string): string | undefined {
+    for (const backend of this.builtInListOrder()) {
+      const tabId = backend.tabOfTmuxSession(host, name)
+      if (tabId !== undefined) return tabId
     }
     return undefined
   }

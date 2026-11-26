@@ -13,6 +13,7 @@ import { isPlaceholderSessionTitle, PLAN_READY } from '@shared/types'
 import { basename } from '@shared/preview'
 import { NOTES_HEIGHT_FLOOR } from '@shared/settingsOps'
 import { statusUnavailable } from '@shared/sessionBackend'
+import { AGENT_OF_UNNAMED_OLD_DATA, agentManifest } from '@core/agent/registry'
 import { isWorkspaceWorkbenchKey, workspaceOfWorkbenchKey } from '@shared/workbenchState'
 
 export { statusUnavailable }
@@ -63,16 +64,14 @@ export function parkedBadge(
     return `server · ${p.label}` + (p.ageMs === undefined ? '' : ` · running ${shortDur(p.ageMs)}`)
   })
   lines.push(...leftovers.map((p) => `left running · ${leftoverLabel(p)}`))
+  const agent = backend ?? AGENT_OF_UNNAMED_OLD_DATA
   return {
     text: `⏸ ${n}`,
     lines,
-    hint: leftovers.length
-      ? 'Programs this session started keep running on their own. Stop any you no longer need.'
-      : backend === 'codex'
-        ? 'Stop these tasks in the Codex session to free the resources.'
-        : backend === 'agy'
-          ? 'Stop them in the Antigravity session (/tasks lists them) to free the resources.'
-          : 'Stop them in the session (ctrl+b lists background tasks) to free the resources.'
+    hint:
+      leftovers.length || !agent
+        ? 'Programs this session started keep running on their own. Stop any you no longer need.'
+        : agentManifest(agent).howToStopItsBackgroundTasks
   }
 }
 

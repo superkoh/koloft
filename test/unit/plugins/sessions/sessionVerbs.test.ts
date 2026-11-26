@@ -4,6 +4,7 @@ import path from 'path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   findSessionRow,
+  findSiblingTarget,
   parseNewSessionArgs,
   sessionSays,
   sessionVerb,
@@ -17,6 +18,9 @@ import type { PinnedWorkspace } from '../../../../src/plugins/sessions/api'
 import { A_HELPER_HAS_IT } from '../../../../src/plugins/sessions/main/messageOpenings'
 import { crossSessionLine } from '../../../../src/agents/claude/main/crossSessionMessage'
 import type { TranscriptPlaces } from '../../../../src/core/transcriptPlaces'
+import type { SentNote } from '../../../../src/core/agent/sessionBackends'
+import { everyAgentsMessages } from '../../helpers/agentMessages'
+import { opensAsOnlyKoloftSends } from '../../../../src/plugins/sessions/main/hooks'
 import { INBOX_SENDER } from '../../../../src/plugins/inbox/main/inbox'
 import { butlersFolderClaim } from '../../../../src/plugins/butler/api'
 import type { SendResult } from '../../../../src/plugins/sessions/api'
@@ -36,8 +40,9 @@ const OLDER_A_HELPER_HAS_IT =
 import { ownerSays } from '../../../../src/shared/agentGuide'
 import type { PickFacts } from '../../../../src/shared/sessionPicks'
 import { handoverPreamble } from '../../../../src/plugins/sessions/main/handoverPreamble'
+import { withHandover } from '../../../../src/core/handOver'
 import { StartedSessions } from '../../../../src/plugins/sessions/main/startedSessions'
-import { turnedOffLine } from '../../../../src/shared/sessionBackend'
+import { SESSION_BACKENDS, turnedOffLine } from '../../../../src/shared/sessionBackend'
 import { EXIT_USAGE, type AgentReply } from '../../../../src/core/command'
 import { AGENT_SHIM_WAITS_MS } from '../../../../src/core/command'
 import type {
@@ -131,7 +136,7 @@ function harness(
   closeFails: ((text: string) => void)[]
   reads: { key: string; n: number }[]
   lines: { tabId: string; line: string }[]
-  noted: { tabId: string; text: string; id?: string }[]
+  noted: { tabId: string; note: SentNote }[]
   pressed: { tabId: string; keys: string[] }[]
   resumed: string[]
   stopped: string[]
@@ -154,7 +159,7 @@ function harness(
   const closeFails: ((text: string) => void)[] = []
   const reads: { key: string; n: number }[] = []
   const lines: { tabId: string; line: string }[] = []
-  const noted: { tabId: string; text: string; id?: string }[] = []
+  const noted: { tabId: string; note: SentNote }[] = []
   const pressed: { tabId: string; keys: string[] }[] = []
   const resumed: string[] = []
   const stopped: string[] = []
@@ -190,15 +195,16 @@ function harness(
       openTabs.add('new-tab')
       return 'new-tab'
     },
+    handOverLaunch: (backend, handOver, task) =>
+      backend === 'codex'
+        ? { role: handOver, firstPrompt: task }
+        : { firstPrompt: withHandover(handOver, task) },
     assist: async (job) =>
       (job.system === 'You translate.'
         ? conducting.translation
         : job.system === 'You name git worktrees.'
           ? conducting.worktreeNameReply
           : conducting.titleReply) ?? null,
-    queue: async (tabId, text, clientId) => {
-      queued.push({ tabId, text, clientId })
-    },
     startedSessions,
     closable: () => [...sessions, ...cold],
     whatIsLeft: async (target, waitUntil) => {
@@ -234,14 +240,20 @@ function harness(
     ready: async (tabId, ms, turnEnded) => conducting.ready?.(tabId, turnEnded, ms) ?? true,
     bound: async (tabId, ms) => conducting.bound?.(tabId, ms) ?? true,
     asking: (tabId) => conducting.asking?.includes(tabId) ?? false,
-    sendLine: async (tabId, line) => {
-      lines.push({ tabId, line })
-    },
+    ...everyAgentsMessages({
+      sendLine: async (tabId, line) => {
+        lines.push({ tabId, line })
+      },
+      queue: async (tabId, text, clientId) => {
+        queued.push({ tabId, text, clientId })
+      },
+      throughItsApi: async () => false,
+      noteKoloftSent: async (tabId, note) => void noted.push({ tabId, note })
+    }),
     press: async (tabId, keys) => {
       pressed.push({ tabId, keys })
     },
-    deliver: async () => false,
-    noteSent: async (tabId, text, id) => void noted.push({ tabId, text, id }),
+    opensAsOnlyKoloftSends,
     modeOf: (tabId) => (conducting.bypass?.includes(tabId) ? 'bypass' : 'prompting'),
     stop: (tabId) => {
       stopped.push(tabId)
@@ -1058,6 +1070,24 @@ describe('koloft session send', () => {
     expect(reply.exit).not.toBe(0)
     expect(reply.text).toContain('SendMessage')
     expect(lines).toEqual([])
+  })
+
+  it('leaves to its own tool only a pair of sessions of the same agent on one machine: of every pair of agents on one machine or two, only Claude to Claude on one machine is sent away from koloft session send', () => {
+    const machines = [undefined, { host: 'box' }]
+    const sentAway = SESSION_BACKENDS.flatMap((caller) =>
+      SESSION_BACKENDS.flatMap((target) =>
+        machines.flatMap((callerOn) =>
+          machines.flatMap((targetOn) => {
+            const from = session('me', caller, { remote: callerOn })
+            const to = session('to', target, { title: 'Target', remote: targetOn })
+            const found = findSiblingTarget([from, to], 'Target', from)
+            const where = `${callerOn?.host ?? 'mac'} to ${targetOn?.host ?? 'mac'}`
+            return found.ok ? [] : [`${caller} to ${target}, ${where}`]
+          })
+        )
+      )
+    )
+    expect(sentAway).toEqual(['claude to claude, mac to mac', 'claude to claude, box to box'])
   })
 
   it('a Claude session reaches a Claude session on another machine with koloft session send, on that one’s message line there, and that one reaches it back on its own, since SendMessage reaches no session on another machine', async () => {

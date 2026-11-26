@@ -1,5 +1,6 @@
 // ADR-0054
 import type { CronEffort } from '@shared/efforts'
+import type { PriceList } from '@shared/pricing'
 import type { ModelAndEffort } from '../assistModels'
 import type { SettingKey } from '../settings'
 
@@ -41,15 +42,40 @@ export interface AgentFlags {
   conversationStartsAtFirstPrompt: boolean
   pasteKeepsItsLastLineFeeds: boolean
   passedOnMessageShowsAsFromAnotherSession: boolean
+  sessionsOfItsKindOnOneMachineTalkWithTheirOwnTool: boolean
+  mightNotTakeAMessageWhileItsTurnRuns: boolean
   commandsItRunsCanHaveATerminalOfTheirOwn: boolean
   runsCommandsInASandboxWhereSudoCannotStart: boolean
   questionToolTakesNoOptionDescriptions: boolean
+  removesItsWorktreeAsItExits: boolean
+  turnEndCanComeBeforeItsReplyIsWritten: boolean
+  typesASkillOnlyByTheNameInItsFile: boolean
+  refusesATypedSkillMarkedNotUserInvocable: boolean
+  listsTheModelsAnAccountCanRun: boolean
+}
+
+export interface SkillFolderNames {
+  skills: readonly string[]
+  commands: readonly string[]
+}
+
+export interface SkillFolders {
+  inTheWorkspace: SkillFolderNames
+  inTheHome: SkillFolderNames
+}
+
+export interface InputBoxKeys {
+  clearALeftoverCommand: readonly string[]
+  makeEnterRunTheTypedText: readonly string[]
+  backToAnEmptyBox: readonly string[]
 }
 
 export type SmallJobKind = 'smallAndQuick' | 'judgesAReply' | 'picksFromAList'
 
 export interface AgentPureFunctions {
   effortsAModelTakes(model: string | undefined): readonly CronEffort[]
+  draftInItsInputBox(screen: string[]): string | undefined
+  priceOf: PriceList
 }
 
 export interface AccountKindFacts {
@@ -59,20 +85,27 @@ export interface AccountKindFacts {
   signsInThroughABrowser: boolean
   storesAPastedKeyItself: boolean
   takesAnEndpoint: boolean
+  asksItsFirstRunQuestionsForEachAccount: boolean
+  isATokenItsSignInPrints: boolean
 }
 
 export interface AgentManifest {
   id: string
   name: string
   productName: string
+  shortProductName: string
   maker: string
   command: string
+  signInCommand: string
+  installCommand: string
   nodePackageFolderNames: readonly string[]
   wordsThatNameMe: AgentWords
   skillPrefix: string
+  skillFolders: SkillFolders
   questionToolName: string
   instructionFileNames: readonly string[]
   trustQuestion: string
+  textItsMessagesCannotHold?: string
   ownLogFolderNames: readonly string[]
   atTopOfSessionFolder: AtTopOfSessionFolder
   envOfItsSessionThatMisleadsWhatStartsInside: EnvNames
@@ -84,6 +117,9 @@ export interface AgentManifest {
   ownSettings: Readonly<Record<string, OwnSetting>>
   slotFills: Readonly<Record<string, string>>
   slotAdditions: Readonly<Record<string, string>>
+  inputBoxKeys: InputBoxKeys
+  commandWithItsChoiceAfterIt?: string
+  howToStopItsBackgroundTasks: string
   flags: AgentFlags
   pureFunctions: AgentPureFunctions
   accountKinds: readonly AccountKindFacts[]

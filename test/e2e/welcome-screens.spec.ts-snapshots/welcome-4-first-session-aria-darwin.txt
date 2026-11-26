@@ -1,0 +1,22 @@
+- dialog "Welcome to Koloft":
+  - banner:
+    - button "Skip setup esc"
+  - main:
+    - text: Ready · ws-a
+    - heading "Built for you. And for your agents." [level=1]
+    - paragraph: Say what you want done. That starts your first session.
+    - img
+    - text: "ws-a Your first session opens here. Changes Web Shell What a session changes shows up here. Workbench files it changed · web · shell ⌘P say it in plain words # alfred"
+    - img
+    - text: Alfred
+    - paragraph: Hi, I’m Alfred. Connect Discord any time, and I’ll ask you here when a session needs you.
+    - text: Alfred on your phone, once you connect Discord
+  - contentinfo:
+    - img
+    - 'textbox "Try: explain this project"'
+    - button "Antigravity tab"
+    - button "Start":
+      - img
+      - text: Start
+    - text: Sessions run each step without stopping to ask.
+    - button "Ask me first instead"

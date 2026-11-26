@@ -1,8 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { AccountView, CodexLimits, UsageSnapshot } from '../../src/shared/types'
 import {
-  codexGlyph,
-  codexPoolGlyph,
   codexPoolSnapshot,
   codexResetOffered,
   hardLimited,
@@ -16,7 +14,6 @@ import {
   windowTone,
   accountWalled,
   poolSnapshot,
-  poolGlyph,
   sublineFor,
   AUTO_PROBE_MS,
   STALE_MS,
@@ -352,25 +349,10 @@ describe('launchLine — the account line a Codex or Antigravity tab prints befo
 })
 
 // CODEX§15
-describe('a Codex account in the capsule', () => {
+describe('a saved reset of a Codex account', () => {
   const codex = (limits: Partial<CodexLimits>, p: Partial<AccountView> = {}): AccountView =>
     view({ kind: 'codex-home', limits: { windows: [], at: NOW_MS, ...limits }, ...p })
   const week = (used: number) => [{ minutes: 10080, used, resetsAt: 0 }]
-
-  it('draws its fullest window, walls at a full window or when Codex says a limit was reached, and greys when signed out', () => {
-    expect(
-      codexGlyph(
-        codex({ windows: [...week(0.2), { minutes: 300, used: 0.75, resetsAt: 0 }] }),
-        NOW_MS
-      )
-    ).toMatchObject({ kind: 'bar', frac: 0.75, level: 'warn' })
-    expect(codexGlyph(codex({ windows: week(1) }), NOW_MS).kind).toBe('walled')
-    expect(codexGlyph(codex({ windows: week(0.3), reached: true }), NOW_MS).kind).toBe('walled')
-    expect(codexGlyph(view({ kind: 'codex-home' }), NOW_MS).kind).toBe('empty')
-    expect(codexGlyph(codex({ windows: week(0.3) }, { status: 'expired' }), NOW_MS).kind).toBe(
-      'grey'
-    )
-  })
 
   it('offers a saved reset only to a walled account that has one, so a reset is never spent on room it still has', () => {
     const resets = { available: 2 }
@@ -866,93 +848,6 @@ describe('codexPoolSnapshot — the Codex pool reads like the Claude one', () =>
       ]
     })
     expect(p.tension).toBeCloseTo((0.6 + 1 + 1) / 3)
-  })
-
-  it('draws a pool bar only from two measured accounts on, and walls it only when every one is walled', () => {
-    expect(codexPoolGlyph([codex('a', { windows: [win(10080, 0.2)] }), codex('b')], NOW_MS)).toBe(
-      null
-    )
-    const two = [
-      codex('a', { windows: [win(10080, 0.2)] }),
-      codex('b', { windows: [win(10080, 1)] })
-    ]
-    expect(codexPoolGlyph(two, NOW_MS)).toMatchObject({ kind: 'bar', frac: 0.6 })
-    const allOut = [codex('a', { reached: true }), codex('b', { windows: [win(10080, 1)] })]
-    expect(codexPoolGlyph(allOut, NOW_MS)?.kind).toBe('walled')
-  })
-})
-
-describe('poolGlyph', () => {
-  const hardView = (name: string): AccountView =>
-    view({ name, usage: snap({ s5: 'rejected', r5: NOW_SEC + 7_200, u5: 1 }) })
-
-  it('under two measured accounts there is no pool to draw', () => {
-    expect(poolGlyph([], NOW_MS)).toBe(null)
-    expect(poolGlyph([view({ usage: snap({ u5: 0.5 }) }), view({ name: 'cold' })], NOW_MS)).toBe(
-      null
-    )
-  })
-  it('two measured accounts → a bar at the mean tension', () => {
-    const rows = [
-      view({ usage: snap({ u7: 0.25 }) }),
-      view({ name: 'b', usage: snap({ u5: 0.75 }) })
-    ]
-    expect(poolGlyph(rows, NOW_MS)).toEqual({
-      kind: 'bar',
-      frac: 0.5,
-      level: '',
-      stale: false,
-      fable: { frac: 0, spent: false }
-    })
-  })
-  it('one walled member does not wall the pool — it just weighs 1 in the mean', () => {
-    const rows = [hardView('a'), view({ name: 'b', usage: snap({ u5: 0.5 }) })]
-    expect(poolGlyph(rows, NOW_MS)).toMatchObject({ kind: 'bar', frac: 0.75, level: 'warn' })
-  })
-  it('every measured member hard-walled → the top rail', () => {
-    expect(poolGlyph([hardView('a'), hardView('b')], NOW_MS)).toEqual({
-      kind: 'walled',
-      stale: false
-    })
-  })
-  it('a pool short of the wall never touches the top rail', () => {
-    const rows = [
-      view({ usage: snap({ u5: 0.95 }) }),
-      view({ name: 'b', usage: snap({ u5: 0.97 }) })
-    ]
-    expect(poolGlyph(rows, NOW_MS)).toMatchObject({ kind: 'bar', frac: CAP, level: 'bad' })
-  })
-  it('fades on the oldest snapshot in M; exactly 15min is not yet stale', () => {
-    const pair = (age: number): AccountView[] => [
-      view({ usage: snap({ u5: 0.4, at: NOW_MS }) }),
-      view({ name: 'b', usage: snap({ u5: 0.4, at: NOW_MS - age }) })
-    ]
-    expect(poolGlyph(pair(STALE_MS), NOW_MS)).toMatchObject({ stale: false })
-    expect(poolGlyph(pair(STALE_MS + 1), NOW_MS)).toMatchObject({ stale: true })
-  })
-  it('a walled pool carries staleness too', () => {
-    const rows = [
-      hardView('a'),
-      view({
-        name: 'b',
-        usage: snap({ s5: 'rejected', r5: NOW_SEC + 7_200, u5: 1, at: NOW_MS - STALE_MS - 1 })
-      })
-    ]
-    expect(poolGlyph(rows, NOW_MS)).toEqual({ kind: 'walled', stale: true })
-  })
-  it('no fable data in the pool → no fable layer', () => {
-    const rows = [
-      view({ usage: snap({ u5: 0.5, hasOi: false }) }),
-      view({ name: 'b', usage: snap({ u5: 0.5, uoi: 0.9, hasOi: false }) })
-    ]
-    expect(poolGlyph(rows, NOW_MS)).toMatchObject({ fable: null })
-  })
-  it('every fable bucket exhausted → a spent layer, capped by the same top rail', () => {
-    const rows = [
-      view({ usage: snap({ u5: 0.5, uoi: 1 }) }),
-      view({ name: 'b', usage: snap({ u5: 0.5, soi: 'rejected' }) })
-    ]
-    expect(poolGlyph(rows, NOW_MS)).toMatchObject({ fable: { frac: CAP, spent: true } })
   })
 })
 

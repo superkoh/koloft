@@ -9,9 +9,11 @@ import { tabPackageDir } from '../../src/main/remote/paths'
 import { diffBase as localDiffBase } from '../../src/main/gitStatus'
 import { localHost } from '../../src/main/host/localHost'
 import { GithubRepos } from '../../src/main/githubRepos'
-import { utilTerminalGuard } from '../../src/main/shim'
+import { utilTerminalGuard } from '../../src/main/utilTerminalGuard'
+import { CLAUDE_UTIL_TERMINAL_REFUSAL } from '../../src/agents/claude/main/claudeShim'
 import type { BytesResult } from '../../src/main/remote/ssh'
 import { shellOnThisMacAsTheMachine } from './helpers/agentTabs'
+import { agentsWithTheirCatalogs } from './helpers/agentCatalogs'
 import { barePath } from '../../src/shared/remoteKey'
 import { removeTree } from '../../src/plugins/sessions/main/sessionClose'
 
@@ -328,6 +330,26 @@ describe.each(['/bin/sh', '/bin/tcsh'])(
 
       expect(fs.readdirSync(hookDir)).toEqual(['res-r1.json'])
       expect(fs.readFileSync(path.join(hookDir, 'res-r1.json'), 'utf8')).toBe(reply)
+    })
+
+    it("leaves Koloft's notice under every tab id the tab ran under, merges a new one in only while no copy has been taken, else writes it fresh to every copy, and drops every copy", async () => {
+      const hookDir = path.join(home, '.koloft', 'hook-sessions')
+      const copy = (id: string): string => path.join(hookDir, `${id}.notice`)
+      const notice = machine().notice(['pty-now', 'pty-started'])
+
+      expect(await notice.leave('first', 'first and second')).toBe('fresh')
+      expect(await notice.leave('second', 'first and second')).toBe('merged')
+      expect(fs.readFileSync(copy('pty-started'), 'utf8')).toBe('first and second\\n\\n')
+      expect(fs.readFileSync(copy('pty-now'), 'utf8')).toBe('first and second\\n\\n')
+
+      fs.rmSync(copy('pty-started'))
+      expect(await notice.leave('third', 'first, second and third')).toBe('fresh')
+      expect(fs.readFileSync(copy('pty-started'), 'utf8')).toBe('third\\n\\n')
+      expect(fs.readFileSync(copy('pty-now'), 'utf8')).toBe('third\\n\\n')
+
+      fs.writeFileSync(`${copy('pty-started')}.turn`, 'third\\n\\n')
+      await notice.drop()
+      expect(fs.readdirSync(hookDir)).toEqual([])
     })
 
     it("saves a picked element's picture on the machine and answers with its absolute path there, deleting anything older than a day left in its folder", async () => {
@@ -738,7 +760,11 @@ describe('the utility terminal on the machine', () => {
     const realDir = path.join(home, 'real-bin')
     fs.mkdirSync(guardDir)
     fs.mkdirSync(realDir)
-    fs.writeFileSync(path.join(guardDir, 'claude'), utilTerminalGuard('claude'), { mode: 0o755 })
+    fs.writeFileSync(
+      path.join(guardDir, 'claude'),
+      utilTerminalGuard('claude', CLAUDE_UTIL_TERMINAL_REFUSAL),
+      { mode: 0o755 }
+    )
     const realLog = path.join(home, 'real.log')
     fs.writeFileSync(
       path.join(realDir, 'claude'),
@@ -778,4 +804,73 @@ it('a worktree git cannot delete on the machine is reported in git’s words, wi
   fs.chmodSync(readOnly, 0o755)
   expect(problem).toContain(`failed to delete '${tree}': Permission denied`)
   expect(problem).toContain(`run on ${MACHINE}: chmod -R u+w '${tree}' && rm -rf '${tree}'`)
+})
+
+describe('the skills a scheduled task is offered, read where its workspace is (BB-M16)', () => {
+  const put = (file: string, text = '---\ndescription: d\n---'): void => {
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, text)
+  }
+
+  it.each(['claude', 'codex', 'agy'] as const)(
+    'on a machine, the script that gathers the skill files of %s names its own folders, the same byte for byte',
+    async (backend) => {
+      const onMachine = machine()
+      const scripts: string[] = []
+      onMachine.sh = async (script) => {
+        scripts.push(script)
+        return { code: 1, stdout: Buffer.alloc(0), stderr: '' }
+      }
+      expect(await onMachine.listSkills(keyed(repo), backend)).toEqual([])
+      expect(scripts).toHaveLength(1)
+      await expect(scripts[0]).toMatchFileSnapshot(`remote-skill-script/${backend}.sh`)
+    }
+  )
+
+  it("on this Mac, each agent's folders in the workspace and in this Mac's home, Codex's own home among them", async () => {
+    const codexHome = path.join(home, 'codex-home')
+    put(path.join(repo, '.claude', 'skills', 'cc-project', 'SKILL.md'))
+    put(path.join(repo, '.claude', 'commands', 'cc-command.md'), '# cc')
+    put(path.join(home, '.claude', 'skills', 'cc-home', 'SKILL.md'))
+    put(path.join(home, '.claude', 'commands', 'cc-home-command.md'), '# cc')
+    put(path.join(repo, '.agents', 'skills', 'agents-project', 'SKILL.md'))
+    put(path.join(repo, '.codex', 'skills', 'codex-project', 'SKILL.md'))
+    put(
+      path.join(repo, '.agent', 'skills', 'agent-project', 'SKILL.md'),
+      '---\nname: agent-named\n---'
+    )
+    put(path.join(repo, '_agents', 'skills', 'underscore', 'SKILL.md'), '---\nname: under\n---')
+    put(path.join(codexHome, 'skills', 'codex-home', 'SKILL.md'))
+    put(path.join(home, '.agents', 'skills', 'agents-home', 'SKILL.md'))
+    put(path.join(home, '.gemini', 'config', 'skills', 'gemini', 'SKILL.md'), '---\nname: g\n---')
+    const agents = agentsWithTheirCatalogs({
+      codexConfig: path.join(codexHome, 'config.toml'),
+      ownersGemini: path.join(home, '.gemini')
+    })
+    const here = localHost(new GithubRepos({}), {
+      moreSkillFoldersEveryAccountReads: (backend) =>
+        agents.moreSkillFoldersEveryAccountReadsOnThisMac(backend)
+    })
+    const homeBefore = process.env.HOME
+    process.env.HOME = home
+    try {
+      const names = async (backend: 'claude' | 'codex' | 'agy'): Promise<string[]> =>
+        (await here.listSkills(repo, backend)).map((s) => `${s.name} ${s.source}`)
+      expect(await names('claude')).toEqual([
+        '/cc-project project',
+        '/cc-command project',
+        '/cc-home home',
+        '/cc-home-command home'
+      ])
+      expect(await names('codex')).toEqual([
+        '$agents-project project',
+        '$codex-project project',
+        '$agents-home home',
+        '$codex-home home'
+      ])
+      expect(await names('agy')).toEqual(['/agent-named project', '/under project'])
+    } finally {
+      process.env.HOME = homeBefore
+    }
+  })
 })

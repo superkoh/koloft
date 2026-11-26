@@ -26,6 +26,9 @@ export type AccountKind = AccountKindId
 
 export const ACCOUNT_KINDS: readonly AccountKind[] = ACCOUNT_KIND_IDS
 
+export const isAccountKind = (kind: unknown): kind is AccountKind =>
+  ACCOUNT_KINDS.some((k) => k === kind)
+
 export const SIGN_IN_FOLDER_OF = Object.fromEntries(
   AGENT_IDS.flatMap((id) =>
     agentManifest(id)
@@ -49,9 +52,6 @@ export const takesAnEndpoint = (kind: AccountKind): boolean =>
 export const BACKEND_OF_SIGN_IN_FOLDER = Object.fromEntries(
   Object.entries(SIGN_IN_FOLDER_OF).map(([backend, kind]) => [kind, backend])
 ) as Record<SignInFolderKind, SignInBackend>
-
-export const isSignInFolderKind = (kind: unknown): kind is SignInFolderKind =>
-  SIGN_IN_FOLDER_KINDS.some((k) => k === kind)
 
 export type AccountStatus = 'ok' | 'expired' | 'unverified'
 
@@ -284,16 +284,6 @@ export interface CodexLimits {
   resets?: { available: number; firstExpiresAt?: number }
 }
 
-// CODEX§15
-export const CODEX_RESET_OUTCOMES = [
-  'reset',
-  'nothingToReset',
-  'noCredit',
-  'alreadyRedeemed'
-] as const
-
-export type CodexResetOutcome = (typeof CODEX_RESET_OUTCOMES)[number] | 'failed'
-
 export interface QuotaBucket {
   label: string
   used: number
@@ -310,17 +300,6 @@ export interface AccountView extends AccountMeta {
   apiKey?: true
 }
 
-export type SignInResult =
-  | { ok: true; tabId: string; cwd: string }
-  | { ok: false; error: 'invalid-name' | 'duplicate' | 'keychain' }
-
-export interface SignInFailure {
-  backend: SignInBackend
-  name: string
-  again: boolean
-  tail: string
-}
-
 export interface LoginProgress {
   phase: 'starting' | 'browser' | 'saved' | 'failed'
   name: string
@@ -328,6 +307,31 @@ export interface LoginProgress {
   tail?: string
   tabId?: string
   cwd?: string
+}
+
+export interface SignInProgress {
+  kind: AccountKind
+  name: string
+  again: boolean
+  phase: 'starting' | 'browser' | 'inATab' | 'saved' | 'failed'
+  url?: string
+  tail?: string
+  tab?: { tabId: string; cwd?: string }
+}
+
+export type SignInStart =
+  | { ok: true; progress: SignInProgress }
+  | { ok: false; error: 'invalid-name' | 'duplicate' | 'unknown' | 'keychain' }
+
+export interface SignInNews {
+  progress: SignInProgress | null
+  heldFailure: SignInProgress | null
+}
+
+export interface SignInCommand {
+  binary?: string
+  env: Record<string, string>
+  args?: string[]
 }
 
 export interface AccountAddResult {
@@ -1209,20 +1213,11 @@ export interface CoreApi {
     remove(name: string, kind: AccountKind): Promise<boolean>
     toggle(name: string, kind: AccountKind, enabled: boolean): Promise<void>
     probe(): Promise<AccountView[]>
-    // CC§7
-    startLogin(
-      name: string,
-      reauth?: boolean
-    ): Promise<'ok' | 'invalid-name' | 'duplicate' | 'unknown'>
-    cancelLogin(): void
-    // CODEX§15
-    signIn(kind: SignInFolderKind, name: string, again?: boolean): Promise<SignInResult>
-    signInFailure(): Promise<SignInFailure | null>
-    dismissSignInFailure(): void
-    onSignInFailure(cb: (f: SignInFailure | null) => void): () => void
-    // CODEX§15
-    codexUseReset(name: string): Promise<CodexResetOutcome>
-    onLoginProgress(cb: (p: LoginProgress) => void): () => void
+    act(kind: AccountKind, name: string, action: string): Promise<string>
+    beginSignIn(kind: AccountKind, name: string, again?: boolean): Promise<SignInStart>
+    heldSignInFailure(): Promise<SignInProgress | null>
+    onSignInProgress(cb: (news: SignInNews) => void): () => void
+    endSignIn(kind: AccountKind, name: string): void
     onUpdate(cb: (accounts: AccountView[]) => void): () => void
   }
   gitAccounts: {

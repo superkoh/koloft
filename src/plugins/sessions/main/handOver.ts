@@ -1,12 +1,7 @@
 import type { BackendId } from '@shared/types'
-import { messagingOf } from '@shared/sessionBackend'
 import { errorText } from '@core/errorText'
-import type { ModeClass } from '@core/agent/sessionBackends'
-import {
-  MESSAGE_SOCKET_SHOWS_WITHIN_MS,
-  crossSessionLine,
-  fitsACrossSessionMessage
-} from '@agents/claude/main/crossSessionMessage'
+import type { MessageToSend, ModeClass, SendOutcome } from '@core/agent/sessionBackends'
+import { textItCannotHold } from './messageText'
 
 const PROMPT_SETTLES_AFTER_BIND_MS = 1000
 const RECIPIENT_GETS_READY_WITHIN_MS = 10 * 60_000
@@ -43,10 +38,9 @@ export interface HandOverDeps {
   typable(tab: string): boolean
   ready(tab: string, ready: () => boolean, ms: number): Promise<boolean>
   type(tab: string, keys: string[]): Promise<boolean>
-  queue(tab: string, text: string, clientId: string): Promise<void>
-  sendLine(tab: string, line: string, ms: number): Promise<void>
+  send(backend: BackendId, tab: string, m: MessageToSend): Promise<SendOutcome>
   modeOf(tab: string): ModeClass
-  noteSent(tab: string, text: string, id: string): Promise<void>
+  opensAsOnlyKoloftSends(text: string): boolean
 }
 
 interface Queued {
@@ -118,19 +112,18 @@ export class HandOver {
   private async handTo(tab: string, words: Words, text: string): Promise<void> {
     if (words.typeAsCommand) return words.typeAsCommand(tab, text)
     const backend = this.d.backendOf(tab)
-    const route = backend && messagingOf(backend, false)
-    if (route === 'peerLine' && !fitsACrossSessionMessage(text))
-      throw new Error('Koloft cannot hand over a message holding </cross-session-message>.')
-    // ADR-0028
-    await this.d.noteSent(tab, text, words.clientId)
-    // CC§13
-    if (route === 'peerLine')
-      return this.d.sendLine(
-        tab,
-        crossSessionLine(this.d.modeOf(tab), text, words.clientId),
-        MESSAGE_SOCKET_SHOWS_WITHIN_MS
-      )
-    if (route === 'queue') return this.d.queue(tab, text, words.clientId)
+    const cannotHold = backend && textItCannotHold(backend, text)
+    if (cannotHold) throw new Error(`Koloft cannot hand over a message holding ${cannotHold}.`)
+    const outcome = backend
+      ? await this.d.send(backend, tab, {
+          text,
+          handedOverAs: words.clientId,
+          senderPermission: this.d.modeOf(tab),
+          // ADR-0028
+          koloftWroteTheOpening: this.d.opensAsOnlyKoloftSends(text)
+        })
+      : 'only-its-terminal-takes-it'
+    if (outcome === 'taken') return
     await this.d.type(tab, [text, '\r'])
   }
 

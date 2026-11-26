@@ -1,3 +1,4 @@
+import fs from 'fs'
 import os from 'os'
 import path from 'path'
 import {
@@ -66,9 +67,9 @@ import {
   remoteSentIdsFile,
   remoteSentWordsFile,
   sentWordsLine,
-  type NoticeFile,
-  type SentNote
+  type NoticeFile
 } from '@plugins/sessions/main/hooks'
+import type { SentNote } from '@core/agent/sessionBackends'
 import { listSkills, skillFolders, type SkillFs, type SkillPlaces } from '../skillList'
 import type { GitOut } from '@core/worktree'
 import type { Host, ShellLaunch } from './host'
@@ -489,13 +490,23 @@ const ANSWER_AGENT_REQUEST = `d="${REMOTE_HOOK_DIR}"
 [ -f "$d/req-$1.json" ] || exit 0
 cat > "$d/res-$1.json.tmp" && mv -f "$d/res-$1.json.tmp" "$d/res-$1.json" && rm -f "$d/req-$1.json"`
 const TAKE_AWAY_AGENT_REQUEST = `rm -f "${REMOTE_HOOK_DIR}/req-$1.json"`
-const NOTE_SENT_ID = `mkdir -p "${REMOTE_HOOK_DIR}" && printf '%s\\n' "$2" >> "${remoteSentIdsFile('$1')}"`
-const NOTE_SENT_WORDS = `mkdir -p "${REMOTE_HOOK_DIR}" && cat >> "${remoteSentWordsFile('$1')}"`
-const leaveNoticeOnMachine = (file: string): string => `mkdir -p "${REMOTE_HOOK_DIR}" || exit 1
+const appendToTheFileOfEveryTab = (fileOf: (tabId: string) => string): string =>
+  `for t in "$@"; do set -- "$@" "${fileOf('$t')}"; shift; done; mkdir -p "${REMOTE_HOOK_DIR}" && tee -a "$@" >/dev/null`
+const NOTE_SENT_ID = appendToTheFileOfEveryTab(remoteSentIdsFile)
+const NOTE_SENT_WORDS = appendToTheFileOfEveryTab(remoteSentWordsFile)
+const LEAVE_NOTICE_UNDER_EVERY_TAB_ID = `mkdir -p "${REMOTE_HOOK_DIR}" || exit 1
 IFS= read -r fresh; IFS= read -r merged
 t="$fresh"; k=fresh
-[ -n "$merged" ] && [ -f "${file}" ] && { t="$merged"; k=merged; }
-printf '%s' "$t" > "${file}.part" && mv -f "${file}.part" "${file}" && printf '%s' "$k"`
+if [ -n "$merged" ]; then
+  t="$merged"; k=merged
+  for id in "$@"; do [ -f "${remoteNoticeFile('$id')}" ] || { t="$fresh"; k=fresh; }; done
+fi
+for id in "$@"; do
+  f="${remoteNoticeFile('$id')}"
+  printf '%s' "$t" > "$f.part" && mv -f "$f.part" "$f" || exit 1
+done
+printf '%s' "$k"`
+const DROP_NOTICE_UNDER_EVERY_TAB_ID = `for id in "$@"; do f="${remoteNoticeFile('$id')}"; rm -f "$f" "$f${NOTICE_THIS_TURN}"; done`
 
 const MARK_OWNER_ASLEEP = `mkdir -p "${REMOTE_HOOK_DIR}" || exit 1
 f="${REMOTE_HOOK_DIR}/${OWNER_ASLEEP_FILE}"
@@ -953,11 +964,10 @@ exit ${CALLER_GONE_EXIT}`,
   }
 
   // ADR-0028
-  async noteSent(tabId: string, note: SentNote): Promise<void> {
-    const r =
-      'id' in note
-        ? await this.sh(NOTE_SENT_ID, [tabId, note.id])
-        : await this.sh(NOTE_SENT_WORDS, [tabId], { input: Buffer.from(sentWordsLine(note.words)) })
+  async noteSent(tabIds: string[], note: SentNote): Promise<void> {
+    const [script, line] =
+      'id' in note ? [NOTE_SENT_ID, `${note.id}\n`] : [NOTE_SENT_WORDS, sentWordsLine(note.words)]
+    const r = await this.sh(script, tabIds, { input: Buffer.from(line) })
     if (r.code !== 0) throw new Error(problemOf(r))
   }
 
@@ -968,17 +978,18 @@ exit ${CALLER_GONE_EXIT}`,
     return r.code === 0
   }
 
-  notice(tabId: string): NoticeFile {
-    const file = remoteNoticeFile(tabId)
+  notice(tabIds: string[]): NoticeFile {
     return {
       leave: async (fresh, merged) => {
         const both = `${noticeLine(fresh)}\n${merged === undefined ? '' : noticeLine(merged)}\n`
-        const r = await this.sh(leaveNoticeOnMachine(file), [], { input: Buffer.from(both) })
+        const r = await this.sh(LEAVE_NOTICE_UNDER_EVERY_TAB_ID, tabIds, {
+          input: Buffer.from(both)
+        })
         if (r.code !== 0) throw new Error(problemOf(r))
         return r.stdout.toString('utf8') === 'merged' ? 'merged' : 'fresh'
       },
       drop: async () => {
-        await this.sh(`rm -f "${file}" "${file}${NOTICE_THIS_TURN}"`, [])
+        await this.sh(DROP_NOTICE_UNDER_EVERY_TAB_ID, tabIds)
       }
     }
   }
@@ -1034,7 +1045,6 @@ exit ${CALLER_GONE_EXIT}`,
       killed: this.killedSessions,
       sessionId: sid
     })
-    this.killedSessions.delete(sid)
     await this.kills.get(tmuxSessionName(sid))
     return mode
   }
@@ -1091,9 +1101,18 @@ exit ${CALLER_GONE_EXIT}`,
       shell: POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
       resized: this.resized,
       launchCommand: (tabId, content) => {
+        if (sessionKnownBeforeItStarts && mode === 'start')
+          this.killedSessions.delete(named.session)
         const dir = tabPackageDir(tabs.userData, tabId)
         markStartedBeforeTabPasses(tabId, keyless)
-        writeTabPackage(dir, { ...content, tabId, tmuxName, machineName: pkg.name })
+        try {
+          writeTabPackage(dir, { ...content, tabId, tmuxName, machineName: pkg.name })
+        } catch (error) {
+          try {
+            fs.rmSync(dir, { recursive: true, force: true })
+          } catch {}
+          throw error
+        }
         return this.tabLaunchLine(pkg, dir, tabId, mode)
       }
     }

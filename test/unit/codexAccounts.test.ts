@@ -1,12 +1,20 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { describe, expect, it } from 'vitest'
-import { limitsFrom, prepareCodexHome } from '../../src/agents/codex/main/codexAccounts'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  codexHomeAccounts,
+  codexHomeOf,
+  limitsFrom,
+  prepareCodexHome
+} from '../../src/agents/codex/main/codexAccounts'
+import { USE_A_SAVED_RESET } from '../../src/agents/codex/shared/savedResets'
+import type { CodexSessions } from '../../src/agents/codex/main/codexSessions'
 import { HomeAccountPicker } from '../../src/agents/kit/main/homeAccountPicker'
 import { allLimitedNotice } from '../../src/main/accountPicker'
 import { windowLabel } from '../../src/shared/accountUsage'
 import type { AccountView } from '../../src/shared/types'
+import { NO_SUCH_ACTION, type AgentAccounts } from '../../src/core/agent/agentsMain'
 
 const account = (name: string, over: Partial<AccountView> = {}): AccountView => ({
   name,
@@ -479,5 +487,139 @@ describe('prepareCodexHome', () => {
     expect(fs.readlinkSync(path.join(home, 'config.toml'))).toBe(shared)
     expect(fs.readFileSync(shared, 'utf8')).toBe('')
     fs.rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+describe('probeCodexAccounts (a probe round of every Codex account)', () => {
+  it('probes again on the next call after a round in which one account failed', async () => {
+    const acct = account('work')
+    const readAccount = vi.fn(async () => ({ signedIn: false }))
+    const pushHomeAccount = vi.fn<() => void>().mockImplementationOnce(() => {
+      throw new Error('could not push')
+    })
+    const { probeCodexAccounts } = codexHomeAccounts({
+      app: { getPath: () => '/nowhere' },
+      accountViews: () => [],
+      allLimitedNotice: () => undefined,
+      findAccount: () => acct,
+      foldHomeSignIn: () => {},
+      listAccounts: () => [acct],
+      noteHomeAccount: () => {},
+      pushHomeAccount,
+      savedHomeUsageOf: () => undefined,
+      usageViews: new Map(),
+      viewKey: (name, kind) => `${kind}:${name}`,
+      sessionAccounts: () => undefined,
+      codexSharedConfig: () => '/nowhere/config.toml',
+      codexSessions: () => ({ readAccount }) as unknown as CodexSessions,
+      signInInATab: async () => {
+        throw new Error('no sign-in here')
+      }
+    })
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await probeCodexAccounts()
+    expect(logged).toHaveBeenCalledOnce()
+    logged.mockRestore()
+    await probeCodexAccounts()
+    expect(readAccount).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('acting on a Codex account', () => {
+  const resetsWith = (
+    outcome: string
+  ): {
+    accounts: AgentAccounts
+    useResetCredit: ReturnType<typeof vi.fn>
+    readAccount: ReturnType<typeof vi.fn>
+  } => {
+    const acct = account('work')
+    const useResetCredit = vi.fn(async () => outcome)
+    const readAccount = vi.fn(async () => ({ signedIn: false }))
+    const { accounts } = codexHomeAccounts({
+      app: { getPath: () => '/data' },
+      accountViews: () => [],
+      allLimitedNotice: () => undefined,
+      findAccount: (name) => (name === acct.name ? acct : undefined),
+      foldHomeSignIn: () => {},
+      listAccounts: () => [acct],
+      noteHomeAccount: () => {},
+      pushHomeAccount: () => {},
+      savedHomeUsageOf: () => undefined,
+      usageViews: new Map(),
+      viewKey: (name, kind) => `${kind}:${name}`,
+      sessionAccounts: () => undefined,
+      codexSharedConfig: () => '/data/config.toml',
+      codexSessions: () => ({ useResetCredit, readAccount }) as unknown as CodexSessions,
+      signInInATab: async () => {
+        throw new Error('no sign-in here')
+      }
+    })
+    return { accounts, useResetCredit, readAccount }
+  }
+
+  it('uses a saved reset on the account named, answers what Codex said, and reads its limits again', async () => {
+    const { accounts, useResetCredit, readAccount } = resetsWith('noCredit')
+
+    expect(await accounts.act('codex-home', 'work', USE_A_SAVED_RESET)).toBe('noCredit')
+    expect(useResetCredit).toHaveBeenCalledWith(codexHomeOf('/data', 'work'))
+    expect(readAccount).toHaveBeenCalledOnce()
+  })
+
+  it('answers that the reset failed for an account it does not keep, without asking Codex', async () => {
+    const { accounts, useResetCredit } = resetsWith('reset')
+
+    expect(await accounts.act('codex-home', 'gone', USE_A_SAVED_RESET)).toBe('failed')
+    expect(useResetCredit).not.toHaveBeenCalled()
+  })
+
+  it('answers that there is no such action for any other action, without asking Codex', async () => {
+    const { accounts, useResetCredit, readAccount } = resetsWith('reset')
+
+    expect(await accounts.act('codex-home', 'work', 'anAction')).toBe(NO_SUCH_ACTION)
+    expect(useResetCredit).not.toHaveBeenCalled()
+    expect(readAccount).not.toHaveBeenCalled()
+  })
+})
+
+describe('signing in to a Codex account', () => {
+  it('signs in in a terminal tab, and has nothing running to cancel: the sign-in is that tab, which ends when the user closes it', async () => {
+    const touched: string[] = []
+    const signInInATab = vi.fn(async () => ({ ok: false as const, error: 'duplicate' as const }))
+    const touch = (dep: string) => (): undefined => {
+      touched.push(dep)
+      return undefined
+    }
+    const { accounts }: { accounts: AgentAccounts } = codexHomeAccounts({
+      app: { getPath: () => '/nowhere' },
+      accountViews: () => [],
+      allLimitedNotice: touch('allLimitedNotice'),
+      findAccount: touch('findAccount'),
+      foldHomeSignIn: touch('foldHomeSignIn'),
+      listAccounts: () => [],
+      noteHomeAccount: touch('noteHomeAccount'),
+      pushHomeAccount: touch('pushHomeAccount'),
+      savedHomeUsageOf: touch('savedHomeUsageOf'),
+      usageViews: new Map(),
+      viewKey: (name, kind) => `${kind}:${name}`,
+      sessionAccounts: touch('sessionAccounts'),
+      codexSharedConfig: () => '/nowhere/config.toml',
+      codexSessions: () => {
+        touched.push('codexSessions')
+        return null
+      },
+      signInInATab
+    })
+
+    expect(await accounts.signIn('codex-home', 'work', true)).toEqual({
+      ok: false,
+      error: 'duplicate'
+    })
+    expect(signInInATab).toHaveBeenCalledWith('codex-home', 'work', true, {
+      homeLogin: expect.any(Function),
+      probeHomeAccount: expect.any(Function)
+    })
+    accounts.cancelSignIn('codex-home', 'work')
+    expect(touched).toEqual([])
   })
 })

@@ -93,13 +93,10 @@ export const CH = {
     remove: 'accounts:remove',
     toggle: 'accounts:toggle',
     probe: 'accounts:probe',
-    startLogin: 'accounts:start-login',
-    cancelLogin: 'accounts:cancel-login',
-    signIn: 'accounts:sign-in',
-    signInFailure: 'accounts:sign-in-failure',
-    dismissSignInFailure: 'accounts:dismiss-sign-in-failure',
-    codexUseReset: 'accounts:codex-use-reset',
-    loginProgress: 'accounts:login-progress',
+    act: 'accounts:act',
+    beginSignIn: 'accounts:begin-sign-in',
+    signInProgress: 'accounts:sign-in-progress',
+    endSignIn: 'accounts:end-sign-in',
     update: 'accounts:update'
   },
   gitAccounts: {

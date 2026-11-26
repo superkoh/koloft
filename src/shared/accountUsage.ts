@@ -206,22 +206,6 @@ export function codexBackAt(limits: CodexLimits): number {
   return backAtOf(limits.windows)
 }
 
-export function codexGlyph(a: AccountView, nowMs: number): CapsuleGlyph {
-  if (a.status !== 'ok') return { kind: 'grey' }
-  const l = a.limits
-  if (!l) return { kind: 'empty' }
-  const stale = nowMs - l.at > STALE_MS
-  if (codexWalled(l)) return { kind: 'walled', stale }
-  const binding = codexHeaviest(l)
-  return {
-    kind: 'bar',
-    frac: Math.min(binding, CAP),
-    level: meterLevel(binding),
-    stale,
-    fable: null
-  }
-}
-
 export interface HomeRoom {
   keepsResumedSession: boolean
   walled: boolean
@@ -252,21 +236,6 @@ export function homeRoom(
     ...(stopped.length > 0 && {
       fiveHourStoppedUntil: Math.max(...stopped.map((w) => w.resetsAt || Infinity))
     })
-  }
-}
-
-// AGY§23
-export function quotaGlyph(a: AccountView): CapsuleGlyph {
-  if (a.status !== 'ok') return { kind: 'grey' }
-  if (!a.quota?.length) return { kind: 'empty' }
-  const heaviest = heaviestOf(a.quota)
-  if (heaviest >= 1) return { kind: 'walled', stale: false }
-  return {
-    kind: 'bar',
-    frac: Math.min(heaviest, CAP),
-    level: meterLevel(heaviest),
-    stale: false,
-    fable: null
   }
 }
 
@@ -453,24 +422,6 @@ export function codexPoolSnapshot(members: AccountView[], nowMs: number): CodexP
     earliestBack,
     oldestAt: oldestAt(M)
   }
-}
-
-export function codexPoolGlyph(members: AccountView[], nowMs: number): CapsuleGlyph | null {
-  const p = codexPoolSnapshot(members, nowMs)
-  if (p.measured < 2) return null
-  const stale = p.oldestAt !== null && nowMs - p.oldestAt > STALE_MS
-  if (p.walled === p.measured) return { kind: 'walled', stale }
-  const frac = Math.min(p.tension, CAP)
-  return { kind: 'bar', frac, level: meterLevel(p.tension), stale, fable: null }
-}
-
-export function poolGlyph(members: AccountView[], nowMs: number): CapsuleGlyph | null {
-  const p = poolSnapshot(members, nowMs)
-  if (p.measured < 2) return null
-  const stale = p.oldestAt !== null && nowMs - p.oldestAt > STALE_MS
-  if (p.walled === p.measured) return { kind: 'walled', stale }
-  const fable = p.tfable === null ? null : { frac: Math.min(p.tfable, CAP), spent: p.fableSpentAll }
-  return { kind: 'bar', frac: Math.min(p.tension, CAP), level: meterLevel(p.tension), stale, fable }
 }
 
 export type SublineKind = 'none' | 'time' | 'back' | 'due' | 'walled' | 'spent'

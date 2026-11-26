@@ -13,6 +13,7 @@ import {
   type BaseChoice,
   type BrowserJsDialog,
   type SessionWorkbenchState,
+  type AccountKind,
   type LoginProgress,
   type LeftoverProcess,
   type MachineState,
@@ -220,7 +221,7 @@ interface AppState {
   setAccounts: (accounts: AccountView[]) => void
   showSignInTab: (tabId: string) => void
   openSignInTab: (tab: { tabId: string; cwd: string }, title: string) => void
-  beginLogin: (reauthName?: string) => void
+  beginLogin: (kind: AccountKind, reauthName?: string) => void
   setLoginProgress: (p: LoginProgress) => void
   clearLogin: () => void
   setOpenFile: (f: OpenFile | null, tabId?: string) => void
@@ -899,7 +900,7 @@ export const useStore = create<AppState>((set, get) => ({
     const sessionId = sess?.sessionId || tab.sessionId || lastSessionId.get(tab.id)
     if (restarting.has(tab.id)) return
     const oldId = tab.id
-    const liveClaude = !!sess?.alive && !!sess.sessionId
+    const liveAgent = !!sess?.alive && !!sess.sessionId
     const sayNoConversation = (live: boolean): void => {
       if (!get().tabs.some((x) => x.id === oldId)) return
       get().showToast(live ? NO_CONVERSATION_LIVE_NOTICE : NO_CONVERSATION_DEAD_NOTICE)
@@ -1011,7 +1012,7 @@ export const useStore = create<AppState>((set, get) => ({
         .catch(() => failed('Resume failed'))
         .finally(() => restarting.delete(oldId))
     }
-    if (sessionId) return void begin(sessionId, sess?.treeRoot ?? tab.cwd, liveClaude)
+    if (sessionId) return void begin(sessionId, sess?.treeRoot ?? tab.cwd, liveAgent)
     if (tab.ended && tab.launch) return relaunch(tab.launch)
     restarting.add(oldId)
     void window.api.sessions
@@ -1107,9 +1108,9 @@ export const useStore = create<AppState>((set, get) => ({
     get().showSignInTab(tabId)
     get().addTab({ id: tabId, kind: 'shell', title, cwd, alive: true })
   },
-  beginLogin: (reauthName) => set({ accountLogin: { reauthName, progress: null } }),
+  beginLogin: (kind, reauthName) => set({ accountLogin: { kind, reauthName, progress: null } }),
   setLoginProgress: (progress) =>
-    set((s) => ({ accountLogin: { ...(s.accountLogin ?? {}), progress } })),
+    set((s) => (s.accountLogin ? { accountLogin: { ...s.accountLogin, progress } } : {})),
   clearLogin: () => set({ accountLogin: null }),
   setOpenFile: (f, tabId) => {
     const s = get()

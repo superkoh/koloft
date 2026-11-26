@@ -15,13 +15,15 @@ import { BACKEND_LABEL, identityOf, sourceOf } from '@shared/sessionBackend'
 import { isAbsoluteOnHost, isRemoteKey } from '@shared/remoteKey'
 import type { SessionEvent } from '@shared/sessionEvent'
 import type { Turn } from '@shared/turns'
-import type { SearchCandidate } from '../../../main/sessionSearch'
+import type { SearchCandidate } from '@core/agent/search'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
-import type { SessionPlace } from '../../../main/usageCache'
+import type { SessionPlace, UsagePlaces } from '@core/agent/usage'
+import { placedByOwnRowThenFolder } from './storedUsage'
 import type { CodexApproval, CodexQuestion, SentAnswer } from '@plugins/sessions/main/dialog'
 import type { WorktreeResource } from '@core/agent/worktreeRecords'
+import type { MirrorFolder } from '@core/agent/mirrorFolders'
 import { SessionStore, hostOfPath, type KeyOf } from './sessionStore'
-import { SessionWorktrees } from './sessionWorktrees'
+import { SessionWorktrees, type WorktreesOfEveryAgent } from './sessionWorktrees'
 import type { TreeIo } from '../../../main/sessionWorktrees'
 import type { PtyManager } from '../../../main/ptyManager'
 import {
@@ -52,7 +54,7 @@ import {
 import { rereadWhenRowsInMemoryChange } from './rowsInMemoryChanged'
 
 const AVAILABILITY_FAILURE_MS = 60_000
-const EMIT_THROTTLE_MS = 500
+export const EMIT_THROTTLE_MS = 500
 // CODEX§2 AGY§8
 const NEW_SESSION_LIST_LAG_MS = 30_000
 
@@ -126,6 +128,7 @@ export interface StoredSessionDeps {
   gitAccounts: { configEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv }
   remoteDirExists?(dir: string): Promise<boolean>
   remoteTreeIo?(cwd: string): TreeIo
+  worktreesOfEveryAgent: WorktreesOfEveryAgent
   realFilesOn?: RealFilesOnMachine
   skipPermissions?(): boolean
   hookRegDir?: string
@@ -163,18 +166,14 @@ export const ownerTextApart = (
 export interface SessionsWithStore {
   readonly id: BackendId
   rows(workspace: string): BackendSessionRow[]
-  sessionPlaces(): (id: string, host?: string) => SessionPlace | undefined
   members(): Set<string>
   runningBindings(): Map<string, string>
   hasTab(tabId: string): boolean
-  searchable(workspaces: string[]): SearchCandidate[]
-  searchSnippets(term: string, signal?: AbortSignal): Promise<{ id: string; snippet: string }[]>
   openApproval(tabId: string): CodexApproval | undefined
   openQuestion(tabId: string): CodexQuestion | undefined
   answerable?(tabId: string): Promise<void>
   answer(tabId: string, reply: string): Promise<SentAnswer | false>
   deliver(tabId: string, text: string): Promise<boolean>
-  tabOnMachine?(host: string, tmuxName: string, launchTab: string): string | undefined
 }
 
 type Place = ProjectInfo & { missing: boolean }
@@ -203,6 +202,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   private relaunchingKeys = new Set<string>()
   private pendingLaunches = new Set<Promise<{ id: string; cwd: string }>>()
   private starting = new Set<LaunchedSession>()
+  private startingIn = new Set<{ folder?: string }>()
   protected shuttingDown = false
   private emitTimer?: ReturnType<typeof setTimeout>
   private lastEmitMs = 0
@@ -216,10 +216,11 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     protected deps: StoredSessionDeps
   ) {
     this.store = new SessionStore(file, keyOf)
-    this.worktrees = new SessionWorktrees(this.store, deps.remoteTreeIo)
+    this.worktrees = new SessionWorktrees(this.store, deps.worktreesOfEveryAgent, deps.remoteTreeIo)
     this.rereadWhenItsRowsChanged = rereadWhenRowsInMemoryChange({
       pinned: () => deps.pinnedWorkspaces(),
-      rows: (workspace) => this.rows(workspace),
+      rows: (workspace) =>
+        this.rows(workspace).map((r) => (r.pending ? { ...r, mtime: undefined } : r)),
       members: () => this.members(),
       reread: () => deps.rereadRows()
     })
@@ -330,7 +331,9 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   abstract showsPromptBeforeBind(tabId: string): boolean
   abstract noticeRemoteExits(host: string, sessionIds: string[]): void
   abstract mirrorPulled(host: string): void
+  abstract foldersToMirrorFrom(host: string, landing: string): MirrorFolder[]
   abstract tmuxOfTab(tabId: string): string | undefined
+  abstract tabOfTmuxSession(host: string, name: string): string | undefined
   abstract answer(tabId: string, reply: string): Promise<SentAnswer | false>
   abstract deliver(tabId: string, text: string): Promise<boolean>
 
@@ -428,14 +431,20 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     for (const run of this.runs.values()) {
       const info = run.info
       if (!info) {
-        if (samePlace(run.cwd, dir)) return `a starting ${this.label} session`
+        if (samePlace(run.cwd, dir)) return this.startingSessionName()
         continue
       }
       if (samePlace(info.treeRoot, dir)) return occupantName(info)
       const bound = this.findRow(info.sessionId)?.worktreeState
       if (bound && samePlace(bound.worktreePath, dir)) return occupantName(info)
     }
+    for (const { folder } of this.startingIn)
+      if (folder && samePlace(folder, dir)) return this.startingSessionName()
     return null
+  }
+
+  private startingSessionName(): string {
+    return `a starting ${this.label} session`
   }
 
   runningBindings(): Map<string, string> {
@@ -546,9 +555,12 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     }
   }
 
-  workspacesFor(cwds: string[]): string[] {
-    const scope = this.rowScope()
-    return cwds.map((cwd) => this.workspaceFor(cwd, scope))
+  usagePlaces(): UsagePlaces {
+    const placeOf = this.sessionPlaces()
+    let scope: RowScope | undefined
+    return placedByOwnRowThenFolder(placeOf, (folder) =>
+      this.workspaceFor(folder, (scope ??= this.rowScope()))
+    )
   }
 
   rows(workspace: string): BackendSessionRow[] {
@@ -813,6 +825,29 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
     resource?: WorktreeResource
   ): Promise<{ id: string; cwd: string }> {
     if (opts.kind !== this.id) throw new Error(`A ${this.label} launch is required.`)
+    return this.inFolder(resource?.worktreePath ?? opts.cwd, (place) =>
+      this.launchRunIn(place, opts, resource)
+    )
+  }
+
+  private async inFolder<T>(
+    folder: string | undefined,
+    start: (place: { folder?: string }) => Promise<T>
+  ): Promise<T> {
+    const place = { folder }
+    this.startingIn.add(place)
+    try {
+      return await start(place)
+    } finally {
+      this.startingIn.delete(place)
+    }
+  }
+
+  private async launchRunIn(
+    place: { folder?: string },
+    opts: CreateTabOptions,
+    resource?: WorktreeResource
+  ): Promise<{ id: string; cwd: string }> {
     await this.waitForPrevious(opts.resumeSessionId)
     const available = await this.availability()
     this.assertStarting()
@@ -842,6 +877,7 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       } else if (!resource && this.deps.projectInfo(cwd).worktreeName) {
         resource = await this.worktrees.adopt(workspace, this.deps.projectInfo(cwd).treeRoot)
       }
+      place.folder = resource?.worktreePath ?? cwd
       const rules = await this.deps.projectRules?.(workspace)
       const workspaceParts = await this.deps.workspaceInstructions?.(workspace)
       this.assertStarting()
@@ -1016,43 +1052,47 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
       ? this.store.getResource(m.worktreeResourceId)
       : this.store.listResources().find((r) => r.worktreePath === t?.cwd)
     let cwd = m?.cwd ?? t!.cwd
-    if (
-      await rebuildsTheWorktree(
-        req.mode,
-        async () => !resource || this.dirThere(resource.worktreePath)
+    return this.inFolder(resource?.worktreePath ?? cwd, async (place) => {
+      await this.worktrees.whenSettled(resource?.worktreePath ?? cwd)
+      if (
+        await rebuildsTheWorktree(
+          req.mode,
+          async () => !resource || this.dirThere(resource.worktreePath)
+        )
+      ) {
+        resource = await (
+          resource ? this.worktrees.rebuild(resource.id) : this.worktrees.recover(cwd)
+        ).catch(() => {
+          throw new ResumeRefused('rebuild-failed')
+        })
+        cwd = resource.worktreePath
+      } else if (req.mode === 'renamed') {
+        if (!resource || !req.worktree) throw new ResumeRefused('invalid-args')
+        resource = await this.worktrees.prepareRenamed(resource.id, req.worktree)
+        cwd = resource.worktreePath
+      } else if (req.mode === 'main') {
+        cwd = resource?.originalCwd ?? this.workspaceFor(cwd)
+        resource = undefined
+      }
+      place.folder = resource?.worktreePath ?? cwd
+      this.assertStarting()
+      return this.launchRun(
+        {
+          kind: this.id,
+          cwd,
+          resumeSessionId: req.sessionId,
+          cols: req.cols,
+          rows: req.rows,
+          role: req.role,
+          conductor: req.conductor,
+          permission: req.permission ?? m?.permission,
+          trustFolder: req.trustFolder,
+          model: req.model,
+          effort: req.effort
+        },
+        resource
       )
-    ) {
-      resource = await (
-        resource ? this.worktrees.rebuild(resource.id) : this.worktrees.recover(cwd)
-      ).catch(() => {
-        throw new ResumeRefused('rebuild-failed')
-      })
-      cwd = resource.worktreePath
-    } else if (req.mode === 'renamed') {
-      if (!resource || !req.worktree) throw new ResumeRefused('invalid-args')
-      resource = await this.worktrees.prepareRenamed(resource.id, req.worktree)
-      cwd = resource.worktreePath
-    } else if (req.mode === 'main') {
-      cwd = resource?.originalCwd ?? this.workspaceFor(cwd)
-      resource = undefined
-    }
-    this.assertStarting()
-    return this.launchRun(
-      {
-        kind: this.id,
-        cwd,
-        resumeSessionId: req.sessionId,
-        cols: req.cols,
-        rows: req.rows,
-        role: req.role,
-        conductor: req.conductor,
-        permission: req.permission ?? m?.permission,
-        trustFolder: req.trustFolder,
-        model: req.model,
-        effort: req.effort
-      },
-      resource
-    )
+    })
   }
 
   stop(tabId: string, nativeExitCode?: number, restarting = false): Promise<void> {

@@ -11,11 +11,10 @@ import { REMOTE_HOOK_DIR } from './remote/paths'
 import { TAB_PASS_ENV } from './tabPass'
 import { SECRET_VERB, SUDO_SHIM_FILES, writeSudoShims } from '@plugins/passwords/main/sudoShim'
 import { A_TAKEN_ANSWER_SHOWS_WITHIN_MS } from '@plugins/sessions/main/dialog'
-import { AGENT_SHIM_WAITS_MS } from '@core/command'
+import { AGENT_SHIM_WAITS_MS, COULD_NOT_REACH_KOLOFT } from '@core/command'
 
 const PASS_FIELD = `\\"pass\\":\\"$(jstr "$${TAB_PASS_ENV}")\\",`
 const SHIM_POLL_MS = 50
-const COULD_NOT_REACH_KOLOFT = 'koloft: could not reach Koloft.'
 
 const HEAD = `#!/usr/bin/env bash
 : koloft agent shim
@@ -79,7 +78,7 @@ fi
 exit "$code"
 `
 
-export const CLAUDE_AGENT_SHIM = `${HEAD}
+export const SHARED_FOLDER_AGENT_SHIM = `${HEAD}
 if [ -z "$KOLOFT_AGENT_DIR" ] || [ -z "$KOLOFT_TAB_ID" ] || [ -z "$KOLOFT_PID" ] || ! kill -0 "$KOLOFT_PID" 2>/dev/null; then
   echo "koloft: this works only in a Koloft session with agent tools turned on (Koloft Settings)." >&2
   exit 1
@@ -119,10 +118,13 @@ ${body(
   `[ -n "$${NO_REPLY_ENV}" ] && { trap - EXIT; exit 0; }\n`
 )}`
 
-const CODEX_SANDBOX_IS_READ_ONLY = 'koloft: this sandbox is read-only, so koloft cannot run here.'
-
 // CODEX§12 CODEX§17 AGY§25
-function folderAgentShim(backend: BackendId, requestDir: string, guide: string): string {
+function folderAgentShim(
+  backend: BackendId,
+  requestDir: string,
+  guide: string,
+  cannotWriteTheRequest: string
+): string {
   return `${HEAD}
 case "\${1:-help}" in help|--help) cat ${shq(guide)}; exit 0 ;; esac
 dir=${shq(requestDir)}
@@ -131,7 +133,7 @@ if [ ! -d "$dir" ]; then
   exit 1
 fi
 tabfield="${PASS_FIELD}"
-unwritable="${backend === 'codex' ? CODEX_SANDBOX_IS_READ_ONLY : COULD_NOT_REACH_KOLOFT}"
+unwritable="${cannotWriteTheRequest}"
 ${body(AGENT_SHIM_WAITS_MS)}`
 }
 
@@ -139,12 +141,15 @@ export function writeAgentShim(
   shimDir: string,
   requestDir: string,
   backend: BackendId,
+  cannotWriteTheRequest: string,
   rules?: string
 ): void {
   const guide = path.join(shimDir, 'koloft-guide.txt')
   fs.writeFileSync(guide, agentGuide(rules) + '\n')
-  fs.writeFileSync(path.join(shimDir, 'koloft'), folderAgentShim(backend, requestDir, guide), {
-    mode: 0o755
-  })
+  fs.writeFileSync(
+    path.join(shimDir, 'koloft'),
+    folderAgentShim(backend, requestDir, guide, cannotWriteTheRequest),
+    { mode: 0o755 }
+  )
   writeSudoShims(shimDir, SUDO_SHIM_FILES)
 }

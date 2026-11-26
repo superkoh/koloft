@@ -1,0 +1,2 @@
+- text: "Codex sign in: fresh"
+- button "Cancel"

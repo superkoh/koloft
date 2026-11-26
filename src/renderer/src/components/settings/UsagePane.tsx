@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type JSX } from 'react'
 import { createPortal } from 'react-dom'
 import type { BackendId, UsageRead } from '@shared/types'
-import { BACKEND_PRODUCT } from '@shared/sessionBackend'
+import { BACKEND_PRODUCT, SESSION_BACKENDS, shortProductList } from '@shared/sessionBackend'
 import { isRemoteKey } from '@shared/remoteKey'
+import { AGENT_UIS } from '@agents/uis'
 import { basename } from '@shared/preview'
 import { formatCost, formatTokens, localDayKey } from '@shared/usageFormat'
 import {
@@ -33,11 +34,6 @@ const GROUPS: { id: UsageGroup; label: string; title: string }[] = [
   { id: 'model', label: 'Model', title: 'By model' }
 ]
 
-const BADGE: Record<Exclude<BackendId, 'claude'>, string> = {
-  codex: 'CODEX',
-  agy: 'ANTIGRAVITY'
-}
-
 const GRID_STEPS = [0, 0.25, 0.5, 0.75]
 const TIP_FLIPS_PAST = 0.6
 const NO_PRICE_TITLE = 'No price for this model yet'
@@ -56,14 +52,16 @@ function niceMax(max: number): number {
 function Badges({ backends, ssh }: { backends: BackendId[]; ssh: boolean }): JSX.Element {
   return (
     <>
-      {backends.map(
-        (b) =>
-          b !== 'claude' && (
+      {backends.map((b) => {
+        const badge = AGENT_UIS.find((ui) => ui.id === b)?.usage.costBadge
+        return (
+          badge && (
             <span key={b} className={`acct-badge ${b}`}>
-              {BADGE[b]}
+              {badge}
             </span>
           )
-      )}
+        )
+      })}
       {ssh && <span className="acct-badge ssh">SSH</span>}
     </>
   )
@@ -343,8 +341,7 @@ export function UsagePane(): JSX.Element {
 
       <div className="costs-foot">
         <span className="acct-note">
-          Claude Code, Codex and Antigravity sessions are read from the files each tool keeps, on
-          this Mac and on your SSH machines, so days before this version count too.
+          {`${shortProductList(SESSION_BACKENDS, 'and')} sessions are read from the files each tool keeps, on this Mac and on your SSH machines, so days before this version count too.`}
         </span>
         <span className="acct-note">
           Cost uses the list price Koloft keeps for each model. A model with no price shows its

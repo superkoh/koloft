@@ -11,7 +11,16 @@ export function storedBackend<R extends StoredRun, H extends HistoryEntry, P>(
   resumeProbes: ResumeProbes,
   own: Pick<
     SessionBackend,
-    'accountUsable' | 'trustsFolder' | 'turns' | 'peerNames' | 'runningElsewhere'
+    | 'accountUsable'
+    | 'trustsFolder'
+    | 'turns'
+    | 'peerNames'
+    | 'runningElsewhere'
+    | 'worktreeExitWatch'
+    | 'send'
+    | 'mightNotTakeAMessageNow'
+    | 'handOverLaunch'
+    | 'showsAPanel'
   >,
   machineProbes?: (cwd: string) => ResumeProbes
 ): SessionBackend {
@@ -70,7 +79,9 @@ export function storedBackend<R extends StoredRun, H extends HistoryEntry, P>(
     sessionGone: (key) => sessions.threadGone(key),
     noticeRemoteExits: (host, sessionIds) => sessions.noticeRemoteExits(host, sessionIds),
     mirrorPulled: (host) => sessions.mirrorPulled(host),
+    foldersToMirrorFrom: (host, landing) => sessions.foldersToMirrorFrom(host, landing),
     tmuxOfTab: (tabId) => sessions.tmuxOfTab(tabId),
+    tabOfTmuxSession: (host, name) => sessions.tabOfTmuxSession(host, name),
     ...rowsKeptInMemory(sessions),
     // ADR-0028
     permissionClass: (tabId) => (sessions.launchedBypassingChecks(tabId) ? 'bypass' : 'prompting'),

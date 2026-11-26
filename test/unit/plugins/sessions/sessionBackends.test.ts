@@ -8,13 +8,20 @@ import {
   identityOf,
   launchMenus,
   messagingOf,
-  reachedBySendMessage,
   SESSION_BACKENDS,
   sessionKey,
   shownAsInstalled,
+  talksWithItsOwnTool,
   turnedOffLine,
   type Capabilities
 } from '@shared/sessionBackend'
+import { ClaudeBackend, type ClaudeBackendDeps } from '../../../../src/agents/claude/main/backend'
+import { codexBackend } from '../../../../src/agents/codex/main/backend'
+import type { CodexSessions } from '../../../../src/agents/codex/main/codexSessions'
+import { agyBackend } from '../../../../src/agents/agy/main/backend'
+import type { AgySessions } from '../../../../src/agents/agy/main/agySessions'
+import type { ResumeProbes } from '../../../../src/main/resumePlan'
+import { KEEPS_NO_WORKTREE_RECORDS } from '../../../../src/core/agent/worktreeRecords'
 import type { BackendId, BackendSessionInfo, BackendSessionRow, HostId } from '@shared/types'
 import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import { agentManifest } from '@core/agent/registry'
@@ -166,6 +173,27 @@ describe('session backend boundary', () => {
       registry.create({ kind: 'codex', cwd: '/repo', resumeSessionId: 'thread' })
     ).resolves.toMatchObject({ ok: true })
   })
+
+  it('asks whether a panel is open only of the agent that lists a session in that tab, with the screen it was handed, and cannot say for a tab whose session is not listed yet', async () => {
+    const registry = new SessionBackends(lifecycle())
+    const asked: string[] = []
+    const listing = (id: BackendId, tabId: string, alsoHolds?: string): SessionBackend => ({
+      ...stubBackend(id, undefined, [
+        { tabId, sessionId: `${id}-session`, cwd: '/repo' } as BackendSessionInfo
+      ]),
+      hasTab: (tab) => tab === tabId || tab === alsoHolds,
+      showsAPanel: async (tab, screen) => {
+        asked.push(`${id} ${tab} ${screen?.join('|') ?? 'no screen'}`)
+        return true
+      }
+    })
+    registry.register(listing('claude', 'tab-c'))
+    registry.register(listing('codex', 'tab-x', 'tab-starting'))
+    expect(await registry.showsAPanel('tab-x', ['a screen'])).toBe(true)
+    expect(await registry.showsAPanel('tab-c')).toBe(true)
+    expect(await registry.showsAPanel('tab-starting')).toBeUndefined()
+    expect(asked).toEqual(['codex tab-x a screen', 'claude tab-c no screen'])
+  })
 })
 
 describe('session lifecycle tap (one place turns a bind or an exit into attention)', () => {
@@ -235,16 +263,6 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
       ['claude/local']
     ],
     [
-      'Koloft sees whether a menu or panel is open in Claude Code (its session registry, read over ssh on a machine) and in Codex (its screen), on this Mac and on a machine; in an Antigravity tab a slash command from Discord presses Esc to be safe',
-      'panelSeen',
-      ['claude/local', 'claude/ssh', 'codex/local', 'codex/ssh']
-    ],
-    [
-      'Koloft follows Claude Code removing its worktree at /exit, and says so when it fails, on this Mac and on a machine, where its tmux passes the title code on; other agents remove no worktree at exit',
-      'worktreeRemovalFollowed',
-      ['claude/local', 'claude/ssh']
-    ],
-    [
       'every tab on this Mac drives the Workbench browser, and on a machine only Claude Code does, through a tunnel on its ssh connection and the playwright-cli Koloft installs there; the other agents there are not probed yet',
       'browserControl',
       ['claude/local', 'claude/ssh', 'codex/local', 'agy/local']
@@ -258,7 +276,7 @@ describe('capabilitiesFor (what one session can do, from its method and the mach
     )
   })
 
-  // CC§4 CC§11 CC§14
+  // CC§11 CC§14
   it.each(ROWS_ONLY_SOME_TABS_HAVE)('%s', (_rule, row, on) => {
     const tabsWithIt = SESSION_BACKENDS.flatMap((backend) =>
       HOSTS.filter((host) => capabilitiesFor(backend, host)[row] === true).map(
@@ -297,9 +315,44 @@ describe('koloft help on how sessions talk to each other', () => {
     const addsTheExcept = SESSION_BACKENDS.filter((b) =>
       Object.hasOwn(agentManifest(b).slotAdditions, 'koloft-help-send-but-own-message-tool')
     )
-    const leftToItsOwnTool = SESSION_BACKENDS.filter(reachedBySendMessage)
+    const fillsTheRefusal = SESSION_BACKENDS.filter(
+      (b) => agentManifest(b).slotFills['session-send-left-to-its-own-tool'] !== ''
+    )
+    const leftToItsOwnTool = SESSION_BACKENDS.filter(talksWithItsOwnTool)
     expect(addsTheLine).toEqual(leftToItsOwnTool)
     expect(addsTheExcept).toEqual(leftToItsOwnTool)
+    expect(fillsTheRefusal).toEqual(leftToItsOwnTool)
+  })
+})
+
+describe('mightNotTakeAMessageWhileItsTurnRuns (the flag that picks the names the help says only get a message once their turn has ended)', () => {
+  it('is yes for exactly the agents whose own session backend says it might not take a message while the turn runs, so the help and what the sender is told cannot part', async () => {
+    const NO_RESUME_IS_PLANNED_HERE = {} as ResumeProbes
+    const sessionsOf = <T>(id: BackendId): T =>
+      ({ id, worktrees: { records: KEEPS_NO_WORKTREE_RECORDS } }) as T
+    const backends: Record<BackendId, SessionBackend> = {
+      claude: new ClaudeBackend({} as ClaudeBackendDeps),
+      codex: codexBackend(
+        sessionsOf<CodexSessions>('codex'),
+        NO_RESUME_IS_PLANNED_HERE,
+        () => NO_RESUME_IS_PLANNED_HERE,
+        async () => {},
+        async () => undefined
+      ),
+      agy: agyBackend(
+        sessionsOf<AgySessions>('agy'),
+        NO_RESUME_IS_PLANNED_HERE,
+        () => NO_RESUME_IS_PLANNED_HERE
+      )
+    }
+    const theTurnRuns = async () => false
+    const saysItMightNot: BackendId[] = []
+    for (const b of SESSION_BACKENDS)
+      if (await backends[b].mightNotTakeAMessageNow('tab', theTurnRuns)) saysItMightNot.push(b)
+    expect(saysItMightNot).toEqual(
+      SESSION_BACKENDS.filter((b) => agentManifest(b).flags.mightNotTakeAMessageWhileItsTurnRuns)
+    )
+    expect(saysItMightNot).toEqual(['agy'])
   })
 })
 

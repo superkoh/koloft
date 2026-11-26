@@ -13,10 +13,12 @@ import {
 import type { Turn } from '@shared/turns'
 import type { TranscriptPlaces } from '@core/transcriptPlaces'
 import { portOffset } from '@shared/worktreeName'
-import { costUsdOf, resolvePricing } from '@shared/pricing'
+import { costUsdOf } from '@shared/pricing'
+import { resolvePricing } from '@core/agent/prices'
 import { resolveCliRuntime, type CliRuntime, type CliSpec } from '../../../main/cliRuntime'
-import { AGY_UPDATE_TIMEOUT_MS, MIN_AGY_VERSION, TESTED_AGY_LINE } from '../../../main/cliMinimums'
+import { AGY_UPDATE_TIMEOUT_MS, MIN_AGY_VERSION, TESTED_AGY_LINE } from './agyMinimum'
 import { startToolShim } from '../../../main/toolShim'
+import { COULD_NOT_REACH_KOLOFT } from '@core/command'
 import { browserControlEnv } from '../../../main/browserControlEnv'
 import { BACKGROUND_LABEL_CHARS, scheduleLabel } from '@core/scheduleLabel'
 import {
@@ -89,6 +91,8 @@ import {
   agyTab,
   runMachineScript
 } from './agyTab'
+import { agyFoldersToMirror } from './agyMirror'
+import type { MirrorFolder } from '@core/agent/mirrorFolders'
 import {
   agyConversations,
   agyConversationTitle,
@@ -98,7 +102,6 @@ import {
   readAgyConfig
 } from './agyMachine'
 import type { Machine } from '../../../main/host/machine'
-import { keepSkillsIn } from '../../../main/agentPlugin'
 import { seedAssistMemory } from '../../../main/assistMemory'
 import { NOTICE_ENV, noticeFile, SHELL_WROTE_FIELD } from '@plugins/sessions/main/hooks'
 import { formatRemoteKey, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
@@ -116,7 +119,7 @@ import {
 } from '@plugins/sessions/main/dialog'
 import { pathWithDirFirst } from '../../../main/toolInstall'
 import { record } from '@core/unknownValue'
-import { agyToolDid } from '../../../main/rowActivity'
+import { agyToolDid } from './agyToolDid'
 import {
   REMOTE_EXIT_WAIT_MS,
   StoredSessions,
@@ -143,6 +146,7 @@ export interface AgySessionDeps extends StoredSessionDeps {
   openShimRoot: string
   scriptsDir: string
   ownersGemini(): string
+  keepSkillsIn(skillsDir: string, koloftOn: boolean): void
   pickHome(resumeSessionId?: string, onlyAsking?: boolean): AgyHomePick | undefined
   apiKeyOf(account: string): Promise<string | undefined>
   playwrightBin: string
@@ -870,7 +874,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     // AGY§4
     prepareAgyHome(pick.home, gemini)
     // AGY§31
-    keepSkillsIn(path.join(pick.home, AGY_SKILLS), !!agent)
+    this.deps.keepSkillsIn(path.join(pick.home, AGY_SKILLS), !!agent)
     // ADR-0026 AGY§5
     const trust = [cwd, workspace].filter((d, i, all) => all.indexOf(d) === i)
     const koloftWorktreeOfTrustedWorkspace = (): boolean =>
@@ -897,6 +901,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       { ...this.deps, ghWrapper: this.deps.gitAccounts.ghWrapper },
       {
         backend: 'agy',
+        cannotWriteTheRequest: COULD_NOT_REACH_KOLOFT,
         open: (target) => this.deps.events(tabId, { type: 'open', target }),
         agent: agent && ((dir, name, raw) => agent.answer(bound?.tabId, dir, name, raw)),
         rules
@@ -1123,9 +1128,15 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     this.stopTitleChase(run)
     if (run.compacting?.timer) clearTimeout(run.compacting.timer)
     this.clearForeignTimers(run)
-    if (!run.remote || this.shuttingDown) return
+    if (!run.remote) return
     const { host, tmuxName } = run.remote
     const machine = this.deps.remote.machine(host)
+    try {
+      fs.rmSync(machine.tabFiles(run.tabId).dir, { recursive: true, force: true })
+    } catch (error) {
+      this.deps.error(`Could not remove the files of an Antigravity tab on ${host}: ${error}`)
+    }
+    if (this.shuttingDown) return
     // ADR-0044
     const named = await machine.runScript(TAB_TMUX_NAME_SH, [run.tabId])
     const problem = await machine.tmux.end(named?.trim() || tmuxName, run.tabId)
@@ -1494,6 +1505,10 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     })
   }
 
+  foldersToMirrorFrom(host: string, landing: string): MirrorFolder[] {
+    return this.usesHost(host) ? agyFoldersToMirror(landing) : []
+  }
+
   // AGY§29
   mirrorPulled(host: string): void {
     for (const run of this.runs.values())
@@ -1516,11 +1531,11 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     return this.runs.get(tabId)?.remote?.tmuxName
   }
 
-  tabOnMachine(host: string, tmuxName: string, launchTab: string): string | undefined {
+  tabOfTmuxSession(host: string, name: string): string | undefined {
     for (const run of this.runs.values()) {
       if (run.remote?.host !== host || run.explicitStop) continue
-      if ((tmuxName && run.remote.tmuxName === tmuxName) || run.tabId === launchTab)
-        return run.tabId
+      if (run.remote.tmuxName === name)
+        return this.deps.pty.get(run.tabId)?.alive ? run.tabId : undefined
     }
     return undefined
   }

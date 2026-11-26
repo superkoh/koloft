@@ -17,9 +17,11 @@ afterAll(() => fs.rmSync(app.getPath('userData'), { recursive: true, force: true
 import { formatRemoteKey } from '@shared/remoteKey'
 import type { CreateTabOptions } from '@shared/types'
 import { machineClaudeArgs } from '../../src/agents/claude/main/claudeLaunch'
-import { AccountPicker, type LaunchedSession } from '../../src/main/accountPicker'
+import type { LaunchedSession } from '../../src/main/accountPicker'
+import { AccountPicker } from '../../src/agents/claude/main/claudeAccountPicker'
 import { REMOTE_ENV_LINES } from '../../src/main/remote/install'
-import { mirrorHookDir, mirrorProjectsRoot, tabPackageDir } from '../../src/main/remote/paths'
+import { mirrorHookDir, tabPackageDir } from '../../src/main/remote/paths'
+import { mirrorProjectsRoot } from '../../src/agents/claude/main/claudeMirror'
 import type { BytesResult } from '../../src/main/remote/ssh'
 import { meta, NOW_MS, NOW_S, usage } from './helpers/accounts'
 import {

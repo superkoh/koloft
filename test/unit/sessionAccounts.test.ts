@@ -1,11 +1,18 @@
 import fs from 'fs'
 import os from 'os'
 import path from 'path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, onTestFinished } from 'vitest'
+import { BackgroundFile } from '../../src/main/backgroundFile'
 import { SESSIONS_REMEMBERED, SessionAccounts } from '../../src/main/sessionAccounts'
 
-const fileIn = (): string =>
-  path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'session-accounts-')), 'session-accounts.json')
+const fileIn = (): string => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'session-accounts-'))
+  onTestFinished(async () => {
+    await BackgroundFile.whenAllWritten()
+    fs.rmSync(dir, { recursive: true, force: true })
+  })
+  return path.join(dir, 'session-accounts.json')
+}
 
 describe('SessionAccounts', () => {
   it('remembers which account each Claude and Codex session ran on across a restart, the picked one first', () => {

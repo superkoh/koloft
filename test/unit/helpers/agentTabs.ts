@@ -13,7 +13,6 @@ import {
 import { AgySessions, type AgySessionDeps } from '../../../src/agents/agy/main/agySessions'
 import { ClaudeBackend, type ClaudeBackendDeps } from '../../../src/agents/claude/main/backend'
 import type { MachineAccount } from '../../../src/agents/claude/main/claudeLaunch'
-import { trustCodexFolder } from '../../../src/agents/codex/main/backend'
 import { CodexSessions, type CodexSessionDeps } from '../../../src/agents/codex/main/codexSessions'
 import { SessionRuntime } from '../../../src/core/agent/sessionRuntime'
 import { BackgroundFile } from '../../../src/main/backgroundFile'
@@ -24,7 +23,9 @@ import { localHost } from '../../../src/main/host/localHost'
 import { SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST, SshHost } from '../../../src/main/host/sshHost'
 import { answerOf, type BytesResult } from '../../../src/main/remote/ssh'
 import { tabPushed } from '../../../src/main/remote/launch'
+import { claudeProjectPrompt, keepSkillsIn, projectPromptFile } from '../../../src/main/agentPlugin'
 import { standInMachine, type MachineSaid } from './standInMachine'
+import { worktreesOfOneAgent } from './worktreesOfOneAgent'
 
 export const MACHINE = 'devbox'
 export const MACHINE_PACKAGE = 'm-0000000000000000'
@@ -262,6 +263,8 @@ export interface ClaudeSetup {
   tracker?: Partial<ClaudeBackendDeps['tracker']>
   events?: ClaudeBackendDeps['events']
   hookSettings?: ClaudeBackendDeps['hookSettings']
+  liveRegistryOn?: ClaudeBackendDeps['liveRegistryOn']
+  messages?: ClaudeBackendDeps['messages']
 }
 
 export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): ClaudeBackend {
@@ -278,7 +281,7 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
       ...c.tracker
     },
     hosts: new Hosts(
-      localHost(new GithubRepos(), { agentHomes: () => ({ codexHome: '/nowhere' }) }),
+      localHost(new GithubRepos(), { moreSkillFoldersEveryAccountReads: () => [] }),
       (machine) => machineIn(world, machine, c.machine)
     ),
     launchHere: {
@@ -288,6 +291,7 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
         seedHandedOverOwnerWords(saidFile(world.regDir, tabId), words),
       agentPlugin: () =>
         c.withPlugin === false ? undefined : path.join(world.home, 'koloft', 'agent-plugin'),
+      projectPromptFile,
       docsPlugin: () => path.join(world.home, 'koloft', 'docs-plugin'),
       assistOf: () => undefined,
       pastedPicturesDir: () => path.join(world.userData, 'palette-pictures')
@@ -296,6 +300,7 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
       realPath: (_machine: string, p: string) => p,
       settings: () => ({ skipPermissions: c.machine.skipPermissions ?? false }),
       agentTools: () => c.machine.agentTools ?? true,
+      projectPrompt: claudeProjectPrompt,
       docsWritingOn,
       pickAccount: c.machine.pickAccount ?? (async () => ({ env: {}, banner: '' })),
       noAccountMessage: c.machine.noAccountMessage ?? (() => NO_USABLE_ACCOUNT.claude),
@@ -304,6 +309,8 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
     store: () =>
       c.workspaceOfEverySession ? { workspaceOf: () => c.workspaceOfEverySession } : null,
     remoteSync: () => null,
+    resumeProbes: { recorded: () => false },
+    worktreesBeingPrepared: new Map(),
     userData: () => world.userData,
     setupLine: () => undefined,
     hookSettings: c.hookSettings ?? (() => undefined),
@@ -311,7 +318,9 @@ export function claudeBackendIn(world: World, pty: unknown, c: ClaudeSetup): Cla
     ptysChanged: () => {},
     events: c.events ?? (() => {}),
     error: () => {},
-    projectRules: async () => c.projectRules
+    projectRules: async () => c.projectRules,
+    liveRegistryOn: c.liveRegistryOn,
+    messages: c.messages
   } as unknown as ClaudeBackendDeps)
 }
 
@@ -325,6 +334,7 @@ export interface WiredIntoTheApp {
 
 export interface AgySetup extends WiredIntoTheApp {
   machine: MachineSetup
+  pinnedMachines?: () => string[]
   agentTools?: boolean
   apiKey?: string
   signedInOnTheWeb?: boolean
@@ -361,6 +371,7 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
       treeRoot: p
     }),
     remoteDirExists: async () => true,
+    worktreesOfEveryAgent: worktreesOfOneAgent(() => sessions!.store),
     changed: () => a.changed?.(),
     pinnedWorkspaces: () => a.pinnedWorkspaces?.() ?? [],
     rereadRows: () => a.rereadRows?.(),
@@ -375,6 +386,7 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
     openShimRoot: path.join(world.home, 'agy-open'),
     scriptsDir: path.join(world.home, 'scripts'),
     ownersGemini: () => path.join(world.home, '.gemini'),
+    keepSkillsIn,
     pickHome: () => ({ account: 'work', home: accountHome }),
     apiKeyOf: async () => a.apiKey,
     playwrightBin: tools,
@@ -387,7 +399,7 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
     remote: {
       machine,
       saidWhenTheMachineWantsAPasswordFirst: SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST,
-      hosts: () => [MACHINE],
+      hosts: () => a.pinnedMachines?.() ?? [MACHINE],
       keyed: (host, p) => `ssh://${host}${p}`,
       mirrorDir: () => mirror,
       mirrorGemini: () => path.join(world.home, 'mirror-gemini'),
@@ -420,7 +432,7 @@ export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): Code
       background ? '-o' : '',
       background ? 'BatchMode=yes' : ''
     ].filter(Boolean)
-  return new CodexSessions(path.join(world.home, 'sessions.json'), {
+  const sessions: CodexSessions = new CodexSessions(path.join(world.home, 'sessions.json'), {
     pty: pty as CodexSessionDeps['pty'],
     runtime: c.runtime ?? new SessionRuntime(),
     projectInfo: (p) => ({
@@ -428,6 +440,7 @@ export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): Code
       treeRoot: p
     }),
     remoteDirExists: async () => true,
+    worktreesOfEveryAgent: worktreesOfOneAgent(() => sessions.store),
     machine: {
       instance: 'table-instance',
       machine: (name) =>
@@ -467,7 +480,6 @@ export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): Code
     noAccountMessage: (backend) => NO_USABLE_ACCOUNT[backend],
     koloftPrompt: standInForKoloftsPrompt,
     hookRegDir: world.regDir,
-    trustFolder: trustCodexFolder,
     pickHome: () => ({ account: 'work', home: path.join(world.home, 'codex-home') }),
     homeOf: () => undefined,
     assistOf: () => undefined,
@@ -483,4 +495,5 @@ export function codexSessionsIn(world: World, pty: unknown, c: CodexSetup): Code
       ghWrapper: path.join(world.home, 'shim', 'gh')
     }
   })
+  return sessions
 }

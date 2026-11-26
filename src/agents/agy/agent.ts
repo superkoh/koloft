@@ -6,14 +6,23 @@ import {
   AGY_UPLOADS_FOLDER
 } from './shared/agyBrain'
 import { agyEffortsAModelTakes } from './shared/agyEfforts'
+import { AGY_INSTALLER_URL } from './shared/agyInstaller'
+import { agyInputBoxDraft } from './shared/inputBox'
+import { geminiPricing } from './shared/agyPrices'
+import { EMPTY_THE_BOX, ESC } from '@shared/lineEditKeys'
 import { SLOT_ADDITIONS, SLOT_FILLS } from './prompts/text'
 
 export const agent = {
   id: 'agy',
   name: 'Antigravity',
   productName: 'Antigravity CLI',
+  shortProductName: 'Antigravity',
   maker: 'Google',
   command: 'agy',
+  // AGY§5
+  signInCommand: 'agy',
+  // AGY§3
+  installCommand: `curl -fsSL ${AGY_INSTALLER_URL} | bash`,
   nodePackageFolderNames: [],
   wordsThatNameMe: {
     anyCase: ['agy', 'antigravity', 'google', 'gemini'],
@@ -30,6 +39,11 @@ export const agent = {
   },
   // AGY§31
   skillPrefix: '/',
+  // AGY§31
+  skillFolders: {
+    inTheWorkspace: { skills: ['.agent/skills', '.agents/skills', '_agents/skills'], commands: [] },
+    inTheHome: { skills: [], commands: [] }
+  },
   // AGY§13 AGY§14
   questionToolName: 'ask_question',
   // AGY§2 AGY§32
@@ -74,6 +88,15 @@ export const agent = {
   ownSettings: {},
   slotFills: SLOT_FILLS,
   slotAdditions: SLOT_ADDITIONS,
+  // AGY§23
+  inputBoxKeys: {
+    clearALeftoverCommand: [],
+    makeEnterRunTheTypedText: [],
+    backToAnEmptyBox: [ESC, EMPTY_THE_BOX]
+  },
+  // AGY§13
+  howToStopItsBackgroundTasks:
+    'Stop them in the Antigravity session (/tasks lists them) to free the resources.',
   flags: {
     // AGY§5
     resumeCanWaitOnAQuestionBeforeAnySign: false,
@@ -83,14 +106,30 @@ export const agent = {
     pasteKeepsItsLastLineFeeds: false,
     // AGY§15 AGY§16
     passedOnMessageShowsAsFromAnotherSession: false,
+    sessionsOfItsKindOnOneMachineTalkWithTheirOwnTool: false,
+    // AGY§16
+    mightNotTakeAMessageWhileItsTurnRuns: true,
     // AGY§25
     commandsItRunsCanHaveATerminalOfTheirOwn: true,
     // AGY§25
     runsCommandsInASandboxWhereSudoCannotStart: false,
     // AGY§14
-    questionToolTakesNoOptionDescriptions: true
+    questionToolTakesNoOptionDescriptions: true,
+    // AGY§35
+    removesItsWorktreeAsItExits: false,
+    turnEndCanComeBeforeItsReplyIsWritten: false,
+    // AGY§31
+    typesASkillOnlyByTheNameInItsFile: true,
+    // AGY§31
+    refusesATypedSkillMarkedNotUserInvocable: false,
+    // AGY§21
+    listsTheModelsAnAccountCanRun: true
   },
-  pureFunctions: { effortsAModelTakes: agyEffortsAModelTakes },
+  pureFunctions: {
+    effortsAModelTakes: agyEffortsAModelTakes,
+    draftInItsInputBox: agyInputBoxDraft,
+    priceOf: geminiPricing
+  },
   // AGY§5 AGY§6
   accountKinds: [
     {
@@ -99,7 +138,9 @@ export const agent = {
       isASignInFolder: true,
       signsInThroughABrowser: true,
       storesAPastedKeyItself: false,
-      takesAnEndpoint: false
+      takesAnEndpoint: false,
+      asksItsFirstRunQuestionsForEachAccount: true,
+      isATokenItsSignInPrints: false
     }
   ]
 } as const satisfies AgentManifest

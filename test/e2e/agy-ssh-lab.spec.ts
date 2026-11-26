@@ -158,6 +158,11 @@ function agyPidOn(lab: SshLab, user: string): number {
 const tabFilesOn = (lab: SshLab, user: string): string[] =>
   lines(runOnTarget(lab, user, 'ls -A .koloft/tabs')).sort()
 
+const startWordsOn = (lab: SshLab, user: string, tabId: string): string[] =>
+  tabFilesOn(lab, user).filter((name) => name.startsWith(`${tabId}.start.`))
+
+const THE_COPY_OF_A_RUNNING_AGY = expect.stringMatching(/\.start\.\d+\.json$/)
+
 const filesHoldingTheKeyOn = (lab: SshLab, user: string): string[] =>
   lines(runOnTarget(lab, user, KEY_HOLDERS(E2E_AGY_ACCOUNT_KEY)))
 
@@ -288,14 +293,13 @@ test.describe('Antigravity sessions on real sshd machines behind a company jump 
           )
           .toContain('koloft lets you ask Koloft')
         await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: A_TURN_THROUGH_THE_MIRROR_MS })
+        expect(startWordsOn(lab, 'kuser', tabId)).toEqual([THE_COPY_OF_A_RUNNING_AGY])
 
         await sendShortcut(app, 'shortcut:close-tab')
         await nothingOfTheTabRunsOn(lab, 'kuser')
-        expect(tabFilesOn(lab, 'kuser')).toEqual([
-          `${tabId}.sh`,
-          `${tabId}.start.json`,
-          `${tabId}.tmux`
-        ])
+        await expect
+          .poll(() => tabFilesOn(lab, 'kuser'), { timeout: 10_000 })
+          .toEqual([`${tabId}.sh`, `${tabId}.tmux`])
         expect(filesHoldingTheKeyOn(lab, 'kuser')).toEqual([])
 
         const cold = wsRows(page, 'kt-key')
@@ -372,6 +376,9 @@ test.describe('Antigravity sessions on real sshd machines behind a company jump 
         'exited (code 3)'
       )
       await nothingOfTheTabRunsOn(lab, 'kuser')
+      await expect
+        .poll(() => startWordsOn(lab, 'kuser', quitAtOnce), { timeout: 10_000 })
+        .toEqual([])
     })
   })
 
@@ -399,6 +406,7 @@ test.describe('Antigravity sessions on real sshd machines behind a company jump 
           timeout: BACKGROUND_CONNECT_MS
         })
         expect(agyPidOn(lab, 'kuser')).toBe(agy)
+        expect(startWordsOn(lab, 'kuser', tabId)).toEqual([THE_COPY_OF_A_RUNNING_AGY])
 
         await promptShowsWorkingThenDone(page, row, 'after the drop')
         await screenOf(page, tabId, 30_000).toContain('Answer to: after the drop')
@@ -431,6 +439,7 @@ test.describe('Antigravity sessions on real sshd machines behind a company jump 
         await quitKoloft()
         expect(tmuxSessionsOn(lab, 'kuser')).toEqual([`k-${id}`])
         expect(agyPidOn(lab, 'kuser')).toBe(agy)
+        expect(startWordsOn(lab, 'kuser', firstTab)).toEqual([THE_COPY_OF_A_RUNNING_AGY])
 
         const page = await openKoloftAgain()
         const row = wsRows(page, 'kt-key')
@@ -444,6 +453,8 @@ test.describe('Antigravity sessions on real sshd machines behind a company jump 
         expect(agyPidOn(lab, 'kuser')).toBe(agy)
         expect(agyLaunchesOn(lab, 'kuser')).toHaveLength(1)
         expect(filesHoldingTheKeyOn(lab, 'kuser')).toEqual([])
+        expect(startWordsOn(lab, 'kuser', firstTab)).toEqual([THE_COPY_OF_A_RUNNING_AGY])
+        expect(startWordsOn(lab, 'kuser', reopened.tabId)).toEqual([])
       },
       (lab) => {
         fakeAgyOnTheMachine(lab, ['kuser'])

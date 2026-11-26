@@ -1,6 +1,9 @@
 import type { AgentManifest } from '@core/agent/manifest'
 import { CRON_EFFORTS } from '@shared/efforts'
+import { ESC } from '@shared/lineEditKeys'
 import { SLOT_ADDITIONS, SLOT_FILLS } from './prompts/text'
+import { inputBoxDraft } from './shared/inputBox'
+import { claudePriceOf } from './shared/claudePrices'
 
 // CC§9
 const MODEL_EVERY_ACCOUNT_TAKES = 'haiku'
@@ -9,8 +12,13 @@ export const agent = {
   id: 'claude',
   name: 'Claude',
   productName: 'Claude Code',
+  shortProductName: 'Claude Code',
   maker: 'Anthropic',
   command: 'claude',
+  // CC§7
+  signInCommand: 'claude setup-token',
+  // CC§10
+  installCommand: 'curl -fsSL https://claude.ai/install.sh | bash',
   nodePackageFolderNames: ['claude-code'],
   wordsThatNameMe: {
     anyCase: ['claude', 'anthropic', 'fable', 'opus', 'sonnet', 'haiku', 'sk-ant'],
@@ -31,11 +39,18 @@ export const agent = {
   },
   // CC§9
   skillPrefix: '/',
+  // CC§9
+  skillFolders: {
+    inTheWorkspace: { skills: ['.claude/skills'], commands: ['.claude/commands'] },
+    inTheHome: { skills: ['.claude/skills'], commands: ['.claude/commands'] }
+  },
   questionToolName: 'AskUserQuestion',
   // CC§30
   instructionFileNames: ['CLAUDE.md', 'AGENTS.md'],
   // CC§9
   trustQuestion: 'do you trust this project?',
+  // CC§13
+  textItsMessagesCannotHold: '</cross-session-message>',
   ownLogFolderNames: [],
   // CC§2
   atTopOfSessionFolder: {
@@ -68,21 +83,49 @@ export const agent = {
   ownSettings: { fablePriority: { default: true, keptOnReset: true } },
   slotFills: SLOT_FILLS,
   slotAdditions: SLOT_ADDITIONS,
+  // CC§12
+  inputBoxKeys: {
+    clearALeftoverCommand: [],
+    makeEnterRunTheTypedText: [ESC],
+    backToAnEmptyBox: [ESC]
+  },
+  // CC§12
+  commandWithItsChoiceAfterIt: '/model haiku',
+  howToStopItsBackgroundTasks:
+    'Stop them in the session (ctrl+b lists background tasks) to free the resources.',
   flags: {
     resumeCanWaitOnAQuestionBeforeAnySign: false,
     conversationStartsAtFirstPrompt: false,
     pasteKeepsItsLastLineFeeds: true,
     // CC§13
     passedOnMessageShowsAsFromAnotherSession: true,
+    // CC§13
+    sessionsOfItsKindOnOneMachineTalkWithTheirOwnTool: true,
+    // CC§13
+    mightNotTakeAMessageWhileItsTurnRuns: false,
     // PLATFORM§58
     commandsItRunsCanHaveATerminalOfTheirOwn: false,
     // PLATFORM§58
     runsCommandsInASandboxWhereSudoCannotStart: false,
     // CC§14
-    questionToolTakesNoOptionDescriptions: false
+    questionToolTakesNoOptionDescriptions: false,
+    // CC§4
+    removesItsWorktreeAsItExits: true,
+    // CC§2
+    turnEndCanComeBeforeItsReplyIsWritten: true,
+    // CC§9
+    typesASkillOnlyByTheNameInItsFile: false,
+    // CC§20
+    refusesATypedSkillMarkedNotUserInvocable: true,
+    // CC§31
+    listsTheModelsAnAccountCanRun: false
   },
-  pureFunctions: { effortsAModelTakes: () => CRON_EFFORTS },
-  // CC§7
+  pureFunctions: {
+    effortsAModelTakes: () => CRON_EFFORTS,
+    draftInItsInputBox: inputBoxDraft,
+    priceOf: claudePriceOf
+  },
+  // CC§7 CC§10
   accountKinds: [
     {
       id: 'oauth',
@@ -90,7 +133,9 @@ export const agent = {
       isASignInFolder: false,
       signsInThroughABrowser: true,
       storesAPastedKeyItself: false,
-      takesAnEndpoint: false
+      takesAnEndpoint: false,
+      asksItsFirstRunQuestionsForEachAccount: false,
+      isATokenItsSignInPrints: true
     },
     {
       id: 'apikey',
@@ -98,7 +143,9 @@ export const agent = {
       isASignInFolder: false,
       signsInThroughABrowser: false,
       storesAPastedKeyItself: false,
-      takesAnEndpoint: false
+      takesAnEndpoint: false,
+      asksItsFirstRunQuestionsForEachAccount: false,
+      isATokenItsSignInPrints: false
     },
     {
       id: 'custom',
@@ -106,7 +153,9 @@ export const agent = {
       isASignInFolder: false,
       signsInThroughABrowser: false,
       storesAPastedKeyItself: false,
-      takesAnEndpoint: true
+      takesAnEndpoint: true,
+      asksItsFirstRunQuestionsForEachAccount: false,
+      isATokenItsSignInPrints: false
     }
   ]
 } as const satisfies AgentManifest

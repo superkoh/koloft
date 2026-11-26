@@ -58,6 +58,13 @@ export function productList(backends: readonly BackendId[], joiner: 'or' | 'and'
   )
 }
 
+export function shortProductList(backends: readonly BackendId[], joiner: 'or' | 'and'): string {
+  return inWords(
+    backends.map((b) => agentManifest(b).shortProductName),
+    joiner
+  )
+}
+
 export function statusUnavailable(session?: Pick<SessionInfo, 'details'>): boolean {
   return session?.details?.codex?.observation === 'degraded'
 }
@@ -104,28 +111,23 @@ export function messagingOf(backend: BackendId, remote: boolean): Messaging {
   return MESSAGING[backend][remote ? 'ssh' : 'local']
 }
 
-export function reachedBySendMessage(backend: BackendId): boolean {
-  return MESSAGING[backend].local === 'peerLine'
+export function talksWithItsOwnTool(backend: BackendId): boolean {
+  return agentManifest(backend).flags.sessionsOfItsKindOnOneMachineTalkWithTheirOwnTool
 }
 
 export interface PeerTraits {
-  handoverAsRole: boolean
   quotesOwnerWordsInHooks: boolean
 }
 
 export const PEER_TRAITS: Record<BackendId, PeerTraits> = {
   // CC§13
   claude: {
-    handoverAsRole: false,
     quotesOwnerWordsInHooks: true
   },
-  // CODEX§17
   codex: {
-    handoverAsRole: true,
     quotesOwnerWordsInHooks: false
   },
   agy: {
-    handoverAsRole: false,
     quotesOwnerWordsInHooks: false
   }
 }
@@ -152,23 +154,18 @@ export type Capability = true | { pending: true }
 export interface Capabilities {
   browserControl: Capability
   askHookWaitsForDiscord: Capability
-  panelSeen: Capability
-  worktreeRemovalFollowed: Capability
 }
 
 const PENDING = { pending: true } as const
 
 const EVERYTHING: Capabilities = {
   browserControl: true,
-  askHookWaitsForDiscord: true,
-  panelSeen: true,
-  worktreeRemovalFollowed: true
+  askHookWaitsForDiscord: true
 }
 
 const OUTSIDE_LOCAL_CLAUDE: Capabilities = {
   ...EVERYTHING,
-  askHookWaitsForDiscord: PENDING,
-  worktreeRemovalFollowed: PENDING
+  askHookWaitsForDiscord: PENDING
 }
 
 const ON_A_MACHINE: Capabilities = {
@@ -177,11 +174,11 @@ const ON_A_MACHINE: Capabilities = {
 }
 
 const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
-  // CC§4 CC§11 CC§14
+  // CC§11 CC§14
   claude: {
     local: EVERYTHING,
     // PLATFORM§33
-    ssh: { ...ON_A_MACHINE, browserControl: true, worktreeRemovalFollowed: true }
+    ssh: { ...ON_A_MACHINE, browserControl: true }
   },
   codex: {
     local: OUTSIDE_LOCAL_CLAUDE,
@@ -189,8 +186,8 @@ const CAPABILITIES: Record<BackendId, Record<HostId, Capabilities>> = {
     ssh: ON_A_MACHINE
   },
   agy: {
-    local: { ...OUTSIDE_LOCAL_CLAUDE, panelSeen: PENDING },
-    ssh: { ...ON_A_MACHINE, panelSeen: PENDING }
+    local: OUTSIDE_LOCAL_CLAUDE,
+    ssh: ON_A_MACHINE
   }
 }
 

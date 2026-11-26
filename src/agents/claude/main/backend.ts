@@ -7,18 +7,47 @@ import type {
   CreateTabOptions,
   CreateTabResult,
   DiscoveredFolder,
+  HostId,
   ResumePlan,
   SessionResumeRequest,
   SessionResumeResult,
   SessionRow
 } from '@shared/types'
 import type { SessionEvent } from '@shared/sessionEvent'
-import { formatRemoteKey, hostOf, isAbsoluteOnHost, parseRemoteKey } from '@shared/remoteKey'
+import {
+  formatRemoteKey,
+  hostOf,
+  isAbsoluteOnHost,
+  isRemoteKey,
+  parseRemoteKey
+} from '@shared/remoteKey'
 import { hasUsableAccount } from '@shared/accountUsage'
 import type { Turn } from '@shared/turns'
-import { isValidWorktreeName } from '@shared/worktreeName'
-import type { ModeClass, SessionBackend, TabExit } from '@core/agent/sessionBackends'
-import { KEEPS_NO_WORKTREE_RECORDS } from '@core/agent/worktreeRecords'
+import { isValidWorktreeName, SESSION_WORKTREES_FOLDER } from '@shared/worktreeName'
+import type {
+  HandOverLaunch,
+  MessageToSend,
+  ModeClass,
+  SendOutcome,
+  SessionBackend,
+  SessionMessages,
+  TabExit,
+  WorktreeExitWatch
+} from '@core/agent/sessionBackends'
+import { withHandover } from '@core/handOver'
+import { claudeWorktreeExitWatch } from './claudeWorktreeExitWatch'
+import {
+  claudeMessages,
+  messageSocket,
+  type ClaudeMessageDeps,
+  type MessageSocketDeps
+} from './messageSocket'
+import {
+  A_FOLDER_BEING_PREPARED,
+  A_NAME_WITH_A_RECOVERY_RECORD,
+  KEEPS_NO_WORKTREE_RECORDS
+} from '@core/agent/worktreeRecords'
+import { projectInfoFor } from '../../../main/projectInfo'
 import {
   A_PASS_WITH_NO_ROWS,
   type RowsPass,
@@ -33,24 +62,13 @@ import type { Hosts } from '../../../main/host/hosts'
 import type { Host } from '../../../main/host/host'
 import type { Machine } from '../../../main/host/machine'
 import type { RemoteSync } from '../../../main/remote/sync'
-import {
-  AGENT_DROP_NAME,
-  NOT_ITS_PASS,
-  REQUEST_NAME,
-  replyJson,
-  tabSpokenFor
-} from '../../../main/agentRequests'
-import { holdsPass, isStartedBeforeTabPasses } from '../../../main/tabPass'
-import { refused, type AgentReply } from '@core/command'
+import { AGENT_DROP_NAME } from '../../../main/agentRequests'
+import { hookMirrorWatches } from '../../../main/remote/hookMirrorWatches'
 import { errorText } from '@core/errorText'
-import { accountEnv, sessionIdOfTmux, tmuxSessionName } from '../../../main/remote/launch'
-import {
-  dq,
-  mirrorHookDir,
-  mirrorProjectsRoot,
-  REMOTE_HOOK_DIR,
-  tabPackageDir
-} from '../../../main/remote/paths'
+import { sessionIdOfTmux, tmuxSessionName } from '../../../main/remote/launch'
+import { dq, mirrorHookDir, REMOTE_HOOK_DIR, tabPackageDir } from '../../../main/remote/paths'
+import { claudeRecordsFolder, mirrorProjectsRoot } from './claudeMirror'
+import type { MirrorFolder } from '@core/agent/mirrorFolders'
 import {
   hookSettings,
   FROM_SESSION_FIELD,
@@ -64,8 +82,7 @@ import {
   TO_SESSION_FIELD
 } from '@plugins/sessions/main/hooks'
 import type { StatusLineSetting } from '../../../main/statusline'
-import { keychainRead, listAccounts } from '../../../main/accounts'
-import type { PickResponse } from '../../../main/accountPicker'
+import { listAccounts } from '../../../main/accounts'
 import { SESSION_ID_RE } from './claudeArgs'
 import {
   claudeTrustsFolderHere,
@@ -74,8 +91,7 @@ import {
   launchClaudeOnMachine,
   type ClaudeHereDeps,
   type ClaudeLaunch,
-  type ClaudeOnMachineDeps,
-  type MachineAccount
+  type ClaudeOnMachineDeps
 } from './claudeLaunch'
 import { publicClaudeSession } from './publicClaudeSession'
 import { forgetClaudeProbe, probeClaude } from './claudeProbe'
@@ -83,6 +99,7 @@ import {
   OLD_CLAUDE_GOES_WITHIN_MS,
   claudePeerNames,
   claudePidsHolding,
+  claudeShowsAPanelInTab,
   runningClaudePidBesides
 } from './claudeSessionRegistry'
 import { rootsWithClaude } from './claudeLiveness'
@@ -103,7 +120,7 @@ import {
   replacesTheConversation,
   type HookReport
 } from '../../../main/hookRouting'
-import { registeredByTabRoot } from '../../../main/shim'
+import { registeredByTabRoot } from './claudeShim'
 import { oncePerName, watchAndSweepJsonDrops, watchJsonDrops } from '../../../main/jsonDrops'
 import { copyWorktreeIncludes, type ScriptRunner } from '../../../main/sessionWorktrees'
 import { GIT_REF_RE } from '../../../main/gitSteps'
@@ -117,6 +134,12 @@ import {
   type ResumeProbes
 } from '../../../main/resumePlan'
 import type { GitOut } from '@core/worktree'
+import {
+  holdingTheFolder,
+  preparedKeyOf,
+  whenNobodyPrepares,
+  type WorktreesBeingPrepared
+} from '../../../main/worktreesBeingPrepared'
 
 export interface ClaudeBackendDeps {
   pty: PtyManager
@@ -139,11 +162,12 @@ export interface ClaudeBackendDeps {
   playwrightMcp(cwd: string): Promise<string[]>
   ptysChanged(): void
   resumeProbes: ResumeProbes
+  worktreesBeingPrepared: WorktreesBeingPrepared
   events(tabId: string, event: SessionEvent): void
   messaged(tabId: string, fromSessionId: string): void
   error(message: string): void
-  machineOfTab(tabId: string): string | undefined
-  otherTabOnMachine?(machine: string, tmuxName: string, launchTab: string): string | undefined
+  liveRegistryOn(host: string): Promise<string>
+  messages: Omit<MessageSocketDeps, 'tracker'> & Pick<ClaudeMessageDeps, 'noteKoloftSent'>
   projectRules?(workspace: string): Promise<string | undefined>
   workspaceInstructions?(workspace: string): Promise<string[]>
 }
@@ -224,64 +248,47 @@ async function remoteExitOnDisk(
   return undefined
 }
 
-class CallerOnTheMachine {
-  private state: 'unseen' | 'runs' | 'stopped' = 'unseen'
-  private asked = false
-  private checking?: Promise<void>
-
-  constructor(
-    private host: Machine,
-    private requestId: string,
-    private pid: number
-  ) {}
-
-  stillWaiting = (): boolean => {
-    this.asked = true
-    void this.check()
-    return this.state !== 'stopped'
-  }
-
-  async stoppedWaiting(): Promise<boolean> {
-    if (this.asked && this.state !== 'stopped') {
-      await this.checking
-      await this.check()
-    }
-    return this.state === 'stopped'
-  }
-
-  private check(): Promise<void> {
-    this.checking ??= this.host
-      .requestCallerWaits(this.requestId, this.pid)
-      .catch(() => undefined)
-      .then((seen) => {
-        this.checking = undefined
-        if (seen === 'request-gone' || (seen === 'gone' && this.state === 'runs'))
-          this.state = 'stopped'
-        else if (seen === 'runs' && this.state === 'unseen') this.state = 'runs'
-      })
-    return this.checking
-  }
-}
-
 export class ClaudeBackend implements SessionBackend {
   readonly id = 'claude'
   readonly worktreeRecords = KEEPS_NO_WORKTREE_RECORDS
   private hookRegDir = ''
   private statusLogCursors = new Map<string, AppendCursor>()
   private statusLogDraining = new Map<string, boolean>()
-  private watchedHookMirrors = new Map<string, () => void>()
+  private watchedHookMirrors = hookMirrorWatches(
+    () => this.d.userData(),
+    () => this.d.remoteTargets(),
+    (dir, host) => this.watchHookRegistrations(dir, host)
+  )
   private remoteExitWaits = new Set<{ sid: string; settle: (hit: RemoteExitDrop) => void }>()
   private pickedSkipFlag = new Set<string>()
   private launchedBypassing = new Set<string>()
   private closedClaudes = new Map<string, { pids: Set<number>; until: number }>()
   private heldBeforeStartup = new Map<string, string>()
-  agentReply?: (
-    tabId: string | undefined,
-    raw: unknown,
-    stillWaiting?: () => boolean
-  ) => Promise<AgentReply>
+  private messages?: SessionMessages
 
   constructor(private d: ClaudeBackendDeps) {}
+
+  private messagesNow(): SessionMessages {
+    return (this.messages ??= claudeMessages({
+      sendPeerLine: messageSocket({ ...this.d.messages, tracker: this.d.tracker }),
+      noteKoloftSent: (tabId, note) => this.d.messages.noteKoloftSent(tabId, note)
+    }))
+  }
+
+  send(tabId: string, m: MessageToSend): Promise<SendOutcome> {
+    return this.messagesNow().send(tabId, m)
+  }
+
+  mightNotTakeAMessageNow(
+    tabId: string,
+    turnHasEnded: (tabId: string) => Promise<boolean>
+  ): Promise<boolean> {
+    return this.messagesNow().mightNotTakeAMessageNow(tabId, turnHasEnded)
+  }
+
+  handOverLaunch(handOver: string, task: string): HandOverLaunch {
+    return { firstPrompt: withHandover(handOver, task) }
+  }
 
   async availability(): Promise<BackendAvailability> {
     const { found } = await probeClaude()
@@ -324,6 +331,14 @@ export class ClaudeBackend implements SessionBackend {
     return this.d.store()?.liveKey() ?? ''
   }
 
+  worktreeExitWatch(tabId: string, hostOfTab: () => HostId): WorktreeExitWatch {
+    return claudeWorktreeExitWatch(tabId, hostOfTab, {
+      pidOf: (id) => this.d.pty.pidOf(id),
+      infoOf: (id) => this.d.tracker.infoOf(id),
+      store: () => this.d.store()
+    })
+  }
+
   tabExited({ tabId, crashed }: TabExit): void {
     this.onPtyExit(tabId, crashed)
     this.d.tracker.setAlive(tabId, false)
@@ -350,6 +365,10 @@ export class ClaudeBackend implements SessionBackend {
 
   mirrorPulled(): void {}
 
+  foldersToMirrorFrom(_host: string, landing: string): MirrorFolder[] {
+    return [claudeRecordsFolder(landing)]
+  }
+
   tmuxOfTab(tabId: string): string | undefined {
     return this.d.tracker.remoteOf(tabId)?.tmuxName
   }
@@ -370,6 +389,7 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   occupantOf(dir: string): string | null {
+    if (isRemoteKey(dir)) return this.machineOccupantOf(dir)
     const target = path.resolve(dir)
     for (const s of this.d.tracker.list()) {
       if (!s.alive || s.remote) continue
@@ -397,6 +417,13 @@ export class ClaudeBackend implements SessionBackend {
 
   workStillRunning(tabId: string): Promise<boolean> {
     return this.d.tracker.workStillRunning(tabId)
+  }
+
+  showsAPanel(tabId: string): Promise<boolean | undefined> {
+    return claudeShowsAPanelInTab(tabId, this.d.tracker.infoOf(tabId)?.sessionId ?? '', {
+      remoteHostOf: (tab) => this.d.tracker.remoteOf(tab)?.host,
+      liveRegistryOn: (host) => this.d.liveRegistryOn(host)
+    })
   }
 
   async trustsFolder(dir: string): Promise<boolean> {
@@ -615,9 +642,7 @@ export class ClaudeBackend implements SessionBackend {
       if (isNews && !isNews(full, JSON.stringify(obj))) return
       this.handleHookRegistration(obj)
     }
-    const drops = machine
-      ? this.watchMachineDrops(dir, machine, handle)
-      : watchJsonDrops(dir, () => handle)
+    const drops = machine ? this.watchMachineDrops(dir, handle) : watchJsonDrops(dir, () => handle)
     const tabNoteFirst = machine
       ? (statusLog: string): void => {
           const note = `${statusLog.slice(0, -STATUS_LOG_SUFFIX.length)}.json`
@@ -639,18 +664,9 @@ export class ClaudeBackend implements SessionBackend {
 
   private watchMachineDrops(
     dir: string,
-    machine: string,
     hookReport: (obj: unknown, full: string) => void
   ): fs.FSWatcher | null {
-    const agentRequest = oncePerName((name) => {
-      const id = REQUEST_NAME.exec(name)?.[1]
-      return id ? (raw): void => this.answerMachineRequest(machine, id, raw) : null
-    })
-    return watchAndSweepJsonDrops(
-      dir,
-      (name) => (AGENT_DROP_NAME.test(name) ? agentRequest(name) : hookReport),
-      agentRequest
-    )
+    return watchJsonDrops(dir, (name) => (AGENT_DROP_NAME.test(name) ? null : hookReport))
   }
 
   private watchStatusLogs(
@@ -743,6 +759,10 @@ export class ClaudeBackend implements SessionBackend {
     return report.tmux ? this.tabRunningTmux(report.tmux) : undefined
   }
 
+  tabOfTmuxSession(host: string, name: string): string | undefined {
+    return this.tabRunningTmux(name, host)
+  }
+
   private tabRunningTmux(tmuxName: string, machine?: string): string | undefined {
     const { pty, tracker } = this.d
     for (const s of tracker.list()) {
@@ -751,67 +771,6 @@ export class ClaudeBackend implements SessionBackend {
       if (!machine || remote.host === machine) return s.tabId
     }
     return undefined
-  }
-
-  // ADR-0052
-  private callerOnMachine(machine: string, raw: unknown): { tabId?: string; refusal?: string } {
-    const r = (raw ?? {}) as { tabId?: unknown; tmux?: unknown; pass?: unknown }
-    if (typeof r.pass === 'string' && r.pass) {
-      const asked = typeof r.tabId === 'string' ? r.tabId : ''
-      const facts = this.d.pty.get(asked)
-      if (!facts) return {}
-      if (!holdsPass(asked, r.pass)) return { refusal: NOT_ITS_PASS }
-      const tabId = tabSpokenFor(asked, facts)
-      return this.liveTabOnMachine(machine, tabId) === tabId ? { tabId } : {}
-    }
-    const named = this.namedOnMachine(machine, r)
-    if (!named) return {}
-    return isStartedBeforeTabPasses(named) ? { tabId: named } : { refusal: NOT_ITS_PASS }
-  }
-
-  private liveTabOnMachine(machine: string, tabId: string, tmux = ''): string | undefined {
-    if (this.d.machineOfTab(tabId) === machine && this.d.pty.get(tabId)) return tabId
-    const other = this.d.otherTabOnMachine?.(machine, tmux, tabId)
-    return other && this.d.pty.get(other) ? other : undefined
-  }
-
-  private namedOnMachine(
-    machine: string,
-    r: { tabId?: unknown; tmux?: unknown }
-  ): string | undefined {
-    const tmux = typeof r.tmux === 'string' ? r.tmux : ''
-    const byTmux = tmux && this.tabRunningTmux(tmux, machine)
-    if (byTmux) return byTmux
-    const asked = typeof r.tabId === 'string' ? r.tabId : ''
-    const facts = this.d.pty.get(asked)
-    return this.liveTabOnMachine(machine, facts ? tabSpokenFor(asked, facts) : asked, tmux)
-  }
-
-  private fromOwnWorkbenchShell(raw: unknown): boolean {
-    const { tabId } = (raw ?? {}) as { tabId?: unknown }
-    return typeof tabId === 'string' && !!this.d.pty.get(tabId)?.util
-  }
-
-  private answerMachineRequest(machine: string, requestId: string, raw: unknown): void {
-    const { tabId, refusal } = this.callerOnMachine(machine, raw)
-    const host = this.d.hosts.machine(machine)
-    const noOneWaits = (raw as { reply?: unknown } | null)?.reply === false
-    if (!this.agentReply || (!tabId && !refusal && !this.fromOwnWorkbenchShell(raw))) {
-      if (noOneWaits) void host.answerRequest(requestId, null)
-      return
-    }
-    const pid = (raw as { pid?: unknown } | null)?.pid
-    const caller =
-      noOneWaits || typeof pid !== 'number'
-        ? undefined
-        : new CallerOnTheMachine(host, requestId, pid)
-    const replied = refusal
-      ? Promise.resolve(refused(refusal))
-      : this.agentReply(tabId, raw, caller?.stillWaiting)
-    void replied.then(async (reply) => {
-      const nobodyReads = noOneWaits || !!(await caller?.stoppedWaiting())
-      await host.answerRequest(requestId, nobodyReads ? null : replyJson(reply))
-    })
   }
 
   private handleStatusRegistration(raw: unknown): void {
@@ -1075,27 +1034,13 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   watchRemoteHookMirrors(): void {
-    const userData = this.d.userData()
-    const wanted = new Map(
-      this.d.remoteTargets().map((t) => [mirrorHookDir(userData, t.host), t.host])
-    )
-    for (const [dir, dispose] of this.watchedHookMirrors) {
-      if (wanted.has(dir)) continue
-      dispose()
-      this.watchedHookMirrors.delete(dir)
-    }
-    for (const [dir, host] of wanted) {
-      if (this.watchedHookMirrors.has(dir)) continue
-      try {
-        fs.mkdirSync(dir, { recursive: true })
-      } catch {}
-      this.watchedHookMirrors.set(dir, this.watchHookRegistrations(dir, host))
-    }
+    this.watchedHookMirrors()
   }
 
   async create(opts: CreateTabOptions): Promise<CreateTabResult> {
     const asked = typeof opts.cwd === 'string' ? opts.cwd : ''
     const root = hostOf(asked) === 'ssh' ? asked : (this.homeOf(opts.resumeSessionId) ?? asked)
+    if (opts.worktree) await this.refuseANameAnotherAgentHolds(root, opts.worktree)
     return this.createTab({
       tabId: opts.tabId,
       root,
@@ -1145,17 +1090,31 @@ export class ClaudeBackend implements SessionBackend {
         return { ok: false, code: 'invalid-args' }
       }
       worktree = req.worktree
+      await this.refuseANameAnotherAgentHolds(cwd, worktree)
     }
-    const rebuildable = !home || !!this.d.store()?.findRow(sid)?.worktreeState
+    const bound = this.d.store()?.findRow(sid)?.worktreeState
+    const rebuildable = !home || !!bound
+    const { worktreesBeingPrepared } = this.d
+    await whenNobodyPrepares(
+      worktreesBeingPrepared,
+      preparedKeyOf(host.keyed(bound?.worktreePath ?? cwd))
+    )
     if (await rebuildsTheWorktree(req.mode, async () => !rebuildable || host.dirExists(cwd))) {
       const plan = home
         ? await this.machineResumePlan(host, sid)
         : await this.localWorktreePlan(sid)
       if (plan.action === 'rebuild') {
+        const tree = host.keyed(plan.worktreePath)
         if (
           !GIT_REF_RE.test(plan.branch) ||
           !GIT_REF_RE.test(plan.baseRef) ||
-          !(await rebuildWorktree(plan, host, this.d.hosts.machineOf(home ?? asked)))
+          !(await holdingTheFolder(
+            worktreesBeingPrepared,
+            preparedKeyOf(tree),
+            async () =>
+              (await host.dirExists(tree)) ||
+              rebuildWorktree(plan, host, this.d.hosts.machineOf(home ?? asked))
+          ))
         ) {
           return { ok: false, code: 'rebuild-failed' }
         }
@@ -1189,6 +1148,23 @@ export class ClaudeBackend implements SessionBackend {
     return r.ok ? { ok: true, id: r.id, cwd: r.cwd } : { ok: false, code: r.code }
   }
 
+  private async refuseANameAnotherAgentHolds(where: string, name: string): Promise<void> {
+    const root = isRemoteKey(where) ? await this.mainCheckoutOn(where) : projectInfoFor(where).root
+    const tree = `${root}/${SESSION_WORKTREES_FOLDER}/${name}`
+    if (this.d.resumeProbes.recorded?.(tree)) throw new Error(A_NAME_WITH_A_RECOVERY_RECORD)
+    if (this.d.worktreesBeingPrepared.has(preparedKeyOf(tree)))
+      throw new Error(A_FOLDER_BEING_PREPARED)
+  }
+
+  private async mainCheckoutOn(where: string): Promise<string> {
+    const host = this.d.hosts.of(where)
+    const listed = await host.gitOut(where, ['worktree', 'list', '--porcelain'])
+    const first = listed?.split('\n')[0]
+    return first?.startsWith('worktree ')
+      ? host.keyed(first.slice('worktree '.length))
+      : where.split(`/${SESSION_WORKTREES_FOLDER}/`)[0]
+  }
+
   resumePlan(key: string): Promise<ResumePlan> {
     const home = this.homeOf(key)
     return home ? this.machineResumePlan(this.d.hosts.of(home), key) : this.localResumePlan(key)
@@ -1212,7 +1188,7 @@ export class ClaudeBackend implements SessionBackend {
       row,
       {
         dirExists: (p) => host.dirExists(host.keyed(p)),
-        occupantOf: (dir) => this.machineOccupantOf(host.keyed(dir)),
+        occupantOf: (dir) => this.d.resumeProbes.occupantOf(host.keyed(dir)),
         ...gitProbes(hostGit(host))
       },
       this.d.store()?.bucketDirOf(sessionId)
@@ -1223,7 +1199,7 @@ export class ClaudeBackend implements SessionBackend {
     for (const s of this.d.tracker.list()) {
       if (!s.alive || !s.remote) continue
       const onMachine = (p: string): string => formatRemoteKey(s.remote!.host, p)
-      if (onMachine(s.cwd) === dir) return occupantName(s)
+      if (onMachine(s.cwd) === dir || onMachine(s.treeRoot) === dir) return occupantName(s)
       const bound = s.sessionId ? this.d.store()?.findRow(s.sessionId)?.worktreeState : undefined
       if (bound && onMachine(bound.worktreePath) === dir) return occupantName(s)
     }
@@ -1339,19 +1315,6 @@ function transcriptEnding(file: string): { exists: boolean; continuedIn?: string
 
 function hostGit(host: Host): GitOut {
   return (dir, args) => host.gitOut(host.keyed(dir), args)
-}
-
-export async function pickMachineAccount(
-  pick: () => Promise<{ res: PickResponse; endpoint?: { baseUrl?: string; model?: string } }>
-): Promise<MachineAccount | undefined> {
-  const { res, endpoint } = await pick()
-  if (!res.account) return undefined
-  const secret = await keychainRead(res.kind, res.account)
-  if (!secret) return undefined
-  return {
-    env: accountEnv(res.kind, res.account, secret, endpoint),
-    banner: res.warning ? `${res.banner}\n${res.warning}` : res.banner
-  }
 }
 
 export function machineHookSettings(

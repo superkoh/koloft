@@ -45,7 +45,16 @@ export function stubBackend(
     sessionGone: () => false,
     noticeRemoteExits: () => {},
     mirrorPulled: () => {},
+    foldersToMirrorFrom: () => [],
     tmuxOfTab: () => undefined,
+    tabOfTmuxSession: () => undefined,
+    worktreeExitWatch: () => undefined,
+    showsAPanel: async () => undefined,
+    send: async () => 'taken' as const,
+    mightNotTakeAMessageNow: async () => false,
+    handOverLaunch: (): never => {
+      throw new Error('a stub backend starts no session handed over')
+    },
     ...rowsKeptInMemory({
       rows: () => [],
       members: () => new Set<string>(),

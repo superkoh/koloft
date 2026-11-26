@@ -1494,6 +1494,12 @@ Koloft dependents: the repo's own `.agents/hooks.json` (ADR-0053).
   `structured_output`.
 - A trivial run takes about 100–200 ms against a fast fake with the updater off; the
   first launch in a fresh folder about 760 ms.
+- **SIGTERM during a `-p` turn.** agy 1.5.10 (Linux arm64, Docker with no network, a
+  temp HOME, the API-key route against a fake server that never answers), 2026-11-25,
+  3 runs: `/proc/<pid>/status` shows SIGTERM caught; a SIGTERM while the model request
+  hangs ends it in 26–48 ms with `error: interrupted` on stderr, exit 1. Each run was
+  one process (no `--bg-updater` beside it), and a `--gemini_dir` removed 1 s after the
+  exit was not made again. The macOS build: not probed.
 
 ## §21 Models and effort
 
@@ -2056,7 +2062,7 @@ fake Gemini server with MCP servers that logged their start.
   `GEMINI_API_KEY` among them, with nothing in the entry's `env`; the same after
   `/clear`, in `--dangerously-skip-permissions`, and on the macOS build in the tart VM.
 
-Koloft dependents: `koloft todo`'s list of MCP servers (`src/main/mcpServers.ts`); the
+Koloft dependents: `koloft todo`'s list of MCP servers (`src/agents/agy/main/agyCatalog.ts`); the
 Workbench browser's address in agy's environment (`src/agents/agy/main/agySessions.ts`); the allow
 rule for the owner's Playwright entries (`src/agents/agy/main/agyAccounts.ts`).
 
@@ -2256,3 +2262,21 @@ Koloft dependents: `asksTheTerminal` in `src/main/flowControl.ts`.
 
 Koloft dependents: `TAB_PASS_ENV` in `src/main/tabPass.ts`, which reaches agy through its
 tab's environment (`src/main/ptyManager.ts`).
+
+## §35 Leaving a git worktree it runs in
+
+- **agy never removes the worktree it runs in.** Started inside a linked worktree
+  (`<repo>/.claude/worktrees/wt` on branch `worktree-wt`), `/exit` printed what §1 says
+  (or nothing, before the first message) and exited 0, and the folder, its registration
+  in `git worktree list` and the branch were all still there, in each of three runs: an
+  unchanged worktree with no message, one with an untracked file after one message (the
+  file kept), and an unchanged one after one message. It asked nothing and printed no line
+  about the worktree. `agy --help` names no worktree flag.
+- Measured 2026-11-25: agy 1.5.17, the Linux arm64 build from the manifest (sha512
+  checked), Docker `--network none` on the e2e SSH lab image, tmux 3.3a 120×40, keys by
+  `tmux send-keys`, the API-key route against `test/e2e/fixtures/fake-gemini.js`, the
+  folder trusted and onboarding seeded (§5). Not probed: the macOS build, Ctrl+C and
+  Ctrl+D.
+
+Koloft dependents: `removesItsWorktreeAsItExits` in `src/agents/agy/agent.ts` and `worktreeExitWatch`
+in `src/agents/agy/main/backend.ts`.

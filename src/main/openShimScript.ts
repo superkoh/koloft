@@ -3,7 +3,7 @@ import os from 'os'
 import path from 'path'
 import { VIEWABLE_EXTENSIONS } from '@shared/preview'
 import { shq } from '@shared/shellQuote'
-import { CODEX_TMP_DIR, OPEN_SHIM_FOLDER } from './leftovers'
+import { SHORT_TMP_DIR, OPEN_SHIM_FOLDER } from './leftovers'
 
 const EXT_GLOBS = VIEWABLE_EXTENSIONS.map((e) => `*${e}`).join('|')
 
@@ -23,7 +23,7 @@ passthrough() {
   set -f
   for d in $PATH; do
     [ "$d" = "$self_dir" ] && continue
-    [ -x "$d/open" ] || continue
+    [ -f "$d/open" ] && [ -x "$d/open" ] || continue
     if head -n 2 "$d/open" 2>/dev/null | grep -q "koloft open shim"; then continue; fi
     real="$d/open"; break
   done
@@ -73,15 +73,15 @@ write_drop() {
 }
 `
 
-export const CODEX_OPEN_SENT = 'koloft-open:sent'
+export const TAB_OPEN_SHIM_SENT = 'koloft-open:sent'
 
 // CODEX§12
-function codexOpenShimScript(requestDir: string): string {
+function tabOpenShimScript(requestDir: string): string {
   const dir = shq(requestDir)
   return `${OPEN_SHIM_HEAD}
 [ -d ${dir} ] || passthrough "$@"
 ${OPEN_SHIM_TARGET}
-if write_drop ${dir} ""; then echo ${CODEX_OPEN_SENT}; else echo koloft-open:blocked; fi
+if write_drop ${dir} ""; then echo ${TAB_OPEN_SHIM_SENT}; else echo koloft-open:blocked; fi
 exit 0
 `
 }
@@ -160,11 +160,11 @@ export function writeOpenShim(
     shimDir,
     zdotDir,
     bashEnv: bashEnvFileIn(shimDir),
-    requestDir: path.join(CODEX_TMP_DIR, `koloft-cx-open-${token}`)
+    requestDir: path.join(SHORT_TMP_DIR, `koloft-cx-open-${token}`)
   }
   try {
     fs.mkdirSync(zdotDir, { recursive: true })
-    fs.writeFileSync(path.join(shimDir, 'open'), codexOpenShimScript(shim.requestDir), {
+    fs.writeFileSync(path.join(shimDir, 'open'), tabOpenShimScript(shim.requestDir), {
       mode: 0o755
     })
     for (const name of ZSH_DOTFILES)

@@ -147,6 +147,21 @@ function runSync(file: string, args: string[], input: unknown, env: NodeJS.Proce
   return { printed: res.stdout }
 }
 
+function runInSh(command: string, input: unknown, env: NodeJS.ProcessEnv): Run {
+  const res = spawnSync('/bin/sh', ['-c', command], {
+    input: typeof input === 'string' ? input : JSON.stringify(input),
+    encoding: 'utf8',
+    env,
+    timeout: A_HOOK_RUN_ENDS_WITHIN_MS
+  })
+  if (res.error)
+    throw new Error(
+      `${command} did not finish (${res.error.message}, limit ${A_HOOK_RUN_ENDS_WITHIN_MS} ms): ${res.stderr}`
+    )
+  if (res.status !== 0) throw new Error(`${command} exited ${res.status}: ${res.stderr}`)
+  return { printed: res.stdout }
+}
+
 const pin = (text: string, name: string): Promise<void> =>
   expect(text).toMatchFileSnapshot(`${PINNED}/${name}.txt`)
 
@@ -345,7 +360,7 @@ describe("Codex's reply-language script on this Mac, run as Codex runs each hook
       KOLOFT_SHELL_WROTE: path.join(reg, `${TAB}.shell-wrote.jsonl`)
     })
   const fire = (arg: string, payload: unknown): Run =>
-    runSync('/bin/sh', ['-c', `sh "$KOLOFT_CODEX_REPLY_LANGUAGE" ${arg}`], payload, codexEnv())
+    runInSh(`sh "$KOLOFT_CODEX_REPLY_LANGUAGE" ${arg}`, payload, codexEnv())
 
   beforeEach(() => {
     ;({ codexReplyLanguage: script } = setupHooks(() => false))
@@ -408,10 +423,11 @@ describe("Antigravity's hook script on this Mac, run as agy runs each hook", () 
     cleanEnv({
       KOLOFT_AGY_LOG: path.join(reg, `${TAB}.agy.jsonl`),
       KOLOFT_NOTICE: noticeFile(reg, TAB),
-      KOLOFT_AGY_START: path.join(reg, `${TAB}.agy-start.json`)
+      KOLOFT_AGY_START: path.join(reg, `${TAB}.agy-start.json`),
+      AGY_HOOK_UNDER_TEST: script
     })
   const fire = (event: string, payload: unknown): Run =>
-    runSync('/bin/sh', [script, event], payload, agyEnv())
+    runInSh(`/bin/sh "$AGY_HOOK_UNDER_TEST" ${event}`, payload, agyEnv())
 
   beforeEach(() => {
     ;({ hook: script } = writeAgyScripts(path.join(root, 'scripts')))
@@ -512,9 +528,8 @@ describe('a message the butler passes on, which Koloft proves it sent, and the f
     const saidFile = path.join(reg, `${TAB}.codex-said`)
     const sentWords = path.join(reg, `${TAB}.discord-said`)
     const prompt = (text: string): string =>
-      runSync(
-        '/bin/sh',
-        ['-c', `sh "$KOLOFT_CODEX_REPLY_LANGUAGE" prompt`],
+      runInSh(
+        `sh "$KOLOFT_CODEX_REPLY_LANGUAGE" prompt`,
         { session_id: SESSION, hook_event_name: 'UserPromptSubmit', prompt: text },
         cleanEnv({
           KOLOFT_CODEX_REPLY_LANGUAGE: codexReplyLanguage,
@@ -547,11 +562,10 @@ describe('a message the butler passes on, which Koloft proves it sent, and the f
           )
           .join('\n') + '\n'
       )
-      const { printed } = runSync(
-        '/bin/sh',
-        [hook, 'PreInvocation'],
+      const { printed } = runInSh(
+        `/bin/sh "$AGY_HOOK_UNDER_TEST" PreInvocation`,
         { conversationId: CONVERSATION, transcriptPath: transcript, invocationNum: 0 },
-        cleanEnv({ KOLOFT_AGY_LOG: path.join(reg, `${TAB}.agy.jsonl`) })
+        cleanEnv({ KOLOFT_AGY_LOG: path.join(reg, `${TAB}.agy.jsonl`), AGY_HOOK_UNDER_TEST: hook })
       )
       return JSON.parse(printed).injectSteps[0].ephemeralMessage as string
     }
