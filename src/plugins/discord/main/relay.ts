@@ -469,8 +469,11 @@ export class DiscordRelay {
     this.d.asks.dropClaudeAsk(tab)
     const asked = this.codexAsks.get(tab)
     const open = this.d.pendingApproval(tab) ?? this.d.pendingQuestion(tab)
+    if (open?.id !== asked) {
+      this.codexAsks.delete(tab)
+    }
     if (!open || !answerKeysOf(this.d.backendOf(tab))) return undefined
-    return this.d.asks.answerSession(tab, m.content, { toItsCard: asked !== undefined })
+    return this.d.asks.answerSession(tab, m.content, { toItsCard: open.id === asked })
   }
 
   forget(tab: string): void {

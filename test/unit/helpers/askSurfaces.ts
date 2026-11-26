@@ -290,7 +290,7 @@ export class AskSurfaces {
       onEvent: () => {},
       push: () => true
     } as unknown as MainIpc
-    startInbox(
+    const { koloftInbox } = startInbox(
       { commands: new Commands(PLUGINS), moments: this.moments, ipc },
       {
         cards: {
@@ -325,6 +325,7 @@ export class AskSurfaces {
         toast: () => {}
       }
     )
+    this.asks.listen({ asked: (tabId) => koloftInbox.asked(tabId) })
     this.watcher = this.asks.watchAsks()
   }
 

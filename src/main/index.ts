@@ -3148,6 +3148,7 @@ app.whenReady().then(() => {
     regDir: hookPaths.regDir
   })
   sessionAsks = asks
+  asks.listen({ asked: (tabId) => koloftInbox.asked(tabId) })
   const waitsBesidesInstructions = (tabId: string): boolean =>
     runtime.statusOf(tabId) === 'approval' || !!secretAsks?.views().some((a) => a.tabId === tabId)
   const ownerWaits = {

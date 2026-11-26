@@ -74,7 +74,7 @@ export function askWiring<View extends DialogView>(d: AskWiringDeps<View>) {
     },
     claudeAskOf: (tabId: string): AskPayload | undefined => claudeAsks.get(tabId),
     openAsk: (tabId: string): AskPayload | undefined =>
-      claudeAsks.get(tabId) ?? d.sessionAsks()?.heldAsk(tabId),
+      d.sessionAsks()?.heldAsk(tabId) ?? claudeAsks.get(tabId),
     endsTheAsk: (tabId: string, call: ToolCall): boolean => {
       const { isAskedCall } = d.readers()
       const ask = claudeAsks.get(tabId)

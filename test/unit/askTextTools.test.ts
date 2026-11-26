@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it, vi } from 'vitest'
 import fs from 'fs'
 import { app } from 'electron'
+import type { InboxAnswers } from '@shared/inbox'
 
 vi.mock('electron', async () => {
   const nfs = await import('node:fs')
@@ -79,7 +80,7 @@ describe('when each kind of tab posts its Discord card, and when a Discord messa
 })
 
 describe('a Claude Code ask its hook holds is answered from its Inbox card, through the hook', () => {
-  const cases: [string, string, string, Record<string, unknown>, string][] = [
+  const cases: [string, string, string, InboxAnswers, string][] = [
     [
       'Allow',
       'run-a-command-no-reason',
@@ -127,7 +128,7 @@ describe('a Claude Code ask its hook holds is answered from its Inbox card, thro
     it(
       `${what}: ${titleOf(file)}`,
       async () => {
-        const reached = await heldAskAnsweredFromTheInbox(file, () => ({ action, answers }))
+        const reached = await heldAskAnsweredFromTheInbox(file, action, answers)
         expect(reached.join('\n')).toContain(
           `the hook printed to Claude Code: {"hookSpecificOutput":{"hookEventName":"PermissionRequest",`
         )
