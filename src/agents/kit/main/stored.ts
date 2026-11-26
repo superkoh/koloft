@@ -82,6 +82,11 @@ export function storedBackend<R extends StoredRun, H extends HistoryEntry, P>(
     foldersToMirrorFrom: (host, landing) => sessions.foldersToMirrorFrom(host, landing),
     tmuxOfTab: (tabId) => sessions.tmuxOfTab(tabId),
     tabOfTmuxSession: (host, name) => sessions.tabOfTmuxSession(host, name),
+    machineOfTab: (tabId) => sessions.machineOfTab(tabId),
+    machinesWithTabs: () => sessions.machinesWithTabs(),
+    sessionsRunningOnTheMachine: (workspace) => sessions.sessionsRunningOnTheMachine(workspace),
+    endOnTheMachine: (host, key) => sessions.endOnTheMachine(host, key),
+    goneFromTheMachine: (host, key) => sessions.goneFromTheMachine(host, key),
     ...rowsKeptInMemory(sessions),
     // ADR-0028
     permissionClass: (tabId) => (sessions.launchedBypassingChecks(tabId) ? 'bypass' : 'prompting'),

@@ -45,7 +45,10 @@ let conductorIds: Set<string>
 
 const SEEDED: SessionWorkbenchState = { open: false, tabs: [] }
 
-type AsTheEntryFileWiresThem = Omit<WorkspaceManagerDeps, 'agents' | 'remoteOrphansOf'> &
+type AsTheEntryFileWiresThem = Omit<
+  WorkspaceManagerDeps,
+  'agents' | 'sessionsRunningOnTheMachine'
+> &
   Pick<
     ClaudeSessionStoreDeps,
     | 'projectsRoot'
@@ -85,7 +88,7 @@ function managerAndStore({
   const manager: WorkspaceManager = new WorkspaceManager({
     ...managers,
     agents: rowsOfEveryAgent(() => [{ id: 'claude', rows: store }, ...others]),
-    remoteOrphansOf: (ws) => store.remoteOrphansOf(ws)
+    sessionsRunningOnTheMachine: (ws) => store.sessionsRunningOnTheMachine(ws)
   })
   const store: ClaudeSessionStore = new ClaudeSessionStore({
     projectsRoot,
@@ -2031,7 +2034,7 @@ describe('remote workspace: reading the mirror', () => {
     mgr = remoteMgr({
       remoteRunning: () => new Set(['abc']),
       remoteConnected: () => true,
-      killRemoteSession: (host: string, id: string) => killedRemote.push(`${host}/${id}`)
+      endOnTheMachine: (host: string, id: string) => killedRemote.push(`${host}/${id}`)
     })
     startRows()
     await vi.waitFor(() => expect(latest(RKEY).rows.length).toBe(1))
@@ -2056,7 +2059,7 @@ describe('remote workspace: reading the mirror', () => {
         killedTabs.push(tabId)
         bindings.delete('abc')
       },
-      killRemoteSession: (host: string, id: string) => killedRemote.push(`${host}/${id}`)
+      endOnTheMachine: (host: string, id: string) => killedRemote.push(`${host}/${id}`)
     })
     startRows()
     await vi.waitFor(() => expect(latest(RKEY).rows.length).toBe(1))

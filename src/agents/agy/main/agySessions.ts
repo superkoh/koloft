@@ -1541,6 +1541,29 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     return undefined
   }
 
+  machineOfTab(tabId: string): string | undefined {
+    const tab = this.deps.pty.get(tabId)
+    return tab?.kind === this.id ? tab.remoteHost : undefined
+  }
+
+  machinesWithTabs(): string[] {
+    return this.deps.pty
+      .list()
+      .flatMap((tab) =>
+        tab.alive && tab.kind === this.id && tab.remoteHost ? [tab.remoteHost] : []
+      )
+  }
+
+  sessionsRunningOnTheMachine(): string[] {
+    return []
+  }
+
+  endOnTheMachine(): void {}
+
+  goneFromTheMachine(): boolean {
+    return true
+  }
+
   // AGY§11 AGY§12
   private showLastState(run: AgyRun, earlierLog: string): void {
     let last: ProgramStatus | undefined

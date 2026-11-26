@@ -181,7 +181,6 @@ const SESSION_END_SETTLE_MS = 800
 // CC§1
 const EVICTING_END_REASONS = new Set(['prompt_input_exit', 'logout'])
 const REMOTE_EXIT_WAIT_MS = 10_000
-const REMOTE_EXIT_POLL_MS = 500
 const REMOTE_EXIT_SLACK_MS = 30_000
 const LIVENESS_SWEEP_MS = 2500
 const MISSED_SWEEPS_BEFORE_UNTRACK = 2
@@ -371,6 +370,31 @@ export class ClaudeBackend implements SessionBackend {
 
   tmuxOfTab(tabId: string): string | undefined {
     return this.d.tracker.remoteOf(tabId)?.tmuxName
+  }
+
+  machineOfTab(tabId: string): string | undefined {
+    const tab = this.d.pty.get(tabId)
+    return tab?.kind === 'claude' ? tab.remoteHost : undefined
+  }
+
+  machinesWithTabs(): string[] {
+    return this.d.pty
+      .list()
+      .flatMap((tab) =>
+        tab.alive && tab.kind === 'claude' && tab.remoteHost ? [tab.remoteHost] : []
+      )
+  }
+
+  sessionsRunningOnTheMachine(workspace: string): string[] {
+    return this.d.store()?.sessionsRunningOnTheMachine(workspace) ?? []
+  }
+
+  endOnTheMachine(host: string, sessionId: string): void {
+    this.endRemoteTmux(host, tmuxSessionName(sessionId))
+  }
+
+  goneFromTheMachine(host: string, sessionId: string): boolean {
+    return !this.d.remoteSync()?.alive(host).has(sessionId)
   }
 
   hasTab(tabId: string): boolean {
@@ -880,19 +904,7 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   private remoteSessionGone(host: string, sessionId: string): boolean {
-    const remoteSync = this.d.remoteSync()
-    return !!remoteSync?.connected(host) && !remoteSync.alive(host).has(sessionId)
-  }
-
-  async waitRemoteGone(host: string, sessionId: string): Promise<'gone' | 'alive' | 'unreachable'> {
-    this.d.remoteSync()?.pokeNow(host)
-    const deadline = Date.now() + REMOTE_EXIT_WAIT_MS
-    while (!this.remoteSessionGone(host, sessionId)) {
-      if (Date.now() >= deadline)
-        return this.d.remoteSync()?.connected(host) ? 'alive' : 'unreachable'
-      await new Promise((r) => setTimeout(r, REMOTE_EXIT_POLL_MS))
-    }
-    return 'gone'
+    return !!this.d.remoteSync()?.connected(host) && this.goneFromTheMachine(host, sessionId)
   }
 
   noticeRemoteExits(host: string, sessionIds: string[]): void {

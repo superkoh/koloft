@@ -101,8 +101,23 @@ export interface SessionBackend extends SessionRowsSource, SessionMessages {
   foldersToMirrorFrom(host: string, landing: string): MirrorFolder[]
   tmuxOfTab(tabId: string): string | undefined
   tabOfTmuxSession(host: string, name: string): string | undefined
+  machineOfTab(tabId: string): string | undefined
+  machinesWithTabs(): string[]
+  sessionsRunningOnTheMachine(workspace: string): string[]
+  endOnTheMachine(host: string, key: string): void
+  goneFromTheMachine(host: string, key: string): boolean
   showsAPanel(tabId: string, screen?: string[]): Promise<boolean | undefined>
 }
+
+export interface MachineReach {
+  poke(): void
+  connected(): boolean
+}
+
+export type LeftTheMachine = 'gone' | 'alive' | 'unreachable'
+
+const A_SESSION_LEAVES_THE_MACHINE_WITHIN_MS = 10_000
+const MACHINE_LOOKED_AT_AGAIN_EVERY_MS = 500
 
 export interface SessionLifecycle {
   prompted(tabId: string): void
@@ -395,6 +410,44 @@ export class SessionBackends {
       if (tabId !== undefined) return tabId
     }
     return undefined
+  }
+
+  machineOfTab(tabId: string): string | undefined {
+    for (const backend of this.builtInListOrder()) {
+      const machine = backend.machineOfTab(tabId)
+      if (machine !== undefined) return machine
+    }
+    return undefined
+  }
+
+  machinesWithTabs(): string[] {
+    return [...new Set(this.builtInListOrder().flatMap((b) => b.machinesWithTabs()))]
+  }
+
+  sessionsRunningOnTheMachine(workspace: string): string[] {
+    return this.builtInListOrder().flatMap((b) => b.sessionsRunningOnTheMachine(workspace))
+  }
+
+  endOnTheMachine(host: string, key: string): void {
+    this.ownerOfSession(key)?.endOnTheMachine(host, key)
+  }
+
+  async waitGoneFromTheMachine(
+    host: string,
+    key: string,
+    machine: MachineReach
+  ): Promise<LeftTheMachine> {
+    const identity = identityOf(key)
+    const owner = identity && this.adapters.get(identity.backendId)
+    const gone = (): boolean =>
+      machine.connected() && (!owner || owner.goneFromTheMachine(host, key))
+    machine.poke()
+    const deadline = Date.now() + A_SESSION_LEAVES_THE_MACHINE_WITHIN_MS
+    while (!gone()) {
+      if (Date.now() >= deadline) return machine.connected() ? 'alive' : 'unreachable'
+      await new Promise((r) => setTimeout(r, MACHINE_LOOKED_AT_AGAIN_EVERY_MS))
+    }
+    return 'gone'
   }
 
   async historyRows(

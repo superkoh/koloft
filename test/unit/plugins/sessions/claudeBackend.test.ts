@@ -21,6 +21,8 @@ import { GithubRepos } from '../../../../src/main/githubRepos'
 import { gitOnPath, realGit, restorePath, seedRepo } from '../../helpers/gitShim'
 import { mirrorHookDir } from '../../../../src/main/remote/paths'
 import { START_IN_STATUS_LOG } from '../../../../src/plugins/sessions/main/hooks'
+import { SessionBackends, type LeftTheMachine } from '../../../../src/core/agent/sessionBackends'
+import { lifecycle } from '../../helpers/sessionBackendStub'
 
 function fakeTracker(): ClaudeBackendDeps['tracker'] {
   const tracked = new Map<string, { sessionId: string }>()
@@ -173,18 +175,22 @@ describe('ClaudeBackend: waiting for a remote session to end before its folder i
   const REMOTE_EXIT_WAIT_MS = 10_000
 
   function machine(): {
-    backend: ClaudeBackend
+    backend: { waitRemoteGone(host: string, sessionId: string): Promise<LeftTheMachine> }
     sync: { connected: boolean; alive: Set<string>; pokes: string[] }
   } {
     const sync = { connected: true, alive: new Set(['sid-1']), pokes: [] as string[] }
-    const backend = new ClaudeBackend({
-      remoteSync: () => ({
-        pokeNow: (host: string) => void sync.pokes.push(host),
-        connected: () => sync.connected,
-        alive: () => sync.alive
+    const backends = new SessionBackends(lifecycle())
+    backends.register(
+      new ClaudeBackend({
+        remoteSync: () => ({ connected: () => sync.connected, alive: () => sync.alive })
+      } as unknown as ClaudeBackendDeps)
+    )
+    const waitRemoteGone = (host: string, sessionId: string): Promise<LeftTheMachine> =>
+      backends.waitGoneFromTheMachine(host, sessionId, {
+        poke: () => void sync.pokes.push(host),
+        connected: () => sync.connected
       })
-    } as unknown as ClaudeBackendDeps)
-    return { backend, sync }
+    return { backend: { waitRemoteGone }, sync }
   }
 
   it('asks the machine at once, and answers "gone" as soon as the session leaves its list', async () => {

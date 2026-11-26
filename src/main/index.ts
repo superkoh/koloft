@@ -94,7 +94,6 @@ import { codexMachineInstance } from '@agents/codex/main/codexMachine'
 import {
   buildMachinePackage,
   POSIX_SHELL_FOR_REMOTE_LAUNCH_LINE,
-  tmuxSessionName,
   removeTabPackagesNoTabNeeds,
   utilShellLine,
   writeTabPassFile,
@@ -846,13 +845,7 @@ function handsOnKoloft(_e: unknown, input: { type: string }): void {
 }
 const ownerAsleepDeps: PluginStartDeps['butler']['ownerAsleep'] = {
   presence,
-  machines: () => [
-    THIS_MAC,
-    ...new Set([
-      ...ptyMgr.list().flatMap((h) => (h.alive && h.remoteHost ? [h.remoteHost] : [])),
-      ...(codexSessions?.machinesWithTabs() ?? [])
-    ])
-  ],
+  machines: () => [THIS_MAC, ...sessionBackends.machinesWithTabs()],
   mark: async (machine, awakeTabs) => {
     if (machine !== THIS_MAC) return hosts.machine(machine).markOwnerAsleep(awakeTabs)
     if (hookRegDir) markOwnerAsleep(hookRegDir, awakeTabs)
@@ -1394,7 +1387,7 @@ function watchPickRequests(pickDir: string): fs.FSWatcher | null {
 }
 
 function machineOfTab(tabId: string): string | undefined {
-  return remoteHostOfTab(tabId) ?? codexSessions?.machineOfTab(tabId)
+  return sessionBackends.machineOfTab(tabId)
 }
 
 function hostOfTab(tabId: string): HostId {
@@ -2999,9 +2992,8 @@ app.whenReady().then(() => {
     remoteConnected: (host) => remoteSync?.connected(host) ?? false,
     remoteProblem: (host) => remoteSync?.problem(host),
     remoteGit: (host, p) => remoteSync?.gitInfo(host, p),
-    remoteOrphansOf: (wsPath) => claudeStore?.remoteOrphansOf(wsPath) ?? [],
-    killRemoteSession: (host, sessionId) =>
-      claudeBackend.endRemoteTmux(host, tmuxSessionName(sessionId)),
+    sessionsRunningOnTheMachine: (wsPath) => sessionBackends.sessionsRunningOnTheMachine(wsPath),
+    endOnTheMachine: (host, key) => sessionBackends.endOnTheMachine(host, key),
     hiddenRow: (id) => sessionBackends.isKoloftsOwnSession(id),
     parentOf: (rowId) => startedSessions.parentOfRow(rowId),
     conductorsRoot: path.join(userData, 'conductors'),
@@ -3332,8 +3324,7 @@ app.whenReady().then(() => {
     listen: (host, cmd, onLine, onEnd) =>
       listenOverSsh(host, cmd, { controlDir: remoteControlDir }, onLine, onEnd),
     targets: () => {
-      const codexMachines = new Set(codexSessions?.machinesWithTabs())
-      const live = new Set(codexMachines)
+      const live = new Set(sessionBackends.machinesWithTabs())
       const agentTabsOn = new Set<string>()
       const shellTabsOn = new Map<string, string[]>()
       for (const h of ptyMgr.list()) {
@@ -4273,7 +4264,10 @@ const STILL_RUNNING_ON_THE_MACHINE = 'still running on the machine'
 async function tidyRun(root: string, worktree: string, sessionId?: string): Promise<TidyResult> {
   const host = parseRemoteKey(root)?.host
   if (host && sessionId) {
-    const after = await claudeBackend.waitRemoteGone(host, sessionId)
+    const after = await sessionBackends.waitGoneFromTheMachine(host, sessionId, {
+      poke: () => remoteSync?.pokeNow(host),
+      connected: () => !!remoteSync?.connected(host)
+    })
     if (after === 'alive') return { removed: false, kept: [STILL_RUNNING_ON_THE_MACHINE] }
     if (after === 'unreachable') return machineUnreachable()
   }
