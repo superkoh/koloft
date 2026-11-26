@@ -4,6 +4,7 @@ ANTHROPIC_AUTH_TOKEN=the-users-own-anthropic-token
 CODEX_API_KEY=the-users-own-codex-key
 CODEX_HOME=<home>/codex-home
 COLORTERM=truecolor
+GEMINI_API_KEY=the-users-own-gemini-key
 HOME=<home>
 LANG=en_US.UTF-8
 OPENAI_API_KEY=the-users-own-openai-key
@@ -33,7 +34,6 @@ CODEX_SAGE_BACKFILL_TRACKER_TAB_REUSE
 CODEX_SESSION_ID
 CODEX_SHELL
 CODEX_THREAD_ID
-GEMINI_API_KEY
 KOLOFT_AGENT_DIR
 KOLOFT_AGENT_PLUGIN
 KOLOFT_AGENT_PROMPT
