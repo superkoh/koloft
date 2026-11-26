@@ -384,6 +384,7 @@ test.describe('Workbench web tabs: an .html goes to a web tab, and the tab set s
       await expect(row).toHaveClass(/\bcold\b/, { timeout: 60_000 })
 
       await row.click()
+      await expect(row).toHaveClass(/\bst-(working|waiting)\b/, { timeout: 60_000 })
       await expect(auxIcon(page, 'Workbench')).toHaveAttribute('aria-disabled', 'false', {
         timeout: 60_000
       })
