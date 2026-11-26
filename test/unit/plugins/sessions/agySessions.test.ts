@@ -341,7 +341,7 @@ beforeEach(() => {
             endedByKoloft: async (id: string) => machine.ended.includes(`k-${id}`)
           }
         }) as unknown as Machine,
-      saidWhenTheMachineWantsAPasswordFirst: 'sign in there first',
+      saidWhenTheMachineWantsAPasswordFirst: () => 'sign in there first',
       hosts: () => ['devbox'],
       keyed: (host, p) => `ssh://${host}${p}`,
       mirrorDir: () => mirror,

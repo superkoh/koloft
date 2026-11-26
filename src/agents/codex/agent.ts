@@ -122,8 +122,7 @@ export const agent = {
     // CODEX§17
     refusesATypedSkillMarkedNotUserInvocable: false,
     // CODEX§14
-    listsTheModelsAnAccountCanRun: true,
-    itsRemoteTabCanAskForTheMachinesPassword: true
+    listsTheModelsAnAccountCanRun: true
   },
   pureFunctions: {
     effortsAModelTakes: () => CRON_EFFORTS,

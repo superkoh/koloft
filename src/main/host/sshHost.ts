@@ -70,7 +70,8 @@ import {
   type NoticeFile
 } from '@plugins/sessions/main/hooks'
 import type { SentNote } from '@core/agent/sessionBackends'
-import { AGENT_MANIFESTS } from '@core/agent/registry'
+import { AGENT_IDS, agentManifest, type AgentId } from '@core/agent/registry'
+import { shortProductList } from '@shared/sessionBackend'
 import { listSkills, skillFolders, type SkillFs, type SkillPlaces } from '../skillList'
 import type { GitOut } from '@core/worktree'
 import type { Host, ShellLaunch } from './host'
@@ -107,12 +108,13 @@ export interface SshHostDeps {
 
 const NETWORK_GIT_TIMEOUT_MS = 20_000
 
-const agentsWhoseRemoteTab = (canAsk: boolean): string =>
-  AGENT_MANIFESTS.filter((agent) => agent.flags.itsRemoteTabCanAskForTheMachinesPassword === canAsk)
-    .map((agent) => agent.shortProductName)
-    .join(' or ')
-
-export const SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST = `This machine wants a password or a new host key first, and an ${agentsWhoseRemoteTab(false)} tab cannot ask for it yet: sign in through a ${agentsWhoseRemoteTab(true)} session there first`
+export function signInThroughATabThatCanAskFirst(refused: AgentId): string {
+  const others = shortProductList(
+    AGENT_IDS.filter((id) => id !== refused),
+    'or'
+  )
+  return `This machine wants a password or a new host key first, and an ${agentManifest(refused).shortProductName} tab cannot ask for it yet: sign in through a ${others} session there first`
+}
 const WHOLE_FILE_MAX_BYTES = 32 * 1024 * 1024
 const WHOLE_FILE_READ_MS = 120_000
 const WHOLE_FILE_READS_AT_ONCE_UNDER_DEFAULT_SSHD_MAX_SESSIONS = 4

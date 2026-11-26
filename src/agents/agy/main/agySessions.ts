@@ -93,6 +93,7 @@ import {
 } from './agyTab'
 import { agyFoldersToMirror } from './agyMirror'
 import type { MirrorFolder } from '@core/agent/mirrorFolders'
+import type { AgentId } from '@core/agent/registry'
 import {
   agyConversations,
   agyConversationTitle,
@@ -165,7 +166,7 @@ export interface AgySessionDeps extends StoredSessionDeps {
 
 export interface AgyRemoteDeps {
   machine(host: string): Machine
-  saidWhenTheMachineWantsAPasswordFirst: string
+  saidWhenTheMachineWantsAPasswordFirst(refused: AgentId): string
   hosts(): string[]
   keyed(host: string, pathOnMachine: string): string
   mirrorDir(host: string): string
@@ -717,7 +718,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     return readAgyConfig(
       remote.machine(key.host),
       picked.account,
-      remote.saidWhenTheMachineWantsAPasswordFirst
+      remote.saidWhenTheMachineWantsAPasswordFirst(this.id)
     ).then((config) => trustsIn(key.path, config.ownSettings, config.ownersSettings))
   }
 
@@ -1008,7 +1009,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       throw new Error(HELD_ELSEWHERE)
     const [apiKey, config] = await Promise.all([
       this.deps.apiKeyOf(pick.account),
-      readAgyConfig(machine, pick.account, remote.saidWhenTheMachineWantsAPasswordFirst)
+      readAgyConfig(machine, pick.account, remote.saidWhenTheMachineWantsAPasswordFirst(this.id))
     ])
     this.assertStarting()
     const tabId = opts.tabId ?? this.deps.pty.nextId()

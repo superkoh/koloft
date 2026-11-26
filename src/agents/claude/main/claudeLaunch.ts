@@ -28,7 +28,7 @@ import {
 import { mirrorProjectsRoot } from './claudeMirror'
 import { worktreeNameAround } from '../../../main/resumePlan'
 import { claudeArgv } from './claudeArgs'
-import { CLAUDE_AUTH_ENV_VARS } from './claudeAccountEnv'
+import { CLAUDE_AUTH_ENV_VARS } from './claudeAuthEnv'
 import {
   acceptClaudeTrust,
   claudeJsonPath,

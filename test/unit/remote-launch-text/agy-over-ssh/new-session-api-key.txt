@@ -93,7 +93,7 @@ if [ "$1" = run ]; then
   KOLOFT_TMUX_FOLLOW=1; export KOLOFT_TMUX_FOLLOW
   PATH="$PATH":'/opt/login-shell/bin:/home/linuxbrew/.linuxbrew/bin'
   KOLOFT_TAB_ID=pty-t1; PATH="$M/bin/:$PATH"; export KOLOFT_TAB_ID PATH
-  unset KOLOFT_TAB_PASS
+  unset GEMINI_API_KEY KOLOFT_TAB_PASS
   [ -f "$HOME/.koloft/tabs/pty-t1.env" ] && { set -a; . "$HOME/.koloft/tabs/pty-t1.env"; set +a; rm -f "$HOME/.koloft/tabs/pty-t1.env"; }
   [ -f "$HOME/.koloft/tabs/pty-t1.pass" ] && { set -a; . "$HOME/.koloft/tabs/pty-t1.pass"; set +a; rm -f "$HOME/.koloft/tabs/pty-t1.pass"; }
   [ -n "$KOLOFT_TAB_PASS" ] && ( umask 077; printf 'set-environment -t %s KOLOFT_TAB_ID %s\nset-environment -t %s KOLOFT_TAB_PASS %s\n' "m-pty-t1-t" pty-t1 "m-pty-t1-t" "$KOLOFT_TAB_PASS" > "$HOME/.koloft/tabs/pty-t1.keys" ) && tmux -L koloft source-file "$HOME/.koloft/tabs/pty-t1.keys"; rm -f "$HOME/.koloft/tabs/pty-t1.keys"
@@ -119,7 +119,7 @@ if [ "$1" = run ]; then
   [ -f "$T.onboarding.json" ] && { [ -f "$A/antigravity-cli/cache/onboarding.json" ] || mv "$T.onboarding.json" "$A/antigravity-cli/cache/onboarding.json"; rm -f "$T.onboarding.json"; }
   [ -n "$KOLOFT_AGY_SIGN_IN" ] && { [ -f "$A/antigravity-cli/antigravity-oauth-token" ] || ( umask 077; printf '%s' "$KOLOFT_AGY_SIGN_IN" > "$A/antigravity-cli/antigravity-oauth-token" ); }; unset KOLOFT_AGY_SIGN_IN
   mkdir -p "$A/antigravity-cli/skills"; { diff -r "$M/docs-plugin/skills/koloft-docs" "$A/antigravity-cli/skills/koloft-docs" >/dev/null 2>&1 || { rm -rf "$A/antigravity-cli/skills/koloft-docs.new-$$" && cp -R "$M/docs-plugin/skills/koloft-docs" "$A/antigravity-cli/skills/koloft-docs.new-$$" && rm -rf "$A/antigravity-cli/skills/koloft-docs" && mv "$A/antigravity-cli/skills/koloft-docs.new-$$" "$A/antigravity-cli/skills/koloft-docs"; }; }; rm -rf "$A/antigravity-cli/skills/koloft"
-  unset GEMINI_API_KEY; [ -n "$KOLOFT_AGY_KEY" ] && { GEMINI_API_KEY="$KOLOFT_AGY_KEY"; export GEMINI_API_KEY; }; unset KOLOFT_AGY_KEY
+  [ -n "$KOLOFT_AGY_KEY" ] && { GEMINI_API_KEY="$KOLOFT_AGY_KEY"; export GEMINI_API_KEY; }; unset KOLOFT_AGY_KEY
   KOLOFT_AGY_LOG="$HOME/.koloft/hook-sessions/pty-t1.agy.jsonl"
   KOLOFT_NOTICE="$HOME/.koloft/hook-sessions/pty-t1.notice"
   AGY_CLI_OSC7501=off

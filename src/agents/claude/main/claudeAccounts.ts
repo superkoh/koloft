@@ -36,11 +36,8 @@ import {
   type PickResponse,
   type UsageSnapshots
 } from './claudeAccountPicker'
-import {
-  CLAUDE_AUTH_ENV_VARS,
-  claudeCodeGuessesWindowOf,
-  pickMachineAccount
-} from './claudeAccountEnv'
+import { claudeCodeGuessesWindowOf, pickMachineAccount } from './claudeAccountEnv'
+import { CLAUDE_AUTH_ENV_VARS } from './claudeAuthEnv'
 
 // CC§7
 interface LoginWatch {

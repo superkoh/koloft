@@ -127,7 +127,7 @@ export function agyTab(s: AgyTabSpec): TabProgram {
     // PLATFORM§75
     `[ -n "$${AGY_SIGN_IN_FROM_KOLOFT}" ] && { [ -f "${own}/antigravity-oauth-token" ] || ( umask 077; printf '%s' "$${AGY_SIGN_IN_FROM_KOLOFT}" > "${own}/antigravity-oauth-token" ); }; unset ${AGY_SIGN_IN_FROM_KOLOFT}`,
     skillsFromMachineLine(`$A/${AGY_SKILLS}`, '$M', s.koloftSkill),
-    `unset ${AGY_KEY_ENV}; [ -n "$${AGY_KEY_FROM_KOLOFT}" ] && { ${AGY_KEY_ENV}="$${AGY_KEY_FROM_KOLOFT}"; export ${AGY_KEY_ENV}; }; unset ${AGY_KEY_FROM_KOLOFT}`,
+    `[ -n "$${AGY_KEY_FROM_KOLOFT}" ] && { ${AGY_KEY_ENV}="$${AGY_KEY_FROM_KOLOFT}"; export ${AGY_KEY_ENV}; }; unset ${AGY_KEY_FROM_KOLOFT}`,
     `${AGY_LOG_ENV}="${REMOTE_HOOK_DIR}/${agyLogName(s.tabId)}"`,
     `${NOTICE_ENV}="${remoteNoticeFile(s.tabId)}"`,
     // AGY§10 AGY§29
@@ -144,7 +144,7 @@ export function agyTab(s: AgyTabSpec): TabProgram {
     ensureTool: 'agy',
     beforeTmux: '',
     whenItEnds: s.start ? `rm -f ${START_OF_THIS_RUN}` : '',
-    envThatWouldSignItInAsAnotherAccount: [],
+    envThatWouldSignItInAsAnotherAccount: [AGY_KEY_ENV],
     files: {
       [file('settings.json')]: s.settings,
       [file('hooks.json')]: s.hooks,
