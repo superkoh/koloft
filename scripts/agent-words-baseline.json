@@ -86,9 +86,6 @@
       "return { question: questions > 0, questions, text: claudeDialog(claude).text }",
       "type CodexAsk = CodexApproval | CodexQuestion"
     ],
-    "src/main/host/sshHost.ts": [
-      "'This machine wants a password or a new host key first, and an Antigravity tab cannot ask for it yet: sign in through a Claude Code or Codex session there first'"
-    ],
     "src/main/index.ts": [
       "() => agySessions,",
       "() => claudeStore,",
@@ -99,8 +96,6 @@
       ".then((codex) => {",
       "? 'Installing Claude Code failed'",
       "? listedModelsWithin('agy', THE_DIALOG_WAITS_FOR_THE_ACCOUNTS_MODELS_MS)",
-      "CLAUDE_AUTH_ENV_VARS,",
-      "CLAUDE_AUTH_ENV_VARS,",
       "accounts: claudeAccounts,",
       "agentPlugin: () => (agentToolsOn() ? claudeAgentPlugin : undefined),",
       "agy: () => agyOneShotTarget()",
@@ -333,13 +328,8 @@
       "say \"this machine's AppArmor blocks the sandbox Codex runs commands in (kernel.apparmor_restrict_unprivileged_userns = 1 and no AppArmor profile for /usr/bin/bwrap), so each command Codex runs there fails with \\\\\"bwrap: loopback\\\\\". To fix it, load an AppArmor profile that allows userns for /usr/bin/bwrap on the machine (needs root), then start the session again.\""
     ],
     "src/main/remote/launch.ts": [
-      "'ANTHROPIC_API_KEY',",
-      "'ANTHROPIC_AUTH_TOKEN'",
-      "'CLAUDE_CODE_OAUTH_TOKEN',",
       "[UTIL_BIN_DIR, SESSION_BIN_DIR, CLAUDE_BIN_DIR].some((bin) => rel.startsWith(bin))",
-      "export const CLAUDE_AUTH_ENV_VARS = [",
-      "export const CLAUDE_BIN_DIR = 'claude-bin/'",
-      "unset ${CLAUDE_AUTH_ENV_VARS.join(' ')} ${TAB_PASS_ENV}"
+      "export const CLAUDE_BIN_DIR = 'claude-bin/'"
     ],
     "src/main/remote/machinePackageFiles.ts": [
       "...replyLanguageFiles(CODEX_REPLY_LANGUAGE_SCRIPT),",

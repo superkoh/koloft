@@ -70,6 +70,8 @@ import {
   type NoticeFile
 } from '../hookFiles'
 import type { SentNote } from '@core/agent/sessionBackends'
+import { AGENT_IDS, agentManifest, type AgentId } from '@core/agent/registry'
+import { shortProductList } from '@shared/sessionBackend'
 import { listSkills, skillFolders, type SkillFs, type SkillPlaces } from '../skillList'
 import type { GitOut } from '@core/worktree'
 import type { Host, ShellLaunch } from './host'
@@ -106,8 +108,14 @@ export interface SshHostDeps {
 
 const NETWORK_GIT_TIMEOUT_MS = 20_000
 
-export const SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST =
-  'This machine wants a password or a new host key first, and an Antigravity tab cannot ask for it yet: sign in through a Claude Code or Codex session there first'
+export function signInThroughATabThatCanAskFirst(refused: AgentId): string {
+  const others = shortProductList(
+    AGENT_IDS.filter((id) => id !== refused),
+    'or'
+  )
+  const name = agentManifest(refused).shortProductName
+  return `This machine wants a password or a new host key first, and ${/^[AEIOU]/.test(name) ? 'an' : 'a'} ${name} tab cannot ask for it yet: sign in through a ${others} session there first`
+}
 const WHOLE_FILE_MAX_BYTES = 32 * 1024 * 1024
 const WHOLE_FILE_READ_MS = 120_000
 const WHOLE_FILE_READS_AT_ONCE_UNDER_DEFAULT_SSHD_MAX_SESSIONS = 4

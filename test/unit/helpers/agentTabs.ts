@@ -18,7 +18,7 @@ import { GithubRepos } from '../../../src/main/githubRepos'
 import type { RemoteTab } from '../../../src/main/host/host'
 import { Hosts } from '../../../src/main/host/hosts'
 import { localHost } from '../../../src/main/host/localHost'
-import { SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST, SshHost } from '../../../src/main/host/sshHost'
+import { signInThroughATabThatCanAskFirst, SshHost } from '../../../src/main/host/sshHost'
 import { answerOf, type BytesResult } from '../../../src/main/remote/ssh'
 import { tabPushed } from '../../../src/main/remote/launch'
 import { claudeProjectPrompt, keepSkillsIn, projectPromptFile } from '../../../src/main/agentPlugin'
@@ -396,7 +396,7 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
     gitAccounts: { configEnv: (env) => env, ghWrapper: path.join(tools, 'gh') },
     remote: {
       machine,
-      saidWhenTheMachineWantsAPasswordFirst: SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST,
+      saidWhenTheMachineWantsAPasswordFirst: signInThroughATabThatCanAskFirst,
       hosts: () => a.pinnedMachines?.() ?? [MACHINE],
       keyed: (host, p) => `ssh://${host}${p}`,
       mirrorDir: () => mirror,

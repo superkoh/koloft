@@ -10,6 +10,7 @@ export interface TabProgram {
   ensureTool?: string
   beforeTmux: string
   whenItEnds: string
+  envThatWouldSignItInAsAnotherAccount: readonly string[]
   files: Record<string, string>
 }
 

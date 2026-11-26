@@ -25,12 +25,6 @@ import { saidFile, seedHandedOverOwnerWords, STATUS_LOG_SUFFIX } from '../hookFi
 import { STATUS_RELAY_FILE } from './statusRelay'
 import type { TabContent } from '../host/machine'
 
-export const CLAUDE_AUTH_ENV_VARS = [
-  'CLAUDE_CODE_OAUTH_TOKEN',
-  'ANTHROPIC_API_KEY',
-  'ANTHROPIC_AUTH_TOKEN'
-]
-
 export interface MachinePackage {
   dir: string
   name: string
@@ -157,7 +151,7 @@ ${REMOTE_ENV_LINES}
 if [ "$1" = run ]; then
   KOLOFT_TMUX_FOLLOW=1; export KOLOFT_TMUX_FOLLOW
 ${loginPathToo}  KOLOFT_TAB_ID=${spec.tabId}; PATH="$M/${SESSION_BIN_DIR}:$PATH"; export KOLOFT_TAB_ID PATH
-  unset ${CLAUDE_AUTH_ENV_VARS.join(' ')} ${TAB_PASS_ENV}
+  unset ${[...program.envThatWouldSignItInAsAnotherAccount, TAB_PASS_ENV].join(' ')}
   ${sourceOnceThenRemove(`${T}.env`)}
   ${sourceTabPass(spec.tabId)}
   ${tabPassIntoTmux(T, spec.tmuxName, spec.tabId)}

@@ -98,7 +98,6 @@ import {
   removeTabPackagesNoTabNeeds,
   utilShellLine,
   writeTabPassFile,
-  CLAUDE_AUTH_ENV_VARS,
   type MachinePackage
 } from './remote/launch'
 import {
@@ -201,7 +200,7 @@ import { closeAllFileWatchers, closeAllDirWatchers } from './fileWatch'
 import { sanitizeBase } from './gitStatus'
 import { Hosts } from './host/hosts'
 import { localGitOut, localHost } from './host/localHost'
-import { SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST, SshHost } from './host/sshHost'
+import { signInThroughATabThatCanAskFirst, SshHost } from './host/sshHost'
 import { isGitCheckoutAsync, projectInfoFor, realpathSafe } from './projectInfo'
 import { checkForUpdates, downloadAndInstall, releasePageUrl, restartApp } from './updater'
 import { currentOffer, startUpdateNotifier } from './updateNotifier'
@@ -1331,7 +1330,6 @@ const {
     availability: () => claudeBackend.availability()
   },
   loginEnvReady,
-  CLAUDE_AUTH_ENV_VARS,
   cronTestMs,
   setupLine,
   PLAIN_KOLOFT_SHIM,
@@ -2903,7 +2901,7 @@ app.whenReady().then(() => {
       remote: {
         ...machineRemoteDeps,
         machine: (host) => hosts.machine(host),
-        saidWhenTheMachineWantsAPasswordFirst: SIGN_IN_THROUGH_A_TAB_THAT_CAN_ASK_FIRST,
+        saidWhenTheMachineWantsAPasswordFirst: signInThroughATabThatCanAskFirst,
         mirrorGemini: (host) => mirrorAgyGemini(userData, host),
         nextPull: (host) => {
           if (!remoteSync) return Promise.resolve()
