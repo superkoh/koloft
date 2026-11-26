@@ -44,7 +44,12 @@ quote were English 30% of the time against 13% under the owner's own words (67% 
 1% once the turn had been compacted, 37% against 15% past 60 tool calls).
 A Codex tab gets the same quote, at the prompt and after every tool, through Codex's own
 `UserPromptSubmit` and `PostToolUse` hooks (CODEX§27); a message another session sends it
-starts "(From the session …" and keeps the owner's quote. How far Codex's models drift
+starts "(From the session …" and keeps the owner's quote.
+A message the butler passes on ("(From the butler, Koloft's AI, …") keeps the owner's
+quote too, in every agent's tab, even once Koloft has proved it sent it: the reminder
+follows only the owner's own words, typed in that tab or sent through Koloft's Discord
+relay. Rejected: taking a butler message Koloft proved it sent as the owner's words,
+though it carries them in « »; the owner decided the butler's messages never count. How far Codex's models drift
 was not measured: the rule is carried over because the owner reads both kinds of tab.
 A session another session starts (`koloft session new`) is quoted by the owner's words,
 not by its task: the task is written by an AI, often in English (a path to a brief, or

@@ -481,6 +481,14 @@ only downloaded the public release.
   - The user's words are `USER_INPUT.content`, still wrapped as in §2; the reply is
     `PLANNER_RESPONSE.content`; tool results are `GENERIC.content`. Tokens are on
     `PLANNER_RESPONSE` lines.
+  - An apostrophe in `content` is written as the plain character, never as its
+    six-character JSON escape (backslash, `u0027`). Read 2026-11-25 from real
+    `transcript_full.jsonl` files on the Mac (agy 1.5.17 installed then; the version
+    that wrote them, 2026-11-18 and 11-22, not recorded): a `USER_INPUT` line holding
+    `<USER_REQUEST>\nDo two things. … from this repository's .agents/skills`, and a
+    tool result holding `"(From the butler, Koloft's AI, for your owner."`. Koloft
+    dependent: the hook's list of openings that are not the owner's words (§12) matches
+    the butler's opening, `Koloft's` included, by its raw text.
   - What the token fields hold (2026-10-19, agy 1.3.6, `agy -p` against a fake model
     server, two calls checked against what it sent): `input_tokens =
     promptTokenCount − cachedContentTokenCount` (cached already taken out, unlike

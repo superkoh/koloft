@@ -920,7 +920,7 @@ esac
     })
 
     // ADR-0028 CODEX§33
-    it('a Codex prompt that opens the way Koloft, its butler or another session through Koloft opens one passes when Koloft noted its words, however the agent escapes them, and is flagged as not sent by Koloft when it did not', () => {
+    it('a Codex prompt that opens the way Koloft, its butler or another session through Koloft opens one passes when Koloft noted its words, however the agent escapes them, and is flagged as not sent by Koloft when it did not; either way it is not the owner’s words, so a butler’s message Koloft sent leaves the quote alone', () => {
       const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-sent-words-'))
       const sentWords = path.join(dir, 'tabC.discord-said')
       const run = (input: string): string =>
@@ -945,7 +945,9 @@ esac
       }
       const passedOn = ownerSays('«先看看侧栏»')
       fs.appendFileSync(sentWords, sentWordsLine(passedOn))
-      expect(reminder(run(input(passedOn)), 'UserPromptSubmit')).toMatch(writesIn('Chinese'))
+      expect(reminder(run(input(passedOn)), 'UserPromptSubmit')).toMatch(
+        /^The user's latest message begins: «look but do not change»/
+      )
       expect(flagged(run(input(A_HELPER_HAS_IT)))).toBe(false)
       fs.rmSync(dir, { recursive: true, force: true })
     })

@@ -242,12 +242,6 @@ case "$(prompt_body)" in
     else
       flag=${shq(NOT_FROM_THE_RELAY)}
     fi ;;
-  ${opensLike([BUTLER_SAYS_OPENING])})
-    if sent_by_koloft; then
-      ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS}
-    else
-      flag=${shq(NOT_SENT_BY_KOLOFT)}
-    fi ;;
   ${opensLike(OPENINGS_ONLY_KOLOFT_SENDS)}) sent_by_koloft || flag=${shq(NOT_SENT_BY_KOLOFT)} ;;
   *) ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS} ;;
 esac`

@@ -24,6 +24,7 @@ import {
   REPLY_LANGUAGE_BEFORE_QUOTE,
   noticeLine
 } from '../../../../src/plugins/sessions/main/hooks'
+import { ownerSays as butlerPassesOn } from '../../../../src/shared/agentGuide'
 
 const C1 = '3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d'
 const C2 = '7a2d4e6f-1b3c-4d5e-8f9a-0b1c2d3e4f5a'
@@ -239,12 +240,13 @@ describe('the hook script agy runs for every hook (AGY§12)', () => {
   })
 
   // ADR-0031
-  it("quotes the owner's own newest words past a message from another session, a notice from Koloft and the note Koloft opens a butler with for a ⌘P request, in its older wording too", () => {
+  it("quotes the owner's own newest words past a message from another session, a notice from Koloft, a message the butler passes on and the note Koloft opens a butler with for a ⌘P request, in its older wording too", () => {
     expect(
       quoteBeforeModelCall(
         transcriptWith(
           'mira primero la barra lateral',
           `${FROM_A_SESSION}"Fix docs", id abc:) Done: PR #12 is open.`,
+          butlerPassesOn('«先看看侧栏，别动代码»'),
           `${FROM_KOLOFT}origin/main moved from aaaaaaa to bbbbbbb.`,
           A_HELPER_HAS_IT,
           '(From Koloft: the owner asked for something, and Koloft hands it to a helper of yours, which has the request and reports back to you. Nothing is needed from you now.)'
