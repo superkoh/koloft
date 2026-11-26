@@ -291,9 +291,9 @@ case "$event" in
       esac
       case "$(prompt_body | LC_ALL=C sed -E 's/^<cross-session-message( [a-z-]+=\\\\"[^"\\\\]*\\\\")*>\\\\n//')" in
         ${WORDS_THAT_ASK_NOTHING}) ;;
+        ${opensLike(OPENINGS_ONLY_KOLOFT_SENDS)}) [ -n "$sent" ] || flag=${shq(NOT_SENT_BY_KOLOFT)} ;;
         ${opensLike([FROM_DISCORD])})
           if [ -n "$sent" ]; then save_quote; else flag=${shq(NOT_FROM_THE_RELAY)}; fi ;;
-        ${opensLike(OPENINGS_ONLY_KOLOFT_SENDS)}) [ -n "$sent" ] || flag=${shq(NOT_SENT_BY_KOLOFT)} ;;
         *)
           case "$input" in
             *'"prompt":"<cross-session-message '*|*'"prompt":"<task-notification>'*|*'"prompt":"<agent-message '*) ;;
