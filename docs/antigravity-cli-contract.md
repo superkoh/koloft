@@ -1356,8 +1356,8 @@ Koloft dependents: the repo's own `.agents/hooks.json` (ADR-0053).
 - **Renaming over ssh works the same way.** The same lookup, then
   `UpdateConversationAnnotations` with the title, sent from the Mac through one
   `ssh host node …` call after the first turn ended, on the agy Google's installer put on
-  the Docker lab's Linux machine (2026-11-25, fake Gemini server, API-key route, tmux 3.3a,
-  1 run): the conversation's `annotations/*.pbtxt` held the new title at once and
+  the Docker lab's Linux machine (agy 1.5.18, 2026-11-25, fake Gemini server, API-key
+  route, tmux 3.3a, 2 runs): the conversation's `annotations/*.pbtxt` held the new title at once and
   `conversation_summaries.db` within 30 s (until then only its `-wal` had it); the title
   the model gave was in neither by then. Koloft's listing of that machine then read the new
   title, and kept it after Koloft's tab closed and after Koloft started again.

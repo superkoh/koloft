@@ -323,6 +323,7 @@ const post = async (port, method, body) => {
 for (const port of new Set(ports().filter((p) => Number.isInteger(p) && p > 0))) {
   if (action === '${AGY_RENAME}') {
     try {
+      await post(port, 'GetStatus', {})
       await post(port, 'UpdateConversationAnnotations', {
         cascadeId,
         annotations: { title: text },
