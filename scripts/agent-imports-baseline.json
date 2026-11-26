@@ -36,6 +36,7 @@
       "src/main/index.ts": {
         "src/agents/agy/main/agyAccounts.ts": "D1",
         "src/agents/agy/main/agyCatalog.ts": "D1",
+        "src/agents/agy/main/agyMachinePackage.ts": "D1",
         "src/agents/agy/main/agyMirror.ts": "D1",
         "src/agents/agy/main/agyShim.ts": "D1",
         "src/agents/agy/main/agyStore.ts": "D1",
@@ -44,6 +45,7 @@
         "src/agents/claude/main/claudeAccounts.ts": "D1",
         "src/agents/claude/main/claudeCatalog.ts": "D1",
         "src/agents/claude/main/claudeDialogWatch.ts": "D1",
+        "src/agents/claude/main/claudeMachinePackage.ts": "D1",
         "src/agents/claude/main/claudeMirror.ts": "D1",
         "src/agents/claude/main/claudeSessionRegistry.ts": "D1",
         "src/agents/claude/main/claudeShim.ts": "D1",
@@ -55,24 +57,6 @@
         "src/agents/codex/main/codexShim.ts": "D1",
         "src/agents/codex/main/codexTrust.ts": "D1",
         "src/agents/codex/main/codexUsage.ts": "D1"
-      },
-      "src/main/remote/install.ts": {
-        "src/agents/agy/main/agyMinimum.ts": "C10",
-        "src/agents/agy/shared/agyInstaller.ts": "C10",
-        "src/agents/claude/main/claudeMinimum.ts": "C10"
-      },
-      "src/main/remote/machinePackageFiles.ts": {
-        "src/agents/agy/main/agyHooks.ts": "C10",
-        "src/agents/agy/main/agyShim.ts": "C10",
-        "src/agents/agy/main/agyStatusline.ts": "C10",
-        "src/agents/agy/main/agyStore.ts": "C10",
-        "src/agents/agy/main/agyTab.ts": "C10",
-        "src/agents/claude/main/advisorOnFable.ts": "C10",
-        "src/agents/claude/main/claudeHooks.ts": "C10",
-        "src/agents/claude/main/claudeShim.ts": "C10",
-        "src/agents/codex/main/codexHooks.ts": "C10",
-        "src/agents/codex/main/codexMachine.ts": "C10",
-        "src/agents/codex/main/codexShim.ts": "C10"
       },
       "src/main/rowActivity.ts": { "src/agents/claude/main/claudeTouchedFiles.ts": "C1" }
     },

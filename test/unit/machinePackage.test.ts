@@ -14,6 +14,20 @@ vi.mock('electron', async () => {
 
 afterAll(() => fs.rmSync(app.getPath('userData'), { recursive: true, force: true }))
 
+const statusLineBundle = vi.hoisted(() => ({ unreadable: false }))
+
+vi.mock('../../src/main/statuslineParts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../../src/main/statuslineParts')>()
+  const { app: mockedApp } = await import('electron')
+  return {
+    ...real,
+    bundlePath: () =>
+      statusLineBundle.unreadable
+        ? path.join(mockedApp.getPath('userData'), 'no-such-folder', 'ccstatusline.js')
+        : real.bundlePath()
+  }
+})
+
 import { knowPluginStates } from '@core/switches'
 import { plugin as passwordsPlugin } from '@plugins/passwords/plugin'
 import {
@@ -23,6 +37,7 @@ import {
 } from '../../src/main/remote/launch'
 import { machinePackageFiles } from '../../src/main/remote/machinePackageFiles'
 import { makeWorld, type World } from './helpers/agentTabs'
+import { everyAgentWithItsOwnToolsAndMachinePackage } from './helpers/agentShims'
 
 const PINNED = './machine-package'
 const PROMPT_TEXT = path.join(__dirname, 'prompt-text')
@@ -42,13 +57,18 @@ beforeEach(() => {
 })
 
 afterEach(async () => {
+  statusLineBundle.unreadable = false
+  vi.restoreAllMocks()
   knowPluginStates({})
   await world.gone()
 })
 
 function machinePackageWith(passwords: boolean): Built {
   knowPluginStates({ [passwordsPlugin.id]: { on: passwords } })
-  const pkg = buildMachinePackage(path.join(world.userData, 'remote', 'pkg'), machinePackageFiles())
+  const pkg = buildMachinePackage(
+    path.join(world.userData, 'remote', 'pkg'),
+    machinePackageFiles(everyAgentWithItsOwnToolsAndMachinePackage())
+  )
   const files = fs
     .readdirSync(pkg.dir, { recursive: true, encoding: 'utf8' })
     .filter((rel) => rel !== '.complete' && fs.statSync(path.join(pkg.dir, rel)).isFile())
@@ -121,6 +141,15 @@ describe('the machine package Koloft pushes once to every machine it has a tab o
     expect(off.name).toBe(nameFromTheFilesOnDisk(off))
     await expect(`passwords on: ${on.name}\npasswords off: ${off.name}\n`).toMatchFileSnapshot(
       `${PINNED}/names.txt`
+    )
+  })
+
+  it("when ccstatusline's bundle cannot be read, every file under statusline/ is left out, every agent's too, as they need the bundle to run", async () => {
+    statusLineBundle.unreadable = true
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const pkg = machinePackageWith(true)
+    await expect(`${pkg.files.join('\n')}\n`).toMatchFileSnapshot(
+      `${PINNED}/statusline-bundle-unreadable.txt`
     )
   })
 

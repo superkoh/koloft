@@ -14,7 +14,13 @@ import {
   TAB_PASS_FILE_SUFFIX,
   tmuxHoldsATabPass
 } from './install'
-import { remotePtsFile, remoteTabPath, REMOTE_TABS_DIR, tabPackagesBase } from './paths'
+import {
+  remotePtsFile,
+  remoteTabPath,
+  REMOTE_TABS_DIR,
+  SESSION_BIN_DIR,
+  tabPackagesBase
+} from './paths'
 import { passOf, TAB_PASS_ENV } from '../tabPass'
 import { OWNING_TAB_ENV } from '../owningTabEnv'
 import { SSH_LINK_BROKE_EXIT } from './ssh'
@@ -36,9 +42,6 @@ export interface MachinePackage {
   name: string
 }
 
-export const UTIL_BIN_DIR = 'util-bin/'
-export const SESSION_BIN_DIR = 'bin/'
-export const CLAUDE_BIN_DIR = 'claude-bin/'
 export const AGENT_PLUGIN_DIR = 'agent-plugin/'
 export const DOCS_PLUGIN_DIR = 'docs-plugin/'
 
@@ -62,6 +65,8 @@ export function skillsFromMachineLine(
   ].join('; ')
 }
 
+const IN_A_TOP_FOLDER_WHOSE_NAME_ENDS_IN_BIN = /^[^/]*bin\//
+
 export function buildMachinePackage(
   base: string,
   files: Record<string, string | Buffer>
@@ -80,9 +85,7 @@ export function buildMachinePackage(
     for (const [rel, content] of Object.entries(files)) {
       const full = path.join(dir, rel)
       fs.mkdirSync(path.dirname(full), { recursive: true })
-      const executable =
-        rel.endsWith('.sh') ||
-        [UTIL_BIN_DIR, SESSION_BIN_DIR, CLAUDE_BIN_DIR].some((bin) => rel.startsWith(bin))
+      const executable = rel.endsWith('.sh') || IN_A_TOP_FOLDER_WHOSE_NAME_ENDS_IN_BIN.test(rel)
       fs.writeFileSync(full, content, { mode: executable ? 0o755 : 0o644 })
     }
     fs.writeFileSync(path.join(dir, '.complete'), '')

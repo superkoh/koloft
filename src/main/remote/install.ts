@@ -3,9 +3,7 @@ import { parseWorktreeEntries, type WorktreeEntry } from '../workspaceOps'
 import { REMOTE_HOOK_DIR, REMOTE_TABS_DIR, remotePtsFile, remoteShellPidFile } from './paths'
 import { TAB_PASS_ENV } from '../tabPass'
 import { ECHO_THE_MARK } from './ssh'
-import { ENSURE_AGY_MINIMUM_FN } from '@agents/agy/main/agyMinimum'
-import { AGY_INSTALLER_URL } from '@agents/agy/shared/agyInstaller'
-import { ENSURE_CLAUDE_MINIMUM_FN } from '@agents/claude/main/claudeMinimum'
+import type { EnsureOnTheMachine } from '@core/agent/agentsMain'
 import VENDOR_RELEASE from '../../../scripts/vendor-release.json'
 
 export const NODE_VERSION = '22.12.0'
@@ -84,7 +82,7 @@ export function remoteAnswerCommand(script: string, args: string[] = []): string
   return remoteShCommand(script, args, ECHO_THE_MARK)
 }
 
-const INSTALL_PKG = `say() { printf '[Koloft] %s\\n' "$*"; }
+export const INSTALL_PKG = `say() { printf '[Koloft] %s\\n' "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 ${FETCH_FN}
 fetch_checked() {
@@ -135,18 +133,12 @@ install_pkg() {
   return 1
 }`
 
-const installNode = (
+export const installNode = (
   forWhat: string,
   without: string,
-  onlyOwnNodeWhen = ''
+  firstInNodeOk: string[] = []
 ): string => `NODE_VERSION=${NODE_VERSION}
-node_ok() {${
-  onlyOwnNodeWhen
-    ? `
-  # AGY§8
-  ${onlyOwnNodeWhen} && { node_runs; return; }`
-    : ''
-}
+node_ok() {${firstInNodeOk.map((lines) => `\n${lines}`).join('')}
   have node || return 1
   v="$(node -v 2>/dev/null | sed 's/^v//' | cut -d. -f1)"
   [ "\${v:-0}" -ge 20 ] 2>/dev/null
@@ -193,7 +185,7 @@ fi`
 const GH_TRIES_AGAIN_AFTER_MINUTES = 24 * 60
 
 // PLATFORM§44
-const INSTALL_GH = `GH_VERSION=${VENDOR_RELEASE.gh.version}
+export const INSTALL_GH = `GH_VERSION=${VENDOR_RELEASE.gh.version}
 gh_platform() {
   case "$(uname -s)" in Linux) gh_os=linux; gh_ext=tar.gz ;; Darwin) gh_os=macOS; gh_ext=zip ;; *) return 1 ;; esac
   case "$(uname -m)" in x86_64|amd64) gh_arch=amd64 ;; aarch64|arm64) gh_arch=arm64 ;; *) return 1 ;; esac
@@ -221,17 +213,21 @@ fi`
 
 export const PYTHON3_HAS_PTY = "python3 -c 'import pty, termios' >/dev/null 2>&1"
 
+const caseArm = (ensure: EnsureOnTheMachine): string =>
+  `${ensure.word ?? '*'})\n${ensure.install}\n  ;;\n`
+
 // PLATFORM§37
-export const ENSURE_SH = `#!/bin/sh
+export function ensureSh(ensures: EnsureOnTheMachine[]): string {
+  const named = ensures.filter((ensure) => ensure.word !== undefined)
+  const takenWithNoWord = ensures.filter((ensure) => ensure.word === undefined)
+  return `#!/bin/sh
 ${REMOTE_ENV_LINES}
 ${INSTALL_PKG}
 
 have bash || install_pkg bash || exit 4
 
 program="$1"
-${ENSURE_CLAUDE_MINIMUM_FN}
-${ENSURE_AGY_MINIMUM_FN}
-official_install() {
+${ensures.map((ensure) => `${ensure.functions}\n`).join('')}official_install() {
   have curl || have wget || install_pkg curl || { say "need curl or wget to install $1"; exit 4; }
   say "installing $1 (official installer)"
   if have curl; then curl -fsSL "$2" | bash
@@ -239,18 +235,13 @@ official_install() {
   have "$1" || { say "$1 did not install; see the output above"; exit 4; }
 }
 case "$program" in
-agy)
-  # AGY§3
-  have agy || official_install agy ${AGY_INSTALLER_URL}
-  ensure_agy_minimum agy || exit 4
-  ;;
-*)
-  have claude || official_install claude https://claude.ai/install.sh
-  ensure_claude_minimum claude || exit 4
-  ;;
-esac
+${[...named, ...takenWithNoWord].map(caseArm).join('')}esac
 
-${installNode('the statusline', 'this machine gets no statusline', '[ "$program" = agy ]')}
+${installNode(
+  'the statusline',
+  'this machine gets no statusline',
+  ensures.map((ensure) => ensure.whichNodeWillDo).filter(Boolean)
+)}
 
 ${INSTALL_GH}
 
@@ -258,50 +249,7 @@ have tmux || install_pkg tmux || exit 4
 have rsync || install_pkg rsync || exit 4
 exit 0
 `
-
-const CODEX_CLI_DIR = '$HOME/.koloft/codex-cli'
-
-export const CODEX_FIRST_ON_PATH = `PATH="${CODEX_CLI_DIR}/bin:$PATH"; export PATH`
-
-const CA_BUNDLES = [
-  '/etc/ssl/certs/ca-certificates.crt',
-  '/etc/pki/tls/certs/ca-bundle.crt',
-  '/etc/ssl/cert.pem',
-  '/etc/ssl/ca-bundle.pem'
-]
-
-// CODEX§16
-export const ENSURE_CODEX_SH = `#!/bin/sh
-${REMOTE_ENV_LINES}
-${CODEX_FIRST_ON_PATH}
-want="$1"
-${INSTALL_PKG}
-have bash || install_pkg bash || exit 4
-ca_ok() {
-  for f in ${CA_BUNDLES.join(' ')}; do [ -s "$f" ] && return 0; done
-  return 1
 }
-if ! ca_ok; then
-  install_pkg ca-certificates && ca_ok || {
-    say "this machine has no CA certificates (the ca-certificates package), so Codex cannot reach OpenAI from here — it would only say \\"workspace routing discovery failed\\". Install ca-certificates there, then start the session again."
-    exit 4
-  }
-fi
-if ! have bwrap && [ "$(uname -s)" = Linux ] && { [ "$(id -u)" = 0 ] || sudo -n true >/dev/null 2>&1; }; then
-  install_pkg bubblewrap || :
-fi
-if [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = 1 ] && ! grep -rqs /usr/bin/bwrap /etc/apparmor.d; then
-  say "this machine's AppArmor blocks the sandbox Codex runs commands in (kernel.apparmor_restrict_unprivileged_userns = 1 and no AppArmor profile for /usr/bin/bwrap), so each command Codex runs there fails with \\"bwrap: loopback\\". To fix it, load an AppArmor profile that allows userns for /usr/bin/bwrap on the machine (needs root), then start the session again."
-fi
-${INSTALL_GH}
-[ "$(codex --version 2>/dev/null)" = "codex-cli $want" ] && exit 0
-${installNode('Codex', 'Codex cannot be installed on this machine')}
-have npm || { say "Codex is installed with npm, and this machine has none: install Node.js 20 or newer there, then start the session again"; exit 4; }
-say "installing Codex $want on this machine (once per Codex version)"
-npm install -g --prefix "${CODEX_CLI_DIR}" "@openai/codex@$want" </dev/null || { say "Codex $want did not install; see the output above"; exit 4; }
-[ "$(codex --version 2>/dev/null)" = "codex-cli $want" ] || { say "Codex $want did not install; see the output above"; exit 4; }
-exit 0
-`
 
 // CC§4 PLATFORM§35
 export const TMUX_PASSES_THE_PANE_TITLE_ON = ['set-titles on', "set-titles-string '#{pane_title}'"]

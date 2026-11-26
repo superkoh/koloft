@@ -6,7 +6,7 @@ import { claudeCatalog } from '../../../src/agents/claude/main/claudeCatalog'
 import { codexCatalog } from '../../../src/agents/codex/main/codexCatalog'
 import { agyCatalog } from '../../../src/agents/agy/main/agyCatalog'
 import { EVERY_AGENTS_TOOLS } from './agentShims'
-import { NOTHING_TO_READ_OR_SEARCH } from './agentMainParts'
+import { PARTS_THE_TEST_DOES_NOT_USE } from './agentMainParts'
 
 const noModelList = async (): Promise<undefined> => undefined
 const noOneShotTarget = async (): Promise<null> => null
@@ -30,7 +30,7 @@ export function agentsWithTheirCatalogs(owners: OwnersSettings): AgentsMain {
       catalog,
       tools: EVERY_AGENTS_TOOLS[id],
       accounts: accountsThatAreNeverAsked,
-      ...NOTHING_TO_READ_OR_SEARCH
+      ...PARTS_THE_TEST_DOES_NOT_USE
     })
   return agents
 }

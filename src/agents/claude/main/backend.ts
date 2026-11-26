@@ -68,6 +68,7 @@ import { errorText } from '@core/errorText'
 import { sessionIdOfTmux, tmuxSessionName } from '../../../main/remote/launch'
 import { dq, mirrorHookDir, REMOTE_HOOK_DIR, tabPackageDir } from '../../../main/remote/paths'
 import { claudeRecordsFolder, mirrorProjectsRoot } from './claudeMirror'
+import { CLAUDE_HOOK_FILE, CLAUDE_STATUS_LINE_FILE } from './claudeMachinePackage'
 import type { MirrorFolder } from '@core/agent/mirrorFolders'
 import {
   hookSettings,
@@ -1323,9 +1324,9 @@ export function machineHookSettings(
   allowKoloft: boolean
 ): Record<string, unknown> {
   const remoteStatusLine: StatusLineSetting | undefined = statusline
-    ? { type: 'command', command: dq(`${machineDir}/statusline/run.sh`), padding: 0 }
+    ? { type: 'command', command: dq(`${machineDir}/${CLAUDE_STATUS_LINE_FILE}`), padding: 0 }
     : undefined
-  const settings = hookSettings(`${machineDir}/hook.sh`, REMOTE_HOOK_DIR, tabId, {
+  const settings = hookSettings(`${machineDir}/${CLAUDE_HOOK_FILE}`, REMOTE_HOOK_DIR, tabId, {
     statusLine: remoteStatusLine,
     quote: dq,
     dialogs: 'record-only'

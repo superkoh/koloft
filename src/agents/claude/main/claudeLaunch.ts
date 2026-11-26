@@ -14,7 +14,6 @@ import { resolveSpawnCwd } from '../../../main/projectInfo'
 import {
   ACCOUNT_ENV_HELD_IN_MEMORY,
   AGENT_PLUGIN_DIR,
-  CLAUDE_BIN_DIR,
   DOCS_PLUGIN_DIR,
   EXEC_ARGS_THROUGH_THE_STATUS_RELAY,
   MACHINE_PICTURES_DIR_TAIL
@@ -35,6 +34,8 @@ import {
   markClaudeOnboarded
 } from './claudeTrust'
 import { TRUST_CWD_JS, TRUSTED_JS } from './claudeTrustJs'
+
+export const CLAUDE_BIN_DIR = 'claude-bin/'
 
 export interface ClaudeLaunch {
   root: string

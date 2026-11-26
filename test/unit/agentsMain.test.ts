@@ -18,7 +18,7 @@ import { ACCOUNT_KINDS_OF } from '../../src/shared/accountUsage'
 import type { SignInNews, SignInProgress } from '../../src/shared/types'
 import { accountsThatAreNeverAsked } from './helpers/agentAccounts'
 import { EVERY_AGENTS_ONE_SHOT } from './helpers/agentOneShots'
-import { NOTHING_TO_READ_OR_SEARCH } from './helpers/agentMainParts'
+import { PARTS_THE_TEST_DOES_NOT_USE } from './helpers/agentMainParts'
 
 const targetOf = (binary: string): OneShotTarget => ({ binary, env: {}, done: () => {} })
 
@@ -87,7 +87,7 @@ const agentsWithAccounts = (ids: readonly AgentId[], asked: string[] = []): Agen
       catalog: catalogOf(id),
       tools: toolsOf(id),
       accounts: accountsThatSayWhoTheyAre(id, asked),
-      ...NOTHING_TO_READ_OR_SEARCH
+      ...PARTS_THE_TEST_DOES_NOT_USE
     })
   return agents
 }
@@ -102,7 +102,7 @@ describe('the agents registered with their main-process side', () => {
         catalog: catalogOf(id),
         tools: toolsOf(id),
         accounts: accountsThatAreNeverAsked,
-        ...NOTHING_TO_READ_OR_SEARCH
+        ...PARTS_THE_TEST_DOES_NOT_USE
       })
 
     for (const id of AGENT_IDS) {
@@ -120,7 +120,7 @@ describe('the agents registered with their main-process side', () => {
       catalog: catalogOf(AGENT_IDS[0]),
       tools: toolsOf(AGENT_IDS[0]),
       accounts: accountsThatAreNeverAsked,
-      ...NOTHING_TO_READ_OR_SEARCH
+      ...PARTS_THE_TEST_DOES_NOT_USE
     })
 
     expect(await agents.oneShotTarget(AGENT_IDS[1])).toBeNull()
@@ -142,7 +142,7 @@ describe('the agents registered with their main-process side', () => {
         catalog: catalogOf(id),
         tools: toolsOf(id),
         accounts: accountsThatAreNeverAsked,
-        ...NOTHING_TO_READ_OR_SEARCH
+        ...PARTS_THE_TEST_DOES_NOT_USE
       })
 
     expect((await agents.mcpServersOn(['/w'])).map((s) => s.backend)).toEqual(built)
@@ -158,7 +158,7 @@ describe('the agents registered with their main-process side', () => {
         catalog: catalogOf(id),
         tools: toolsOf(id),
         accounts: accountsThatAreNeverAsked,
-        ...NOTHING_TO_READ_OR_SEARCH
+        ...PARTS_THE_TEST_DOES_NOT_USE
       })
 
     expect(agents.shimScripts()).toEqual(
