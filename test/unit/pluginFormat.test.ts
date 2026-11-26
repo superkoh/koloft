@@ -79,8 +79,13 @@ interface V2Manifest {
   hookMomentRules?: readonly (
     | {
         moment: 'message-arrives'
-        match: { opensWith: string } | { isExactly: string }
-        ifNotSentByKoloft?: string
+        match: { isExactly: string }
+        countsAs: 'not-the-owners-words'
+      }
+    | {
+        moment: 'message-arrives'
+        match: { opensWith: string }
+        ifNotSentByKoloft: string
         countsAs: 'the-owners-words-after-the-opening' | 'not-the-owners-words'
       }
     | { moment: 'turn-about-to-end'; whileSwitchIsOn: string; say: string }

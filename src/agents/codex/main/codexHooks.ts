@@ -2,9 +2,9 @@ import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
 import type { KoloftHook } from './codexLaunchConfig'
-import type { MessageArrivesRule } from '@core/hookMoments'
 import {
   LANGUAGE_FNS,
+  type ArmBodies,
   messageArms,
   QUOTE_PROMPT_FN,
   QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS,
@@ -16,19 +16,14 @@ import {
 } from '@agents/kit/main/hookScriptParts'
 import { NOTICE_ENV } from '../../../main/hookFiles'
 
-function armOfARule(rule: MessageArrivesRule): string {
-  const owners = rule.countsAs === 'the-owners-words-after-the-opening'
-  if (rule.ifNotSentByKoloft === undefined)
-    return owners ? ` ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS} ;;` : ' ;;'
-  const flag = `flag=${shq(rule.ifNotSentByKoloft)}`
-  return owners
-    ? `
+const ARMS: ArmBodies = {
+  notTheOwnersWords: (flag) => ` sent_by_koloft || ${flag} ;;`,
+  theOwnersWordsAfterTheOpening: (flag) => `
     if sent_by_koloft; then
       ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS}
     else
       ${flag}
     fi ;;`
-    : ` sent_by_koloft || ${flag} ;;`
 }
 
 // ADR-0028 CODEX§33
@@ -40,7 +35,7 @@ sent_by_koloft() {
 }
 flag=""
 case "$(prompt_body)" in
-${messageArms('  ', armOfARule)}
+${messageArms('  ', ARMS)}
   *) ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS} ;;
 esac`
 

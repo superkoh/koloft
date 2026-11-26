@@ -2,9 +2,9 @@ import fs from 'fs'
 import path from 'path'
 import type { StatusLineSetting } from '../../../main/statuslineParts'
 import { shq } from '@shared/shellQuote'
-import type { MessageArrivesRule } from '@core/hookMoments'
 import {
   languageFns,
+  type ArmBodies,
   messageArms,
   QUOTE_PROMPT_FN,
   QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS,
@@ -36,13 +36,10 @@ const NOTES_COMMAND_TITLES_AND_REPLY: WhatTheUserReads = {
 }
 
 // CC§13 ADR-0028
-function armOfARule(rule: MessageArrivesRule): string {
-  const owners = rule.countsAs === 'the-owners-words-after-the-opening'
-  if (rule.ifNotSentByKoloft === undefined) return owners ? ' save_quote ;;' : ' ;;'
-  const flag = `flag=${shq(rule.ifNotSentByKoloft)}`
-  return owners
-    ? `\n          if [ -n "$sent" ]; then save_quote; else ${flag}; fi ;;`
-    : ` [ -n "$sent" ] || ${flag} ;;`
+const ARMS: ArmBodies = {
+  notTheOwnersWords: (flag) => ` [ -n "$sent" ] || ${flag} ;;`,
+  theOwnersWordsAfterTheOpening: (flag) =>
+    `\n          if [ -n "$sent" ]; then save_quote; else ${flag}; fi ;;`
 }
 
 export const START_IN_STATUS_LOG = 'inStatusLog'
@@ -291,7 +288,7 @@ case "$event" in
           [ -n "$id" ] && grep -qxF "$id" "$reg/$tab${SENT_IDS_SUFFIX}" 2>/dev/null && sent=1 ;;
       esac
       case "$(prompt_body | LC_ALL=C sed -E 's/^<cross-session-message( [a-z-]+=\\\\"[^"\\\\]*\\\\")*>\\\\n//')" in
-${messageArms('        ', armOfARule)}
+${messageArms('        ', ARMS)}
         *)
           case "$input" in
             *'"prompt":"<cross-session-message '*|*'"prompt":"<task-notification>'*|*'"prompt":"<agent-message '*) ;;

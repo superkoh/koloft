@@ -1,11 +1,17 @@
 import { PLUGINS } from '@plugins/list'
 
-export interface MessageArrivesRule {
-  moment: 'message-arrives'
-  match: { opensWith: string } | { isExactly: string }
-  ifNotSentByKoloft?: string
-  countsAs: 'the-owners-words-after-the-opening' | 'not-the-owners-words'
-}
+export type MessageArrivesRule =
+  | {
+      moment: 'message-arrives'
+      match: { isExactly: string }
+      countsAs: 'not-the-owners-words'
+    }
+  | {
+      moment: 'message-arrives'
+      match: { opensWith: string }
+      ifNotSentByKoloft: string
+      countsAs: 'the-owners-words-after-the-opening' | 'not-the-owners-words'
+    }
 
 export interface TurnAboutToEndRule {
   moment: 'turn-about-to-end'
@@ -15,10 +21,15 @@ export interface TurnAboutToEndRule {
 
 export type HookMomentRule = MessageArrivesRule | TurnAboutToEndRule
 
+export type OpeningRule = Extract<MessageArrivesRule, { match: { opensWith: string } }>
+
 export const textOf = (rule: MessageArrivesRule): string =>
   'opensWith' in rule.match ? rule.match.opensWith : rule.match.isExactly
 
-const matchesTheWholeMessage = (rule: MessageArrivesRule): boolean => 'isExactly' in rule.match
+export const isAnOpeningRule = (rule: MessageArrivesRule): rule is OpeningRule =>
+  'opensWith' in rule.match
+
+const matchesTheWholeMessage = (rule: MessageArrivesRule): boolean => !isAnOpeningRule(rule)
 
 const everyRule = (): HookMomentRule[] => PLUGINS.flatMap((p) => p.hookMomentRules ?? [])
 
@@ -35,7 +46,5 @@ export function turnAboutToEndRules(): TurnAboutToEndRule[] {
 }
 
 export function openingsKoloftMustHaveSent(): string[] {
-  return messageArrivesRules()
-    .filter((r) => r.ifNotSentByKoloft !== undefined && !matchesTheWholeMessage(r))
-    .map(textOf)
+  return messageArrivesRules().filter(isAnOpeningRule).map(textOf)
 }

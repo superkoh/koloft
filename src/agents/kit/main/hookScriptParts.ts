@@ -1,6 +1,7 @@
 import { shq } from '@shared/shellQuote'
 import { HANDOVER_OPENING } from '@core/handOver'
 import {
+  isAnOpeningRule,
   messageArrivesRules,
   textOf,
   turnAboutToEndRules,
@@ -131,23 +132,47 @@ export const REMIND_AFTER_A_TOOL = `fields="$(grep -o -E '"(transcript_path|agen
   case "$fields" in *'"agent_id"'*) notice="" ;; esac
   remind_reply_language PostToolUse`
 
-const asExtendedRegex = (text: string): string => text.replace(/[.[\]()*+?^$|{}\\/]/g, '\\$&')
+const insideAJsonString = (text: string): string => JSON.stringify(text).slice(1, -1)
+
+const inASingleQuotedSedProgram = (text: string): string =>
+  insideAJsonString(text)
+    .replace(/[.[\]()*+?^$|{}\\/]/g, '\\$&')
+    .replaceAll("'", "'\\''")
 
 const openingsCutFromTheOwnersWords = (): string[] =>
   messageArrivesRules()
-    .filter((r) => r.countsAs === 'the-owners-words-after-the-opening' && 'opensWith' in r.match)
+    .filter((r) => r.countsAs === 'the-owners-words-after-the-opening')
     .map(textOf)
 
-const cutTheOpening = (
-  opening: string
-): string => `      -e 's/^<cross-session-message from-mode=\\\\"[a-z]+\\\\">\\\\n${asExtendedRegex(opening)}//' \\
-      -e 's/^${asExtendedRegex(opening)}//' \\`
+const cutTheOpening = (opening: string): string[] => [
+  `-e 's/^<cross-session-message from-mode=\\\\"[a-z]+\\\\">\\\\n${inASingleQuotedSedProgram(opening)}//'`,
+  `-e 's/^${inASingleQuotedSedProgram(opening)}//'`
+]
 
-export function messageArms(indent: string, body: (rule: MessageArrivesRule) => string): string {
+const QUOTE_PROMPT_SED = [
+  `-e 's/^${HANDOVER_OPENING}.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//'`,
+  ...openingsCutFromTheOwnersWords().flatMap(cutTheOpening),
+  `-e 's/\\\\n\\(Koloft message [A-Za-z0-9-]+\\)\\\\n<\\/cross-session-message>$//'`
+].join(' \\\n      ')
+
+export interface ArmBodies {
+  notTheOwnersWords(flag: string): string
+  theOwnersWordsAfterTheOpening(flag: string): string
+}
+
+function armBody(rule: MessageArrivesRule, bodies: ArmBodies): string {
+  if (!isAnOpeningRule(rule)) return ' ;;'
+  const flag = `flag=${shq(insideAJsonString(rule.ifNotSentByKoloft))}`
+  return rule.countsAs === 'not-the-owners-words'
+    ? bodies.notTheOwnersWords(flag)
+    : bodies.theOwnersWordsAfterTheOpening(flag)
+}
+
+export function messageArms(indent: string, bodies: ArmBodies): string {
   const arms: { patterns: string[]; body: string }[] = []
   for (const rule of messageArrivesRules()) {
-    const pattern = 'opensWith' in rule.match ? `${shq(textOf(rule))}*` : shq(textOf(rule))
-    const said = body(rule)
+    const pattern = isAnOpeningRule(rule) ? `${shq(textOf(rule))}*` : shq(textOf(rule))
+    const said = armBody(rule, bodies)
     const last = arms.at(-1)
     if (last?.body === said) last.patterns.push(pattern)
     else arms.push({ patterns: [pattern], body: said })
@@ -162,9 +187,7 @@ export const QUOTE_PROMPT_FN = `prompt_body() {
 }
 quote_prompt() {
   prompt_body |
-    LC_ALL=C sed -E -e 's/^${HANDOVER_OPENING}.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//' \\
-${openingsCutFromTheOwnersWords().map(cutTheOpening).join('\n')}
-      -e 's/\\\\n\\(Koloft message [A-Za-z0-9-]+\\)\\\\n<\\/cross-session-message>$//' |
+    LC_ALL=C sed -E ${QUOTE_PROMPT_SED} |
     head -c ${QUOTED_PROMPT_BYTES} | whole_chars
 }
 save_quote() {
