@@ -1830,8 +1830,11 @@ test.describe('Codex sessions through the real method chooser, process transport
       await page.getByRole('tab', { name: 'Accounts', exact: true }).click()
       await page.getByRole('button', { name: 'Sign in to Codex' }).click()
       await page.getByPlaceholder('Name this account (e.g. work)').fill('work')
+      const loginHeld = path.join(env.home, 'fake-codex-login-waits')
+      fs.writeFileSync(loginHeld, '')
       await page.locator('.acct-add').getByRole('button', { name: 'Sign in', exact: true }).click()
       await expect(page.locator('.modal')).toHaveCount(0)
+      fs.rmSync(loginHeld)
       const home = path.join(env.userData, 'codex-homes', 'work')
       await expect
         .poll(() => fs.existsSync(path.join(home, 'auth.json')), { timeout: 30_000 })

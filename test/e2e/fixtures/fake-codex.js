@@ -8,6 +8,7 @@ const { execFile, spawnSync } = require('child_process')
 const VERSION_AT_KOLOFTS_MINIMUM = '0.161.0'
 const FLAGS_FOLLOWED_BY_A_VALUE = ['--remote', '-C', '-c', '-m', '-a', '-s']
 const ASK_LATER_CHECKED_EVERY_MS = 200
+const LOGIN_HOLD_CHECKED_EVERY_MS = 50
 
 const argv = process.argv.slice(2)
 const colsAtStart = process.stdout.columns ?? null
@@ -94,7 +95,8 @@ if (argv.includes('--version')) {
 
 if (argv[0] === 'login' && flag('fake-codex-login-waits')) {
   fs.writeSync(1, 'Open this page to sign in: https://auth.openai.com/oauth/authorize?fake=1\n')
-  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0)
+  const sleeper = new Int32Array(new SharedArrayBuffer(4))
+  while (flag('fake-codex-login-waits')) Atomics.wait(sleeper, 0, 0, LOGIN_HOLD_CHECKED_EVERY_MS)
 }
 
 if (argv[0] === 'login' && argv[1] === '--with-api-key') {
