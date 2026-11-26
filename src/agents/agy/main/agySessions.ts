@@ -99,6 +99,7 @@ import {
   agyConversations,
   agyConversationTitle,
   agyHeldElsewhere,
+  agyRename,
   agySend,
   launchAgy,
   readAgyConfig
@@ -1117,7 +1118,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       bypassing: permission === 'bypass',
       firstLine,
       account: pick.account,
-      remote:{ host: where.host, tmuxName: plan.tmuxName },
+      remote: { host: where.host, tmuxName: plan.tmuxName },
       log: new LineTail(logFile, (line) => this.onLogLine(run, line), alreadyThere.size),
       touched: new Map(),
       liveWrites: 0,
@@ -2763,8 +2764,12 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       return
     }
     run.givenTitle = undefined
-    // AGY§16
-    if (name !== given) void run.api?.rename(id, given).catch(() => undefined)
+    if (name === given) return
+    // AGY§16 AGY§29
+    const renamed = run.remote
+      ? agyRename(this.deps.remote.machine(run.remote.host), run.remote.tmuxName, id, given)
+      : run.api?.rename(id, given)
+    void renamed?.catch(() => undefined)
   }
 
   // AGY§8

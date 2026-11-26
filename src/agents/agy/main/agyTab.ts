@@ -249,15 +249,19 @@ flock -n "$l" true || exit 1`,
 
 export const AGY_HELD_ELSEWHERE_EXIT = 1
 
+const AGY_SEND = 'send'
+const AGY_RENAME = 'rename'
+export type AgyApiAction = typeof AGY_SEND | typeof AGY_RENAME
+
 const LOCALHOST_CALL_TIMEOUT_MS = 3_000
 const NO_SEND_STARTS_AFTER_MS = 15_000
 export const AGY_SEND_SSH_OUTLASTS_THE_SCRIPT_MS = 30_000
 
 // AGY§16 AGY§29
-const AGY_SEND_JS = `import fs from 'fs'
+const AGY_API_JS = `import fs from 'fs'
 import { execFileSync } from 'child_process'
 const started = Date.now()
-const [tmuxName, cascadeId] = process.argv.slice(1)
+const [tmuxName, cascadeId, action] = process.argv.slice(1)
 const text = fs.readFileSync(0, 'utf8')
 const out = (cmd, args) => {
   try {
@@ -317,6 +321,18 @@ const post = async (port, method, body) => {
   return t ? JSON.parse(t) : {}
 }
 for (const port of new Set(ports().filter((p) => Number.isInteger(p) && p > 0))) {
+  if (action === '${AGY_RENAME}') {
+    try {
+      await post(port, 'UpdateConversationAnnotations', {
+        cascadeId,
+        annotations: { title: text },
+        mergeAnnotations: true
+      })
+      process.exit(0)
+    } catch {
+      continue
+    }
+  }
   let cascadeConfig
   try {
     await post(port, 'GetStatus', {})
@@ -335,10 +351,10 @@ process.exit(1)
 `
 
 // AGY§16 AGY§29
-export function agySendCmd(tmuxName: string, conversationId: string): string {
+export function agyApiCmd(tmuxName: string, conversationId: string, action: AgyApiAction): string {
   return remoteShCommand(
-    `exec "${REMOTE_NODE}" --input-type=module -e ${shq(AGY_SEND_JS)} "$1" "$2"`,
-    [tmuxName, conversationId]
+    `exec "${REMOTE_NODE}" --input-type=module -e ${shq(AGY_API_JS)} "$1" "$2" "$3"`,
+    [tmuxName, conversationId, action]
   )
 }
 

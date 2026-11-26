@@ -400,7 +400,7 @@ test.describe('`koloft` inside a tab on a remote workspace: the agent on the mac
     })
 
   for (const backend of SESSION_BACKENDS)
-    test(`a ${backend} child on the machine reports to the ${backend} session on the machine that started it after that session’s tab was closed: koloft session send with the id from its first message starts the parent again on the machine and delivers the report marked with who sent it`, async ({
+    test(`a ${backend} child on the machine, named by koloft session new --name and titled so on its row, reports to the ${backend} session on the machine that started it after that session’s tab was closed: koloft session send with the id from its first message starts the parent again on the machine and delivers the report marked with who sent it`, async ({
       env
     }) => {
       test.setTimeout(240_000)
@@ -420,13 +420,14 @@ test.describe('`koloft` inside a tab on a remote workspace: the agent on the mac
           await koloftInSession(
             page,
             parentTab,
-            `session new ${picksFor(backend)} -- report back when done`
+            `session new ${picksFor(backend)} --name "Kid on the machine" -- report back when done`
           )
         ).toBe('0')
         const kidRow = wsGroup(page, REMOTE_WS_NAME).locator(
           `.ws-tab[data-tab-id="${parentTab}"] + .ws-subtabs > .ws-tab`
         )
         await expect(kidRow).toHaveClass(/\bst-waiting\b/, { timeout: 90_000 })
+        await expect(kidRow.locator('.ws-tab-title')).toHaveText('Kid on the machine')
         const kidTab = (await kidRow.getAttribute('data-tab-id'))!
         const kid = await sessionOf(page, kidTab)
         expect(kid?.backendId).toBe(backend)

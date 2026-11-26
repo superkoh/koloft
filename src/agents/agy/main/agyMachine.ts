@@ -4,12 +4,13 @@ import { parseAnnotationTitle, type SummaryRow } from './agyStore'
 import {
   AGY_HELD_ELSEWHERE_EXIT,
   AGY_SEND_SSH_OUTLASTS_THE_SCRIPT_MS,
+  agyApiCmd,
   agyHeldCmd,
-  agySendCmd,
   agyTitleCmd,
   listAgyCmd,
   parseAgyConfig,
   readAgyConfigCmd,
+  type AgyApiAction,
   type AgyMachineLaunch,
   type AgyMachinePlan,
   type RemoteAgyConfig
@@ -30,18 +31,33 @@ export async function agyHeldElsewhere(machine: Machine, conversationId: string)
   return (await machine.run(agyHeldCmd(conversationId))).code === AGY_HELD_ELSEWHERE_EXIT
 }
 
-export async function agySend(
+async function callAgyApi(
   machine: Machine,
   tmuxName: string,
   conversationId: string,
+  action: AgyApiAction,
   text: string
 ): Promise<boolean> {
-  const r = await machine.run(agySendCmd(tmuxName, conversationId), {
+  const r = await machine.run(agyApiCmd(tmuxName, conversationId, action), {
     input: Buffer.from(text),
     timeoutMs: AGY_SEND_SSH_OUTLASTS_THE_SCRIPT_MS
   })
   return r.code === 0
 }
+
+export const agySend = (
+  machine: Machine,
+  tmuxName: string,
+  conversationId: string,
+  text: string
+): Promise<boolean> => callAgyApi(machine, tmuxName, conversationId, 'send', text)
+
+export const agyRename = (
+  machine: Machine,
+  tmuxName: string,
+  conversationId: string,
+  title: string
+): Promise<boolean> => callAgyApi(machine, tmuxName, conversationId, 'rename', title)
 
 export async function agyConversationTitle(
   machine: Machine,

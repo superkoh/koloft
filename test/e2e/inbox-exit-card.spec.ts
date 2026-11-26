@@ -169,7 +169,7 @@ test.describe(() => {
   test.afterEach(({ env }) => killFakeRemote(env))
 
   for (const kind of KINDS)
-    test(`a ${kind.name} session that stopped unexpectedly is a card; Start it again resumes it in its one row and tells it to carry on, and Hand to a new session starts a ${kind.name} session in the same workspace with the owner’s note`, async ({
+    test(`a ${kind.name} session that stopped unexpectedly is a card; Start it again resumes it in its one row and tells it to carry on, and Hand to a new session starts a ${kind.name} session in the same workspace with the owner’s note, its row titled after the one it picks up`, async ({
       env
     }) => {
       kind.install(env)
@@ -213,6 +213,9 @@ test.describe(() => {
         ).toHaveCount(1)
 
         await expect(wsRows(page, ws)).toHaveCount(2)
+        await expect(
+          wsRows(page, ws).locator('.ws-tab-title', { hasText: /^Pick up “.+”$/ })
+        ).toHaveCount(1, { timeout: A_RESUMED_SESSION_TAKES_A_MESSAGE_MS })
         await expect
           .poll(async () => (await aliveSessions(page)).map((s) => s.backendId), {
             timeout: A_RESUMED_SESSION_TAKES_A_MESSAGE_MS
