@@ -13,11 +13,13 @@ Discord card: body:
     2. Large
 Discord card: footnote: -# Reply with one line per question: a number or your own answer.
 Discord card: buttons: (nothing)
-Inbox card: title: “Fix the docs” is waiting for you in its tab
+Inbox card: title: “Fix the docs” asks 2 questions
 Inbox card: quote: (nothing)
-Inbox card: questions: (nothing)
-Inbox card: text: Koloft cannot show what it asks here. Open the session to answer it.
-Inbox card: buttons: (nothing)
+Inbox card: questions:
+    “Which colour do you prefer?”: options Red | Green; several picks: no; own-words box: yes
+    “Which size?”: options Small | Large; several picks: no; own-words box: yes
+Inbox card: text: (nothing)
+Inbox card: buttons: Send answers
 the butler's owner-asleep report, the part that says what was asked: asked the owner "Which colour do you prefer? 1. Red — Choose red. 2. Green — Choose green. Which size? 1. Small 2. Large"
 this ask's id: the hook's own process id, only in the name of its file claude-tab.<pid>.ask.json; the "someone asked" moment is never announced for it
 --- replied "1\n2" in the session's Discord room ---

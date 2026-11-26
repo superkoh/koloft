@@ -5,6 +5,7 @@ import http from 'http'
 import path from 'path'
 import { codexWires } from './codexWires'
 import type { BackendId } from '@shared/types'
+import { UNDO_MS, type InboxAnswers, type InboxCard } from '@shared/inbox'
 import {
   agySessionsIn,
   claudeBackendIn,
@@ -1037,6 +1038,27 @@ export async function pinSituation(file: string): Promise<void> {
 }
 
 export const titleOf = (file: string): string => SITUATIONS.find((s) => s.file === file)!.title
+
+export async function heldAskAnsweredFromTheInbox(
+  file: string,
+  press: (card: InboxCard) => { action: string; answers?: InboxAnswers }
+): Promise<string[]> {
+  const raised = await raise(
+    'claude-held',
+    SITUATIONS.find((s) => s.file === file)!
+  )
+  surfaces.markAsking(raised.tab)
+  await vi.waitFor(() => expect(surfaces.inboxCards()[0]?.actions.length).toBeGreaterThan(0), {
+    timeout: A_FIRST_INBOX_CARD_IS_ASKED_AGAIN_AFTER_MS + A_REPLY_IS_SEEN_WITHIN_MS
+  })
+  const card = surfaces.inboxCards()[0]
+  const { action, answers } = press(card)
+  surfaces.pressInbox(card, action, answers)
+  await vi.waitFor(async () => expect(await raised.reached()).not.toEqual([]), {
+    timeout: UNDO_MS + A_REPLY_IS_SEEN_WITHIN_MS
+  })
+  return raised.reached()
+}
 
 export async function pinWhenACardIsPosted(): Promise<void> {
   const parts: string[] = ['# When the Discord card is posted, for one ask to run a command']

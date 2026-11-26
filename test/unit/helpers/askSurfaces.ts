@@ -4,7 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import type { AttentionEvent, BackendId } from '@shared/types'
 import type { AskPayload } from '@shared/sessionEvent'
-import type { InboxCard, InboxSnapshot } from '@shared/inbox'
+import type { InboxAnswers, InboxCard, InboxSnapshot } from '@shared/inbox'
 import {
   ATTENTION_CHANGED,
   Moments,
@@ -315,7 +315,7 @@ export class AskSurfaces {
               ? { tabId, backend: o.backendOf(tabId)! }
               : undefined
           },
-          claudeAskOf: this.wiring.claudeAskOf,
+          claudeAskOf: this.wiring.openAsk,
           pendingAskOf: this.wiring.pendingAskOf,
           answer: (tabId, reply) => this.asks.answerSession(tabId, reply),
           butlerSide: () => false,
@@ -367,6 +367,10 @@ export class AskSurfaces {
       customId
     } satisfies DiscordInteraction
     await this.buttons.press(i)
+  }
+
+  pressInbox(card: InboxCard, action: string, answers: InboxAnswers = {}): void {
+    this.ipcListeners.get(INBOX_CHANNELS.press)?.(card.id, action, answers)
   }
 
   message(content: string): DiscordMessage {

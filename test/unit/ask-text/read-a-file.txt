@@ -6,11 +6,11 @@ the session row's small line: Wants to read: outside.txt
 Discord card: body: Claude asks to read: /elsewhere/outside.txt
 Discord card: footnote: -# Reply yes or no.
 Discord card: buttons: Yes | No
-Inbox card: title: “Fix the docs” is waiting for you in its tab
-Inbox card: quote: (nothing)
+Inbox card: title: “Fix the docs” wants to read a file
+Inbox card: quote: File: /elsewhere/outside.txt
 Inbox card: questions: (nothing)
-Inbox card: text: Koloft cannot show what it asks here. Open the session to answer it.
-Inbox card: buttons: (nothing)
+Inbox card: text: (nothing)
+Inbox card: buttons: Allow | Deny
 the butler's owner-asleep report, the part that says what was asked: asked to be allowed: "Claude asks to read: /elsewhere/outside.txt"
 this ask's id: the hook's own process id, only in the name of its file claude-tab.<pid>.ask.json; the "someone asked" moment is never announced for it
 --- pressed the Discord card's first button, "Yes" ---
