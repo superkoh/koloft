@@ -661,7 +661,7 @@ test.describe('Antigravity sessions on real sshd machines behind a company jump 
   })
 
   // AGY§16 AGY§29
-  test('E-SSH-A11: a REAL agy on the Linux machine, started from ⌘P with the title Assist gave, takes that title in its own list there, and its row keeps it while open, once its tab is closed and after Koloft starts again (downloads agy, spends nothing)', async ({
+  test('E-SSH-A12: a REAL agy on the Linux machine, started from ⌘P with the title Assist gave, takes that title in its own list there, and its row keeps it while open, once its tab is closed and after Koloft starts again (downloads agy, spends nothing)', async ({
     env
   }) => {
     test.setTimeout(A_FIRST_AGY_AND_GH_DOWNLOAD_ON_THE_MACHINE_MS + 300_000)
