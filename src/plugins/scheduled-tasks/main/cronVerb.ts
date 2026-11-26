@@ -42,6 +42,7 @@ import {
   type Parsed
 } from '@core/command'
 import type { Commands } from '@core/commands'
+import { AGENT_NO_LONGER_SUPPORTED_NOTE } from './cronStore'
 
 const SUBS = ['list', 'show', 'add', 'edit', 'rm', 'on', 'off', 'run'] as const
 type Sub = (typeof SUBS)[number]
@@ -220,6 +221,7 @@ export function newJobInput(
 }
 
 export function mergeEdit(job: CronJob, patch: CronPatch): CronSaveInput {
+  const own: Partial<CronJob> = cronBackend(job) ? job : {}
   return {
     id: job.id,
     workspacePath: job.workspacePath,
@@ -227,8 +229,8 @@ export function mergeEdit(job: CronJob, patch: CronPatch): CronSaveInput {
     task: patch.task ?? job.task,
     schedule: patch.schedule ?? job.schedule,
     backend: patch.backend ?? cronBackend(job),
-    model: patch.model ?? job.model,
-    effort: patch.effort ?? job.effort,
+    model: patch.model ?? own.model,
+    effort: patch.effort ?? own.effort,
     permission: patch.permission ?? job.permission,
     ...((patch.autoClose ?? job.autoClose) ? { autoClose: true } : {}),
     enabled: job.enabled
@@ -294,7 +296,7 @@ export function formatShow(job: CronJob, number: number, live: LiveRun[], now: D
     `Id: ${job.id}`,
     `When: ${describeSchedule(job.schedule)}`,
     `On: ${job.enabled ? 'yes' : 'no'} · ${nextText(job, live, now)}`,
-    ...(backend ? [`Runs as: ${BACKEND_LABEL[backend]}`] : []),
+    backend ? `Runs as: ${BACKEND_LABEL[backend]}` : AGENT_NO_LONGER_SUPPORTED_NOTE,
     `Model: ${job.model ?? 'default'}`,
     `Effort: ${job.effort ?? 'default'}`,
     `Permission: ${job.permission}`,
@@ -394,6 +396,8 @@ export function cronVerb(d: CronVerbDeps): AgentVerb {
       return refused(
         `koloft cron: ${job.name} runs once and its time has passed. Give it a new time: koloft cron edit ${jobs.indexOf(job) + 1} --once <date>@<time>`
       )
+    if (sub === 'on' && !cronBackend(job))
+      return refused(`koloft cron: ${AGENT_NO_LONGER_SUPPORTED_NOTE}`)
     if (sub === 'on' || sub === 'off') {
       runner.setEnabled(job.id, sub === 'on')
       tell(`turned ${sub}`, job.name)

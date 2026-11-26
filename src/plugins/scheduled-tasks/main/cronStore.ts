@@ -3,7 +3,6 @@ import { isValidSchedule } from '@shared/schedule'
 import { HIST_WORDS } from '@shared/cronHistory'
 import { cronBackend, hasWordChar, isValidModelName, NEW_JOB_PERMISSION } from '@shared/cronNames'
 import { isValidWorktreeName } from '@shared/worktreeName'
-import { backendIdOf } from '@shared/sessionBackend'
 import { isAbsoluteOnHost } from '@shared/remoteKey'
 import { isCronEffort, type CronJob, type HistoryLine, type HistoryState } from '@shared/types'
 
@@ -134,12 +133,9 @@ export function sanitizeCron(
       Number.isFinite(item.waitFrom)
     )
       job.waitFrom = item.waitFrom
-    const backend = backendIdOf(item.backend)
-    if (backend) job.backend = backend
-    else if (item.backend !== undefined || !cronBackend(job)) {
+    if (item.backend !== undefined) job.backend = String(item.backend)
+    if (!cronBackend(job)) {
       job.enabled = false
-      delete job.model
-      delete job.effort
       notes[id] = AGENT_NO_LONGER_SUPPORTED_NOTE
     }
     seen.add(id)

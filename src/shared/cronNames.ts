@@ -1,5 +1,5 @@
 import type { BackendId, CronPermission } from './types'
-import { AGENT_OF_UNNAMED_OLD_DATA } from '@core/agent/registry'
+import { AGENT_IDS, AGENT_OF_UNNAMED_OLD_DATA } from '@core/agent/registry'
 import { SESSION_WORKTREES_FOLDER } from './worktreeName'
 
 export const CRON_PERMISSIONS: CronPermission[] = ['same', 'acceptEdits', 'skipAll']
@@ -41,6 +41,7 @@ export function isRunFolderOf(slug: string, name: string): boolean {
   return new RegExp(`^${slug}-\\d{6}-\\d{4}(-.+)?$`).test(name)
 }
 
-export function cronBackend(job: { backend?: BackendId }): BackendId | undefined {
-  return job.backend ?? AGENT_OF_UNNAMED_OLD_DATA
+export function cronBackend(job: { backend?: unknown }): BackendId | undefined {
+  if (job.backend === undefined) return AGENT_OF_UNNAMED_OLD_DATA
+  return AGENT_IDS.find((id) => id === job.backend)
 }

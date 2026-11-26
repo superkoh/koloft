@@ -7,6 +7,7 @@ import {
   saveCron,
   type CronStoreFs
 } from '../../../../src/plugins/scheduled-tasks/main/cronStore'
+import { cronBackend } from '../../../../src/shared/cronNames'
 
 const WS = '/pinned/ws-a'
 const PINNED = [WS]
@@ -55,10 +56,9 @@ describe('sanitizeCron (which method a job runs in)', () => {
       PINNED
     )
     expect(unknown.jobs[0].enabled).toBe(false)
-    expect(unknown.jobs[0].backend).toBeUndefined()
-    expect(unknown.jobs[0].model).toBeUndefined()
-    expect(unknown.jobs[0].effort).toBeUndefined()
+    expect(cronBackend(unknown.jobs[0])).toBeUndefined()
     expect(unknown.notes[unknown.jobs[0].id]).toContain('no longer supported')
+    expect(cronBackend(one({ backend: null })!)).toBeUndefined()
   })
 })
 

@@ -215,14 +215,15 @@ export function CronJobsDialog({
   }
 
   const edit = (job: CronJob): void => {
+    const own: Partial<CronJob> = cronBackend(job) ? job : {}
     const f = emptyFields(cronBackend(job) ?? defaultBackend)
     setFields({
       ...f,
       ...scheduleToFields(job.schedule),
       name: job.name,
       task: job.task,
-      ...toModelFields(f.backend, job.model),
-      effort: job.effort ?? '',
+      ...toModelFields(f.backend, own.model),
+      effort: own.effort ?? '',
       permission: job.permission,
       autoClose: job.autoClose === true
     })
@@ -317,7 +318,7 @@ export function CronJobsDialog({
     >
       <Switch
         checked={job.enabled}
-        disabled={oncePassed(job, new Date())}
+        disabled={oncePassed(job, new Date()) || !cronBackend(job)}
         small
         ariaLabel={`${job.name} on`}
         onChange={(on) => void window.api.cron.setEnabled(job.id, on)}
@@ -360,7 +361,11 @@ export function CronJobsDialog({
         </div>
       ) : (
         <div className="job-acts">
-          <button className="mini" onClick={() => void window.api.cron.runNow(job.id)}>
+          <button
+            className="mini"
+            disabled={!cronBackend(job)}
+            onClick={() => void window.api.cron.runNow(job.id)}
+          >
             <IconPlay size={11} />
             Run now
           </button>
@@ -415,7 +420,7 @@ export function CronJobsDialog({
 
   const renderForm = (): JSX.Element => (
     <div className="fgrid">
-      {backends.length > 1 && (
+      {(backends.length > 1 || (editing && !cronBackend(editing))) && (
         <>
           <span className="flabel">Runs in</span>
           <div className="fcol">
@@ -437,6 +442,9 @@ export function CronJobsDialog({
                 </button>
               ))}
             </div>
+            {editing && !cronBackend(editing) && cron.notes[editing.id] && (
+              <p className="field-hint bad">{cron.notes[editing.id]}</p>
+            )}
           </div>
         </>
       )}
