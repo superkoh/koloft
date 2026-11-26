@@ -102,14 +102,12 @@ Working principles:
   for a change include the other agents' and remote specs whenever the change reaches
   those tabs.
 - Code outside an agent's own folder never names an agent (ADR-0054). Code about one
-  agent goes in `src/agents/<id>/` — or, until issue #2410 moves them there, in that
-  agent's old files listed under `awaitingMove` in `scripts/agent-words-baseline.json`,
-  which are not checked; other code asks the agent list
+  agent goes in `src/agents/<id>/`; other code asks the agent list
   (`src/core/agent/registry.ts`). `npm run check:agent-words` (CI and the before-push
   hook) fails on every new line that names one — the words each agent lists in its
-  `agent.ts` — and on a baseline line that is gone, so the baseline only shrinks. A
-  line that truly must stay, and any new `awaitingMove` or `allowed` entry, gets its
-  reason in the PR body (`npm run check:agent-words -- --accept-new` takes new lines
+  `agent.ts` — and on a line of `scripts/agent-words-baseline.json` that is gone, so
+  the baseline only shrinks. A line that truly must stay, and any new `allowed` entry,
+  gets its reason in the PR body (`npm run check:agent-words -- --accept-new` takes new lines
   in and drops gone ones); removed lines leave with `-- --prune`.
 - Who may import whom around `src/agents` is checked the same way (ADR-0054):
   `npm run check:agent-imports` (CI and the before-push hook).
