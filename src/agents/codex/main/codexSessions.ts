@@ -75,13 +75,15 @@ import {
   CODEX_SENT_WORDS_ENV,
   CODEX_SHELL_WRITES_HOOKS,
   CODEX_SHELL_WROTE_ENV,
+  SHELL_WROTE_SUFFIX
+} from './codexHooks'
+import {
   sentWordsFile,
   NOTICE_ENV,
   noticeFile,
-  seedHandedOverOwnerWords,
-  SHELL_WROTE_FIELD,
-  SHELL_WROTE_SUFFIX
-} from '@plugins/sessions/main/hooks'
+  seedHandedOverOwnerWords
+} from '../../../main/hookFiles'
+import { SHELL_WROTE_FIELD } from '@agents/kit/main/hookScriptParts'
 import { shellWrittenFiles } from '../../../main/touchedFiles'
 import {
   acceptCodexHookTrust,

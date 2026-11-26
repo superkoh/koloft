@@ -19,6 +19,7 @@ import {
 import { TEXT } from './prompts/text'
 import { TEXT as SKILL_TEXT } from './skill/text'
 import { ASSIST_JOBS } from './shared/assistJobs'
+import { SESSIONS_HOOK_RULES } from './shared/hookRules'
 import { CHANNELS } from './shared/ipc'
 
 export const plugin: PluginManifest = {
@@ -50,6 +51,7 @@ export const plugin: PluginManifest = {
   ],
   skills: [{ name: 'koloft', group: 'koloft' }],
   assistJobs: ASSIST_JOBS,
+  hookMomentRules: SESSIONS_HOOK_RULES,
   channels: Object.values(CHANNELS),
   moments: {
     announces: [

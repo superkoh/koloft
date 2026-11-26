@@ -1,5 +1,6 @@
 // ADR-0051
 import type { AgentFlags, SmallJobKind } from './agent/manifest'
+import type { HookMomentRule } from './hookMoments'
 
 export const PLUGIN_FORMAT_VERSION = 2
 
@@ -87,4 +88,5 @@ export interface PluginManifest {
   hints?: readonly string[]
   assistJobs?: readonly PluginAssistJob[]
   mcpServers?: readonly PluginMcpServer[]
+  hookMomentRules?: readonly HookMomentRule[]
 }

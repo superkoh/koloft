@@ -27,15 +27,14 @@ import { SessionAsks, type SessionAskDeps } from '../../../../src/plugins/sessio
 import { HandOver, type HandOverDeps } from '../../../../src/plugins/sessions/main/handOver'
 import { typeKeys } from '../../../../src/core/typeKeys'
 import { waitingForAnswer } from '../../../../src/shared/slashCommands'
+import { noteSent, opensAsOnlyKoloftSends } from '../../../../src/plugins/sessions/main/hooks'
+import { NOT_FROM_THE_RELAY } from '../../../../src/plugins/discord/shared/hookRules'
 import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
   CODEX_SAID_ENV,
-  CODEX_SENT_WORDS_ENV,
-  NOT_FROM_THE_RELAY,
-  noteSent,
-  opensAsOnlyKoloftSends,
-  sentWordsFile
-} from '../../../../src/plugins/sessions/main/hooks'
+  CODEX_SENT_WORDS_ENV
+} from '../../../../src/agents/codex/main/codexHooks'
+import { sentWordsFile } from '../../../../src/main/hookFiles'
 import { everyAgentsMessages, type WhatEachAgentSendsThrough } from '../../helpers/agentMessages'
 
 const OWNER = '555'

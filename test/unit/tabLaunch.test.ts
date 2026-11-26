@@ -52,11 +52,8 @@ import { NO_USABLE_ACCOUNT } from '@shared/accountUsage'
 import { koloftPrompt } from '@plugins/sessions/api'
 import { docsWritingOn } from '@plugins/docs-writing/api'
 import { claudeProjectPrompt, projectPromptFile } from '../../src/main/agentPlugin'
-import {
-  saidFile,
-  seedHandedOverOwnerWords,
-  writeConductorMarker
-} from '@plugins/sessions/main/hooks'
+import { saidFile, seedHandedOverOwnerWords } from '../../src/main/hookFiles'
+import { writeConductorMarker } from '../../src/agents/claude/main/claudeHooks'
 import type { CreateTabOptions } from '@shared/types'
 import { portOffset } from '@shared/worktreeName'
 import { ARGS_ABOVE_THEIR_TOOLS_ON_THE_MACHINE } from '../../src/main/agentLift'
