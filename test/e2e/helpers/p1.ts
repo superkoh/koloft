@@ -1082,6 +1082,22 @@ export async function openMenu(page: Page, target: Locator): Promise<Locator> {
   return menu
 }
 
+export const ONE_SESSION_WILL_BE_CLOSED = '1 running session will be closed'
+
+export async function removeWorkspaceConfirming(
+  page: Page,
+  wsName: string,
+  dialogSays: string
+): Promise<void> {
+  const head = page.locator('.ws-head', { hasText: wsName })
+  await openMenu(page, head)
+  await page.locator('.menu .mi.danger', { hasText: 'Remove workspace' }).click()
+  const dialog = page.locator('.modal')
+  await expect(dialog).toContainText(dialogSays)
+  await dialog.locator('.btn-primary').first().click()
+  await expect(head).toHaveCount(0, { timeout: 30_000 })
+}
+
 export async function menuItemTexts(page: Page): Promise<string[]> {
   const texts = await page.locator('.menu .mi:not(.head)').allTextContents()
   return texts.map((t) => t.replace(/\s+/g, ' ').trim())

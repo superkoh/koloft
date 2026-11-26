@@ -8,6 +8,8 @@ import {
   addWorkspace,
   centerTerm,
   newSessionInWith,
+  ONE_SESSION_WILL_BE_CLOSED,
+  removeWorkspaceConfirming,
   runIn,
   sendShortcut,
   startSessionIn,
@@ -17,6 +19,7 @@ import {
   wsGroup,
   wsRows
 } from './helpers/p1'
+import { koloftOpensAgainWithNoTabToTakeBack } from './helpers/restartTabs'
 import {
   dockerAvailable,
   installFakeCodexOnTarget,
@@ -121,6 +124,13 @@ async function addMachine(page: Page, alias: LabAlias, user: string): Promise<vo
   await expect(wsGroup(page, alias).locator('.ws-conn')).toHaveClass(/\bon\b/, {
     timeout: BACKGROUND_CONNECT_MS
   })
+}
+
+async function machineAndItsRowShown(page: Page): Promise<void> {
+  await expect(wsGroup(page, 'kt-key').locator('.ws-conn')).toHaveClass(/\bon\b/, {
+    timeout: BACKGROUND_CONNECT_MS
+  })
+  await expect(wsRows(page, 'kt-key')).toHaveCount(1, { timeout: A_TURN_THROUGH_THE_MIRROR_MS })
 }
 
 const rowOfTab = (page: Page, tabId: string): Locator =>
@@ -317,6 +327,27 @@ test.describe('how a Claude Code and a Codex session on a real sshd machine behi
       expect(tmuxPanesOn(lab, 'kuser')).toEqual(panes)
       expect(textFilesOfTabOn(lab, 'kuser', firstTab)).toEqual(WHILE_CLAUDE_RUNS(firstTab))
       expect(textFilesOfTabOn(lab, 'kuser', reopened.tabId)).toEqual([])
+    })
+  })
+
+  test('E-SSH-E9: a Claude Code session left running in tmux on the machine while Koloft was closed, which the reopened Koloft opened no tab for, is counted when its workspace is removed and, once that is confirmed, ended there', async ({
+    env
+  }) => {
+    await withLab(env, async ({ page: firstWindow, lab, quitKoloft, openKoloftAgain }) => {
+      const { sessionId } = await claudeTabOnKtKey(firstWindow)
+      await quitKoloft()
+      expect(tmuxSessionsOn(lab, 'kuser')).toEqual([`k-${sessionId}`])
+
+      koloftOpensAgainWithNoTabToTakeBack(env)
+      const page = await openKoloftAgain()
+      await machineAndItsRowShown(page)
+      expect(await termIds(page)).toEqual([])
+      await removeWorkspaceConfirming(page, 'kt-key', ONE_SESSION_WILL_BE_CLOSED)
+      await expect
+        .poll(() => [tmuxSessionsOn(lab, 'kuser'), tabScriptsRunningOn(lab, 'kuser')], {
+          timeout: 30_000
+        })
+        .toEqual([[], []])
     })
   })
 
