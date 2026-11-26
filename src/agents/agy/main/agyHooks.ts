@@ -1,27 +1,22 @@
 import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
-import { BUTLER_SAYS_OPENING } from '@shared/agentGuide'
+import { A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS, BUTLER_SAYS_OPENING } from '@shared/agentGuide'
 import { nonEmptyString, record } from '@core/unknownValue'
-import {
-  A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
-  FROM_A_SESSION,
-  FROM_KOLOFT
-} from '@plugins/sessions/main/messageOpenings'
+import { FROM_A_SESSION, FROM_KOLOFT } from '@plugins/sessions/main/messageOpenings'
 import {
   hookField,
   JSON_STRING_BODY,
   KEEP_GOING_FOR_THE_NOTICE_FN,
   LANGUAGE_FNS,
-  NOTICE_ENV,
-  NOTICE_THIS_TURN,
   QUOTED_NOTE_BYTES,
   QUOTED_PROMPT_BYTES,
   SHELL_WRITES_FNS,
   STALE_PR_STATUS_FN,
   TAKE_NOTICE_FN,
   TRANSCRIPT_LINES_SEARCHED_FOR_THE_LAST_NOTE
-} from '@plugins/sessions/main/hooks'
+} from '@agents/kit/main/hookScriptParts'
+import { NOTICE_ENV, NOTICE_THIS_TURN } from '../../../main/hookFiles'
 import { UUID } from '@agents/kit/main/sessionStore'
 import { HANDOVER_OPENING } from '@core/handOver'
 

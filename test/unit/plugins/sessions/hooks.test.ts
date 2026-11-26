@@ -13,25 +13,29 @@ vi.mock('electron', async () => {
 })
 
 import {
-  setupHooks,
-  writeTabHookSettings,
-  hookSettings,
-  writeConductorMarker,
-  removeConductorMarker,
   markAnswerable,
   markOwnerAsleep,
-  noticeFile,
-  noticeLine,
   opensAsOnlyKoloftSends,
   NOT_FROM_THE_RELAY,
   NOT_SENT_BY_KOLOFT,
-  CODEX_SENT_WORDS_ENV,
-  quotedPrompt,
+  quotedPrompt
+} from '../../../../src/plugins/sessions/main/hooks'
+import {
+  writeTabHookSettings,
+  hookSettings,
+  writeConductorMarker,
+  removeConductorMarker
+} from '../../../../src/agents/claude/main/claudeHooks'
+import { CODEX_SENT_WORDS_ENV } from '../../../../src/agents/codex/main/codexHooks'
+import {
+  noticeFile,
+  noticeLine,
   saidFile,
   sentWordsLine,
   seedHandedOverOwnerWords,
   seedOwnerWords
-} from '../../../../src/plugins/sessions/main/hooks'
+} from '../../../../src/main/hookFiles'
+import { setupHookScripts } from '../../helpers/hookScripts'
 import { ownerSays } from '../../../../src/shared/agentGuide'
 import { OWNER_ASLEEP_PUSH } from '../../../../src/plugins/butler/api'
 import {
@@ -56,7 +60,7 @@ let base: string
 const noPeerInstance = (): boolean => false
 
 beforeAll(() => {
-  ;({ hookScript, codexReplyLanguage, regDir } = setupHooks(noPeerInstance))
+  ;({ hookScript, codexReplyLanguage, regDir } = setupHookScripts(noPeerInstance))
   base = path.dirname(path.dirname(hookScript))
   stubBin = fs.mkdtempSync(path.join(os.tmpdir(), 'koloft-hook-stub-'))
   const answeringClaudeStub = path.join(stubBin, 'claude')
@@ -1179,7 +1183,7 @@ esac
       path.join(regDir, 'pty-abc-1.json'),
       JSON.stringify({ tabId: 'pty-abc-1', event: 'end', reason: 'prompt_input_exit' })
     )
-    writeTabHookSettings(setupHooks(noPeerInstance), 'pty-abc-1')
+    writeTabHookSettings(setupHookScripts(noPeerInstance), 'pty-abc-1')
     expect(fs.existsSync(path.join(regDir, 'pty-abc-1.status.jsonl'))).toBe(false)
     expect(fs.existsSync(path.join(regDir, 'pty-abc-1.json'))).toBe(false)
   })
@@ -1215,7 +1219,13 @@ esac
     const hooksOf = (conductor: boolean): Hooks =>
       JSON.parse(
         fs.readFileSync(
-          writeTabHookSettings(setupHooks(noPeerInstance), 'tabG', undefined, true, conductor),
+          writeTabHookSettings(
+            setupHookScripts(noPeerInstance),
+            'tabG',
+            undefined,
+            true,
+            conductor
+          ),
           'utf8'
         )
       ).hooks
@@ -1225,7 +1235,13 @@ esac
       const settingsOf = (conductor: boolean): Record<string, unknown> =>
         JSON.parse(
           fs.readFileSync(
-            writeTabHookSettings(setupHooks(noPeerInstance), 'tabG', undefined, true, conductor),
+            writeTabHookSettings(
+              setupHookScripts(noPeerInstance),
+              'tabG',
+              undefined,
+              true,
+              conductor
+            ),
             'utf8'
           )
         )
@@ -1322,13 +1338,13 @@ esac
       JSON.parse(fs.readFileSync(file, 'utf8')).hooks.PostToolUse
     const entries = (file: string): string[] =>
       postToolUse(file).map((e) => `${e.matcher} ${e.hooks[0].command.split(' ').pop()}`)
-    expect(entries(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPT1', sl))).toEqual([
+    expect(entries(writeTabHookSettings(setupHookScripts(noPeerInstance), 'tabPT1', sl))).toEqual([
       '* tool',
       'Bash shell-after',
       'SendMessage sent',
       'Bash posttool'
     ])
-    expect(entries(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPT2'))).toEqual([
+    expect(entries(writeTabHookSettings(setupHookScripts(noPeerInstance), 'tabPT2'))).toEqual([
       '* tool',
       'Bash shell-after',
       'SendMessage sent'
@@ -1337,7 +1353,7 @@ esac
 
   it('a Bash call that fails still gets the look at the folder after it', () => {
     const settings = JSON.parse(
-      fs.readFileSync(writeTabHookSettings(setupHooks(noPeerInstance), 'tabPTF'), 'utf8')
+      fs.readFileSync(writeTabHookSettings(setupHookScripts(noPeerInstance), 'tabPTF'), 'utf8')
     )
     expect(
       settings.hooks.PostToolUseFailure.map(
@@ -1351,7 +1367,7 @@ esac
   // CC§8
   it('a Notification reaches Koloft only when claude stops to wait on the person, never for a mid-turn one', () => {
     const settings = JSON.parse(
-      fs.readFileSync(writeTabHookSettings(setupHooks(noPeerInstance), 'tabNT'), 'utf8')
+      fs.readFileSync(writeTabHookSettings(setupHookScripts(noPeerInstance), 'tabNT'), 'utf8')
     )
     const types: string[] = settings.hooks.Notification[0].matcher.split('|')
     expect(types).toEqual(expect.arrayContaining(['permission_prompt', 'idle_prompt']))
@@ -1362,14 +1378,14 @@ esac
 
   it('carries a statusLine next to the hooks when the built-in statusline is on', () => {
     const sl = { type: 'command' as const, command: "'/x/statusline/run.sh'", padding: 0 }
-    const file = writeTabHookSettings(setupHooks(noPeerInstance), 'tabSL', sl)
+    const file = writeTabHookSettings(setupHookScripts(noPeerInstance), 'tabSL', sl)
     const settings = JSON.parse(fs.readFileSync(file, 'utf8'))
     expect(settings.statusLine).toEqual(sl)
     expect(settings.hooks.SessionStart).toBeTruthy()
   })
 
   it('omits statusLine when the toggle is off — the user’s own settings stay in charge', () => {
-    const file = writeTabHookSettings(setupHooks(noPeerInstance), 'tabSL2')
+    const file = writeTabHookSettings(setupHookScripts(noPeerInstance), 'tabSL2')
     expect(JSON.parse(fs.readFileSync(file, 'utf8'))).not.toHaveProperty('statusLine')
   })
 
@@ -1378,11 +1394,12 @@ esac
     const read = (file: string): Record<string, unknown> =>
       JSON.parse(fs.readFileSync(file, 'utf8'))
     expect(
-      read(writeTabHookSettings(setupHooks(noPeerInstance), 'tabAG1', undefined, true)).permissions
+      read(writeTabHookSettings(setupHookScripts(noPeerInstance), 'tabAG1', undefined, true))
+        .permissions
     ).toEqual({ allow: ['Bash(koloft *)'] })
-    expect(read(writeTabHookSettings(setupHooks(noPeerInstance), 'tabAG2'))).not.toHaveProperty(
-      'permissions'
-    )
+    expect(
+      read(writeTabHookSettings(setupHookScripts(noPeerInstance), 'tabAG2'))
+    ).not.toHaveProperty('permissions')
     expect(hookSettings('/x/hook.sh', '/x/reg', 'tabAG3')).not.toHaveProperty('permissions')
     expect(machineHookSettings('tabAG4', '$HOME/.koloft/m', false, true).permissions).toEqual({
       allow: ['Bash(koloft *)']
@@ -1398,7 +1415,7 @@ esac
       JSON.parse(
         fs.readFileSync(
           writeTabHookSettings(
-            setupHooks(noPeerInstance),
+            setupHookScripts(noPeerInstance),
             'tabMCP',
             undefined,
             allowKoloft,
@@ -1419,7 +1436,7 @@ esac
     const off = { CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '' }
     expect(
       JSON.parse(
-        fs.readFileSync(writeTabHookSettings(setupHooks(noPeerInstance), 'tabTM1'), 'utf8')
+        fs.readFileSync(writeTabHookSettings(setupHookScripts(noPeerInstance), 'tabTM1'), 'utf8')
       ).env
     ).toEqual(off)
     expect(machineHookSettings('tabTM2', '$HOME/.koloft/m', false, false).env).toEqual(off)
@@ -1455,7 +1472,7 @@ esac
     it('every local tab waits up to an hour for an answer to any dialog; a tab on another machine only records it', () => {
       const read = (file: string): Record<string, Record<string, unknown>> =>
         JSON.parse(fs.readFileSync(file, 'utf8'))
-      const local = read(writeTabHookSettings(setupHooks(noPeerInstance), 'tabC1')).hooks
+      const local = read(writeTabHookSettings(setupHookScripts(noPeerInstance), 'tabC1')).hooks
         .PermissionRequest as {
         matcher: string
         hooks: { command: string; timeout: number }[]
@@ -1640,7 +1657,7 @@ esac
 
 describe('setupHooks at startup', () => {
   it('prunes only reports and settings older than 12 hours — a fresh one, such as another Koloft instance’s in the same folder, survives', () => {
-    const { settingsDir } = setupHooks(noPeerInstance)
+    const { settingsDir } = setupHookScripts(noPeerInstance)
     const hoursAgo = (h: number): Date => new Date(Date.now() - h * 60 * 60 * 1000)
     const fresh = [
       path.join(regDir, 'peer-1.json'),
@@ -1656,7 +1673,7 @@ describe('setupHooks at startup', () => {
     for (const f of fresh) fs.utimesSync(f, hoursAgo(11), hoursAgo(11))
     for (const f of old) fs.utimesSync(f, hoursAgo(13), hoursAgo(13))
 
-    setupHooks(noPeerInstance)
+    setupHookScripts(noPeerInstance)
 
     for (const f of fresh) expect(fs.existsSync(f), f).toBe(true)
     for (const f of old) expect(fs.existsSync(f), f).toBe(false)
@@ -1684,7 +1701,7 @@ describe('setupHooks at startup', () => {
     const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000)
     for (const f of markers(peerTab)) fs.utimesSync(f, twoDaysAgo, twoDaysAgo)
 
-    setupHooks((tab) => tab === peerTab)
+    setupHookScripts((tab) => tab === peerTab)
 
     for (const f of markers(peerTab)) expect(fs.existsSync(f), f).toBe(true)
     for (const f of markers(crashedTab)) expect(fs.existsSync(f), f).toBe(false)

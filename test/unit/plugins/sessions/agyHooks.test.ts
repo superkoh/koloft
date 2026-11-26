@@ -21,9 +21,9 @@ import {
 } from '../../../../src/plugins/sessions/main/messageOpenings'
 import {
   REPLY_LANGUAGE_AFTER_QUOTE,
-  REPLY_LANGUAGE_BEFORE_QUOTE,
-  noticeLine
-} from '../../../../src/plugins/sessions/main/hooks'
+  REPLY_LANGUAGE_BEFORE_QUOTE
+} from '../../../../src/agents/kit/main/hookScriptParts'
+import { noticeLine } from '../../../../src/main/hookFiles'
 import { ownerSays as butlerPassesOn } from '../../../../src/shared/agentGuide'
 
 const C1 = '3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d'

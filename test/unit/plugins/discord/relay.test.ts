@@ -28,14 +28,16 @@ import { HandOver, type HandOverDeps } from '../../../../src/plugins/sessions/ma
 import { typeKeys } from '../../../../src/core/typeKeys'
 import { waitingForAnswer } from '../../../../src/shared/slashCommands'
 import {
-  CODEX_REPLY_LANGUAGE_SCRIPT,
-  CODEX_SAID_ENV,
-  CODEX_SENT_WORDS_ENV,
   NOT_FROM_THE_RELAY,
   noteSent,
-  opensAsOnlyKoloftSends,
-  sentWordsFile
+  opensAsOnlyKoloftSends
 } from '../../../../src/plugins/sessions/main/hooks'
+import {
+  CODEX_REPLY_LANGUAGE_SCRIPT,
+  CODEX_SAID_ENV,
+  CODEX_SENT_WORDS_ENV
+} from '../../../../src/agents/codex/main/codexHooks'
+import { sentWordsFile } from '../../../../src/main/hookFiles'
 import { everyAgentsMessages, type WhatEachAgentSendsThrough } from '../../helpers/agentMessages'
 
 const OWNER = '555'

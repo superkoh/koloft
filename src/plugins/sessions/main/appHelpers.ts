@@ -11,20 +11,26 @@ export {
 } from './everyWorkspaceInstructions'
 export {
   forgetAssistMarkers,
-  localNotice,
   markAnswerable,
   markOwnerAsleep,
   noteSent,
   opensAsOnlyKoloftSends,
-  noticeFile,
   pruneStale,
   quotedPrompt,
+  setupHooks
+} from './hooks'
+export {
+  localNotice,
+  noticeFile,
   saidFile,
-  seedHandedOverOwnerWords,
-  setupHooks,
+  seedHandedOverOwnerWords
+} from '../../../main/hookFiles'
+export {
+  writeClaudeHookScript,
   writeConductorMarker,
   writeTabHookSettings
-} from './hooks'
+} from '@agents/claude/main/claudeHooks'
+export { writeCodexReplyLanguageScript } from '@agents/codex/main/codexHooks'
 export { resolveWorkspace } from './placedRows'
 export {
   anotherSessionIn,

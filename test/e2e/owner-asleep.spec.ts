@@ -26,7 +26,7 @@ import { installOnTheMachine, startRemoteTab } from './helpers/remoteTab'
 import { BACKEND_LABEL } from '../../src/shared/sessionBackend'
 import type { BackendId } from '../../src/shared/types'
 import { OWNER_ASLEEP_ANSWER, OWNER_ASLEEP_PUSH } from '../../src/plugins/butler/main/ownerAsleep'
-import { OWNER_ASLEEP_FILE } from '../../src/plugins/sessions/main/hooks'
+import { OWNER_ASLEEP_FILE } from '../../src/main/hookFiles'
 
 const KOLOFT_ANSWERS_AND_THE_TURN_ENDS_MS = 20_000
 const THE_BUTLER_STARTS_AND_READS_IT_MS = 60_000
