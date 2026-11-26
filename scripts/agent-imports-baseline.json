@@ -99,6 +99,9 @@
         "src/agents/claude/main/crossSessionMessage.ts": "C2",
         "src/agents/codex/main/backend.ts": "D1"
       },
+      "src/plugins/sessions/main/dialog.ts": {
+        "src/agents/claude/main/claudeTouchedFiles.ts": "C1"
+      },
       "src/plugins/sessions/main/hooks.ts": { "src/agents/codex/main/codexLaunchConfig.ts": "C9" },
       "src/plugins/sessions/main/start.ts": {
         "src/agents/agy/main/agySessions.ts": "D1",

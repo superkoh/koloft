@@ -12,6 +12,7 @@ import {
 import type { AskPayload } from '@shared/sessionEvent'
 import type { AnswerResult, Inbox, InboxCaller } from './inbox'
 import {
+  claudeToolAsk,
   planOf,
   questionsOf,
   type CodexApproval,
@@ -22,7 +23,6 @@ import {
   type Verdict,
   SHOWS_NO_DIALOG
 } from '@plugins/sessions/api'
-import { claudeToolAsk } from '../../../main/rowActivity'
 
 export const KOLOFT_SOURCE = { id: 'koloft', name: 'Koloft' }
 const KOLOFT: InboxCaller = { source: KOLOFT_SOURCE.id }
@@ -37,7 +37,7 @@ export const CLOSE_YOURSELF =
 type Approval =
   | { plan: string }
   | { command: string }
-  | { file: string; read: boolean; content?: string }
+  | { file: string; read: boolean; input?: string }
   | { tool: string; input: string }
   | { said?: string }
 
@@ -67,11 +67,7 @@ export function askFromClaude(p: AskPayload): KoloftAsk {
   if (p.tool_name === 'AskUserQuestion') return { kind: 'question', questions: questionsOf(p) }
   const plan = planOf(p)
   if (plan !== undefined) return { kind: 'approval', plan }
-  const ask = claudeToolAsk(p)
-  const input = JSON.stringify(p.tool_input ?? {})
-  if ('command' in ask) return { kind: 'approval', command: ask.command }
-  if ('tool' in ask) return { kind: 'approval', tool: ask.tool || 'A tool', input }
-  return { kind: 'approval', ...ask, ...(!ask.read && { content: input }) }
+  return { kind: 'approval', ...claudeToolAsk(p) }
 }
 
 export function askFromCodex(a: CodexApproval | CodexQuestion): KoloftAsk {
@@ -89,7 +85,7 @@ function approvalShown(a: Approval): { asks: string; who: string; text?: string 
     return {
       asks: `wants to ${a.read ? 'read' : 'edit'} a file`,
       who: 'File',
-      text: a.content === undefined ? a.file : `${a.file}\n${a.content}`
+      text: a.input === undefined ? a.file : `${a.file}\n${a.input}`
     }
   if ('tool' in a) return { asks: 'wants to use a tool', who: a.tool, text: a.input }
   return { asks: 'asks for your approval', who: 'It said', text: a.said }

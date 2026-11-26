@@ -6,7 +6,8 @@ import type { ToolCall } from '@core/moment'
 import { keysFor, typedPieces } from '@core/typeKeys'
 import { CLEAR_TO_LINE_START } from '@shared/lineEditKeys'
 import { BACKEND_LABEL } from '@shared/sessionBackend'
-import { claudeToolAsk } from '../../../main/rowActivity'
+import { str } from '@core/whatItDid'
+import { toolFilePath, WRITE_TOOLS } from '@agents/claude/main/claudeTouchedFiles'
 
 interface Option {
   label: string
@@ -74,13 +75,34 @@ export function planOf(p: AskPayload): string | undefined {
 const asksTo = (who: string, verb: string, what: string): string =>
   `${who} asks to ${verb}: ${what}`
 
+const CLAUDE_READ_TOOLS: ReadonlySet<string> = new Set(['Read', 'Grep', 'Glob'])
+
+export type ClaudeToolAsk =
+  | { command: string }
+  | { file: string; read: boolean; input?: string }
+  | { tool: string; input: string }
+
+export function claudeToolAsk(p: AskPayload): ClaudeToolAsk {
+  const command = str(p.tool_input?.command)
+  if (command) return { command }
+  const file = toolFilePath(p.tool_input)
+  const tool = p.tool_name ?? ''
+  const input = JSON.stringify(p.tool_input ?? {})
+  const read = CLAUDE_READ_TOOLS.has(tool)
+  if (!file || (!read && !WRITE_TOOLS.has(tool))) return { tool: tool || 'a tool', input }
+  const saysMoreThanThePath = Object.keys(p.tool_input ?? {}).length > 1
+  return { file, read, ...(saysMoreThanThePath && { input }) }
+}
+
 function toolText(p: AskPayload): string {
   const who = BACKEND_LABEL.claude
   const ask = claudeToolAsk(p)
-  const input = JSON.stringify(p.tool_input ?? {})
   if ('command' in ask) return asksTo(who, 'run', ask.command)
-  if (!('file' in ask)) return `${who} asks to use ${ask.tool || 'a tool'}:\n${input}`
-  return ask.read ? asksTo(who, 'read', ask.file) : `${asksTo(who, 'edit', ask.file)}\n${input}`
+  const head =
+    'file' in ask
+      ? asksTo(who, ask.read ? 'read' : 'edit', ask.file)
+      : `${who} asks to use ${ask.tool}:`
+  return ask.input === undefined ? head : `${head}\n${ask.input}`
 }
 
 function approvalText(a: CodexApproval, who: string): string {

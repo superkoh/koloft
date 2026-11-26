@@ -1,27 +1,14 @@
 import type { AskPayload } from '@shared/sessionEvent'
 import { basename } from '@shared/preview'
-import { oneLine, str } from '@core/whatItDid'
-import { toolFilePath, withoutMcpServer, WRITE_TOOLS } from '@agents/claude/main/claudeTouchedFiles'
+import { oneLine } from '@core/whatItDid'
+import { withoutMcpServer } from '@agents/claude/main/claudeTouchedFiles'
 import {
+  claudeToolAsk,
   planOf,
   questionsOf,
   type CodexApproval,
   type CodexQuestion
 } from '@plugins/sessions/main/dialog'
-
-const CLAUDE_READ_TOOLS: ReadonlySet<string> = new Set(['Read', 'Grep', 'Glob'])
-
-export type ClaudeToolAsk = { command: string } | { file: string; read: boolean } | { tool: string }
-
-export function claudeToolAsk(p: AskPayload): ClaudeToolAsk {
-  const command = str(p.tool_input?.command)
-  if (command) return { command }
-  const file = toolFilePath(p.tool_input)
-  const tool = p.tool_name ?? ''
-  if (file && WRITE_TOOLS.has(tool)) return { file, read: false }
-  if (file && CLAUDE_READ_TOOLS.has(tool)) return { file, read: true }
-  return { tool }
-}
 
 export function claudeAskLine(p: AskPayload): string {
   if (p.tool_name === 'AskUserQuestion') {

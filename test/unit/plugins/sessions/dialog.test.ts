@@ -162,6 +162,15 @@ describe('a managed session’s dialog: its full text, and the keys that answer 
     )
   })
 
+  it('a file ask whose input says more than its path, such as what a search looks for, keeps that input under the path', () => {
+    expect(dialogText({ tool_name: 'Read', tool_input: { file_path: '/a' } })).toBe(
+      'Claude asks to read: /a'
+    )
+    expect(dialogText({ tool_name: 'Grep', tool_input: { pattern: 'TOKEN', path: '/a' } })).toBe(
+      'Claude asks to read: /a\n{"pattern":"TOKEN","path":"/a"}'
+    )
+  })
+
   it('a plan another agent waits on reads like Claude’s: the whole plan under "Approve this plan?", with Approve and Reject; with its text unread, it says where to read it', () => {
     const asked = { id: 'plan:1', command: 'implementation_plan.md', plan: true as const }
     expect(codexDialog({ ...asked, reason: 'Create plan-ok.txt.' }, 'Antigravity')).toEqual(
