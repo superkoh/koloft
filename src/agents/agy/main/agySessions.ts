@@ -108,6 +108,7 @@ import { seedAssistMemory } from '../../../main/assistMemory'
 import { NOTICE_ENV, noticeFile } from '../../../main/hookFiles'
 import { SHELL_WROTE_FIELD } from '@agents/kit/main/hookScriptParts'
 import { formatRemoteKey, keyedOn, parseRemoteKey, type RemoteKey } from '@shared/remoteKey'
+import { identityOf } from '@shared/sessionBackend'
 import { AGY_ARTIFACT_SIDECAR } from '../shared/agyBrain'
 import { noteWrite, shellWrittenFiles, wroteEvent, type FileAcc } from '../../../main/touchedFiles'
 import { agySessionKey } from '@agents/kit/main/sessionStore'
@@ -124,8 +125,9 @@ import {
 import { pathWithDirFirst } from '../../../main/toolInstall'
 import { record } from '@core/unknownValue'
 import { agyToolDid } from './agyToolDid'
+import { A_SESSION_LEAVES_THE_MACHINE_WITHIN_MS } from '@core/agent/leavesTheMachine'
+import { machineOfItsTab, machinesWithItsTabs } from '@agents/kit/main/tabMachines'
 import {
-  REMOTE_EXIT_WAIT_MS,
   StoredSessions,
   hostOfKey,
   type HistoryEntry,
@@ -173,7 +175,7 @@ export interface AgyRemoteDeps {
   keyed(host: string, pathOnMachine: string): string
   mirrorDir(host: string): string
   mirrorGemini(host: string): string
-  gone(host: string, sessionId: string): boolean
+  alive(host: string): ReadonlySet<string>
   connected(host: string): boolean
   nextPull(host: string): Promise<void>
   setupLine(): string | undefined
@@ -1014,7 +1016,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     const firstLine = firstLineToType(opts, resumeId)
     if (
       resumeId &&
-      (remote.gone(where.host, resumeId) || (await machine.tmux.endedByKoloft(resumeId))) &&
+      (this.goneThere(where.host, resumeId) || (await machine.tmux.endedByKoloft(resumeId))) &&
       (await agyHeldElsewhere(machine, resumeId))
     )
       throw new Error(HELD_ELSEWHERE)
@@ -1152,11 +1154,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     if (this.shuttingDown) return
     // ADR-0044
     const named = await machine.runScript(TAB_TMUX_NAME_SH, [run.tabId])
-    const problem = await machine.tmux.end(named?.trim() || tmuxName, run.tabId)
-    if (problem)
-      this.deps.error(
-        `Could not stop Antigravity on ${host}: ${problem}. It is still running there.`
-      )
+    await this.endTmuxThere(host, named?.trim() || tmuxName, run.tabId)
   }
 
   private tick(): void {
@@ -1534,9 +1532,9 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       if (run.remote?.host !== host || !sid || !sessionIds.includes(sid)) continue
       setTimeout(() => {
         const still = this.runs.get(run.tabId) === run && run.info?.nativeSessionId === sid
-        if (!still || !this.deps.remote.gone(host, sid)) return
+        if (!still || !this.goneThere(host, sid)) return
         void this.stop(run.tabId, 1).catch((error) => this.deps.error(String(error)))
-      }, REMOTE_EXIT_WAIT_MS).unref()
+      }, A_SESSION_LEAVES_THE_MACHINE_WITHIN_MS).unref()
     }
   }
 
@@ -1551,6 +1549,49 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
         return this.deps.pty.get(run.tabId)?.alive ? run.tabId : undefined
     }
     return undefined
+  }
+
+  machineOfTab(tabId: string): string | undefined {
+    return machineOfItsTab(this.deps.pty, this.id, tabId)
+  }
+
+  machinesWithTabs(): string[] {
+    return machinesWithItsTabs(this.deps.pty, this.id)
+  }
+
+  // AGY§29
+  sessionsRunningOnTheMachine(workspace: string): string[] {
+    const host = parseRemoteKey(workspace)?.host
+    if (!host) return []
+    const running = this.deps.remote.alive(host)
+    return this.rows(workspace).flatMap((r) =>
+      r.nativeSessionId && running.has(r.nativeSessionId) ? [r.id] : []
+    )
+  }
+
+  endOnTheMachine(host: string, key: string): void {
+    const id = identityOf(key)?.nativeSessionId
+    if (!id) return
+    void this.endTmuxThere(host, tmuxSessionName(id)).catch((error) =>
+      this.deps.error(String(error))
+    )
+  }
+
+  goneFromTheMachine(host: string, key: string): boolean {
+    const id = identityOf(key)?.nativeSessionId
+    return !id || !this.deps.remote.alive(host).has(id)
+  }
+
+  private goneThere(host: string, id: string): boolean {
+    return this.deps.remote.connected(host) && !this.deps.remote.alive(host).has(id)
+  }
+
+  private async endTmuxThere(host: string, name: string, tabId?: string): Promise<void> {
+    const problem = await this.deps.remote.machine(host).tmux.end(name, tabId)
+    if (problem)
+      this.deps.error(
+        `Could not stop Antigravity on ${host}: ${problem}. It is still running there.`
+      )
   }
 
   // AGY§11 AGY§12

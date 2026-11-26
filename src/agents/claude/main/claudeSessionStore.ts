@@ -392,14 +392,11 @@ export class ClaudeSessionStore implements SessionRowsSource {
     return parts.join(',')
   }
 
-  remoteOrphansOf(wsPath: string): string[] {
+  sessionsRunningOnTheMachine(wsPath: string): string[] {
     const { key } = this.scope(wsPath)
     if (!key) return []
-    const bindings = this.deps.runningBindings()
     const mine = new Set((this.allRowsCache.get(wsPath) ?? []).map((r) => r.id))
-    return [...(this.deps.remoteRunning?.(key.host) ?? [])].filter(
-      (id) => !bindings.has(id) && mine.has(id)
-    )
+    return [...(this.deps.remoteRunning?.(key.host) ?? [])].filter((id) => mine.has(id))
   }
 
   dispose(): void {

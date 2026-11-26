@@ -80,8 +80,8 @@ export interface WorkspaceManagerDeps {
   remoteConnected?(host: string): boolean
   remoteProblem?(host: string): string | undefined
   remoteGit?(host: string, path: string): RemoteGitInfo | undefined
-  remoteOrphansOf?(wsPath: string): string[]
-  killRemoteSession?(host: string, sessionId: string): void
+  sessionsRunningOnTheMachine?(wsPath: string): string[]
+  endOnTheMachine?(host: string, sessionKey: string): void
   hiddenRow?(id: string): boolean
   parentOf?(rowId: string): string | undefined
   conductorsRoot?: string
@@ -359,7 +359,7 @@ export class WorkspaceManager {
     const { key } = this.scope(wsPath)
     const orphans = key ? this.remoteOrphansOf(wsPath) : []
     for (const tabId of tabs) this.deps.killTab(tabId)
-    if (key) for (const id of orphans) this.deps.killRemoteSession?.(key.host, id)
+    if (key) for (const id of orphans) this.deps.endOnTheMachine?.(key.host, id)
     this.unpin(wsPath)
   }
 
@@ -524,7 +524,9 @@ export class WorkspaceManager {
   }
 
   private remoteOrphansOf(wsPath: string): string[] {
-    return this.deps.remoteOrphansOf?.(wsPath) ?? []
+    const running = this.deps.sessionsRunningOnTheMachine?.(wsPath) ?? []
+    const bindings = this.deps.runningBindings()
+    return running.filter((key) => !bindings.has(key))
   }
 
   whenScanned(): Promise<void> {

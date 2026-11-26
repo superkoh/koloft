@@ -609,6 +609,16 @@ export class CodexSessions extends StoredSessions<CodexRun, CodexThread, CodexLa
     return undefined
   }
 
+  sessionsRunningOnTheMachine(): string[] {
+    return []
+  }
+
+  endOnTheMachine(): void {}
+
+  goneFromTheMachine(): boolean {
+    return true
+  }
+
   async answer(): Promise<false> {
     return false
   }

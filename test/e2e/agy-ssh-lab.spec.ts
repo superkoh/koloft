@@ -14,12 +14,16 @@ import {
 } from './helpers/env'
 import { defaultControlDir } from '../../src/main/remote/ssh'
 import { boundRemoteSession } from './helpers/remote'
+import { koloftOpensAgainWithNoTabToTakeBack } from './helpers/restartTabs'
 import {
   addWorkspace,
   centerTerm,
   chooseBackend,
+  machineAndItsOneRowShown,
   newSessionInWith,
+  ONE_SESSION_WILL_BE_CLOSED,
   openWorktreeSession,
+  removeWorkspaceConfirming,
   runIn,
   sendShortcut,
   terminalText,
@@ -455,6 +459,38 @@ test.describe('Antigravity sessions on real sshd machines behind a company jump 
         expect(filesHoldingTheKeyOn(lab, 'kuser')).toEqual([])
         expect(startWordsOn(lab, 'kuser', firstTab)).toEqual([THE_COPY_OF_A_RUNNING_AGY])
         expect(startWordsOn(lab, 'kuser', reopened.tabId)).toEqual([])
+      },
+      (lab) => {
+        fakeAgyOnTheMachine(lab, ['kuser'])
+        turnsTakeLongerThanAMirrorPull(lab, 'kuser')
+      }
+    )
+  })
+
+  test('E-SSH-A11: an Antigravity session left running in tmux on the machine while Koloft was closed, which the reopened Koloft opened no tab for, is counted when its workspace is removed and, once that is confirmed, ended there with every process of it, and the account’s key in no file there', async ({
+    env
+  }) => {
+    await withLab(
+      env,
+      async ({ page: firstWindow, lab, quitKoloft, openKoloftAgain }) => {
+        await addMachine(firstWindow, 'kt-key', 'kuser')
+        const firstTab = await agyTabAtItsPromptOn(firstWindow, 'kt-key')
+        await promptShowsWorkingThenDone(
+          firstWindow,
+          rowOfTab(firstWindow, firstTab),
+          'before the quit'
+        )
+        const { id } = await boundAgyOn(firstWindow, 'kt-key')
+        await quitKoloft()
+        expect(tmuxSessionsOn(lab, 'kuser')).toEqual([`k-${id}`])
+
+        koloftOpensAgainWithNoTabToTakeBack(env)
+        const page = await openKoloftAgain()
+        await machineAndItsOneRowShown(page, 'kt-key')
+        expect(await termIds(page)).toEqual([])
+        await removeWorkspaceConfirming(page, 'kt-key', ONE_SESSION_WILL_BE_CLOSED)
+        await nothingOfTheTabRunsOn(lab, 'kuser')
+        expect(filesHoldingTheKeyOn(lab, 'kuser')).toEqual([])
       },
       (lab) => {
         fakeAgyOnTheMachine(lab, ['kuser'])

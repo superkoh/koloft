@@ -28,6 +28,8 @@ import type { TabEnded } from '../moment'
 import type { TranscriptPlaces } from '../transcriptPlaces'
 import { rowsOfEveryAgent, type RowsOfEveryAgent, type SessionRowsSource } from './sessionRows'
 import type { MirrorFolder } from './mirrorFolders'
+import { sleep } from '../sleep'
+import { A_SESSION_LEAVES_THE_MACHINE_WITHIN_MS } from './leavesTheMachine'
 
 export type ModeClass = 'bypass' | 'prompting'
 
@@ -101,8 +103,22 @@ export interface SessionBackend extends SessionRowsSource, SessionMessages {
   foldersToMirrorFrom(host: string, landing: string): MirrorFolder[]
   tmuxOfTab(tabId: string): string | undefined
   tabOfTmuxSession(host: string, name: string): string | undefined
+  machineOfTab(tabId: string): string | undefined
+  machinesWithTabs(): string[]
+  sessionsRunningOnTheMachine(workspace: string): string[]
+  endOnTheMachine(host: string, key: string): void
+  goneFromTheMachine(host: string, key: string): boolean
   showsAPanel(tabId: string, screen?: string[]): Promise<boolean | undefined>
 }
+
+export interface MachineReach {
+  poke(host: string): void
+  connected(host: string): boolean
+}
+
+export type LeftTheMachine = 'gone' | 'alive' | 'unreachable'
+
+const MACHINE_LOOKED_AT_AGAIN_EVERY_MS = 500
 
 export interface SessionLifecycle {
   prompted(tabId: string): void
@@ -395,6 +411,48 @@ export class SessionBackends {
       if (tabId !== undefined) return tabId
     }
     return undefined
+  }
+
+  machineOfTab(tabId: string): string | undefined {
+    for (const backend of this.builtInListOrder()) {
+      const machine = backend.machineOfTab(tabId)
+      if (machine !== undefined) return machine
+    }
+    return undefined
+  }
+
+  machinesWithTabs(): string[] {
+    return [...new Set(this.builtInListOrder().flatMap((b) => b.machinesWithTabs()))]
+  }
+
+  sessionsRunningOnTheMachine(workspace: string): string[] {
+    return this.builtInListOrder().flatMap((b) => b.sessionsRunningOnTheMachine(workspace))
+  }
+
+  private builtOwnerOf(key: string): SessionBackend | undefined {
+    const identity = identityOf(key)
+    return identity && this.adapters.get(identity.backendId)
+  }
+
+  endOnTheMachine(host: string, key: string): void {
+    this.builtOwnerOf(key)?.endOnTheMachine(host, key)
+  }
+
+  async waitGoneFromTheMachine(
+    host: string,
+    key: string,
+    machine: MachineReach
+  ): Promise<LeftTheMachine> {
+    const owner = this.builtOwnerOf(key)
+    const gone = (): boolean =>
+      machine.connected(host) && (!owner || owner.goneFromTheMachine(host, key))
+    machine.poke(host)
+    const deadline = Date.now() + A_SESSION_LEAVES_THE_MACHINE_WITHIN_MS
+    while (!gone()) {
+      if (Date.now() >= deadline) return machine.connected(host) ? 'alive' : 'unreachable'
+      await sleep(MACHINE_LOOKED_AT_AGAIN_EVERY_MS)
+    }
+    return 'gone'
   }
 
   async historyRows(

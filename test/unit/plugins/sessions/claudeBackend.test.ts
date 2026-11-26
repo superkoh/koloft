@@ -21,6 +21,9 @@ import { GithubRepos } from '../../../../src/main/githubRepos'
 import { gitOnPath, realGit, restorePath, seedRepo } from '../../helpers/gitShim'
 import { mirrorHookDir } from '../../../../src/main/remote/paths'
 import { START_IN_STATUS_LOG } from '../../../../src/agents/claude/main/claudeHooks'
+import { SessionBackends, type LeftTheMachine } from '../../../../src/core/agent/sessionBackends'
+import { lifecycle } from '../../helpers/sessionBackendStub'
+import { A_SESSION_LEAVES_THE_MACHINE_WITHIN_MS } from '../../../../src/core/agent/leavesTheMachine'
 
 function fakeTracker(): ClaudeBackendDeps['tracker'] {
   const tracked = new Map<string, { sessionId: string }>()
@@ -169,29 +172,33 @@ describe('ClaudeBackend: the hook mirror of a session on a remote machine', () =
   })
 })
 
-describe('ClaudeBackend: waiting for a remote session to end before its folder is tidied (#22)', () => {
-  const REMOTE_EXIT_WAIT_MS = 10_000
-
+describe('waiting for a Claude Code session to leave its machine before its folder is tidied (#22)', () => {
   function machine(): {
-    backend: ClaudeBackend
+    gone: (host: string, sessionId: string) => Promise<LeftTheMachine>
     sync: { connected: boolean; alive: Set<string>; pokes: string[] }
   } {
     const sync = { connected: true, alive: new Set(['sid-1']), pokes: [] as string[] }
-    const backend = new ClaudeBackend({
-      remoteSync: () => ({
-        pokeNow: (host: string) => void sync.pokes.push(host),
-        connected: () => sync.connected,
-        alive: () => sync.alive
-      })
-    } as unknown as ClaudeBackendDeps)
-    return { backend, sync }
+    const backends = new SessionBackends(lifecycle())
+    backends.register(
+      new ClaudeBackend({
+        remoteSync: () => ({ connected: () => sync.connected, alive: () => sync.alive })
+      } as unknown as ClaudeBackendDeps)
+    )
+    const reach = {
+      poke: (host: string) => void sync.pokes.push(host),
+      connected: () => sync.connected
+    }
+    return {
+      gone: (host, sessionId) => backends.waitGoneFromTheMachine(host, sessionId, reach),
+      sync
+    }
   }
 
   it('asks the machine at once, and answers "gone" as soon as the session leaves its list', async () => {
     vi.useFakeTimers()
     try {
       const m = machine()
-      const answer = m.backend.waitRemoteGone('devbox', 'sid-1')
+      const answer = m.gone('devbox', 'sid-1')
       expect(m.sync.pokes).toEqual(['devbox'])
       await vi.advanceTimersByTimeAsync(2_000)
       m.sync.alive.delete('sid-1')
@@ -206,12 +213,12 @@ describe('ClaudeBackend: waiting for a remote session to end before its folder i
     vi.useFakeTimers()
     try {
       const alive = machine()
-      const stillThere = alive.backend.waitRemoteGone('devbox', 'sid-1')
+      const stillThere = alive.gone('devbox', 'sid-1')
       const down = machine()
       down.sync.connected = false
       down.sync.alive.clear()
-      const neverAnswered = down.backend.waitRemoteGone('devbox', 'sid-1')
-      await vi.advanceTimersByTimeAsync(REMOTE_EXIT_WAIT_MS + 1_000)
+      const neverAnswered = down.gone('devbox', 'sid-1')
+      await vi.advanceTimersByTimeAsync(A_SESSION_LEAVES_THE_MACHINE_WITHIN_MS + 1_000)
       await expect(stillThere).resolves.toBe('alive')
       await expect(neverAnswered).resolves.toBe('unreachable')
     } finally {

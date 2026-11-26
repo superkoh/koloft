@@ -66,8 +66,6 @@ export const hostOfKey = (key: string): string | undefined => {
   return sourceId === 'local' ? undefined : sourceId
 }
 
-export const REMOTE_EXIT_WAIT_MS = 10_000
-
 // ADR-0025
 const seenMissing = (cwd: string): boolean => !isRemoteKey(cwd) && !dirExists(cwd)
 
@@ -334,6 +332,11 @@ export abstract class StoredSessions<R extends StoredRun, H extends HistoryEntry
   abstract foldersToMirrorFrom(host: string, landing: string): MirrorFolder[]
   abstract tmuxOfTab(tabId: string): string | undefined
   abstract tabOfTmuxSession(host: string, name: string): string | undefined
+  abstract machineOfTab(tabId: string): string | undefined
+  abstract machinesWithTabs(): string[]
+  abstract sessionsRunningOnTheMachine(workspace: string): string[]
+  abstract endOnTheMachine(host: string, key: string): void
+  abstract goneFromTheMachine(host: string, key: string): boolean
   abstract answer(tabId: string, reply: string): Promise<SentAnswer | false>
   abstract deliver(tabId: string, text: string): Promise<boolean>
 

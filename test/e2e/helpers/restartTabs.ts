@@ -15,6 +15,10 @@ export function openTabsFile(env: E2EEnv): string {
   return path.join(env.userData, 'open-tabs.json')
 }
 
+export function koloftOpensAgainWithNoTabToTakeBack(env: E2EEnv): void {
+  fs.rmSync(openTabsFile(env), { force: true })
+}
+
 export async function theOpenTabAsKoloftSavedIt(env: E2EEnv, sessionId: string): Promise<string> {
   let saved = ''
   await expect

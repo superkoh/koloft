@@ -401,7 +401,7 @@ export function agySessionsIn(world: World, pty: unknown, a: AgySetup): AgySessi
       keyed: (host, p) => `ssh://${host}${p}`,
       mirrorDir: () => mirror,
       mirrorGemini: () => path.join(world.home, 'mirror-gemini'),
-      gone: (_host, id) => !alive().has(id),
+      alive: () => alive(),
       connected: () => true,
       nextPull: async () => undefined,
       setupLine: () => undefined,
