@@ -112,6 +112,7 @@ import {
   codexKeyFor,
   labelsOf,
   questionAnswers,
+  REPLY_YES_OR_NO,
   type CodexApproval,
   type CodexQuestion,
   type Question,
@@ -2922,7 +2923,6 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
             approval: {
               id: askId,
               command: pending.target,
-              reason: pending.kind === 'file' && !pending.read ? 'Write this file' : undefined,
               ...(pending.kind === 'file' && pending.target ? { file: pending.target } : {}),
               ...(pending.read && { read: true as const })
             }
@@ -2976,8 +2976,9 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       noKey: noKeyFor(status.msg, tool?.name),
       approval: {
         id,
-        command: commandLine ?? file ?? status.msg,
-        ...(file ? { file, ...(READING_TOOLS.has(tool!.name) && { read: true as const }) } : {})
+        command: commandLine ?? file,
+        ...(file ? { file, ...(READING_TOOLS.has(tool!.name) && { read: true as const }) } : {}),
+        ...(!commandLine && !file && status.msg && { reason: status.msg })
       }
     }
   }
@@ -3041,7 +3042,7 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
     }
     if (!ask.approval) return false
     const key = codexKeyFor(reply)
-    if (!key) return { error: 'an Antigravity approval takes yes or no.' }
+    if (!key) return { error: REPLY_YES_OR_NO }
     const yes = key === 'y'
     run.waiting = undefined
     if (ask.plan) {

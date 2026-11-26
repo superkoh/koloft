@@ -7,7 +7,7 @@ Discord card: body:
     Which colour do you prefer?
     1. Red — Choose red.
     2. Green — Choose green.
-Discord card: footnote: -# Reply with a number or your own answer.
+Discord card: footnote: -# Reply with the number or the name of one option, or with your own answer.
 Discord card: buttons: 1. Red | 2. Green
 Inbox card: title: “Fix the docs” is waiting for you in its tab
 Inbox card: quote: (nothing)
@@ -49,7 +49,7 @@ Discord card: body:
     Which colour do you prefer?
     1. Red — Choose red.
     2. Green — Choose green.
-Discord card: footnote: -# Reply with a number or your own answer.
+Discord card: footnote: -# Reply with the number or the name of one option, or with your own answer.
 Discord card: buttons: 1. Red | 2. Green
 Inbox card: title: “Fix the docs” asks a question
 Inbox card: quote: (nothing)

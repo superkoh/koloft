@@ -11,19 +11,28 @@ import {
 
 const CLAUDE_READ_TOOLS: ReadonlySet<string> = new Set(['Read', 'Grep', 'Glob'])
 
+export type ClaudeToolAsk = { command: string } | { file: string; read: boolean } | { tool: string }
+
+export function claudeToolAsk(p: AskPayload): ClaudeToolAsk {
+  const command = str(p.tool_input?.command)
+  if (command) return { command }
+  const file = toolFilePath(p.tool_input)
+  const tool = p.tool_name ?? ''
+  if (file && WRITE_TOOLS.has(tool)) return { file, read: false }
+  if (file && CLAUDE_READ_TOOLS.has(tool)) return { file, read: true }
+  return { tool }
+}
+
 export function claudeAskLine(p: AskPayload): string {
   if (p.tool_name === 'AskUserQuestion') {
     const first = questionsOf(p)[0]
     return first ? `Asks: ${oneLine(first.question)}` : 'Asks you a question'
   }
   if (planOf(p) !== undefined) return 'Asks: Approve this plan?'
-  const command = str(p.tool_input?.command)
-  if (command) return `Wants to run: ${oneLine(command)}`
-  const file = toolFilePath(p.tool_input)
-  const tool = p.tool_name ?? ''
-  if (file && WRITE_TOOLS.has(tool)) return `Wants to edit: ${basename(file)}`
-  if (file && CLAUDE_READ_TOOLS.has(tool)) return `Wants to read: ${basename(file)}`
-  return `Wants to use: ${oneLine(withoutMcpServer(tool) || 'a tool')}`
+  const ask = claudeToolAsk(p)
+  if ('command' in ask) return `Wants to run: ${oneLine(ask.command)}`
+  if ('file' in ask) return `Wants to ${ask.read ? 'read' : 'edit'}: ${basename(ask.file)}`
+  return `Wants to use: ${oneLine(withoutMcpServer(ask.tool) || 'a tool')}`
 }
 
 export function storedAskLine(a: CodexApproval | CodexQuestion): string {

@@ -5,6 +5,8 @@ import { fail, type Parsed } from '@core/command'
 import type { ToolCall } from '@core/moment'
 import { keysFor, typedPieces } from '@core/typeKeys'
 import { CLEAR_TO_LINE_START } from '@shared/lineEditKeys'
+import { BACKEND_LABEL } from '@shared/sessionBackend'
+import { claudeToolAsk } from '../../../main/rowActivity'
 
 interface Option {
   label: string
@@ -69,11 +71,23 @@ export function planOf(p: AskPayload): string | undefined {
   return typeof plan === 'string' ? plan : undefined
 }
 
+const asksTo = (who: string, verb: string, what: string): string =>
+  `${who} asks to ${verb}: ${what}`
+
 function toolText(p: AskPayload): string {
-  const command = p.tool_input?.command
-  return typeof command === 'string'
-    ? `${p.tool_name} asks to run:\n${command}`
-    : `${p.tool_name ?? 'A tool'} asks to run:\n${JSON.stringify(p.tool_input ?? {})}`
+  const who = BACKEND_LABEL.claude
+  const ask = claudeToolAsk(p)
+  const input = JSON.stringify(p.tool_input ?? {})
+  if ('command' in ask) return asksTo(who, 'run', ask.command)
+  if (!('file' in ask)) return `${who} asks to use ${ask.tool || 'a tool'}:\n${input}`
+  return ask.read ? asksTo(who, 'read', ask.file) : `${asksTo(who, 'edit', ask.file)}\n${input}`
+}
+
+function approvalText(a: CodexApproval, who: string): string {
+  const why = a.reason ? ` (${a.reason})` : ''
+  if (a.file) return asksTo(who, a.read ? 'read' : 'edit', a.file + why)
+  if (a.command) return asksTo(who, 'run', a.command + why)
+  return a.reason ? `${who} asks for your approval: ${a.reason}` : `${who} asks for your approval`
 }
 
 export const PLAN_IS_IN_ITS_SESSION = 'Open the session to read the plan.'
@@ -139,10 +153,10 @@ export function claudeDialog(p: AskPayload): DialogView {
   return { text: dialogText(p), choices: choicesOf(p) }
 }
 
-export function codexDialog(a: CodexApproval | CodexQuestion): DialogView {
+export function codexDialog(a: CodexApproval | CodexQuestion, label: string): DialogView {
   if (!('questions' in a) && a.plan)
     return { text: planText(a.reason ?? PLAN_IS_IN_ITS_SESSION), choices: APPROVE_OR_REJECT }
-  if (!('questions' in a)) return { text: approvalDetail(a) ?? '', choices: YES_OR_NO }
+  if (!('questions' in a)) return { text: approvalText(a, label), choices: YES_OR_NO }
   const [only, ...more] = a.questions
   return {
     text: a.questions.map(questionText).join('\n\n'),
@@ -162,17 +176,16 @@ function severalPicksHow(qs: Question[]): string | undefined {
   return qs.length > 1 ? ONE_LINE_PER_QUESTION_SOME_PICK_SEVERAL : PICK_SEVERAL
 }
 
-export function askHow(p: AskPayload): string {
+export const REPLY_YES_OR_NO = 'Reply yes or no.'
+
+export function askHow(p: AskPayload, answerTakesWords: boolean): string {
   if (p.tool_name === 'AskUserQuestion') {
     const qs = questionsOf(p)
-    return (
-      severalPicksHow(qs) ??
-      (qs.length > 1 ? ONE_LINE_PER_QUESTION : 'Reply with a number or your own answer.')
-    )
+    return severalPicksHow(qs) ?? (qs.length > 1 ? ONE_LINE_PER_QUESTION : PICK_OR_OWN_WORDS)
   }
-  return planOf(p) === undefined
-    ? 'Reply yes or no.'
-    : 'Reply yes to approve, or say what to change.'
+  return planOf(p) !== undefined && answerTakesWords
+    ? 'Reply yes to approve, or say what to change.'
+    : REPLY_YES_OR_NO
 }
 
 function answerOf(q: Question, line: string): string {
@@ -214,7 +227,6 @@ export function hookAnswer(p: AskPayload, reply: string): Record<string, unknown
 }
 
 const ESC = '\x1b'
-const YES_OR_NO_BY_KEYS = 'Koloft answers this dialog by its keys, so it can only answer yes or no.'
 
 function pickOf(q: Question, word: string): number {
   const pick = /^\d+$/.test(word)
@@ -327,7 +339,7 @@ export function claudeKeysFor(
   if (p.tool_name === 'AskUserQuestion') {
     const qs = questionsOf(p)
     const lines = linesPerQuestion(qs, text)
-    if (!lines) return fail(askHow(p))
+    if (!lines) return fail(askHow(p, false))
     const answers = qs.flatMap((q, i) =>
       questionKeys(q, lines[i]!, keysPressedSinceAsked || i === 0)
     )
@@ -339,7 +351,7 @@ export function claudeKeysFor(
     return { ok: true, value: [...emptyThePlanFeedbackRowFromAnyRow(), ...keysFor([SHIFT_TAB])] }
   if (YES.test(text)) return { ok: true, value: ['1'] }
   if (NO.test(text)) return { ok: true, value: [ESC] }
-  return fail(YES_OR_NO_BY_KEYS)
+  return fail(REPLY_YES_OR_NO)
 }
 
 export const A_TAKEN_ANSWER_SHOWS_WITHIN_MS = 15_000
@@ -355,11 +367,6 @@ const ANSWERED_WITHOUT_RUNNING = new Set(['AskUserQuestion', 'ExitPlanMode'])
 // CC§14
 export function claudeResultComesAtOnce(p: AskPayload, reply: string): boolean {
   return ANSWERED_WITHOUT_RUNNING.has(p.tool_name ?? '') || !YES.test(reply.trim())
-}
-
-export function approvalDetail(a: CodexApproval): string | undefined {
-  if (!a.command) return a.reason
-  return a.reason ? `${a.command} (${a.reason})` : a.command
 }
 
 // CODEX§3

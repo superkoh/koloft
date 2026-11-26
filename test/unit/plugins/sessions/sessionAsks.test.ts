@@ -131,7 +131,7 @@ describe('SessionAsks: a dialog of a session a conductor looks after', () => {
     expect(JSON.parse(fs.readFileSync(hookFile(MANAGED, 'answer', '1'), 'utf8'))).toEqual({})
     asks.toolDone(MANAGED, { name: 'Bash', input: BASH.tool_input })
     expect(fs.existsSync(hookFile(MANAGED, 'answer', '2'))).toBe(false)
-    expect(asks.dialog(MANAGED)?.text).toBe('Bash asks to run:\nmake')
+    expect(asks.dialog(MANAGED)?.text).toBe('Claude asks to run: make')
     watcher?.close()
   })
 
@@ -162,7 +162,7 @@ describe('SessionAsks: a dialog of a session a conductor looks after', () => {
     status = 'working'
 
     asks.onAsk(MANAGED, BASH)
-    expect(await asks.answerSession(MANAGED, 'maybe later')).toContain('only answer yes or no')
+    expect(await asks.answerSession(MANAGED, 'maybe later')).toBe('Reply yes or no.')
     asks.toolDone(MANAGED, { name: 'Bash', input: BASH.tool_input })
     expect(await asks.answerSession(MANAGED, 'yes')).toBe(SHOWS_NO_DIALOG)
   })
@@ -415,7 +415,7 @@ describe('SessionAsks: a dialog of a session a conductor looks after', () => {
       expect(await asks.answerSession(MANAGED, reply)).toBeUndefined()
       return writes.map((w) => w.data)
     }
-    expect(codexDialog(question).choices).toEqual([])
+    expect(codexDialog(question, 'Antigravity').choices).toEqual([])
     expect(await pressed('cherry, 1')).toEqual(['1', '3', '\r'])
     expect(await pressed('A ripe mango')).toEqual(['4', 'A ripe mango', '\r'])
     question = { id: 'hook:2', questions: [fruits, colour] }

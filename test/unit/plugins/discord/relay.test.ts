@@ -413,7 +413,7 @@ describe('DiscordRelay: an owner message to a Claude conductor', () => {
     drop(askFile, QUESTION)
     await vi.waitFor(() =>
       expect(posts.map((p) => p.text)).toEqual([
-        `${butlerAsks('Assist')}\nWhich?\n1. A\n2. B\n-# Reply with a number or your own answer.`
+        `${butlerAsks('Assist')}\nWhich?\n1. A\n2. B\n-# Reply with the number or the name of one option, or with your own answer.`
       ])
     )
     await vi.waitFor(() => expect(placed).toEqual([{ buttons: ['b0', 'b1'], messageId: 'card-1' }]))

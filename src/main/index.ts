@@ -492,6 +492,7 @@ const {
   dialogOf
 } = askWiring({
   runtime: () => runtime,
+  backendOf: (tabId) => backendIdOf(ptyMgr.get(tabId)?.kind),
   storedOwnerOf,
   sessionAsks: () => sessionAsks,
   readers: () => ({ claudeDialog, codexDialog, questionsOf, isAskedCall }),

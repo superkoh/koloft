@@ -1,4 +1,6 @@
 import type { AskPayload } from '@shared/sessionEvent'
+import type { BackendId } from '@shared/types'
+import { BACKEND_LABEL } from '@shared/sessionBackend'
 import { sleep } from '@core/sleep'
 import type { SessionRuntime } from '@core/agent/sessionRuntime'
 import type { ToolCall } from '@core/moment'
@@ -16,13 +18,14 @@ interface DialogView {
 
 export interface AskReaders<View extends DialogView> {
   claudeDialog(p: AskPayload): View
-  codexDialog(a: CodexAsk): View
+  codexDialog(a: CodexAsk, label: string): View
   questionsOf(p: AskPayload): unknown[]
   isAskedCall(p: AskPayload, call: ToolCall): boolean
 }
 
 export interface AskWiringDeps<View extends DialogView> {
   runtime(): Pick<SessionRuntime, 'statusOf' | 'awaitsInput'>
+  backendOf(tabId: string): BackendId | undefined
   storedOwnerOf(tabId: string): StoredAsks | undefined
   sessionAsks(): {
     heldAsk(tabId: string): AskPayload | undefined
@@ -39,6 +42,11 @@ const CODEX_REQUEST_POLL_MS = 250
 export function askWiring<View extends DialogView>(d: AskWiringDeps<View>) {
   const { storedOwnerOf } = d
   const claudeAsks = new Map<string, AskPayload>()
+
+  function storedDialog(tabId: string, ask: CodexAsk): View | undefined {
+    const backend = d.backendOf(tabId)
+    return backend && d.readers().codexDialog(ask, BACKEND_LABEL[backend])
+  }
 
   // CODEX§3 CODEX§20
   async function pendingAskOf(tabId: string): Promise<CodexAsk | undefined> {
@@ -81,10 +89,11 @@ export function askWiring<View extends DialogView>(d: AskWiringDeps<View>) {
       const stored = await pendingAskOf(tabId)
       const runtime = d.runtime()
       const sessionAsks = d.sessionAsks()
-      const { claudeDialog, codexDialog, questionsOf } = d.readers()
-      if (stored) {
+      const { claudeDialog, questionsOf } = d.readers()
+      const view = stored && storedDialog(tabId, stored)
+      if (stored && view) {
         const questions = 'questions' in stored ? stored.questions.length : 0
-        return { question: questions > 0, questions, text: codexDialog(stored).text }
+        return { question: questions > 0, questions, text: view.text }
       }
       const claude =
         sessionAsks?.heldAsk(tabId) ??
@@ -95,8 +104,7 @@ export function askWiring<View extends DialogView>(d: AskWiringDeps<View>) {
     },
     dialogOf: async (tabId: string): Promise<View | undefined> => {
       const ask = await pendingAskOf(tabId)
-      const { codexDialog } = d.readers()
-      return ask ? codexDialog(ask) : d.sessionAsks()?.dialog(tabId)
+      return ask ? storedDialog(tabId, ask) : d.sessionAsks()?.dialog(tabId)
     }
   }
 }

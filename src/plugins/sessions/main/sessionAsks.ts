@@ -20,6 +20,7 @@ import {
   howToAnswer,
   isAskedCall,
   questionAnswers,
+  REPLY_YES_OR_NO,
   takesSeveralPicks,
   type AnswerKeys,
   type SentAnswer,
@@ -28,7 +29,6 @@ import {
   type DialogView
 } from './dialog'
 
-export const CODEX_NEEDS_YES_OR_NO = 'Reply yes or no.'
 export const SHOWS_NO_DIALOG = 'Koloft sees no question or approval in it right now.'
 export const ANSWER_ON_ITS_WAY =
   'Koloft sent it an answer a moment ago and is waiting to see the session take it. Try again in a few seconds.'
@@ -40,7 +40,6 @@ export const asksWhatKoloftCannotSee = (byTheOverseer = false): string =>
   `It is waiting for an answer Koloft cannot read from here.${whoElseAnswers('it', byTheOverseer)}`
 export const inputNotProbed = (label: string, byTheOverseer = false): string =>
   `${label} is asking something Koloft cannot answer from here: it answers a yes-or-no approval, or questions that each pick an option from a list.${whoElseAnswers('this one', byTheOverseer)}`
-const takesYesOrNo = (label: string): string => `a ${label} approval takes yes or no.`
 const NOT_ANSWERED_FROM_HERE = ''
 export const STARTED_IN_THE_TERMINAL =
   'You already started on this question in the terminal, so Koloft leaves it to you there.'
@@ -326,7 +325,7 @@ export class SessionAsks {
       const approval = this.d.pendingApproval(tab)
       if (approval) {
         const key = codexKeyFor(reply)
-        if (!key) return { error: toItsCard ? CODEX_NEEDS_YES_OR_NO : takesYesOrNo(label) }
+        if (!key) return { error: REPLY_YES_OR_NO }
         if (this.codexOnItsWay(tab)) return { error: ANSWER_ON_ITS_WAY }
         this.emit('answered', tab, reply)
         await this.pressOnce(tab, () => this.press(tab, [key]))

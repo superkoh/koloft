@@ -159,6 +159,7 @@ export class AskSurfaces {
     this.backends = new SessionBackends(lifecycle)
     this.wiring = askWiring({
       runtime: () => this.runtime,
+      backendOf: o.backendOf,
       storedOwnerOf,
       sessionAsks: () => this.asks,
       readers: () => ({ claudeDialog, codexDialog, questionsOf, isAskedCall }),

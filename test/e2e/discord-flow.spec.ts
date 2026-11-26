@@ -694,7 +694,7 @@ test.describe('Discord flow: the owner talks to the butler in its channel, and t
     try {
       const question =
         '❓ **Alfred** is waiting for you.\nWhich colour?\n1. Red — The Red one\n2. Green — The Green one'
-      const asked = `${question}\n-# Reply with a number or your own answer.`
+      const asked = `${question}\n-# Reply with the number or the name of one option, or with your own answer.`
       const card = (): FakePost | undefined =>
         fake.posted.filter((p) => p.channelId === CHANNEL && p.content === asked).at(-1)
       fake.say(OWNER, '/ask Which colour?|Red|Green')
