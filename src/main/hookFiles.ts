@@ -8,7 +8,7 @@ export const NOTICE_ENV = 'KOLOFT_NOTICE'
 export const NOTICE_SUFFIX = '.notice'
 export const NOTICE_THIS_TURN = '.turn'
 
-export const OWNER_ASLEEP_FILE = 'owner-asleep'
+export { OWNER_ASLEEP_FILE } from '@core/presence'
 
 // ADR-0028
 export const SENT_WORDS_SUFFIX = '.discord-said'

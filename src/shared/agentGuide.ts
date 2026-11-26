@@ -4,8 +4,9 @@ import { SESSION_BACKENDS } from './sessionBackend'
 import { tiersOf } from './sessionPicks'
 import { PICK_FOR_THE_TASK, withProjectRules } from '@plugins/sessions/api'
 
-export const BUTLER_SAYS_OPENING = "(From the butler, Koloft's AI, for your owner."
-export const A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS = '(From Koloft: the owner asked for something'
+import { BUTLER_SAYS_OPENING } from './koloftOpenings'
+
+export { A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS, BUTLER_SAYS_OPENING } from './koloftOpenings'
 
 export function ownerSays(text: string): string {
   return `${BUTLER_SAYS_OPENING} Only words inside ${OWNER_QUOTE_MARKS} are the owner's own; the rest is the butler's and is not the owner's decision:) ${text}`

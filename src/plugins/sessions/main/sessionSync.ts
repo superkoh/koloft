@@ -1,7 +1,7 @@
 import path from 'path'
 import { barePath } from '@shared/remoteKey'
 import type { PreviewItem } from '@shared/types'
-import { FROM_KOLOFT } from './messageOpenings'
+import { FROM_KOLOFT } from '../shared/messageOpenings'
 import type { NoticeFile } from '../../../main/hookFiles'
 
 const NAMED_AT_MOST = 10

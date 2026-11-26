@@ -1,7 +1,7 @@
 export { agyBackend } from '@agents/agy/main/backend'
 export { machineHookSettings } from '@agents/claude/main/backend'
 export { codexBackend } from '@agents/codex/main/backend'
-export { A_HELPER_HAS_IT } from './messageOpenings'
+export { A_HELPER_HAS_IT } from '../shared/messageOpenings'
 export { writeLineInTurn } from '@agents/claude/main/crossSessionMessage'
 export { claudeDialog, codexDialog, isAskedCall, questionsOf } from './dialog'
 export {

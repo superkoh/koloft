@@ -2,22 +2,9 @@
   "imports": {
     "agent-into-plugin": {
       "src/agents/agy/main/agyApi.ts": { "src/plugins/sessions/main/dialog.ts": "C1" },
-      "src/agents/agy/main/agyHooks.ts": {
-        "src/plugins/sessions/main/hooks.ts": "C9",
-        "src/plugins/sessions/main/messageOpenings.ts": "C9"
-      },
-      "src/agents/agy/main/agySessions.ts": {
-        "src/plugins/sessions/main/dialog.ts": "C1",
-        "src/plugins/sessions/main/hooks.ts": "C9"
-      },
-      "src/agents/agy/main/agyTab.ts": { "src/plugins/sessions/main/hooks.ts": "C9" },
-      "src/agents/claude/main/backend.ts": { "src/plugins/sessions/main/hooks.ts": "C9" },
-      "src/agents/codex/main/codexMachine.ts": { "src/plugins/sessions/main/hooks.ts": "C9" },
+      "src/agents/agy/main/agySessions.ts": { "src/plugins/sessions/main/dialog.ts": "C1" },
       "src/agents/codex/main/codexObservation.ts": { "src/plugins/sessions/main/dialog.ts": "C1" },
-      "src/agents/codex/main/codexSessions.ts": {
-        "src/plugins/sessions/main/dialog.ts": "C1",
-        "src/plugins/sessions/main/hooks.ts": "C9"
-      },
+      "src/agents/codex/main/codexSessions.ts": { "src/plugins/sessions/main/dialog.ts": "C1" },
       "src/agents/kit/main/storedSessions.ts": { "src/plugins/sessions/main/dialog.ts": "C1" }
     },
     "agent-main-into-mixed-main": {
@@ -31,8 +18,7 @@
       },
       "src/agents/claude/main/backend.ts": {
         "src/main/remote/launch.ts": "C10",
-        "src/main/remote/sync.ts": "C10",
-        "src/main/statusline.ts": "C9"
+        "src/main/remote/sync.ts": "C10"
       },
       "src/agents/claude/main/claudeLaunch.ts": { "src/main/remote/launch.ts": "C10" },
       "src/agents/claude/main/claudeShim.ts": { "src/main/remote/launch.ts": "C10" },
@@ -78,15 +64,17 @@
       "src/main/remote/machinePackageFiles.ts": {
         "src/agents/agy/main/agyHooks.ts": "C10",
         "src/agents/agy/main/agyShim.ts": "C10",
+        "src/agents/agy/main/agyStatusline.ts": "C10",
         "src/agents/agy/main/agyStore.ts": "C10",
         "src/agents/agy/main/agyTab.ts": "C10",
         "src/agents/claude/main/advisorOnFable.ts": "C10",
+        "src/agents/claude/main/claudeHooks.ts": "C10",
         "src/agents/claude/main/claudeShim.ts": "C10",
+        "src/agents/codex/main/codexHooks.ts": "C10",
         "src/agents/codex/main/codexMachine.ts": "C10",
         "src/agents/codex/main/codexShim.ts": "C10"
       },
-      "src/main/rowActivity.ts": { "src/agents/claude/main/claudeTouchedFiles.ts": "C1" },
-      "src/main/statusline.ts": { "src/agents/agy/main/agyHooks.ts": "C9" }
+      "src/main/rowActivity.ts": { "src/agents/claude/main/claudeTouchedFiles.ts": "C1" }
     },
     "outside-into-kit": {
       "src/main/index.ts": { "src/agents/kit/main/storedSessions.ts": "C6" },
@@ -96,21 +84,24 @@
       "src/plugins/sessions/main/appHelpers.ts": {
         "src/agents/agy/main/backend.ts": "D1",
         "src/agents/claude/main/backend.ts": "D1",
+        "src/agents/claude/main/claudeHooks.ts": "D1",
         "src/agents/claude/main/crossSessionMessage.ts": "C2",
-        "src/agents/codex/main/backend.ts": "D1"
+        "src/agents/codex/main/backend.ts": "D1",
+        "src/agents/codex/main/codexHooks.ts": "D1"
       },
       "src/plugins/sessions/main/dialog.ts": {
         "src/agents/claude/main/claudeTouchedFiles.ts": "C1"
       },
-      "src/plugins/sessions/main/hooks.ts": { "src/agents/codex/main/codexLaunchConfig.ts": "C9" },
       "src/plugins/sessions/main/start.ts": {
         "src/agents/agy/main/agySessions.ts": "D1",
         "src/agents/agy/main/backend.ts": "D1",
         "src/agents/claude/main/backend.ts": "D1",
+        "src/agents/claude/main/claudeHooks.ts": "D1",
         "src/agents/claude/main/claudeSessionStore.ts": "D1",
         "src/agents/claude/main/crossSessionMessage.ts": "C2",
         "src/agents/claude/main/sessionTracker.ts": "D1",
         "src/agents/codex/main/backend.ts": "D1",
+        "src/agents/codex/main/codexHooks.ts": "D1",
         "src/agents/codex/main/codexSessions.ts": "D1"
       }
     }

@@ -16,10 +16,10 @@ import {
   markAnswerable,
   markOwnerAsleep,
   opensAsOnlyKoloftSends,
-  NOT_FROM_THE_RELAY,
-  NOT_SENT_BY_KOLOFT,
   quotedPrompt
 } from '../../../../src/plugins/sessions/main/hooks'
+import { NOT_FROM_THE_RELAY } from '../../../../src/plugins/discord/shared/hookRules'
+import { NOT_SENT_BY_KOLOFT } from '../../../../src/plugins/sessions/shared/hookRules'
 import {
   writeTabHookSettings,
   hookSettings,
@@ -44,7 +44,10 @@ import {
   handoverPreamble
 } from '../../../../src/plugins/sessions/main/handoverPreamble'
 import { withHandover } from '../../../../src/core/handOver'
-import { A_HELPER_HAS_IT, FROM_KOLOFT } from '../../../../src/plugins/sessions/main/messageOpenings'
+import {
+  A_HELPER_HAS_IT,
+  FROM_KOLOFT
+} from '../../../../src/plugins/sessions/shared/messageOpenings'
 import { crossSessionLine } from '../../../../src/agents/claude/main/crossSessionMessage'
 import type { SentNote } from '../../../../src/core/agent/sessionBackends'
 import type { BackendId } from '../../../../src/shared/types'

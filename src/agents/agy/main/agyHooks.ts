@@ -1,9 +1,9 @@
 import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
-import { A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS, BUTLER_SAYS_OPENING } from '@shared/agentGuide'
+import { A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS } from '@shared/koloftOpenings'
 import { nonEmptyString, record } from '@core/unknownValue'
-import { FROM_A_SESSION, FROM_KOLOFT } from '@plugins/sessions/main/messageOpenings'
+import { messageArrivesRules, textOf } from '@core/hookMoments'
 import {
   hookField,
   JSON_STRING_BODY,
@@ -30,13 +30,18 @@ export const AGY_COST_ENV = 'KOLOFT_AGY_COST'
 const EVENTS = ['SessionStart', 'PreInvocation', 'PreToolUse', 'PostToolUse', 'Stop'] as const
 type AgyHookName = (typeof EVENTS)[number]
 
-// AGY§8 ADR-0031
-const NOT_THE_OWNERS_WORDS = [
-  FROM_KOLOFT,
-  FROM_A_SESSION,
-  BUTLER_SAYS_OPENING,
+const notTheOwnersWords = [
+  ...messageArrivesRules()
+    .filter((r) => r.countsAs === 'not-the-owners-words')
+    .map(textOf),
   A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS
 ]
+const opensWithAnother = (text: string): boolean =>
+  notTheOwnersWords.some((other) => other !== text && text.startsWith(other))
+
+// AGY§8 ADR-0028 ADR-0031
+const NOT_THE_OWNERS_WORDS = notTheOwnersWords
+  .filter((text) => !opensWithAnother(text))
   .map((opening) => `-e ${shq(`"content":"<USER_REQUEST>\\n${opening}`)}`)
   .join(' ')
 

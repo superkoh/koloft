@@ -66,8 +66,8 @@ import type { BackendId, DiscordSettings, SessionInfo } from '../../src/shared/t
 import { agentSessionId, SESSION_BACKENDS } from '../../src/shared/sessionBackend'
 import { ownerSays } from '../../src/shared/agentGuide'
 import { crossSessionLine, writeLine } from '../../src/agents/claude/main/crossSessionMessage'
-import { FROM_KOLOFT } from '../../src/plugins/sessions/main/messageOpenings'
-import { NOT_SENT_BY_KOLOFT } from '../../src/plugins/sessions/main/hooks'
+import { FROM_KOLOFT } from '../../src/plugins/sessions/shared/messageOpenings'
+import { NOT_SENT_BY_KOLOFT } from '../../src/plugins/sessions/shared/hookRules'
 import {
   A_TAKEN_ANSWER_SHOWS_WITHIN_MS,
   ANSWER_NOT_TAKEN

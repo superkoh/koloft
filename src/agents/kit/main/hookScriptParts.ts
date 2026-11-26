@@ -1,11 +1,13 @@
 import { shq } from '@shared/shellQuote'
 import { HANDOVER_OPENING } from '@core/handOver'
-import { OWNER_ASLEEP_PUSH } from '@plugins/butler/api'
 import {
-  HANDED_OVER_TASK_COMES_FIRST,
-  noticeLine,
-  OWNER_ASLEEP_FILE
-} from '../../../main/hookFiles'
+  messageArrivesRules,
+  textOf,
+  turnAboutToEndRules,
+  type MessageArrivesRule,
+  type TurnAboutToEndRule
+} from '@core/hookMoments'
+import { HANDED_OVER_TASK_COMES_FIRST, noticeLine } from '../../../main/hookFiles'
 
 // ADR-0031
 export const REPLY_LANGUAGE_BEFORE_QUOTE = "The user's latest message begins: «"
@@ -34,7 +36,6 @@ const WORDS_THAT_SHOW_A_LANGUAGE = 3
 export const JSON_STRING_BODY = '(([^"\\\\]|\\\\.)*)'
 const ASSISTANT_TEXT_RECORD = '"role":"assistant","content":\\[\\{"type":"(output_)?text","text":"'
 const TRANSCRIPT_PATH_FIELD = `'"transcript_path"[[:space:]]*:[[:space:]]*"[^"]*"'`
-export const opensLike = (openings: string[]): string => openings.map((o) => `${shq(o)}*`).join('|')
 
 // ADR-0031
 export const languageFns = (reads: WhatTheUserReads): string => `whole_chars() {
@@ -79,18 +80,21 @@ export const TAKE_NOTICE_FN = `take_notice() {
 
 const ASLEEP_PUSHED_SUFFIX = '.asleep'
 
+const keepGoingWhileTheSwitchIsOn = (rule: TurnAboutToEndRule): string =>
+  `  asleep="\${notice%/*}/${rule.whileSwitchIsOn}"
+  if [ -n "$notice" ] && [ -f "$asleep" ] && ! grep -qxF "\${notice##*/}" "$asleep" 2>/dev/null; then
+    if [ -f "$pushed" ]; then rm -f "$pushed"
+    else told="$told"${shq(noticeLine(rule.say))}; : > "$pushed"
+    fi
+  elif [ -n "$notice" ]; then rm -f "$pushed"
+  fi`
+
 // CC§21 CODEX§27 AGY§12
 export const KEEP_GOING_FOR_THE_NOTICE_FN = `keep_going_for_the_notice() {
   pushed="$notice${ASLEEP_PUSHED_SUFFIX}"
   case "$input" in *'"stop_hook_active":true'*|*'"stop_hook_active": true'*) [ -z "$notice" ] || rm -f "$pushed"; return 1 ;; esac
   told="$(take_notice)"
-  asleep="\${notice%/*}/${OWNER_ASLEEP_FILE}"
-  if [ -n "$notice" ] && [ -f "$asleep" ] && ! grep -qxF "\${notice##*/}" "$asleep" 2>/dev/null; then
-    if [ -f "$pushed" ]; then rm -f "$pushed"
-    else told="$told"${shq(noticeLine(OWNER_ASLEEP_PUSH))}; : > "$pushed"
-    fi
-  elif [ -n "$notice" ]; then rm -f "$pushed"
-  fi
+${turnAboutToEndRules().map(keepGoingWhileTheSwitchIsOn).join('\n')}
   [ -n "$told" ] || return 1
   printf '{"decision":"block","reason":"%s"}\\n' "$told"
 }`
@@ -127,6 +131,30 @@ export const REMIND_AFTER_A_TOOL = `fields="$(grep -o -E '"(transcript_path|agen
   case "$fields" in *'"agent_id"'*) notice="" ;; esac
   remind_reply_language PostToolUse`
 
+const asExtendedRegex = (text: string): string => text.replace(/[.[\]()*+?^$|{}\\/]/g, '\\$&')
+
+const openingsCutFromTheOwnersWords = (): string[] =>
+  messageArrivesRules()
+    .filter((r) => r.countsAs === 'the-owners-words-after-the-opening' && 'opensWith' in r.match)
+    .map(textOf)
+
+const cutTheOpening = (
+  opening: string
+): string => `      -e 's/^<cross-session-message from-mode=\\\\"[a-z]+\\\\">\\\\n${asExtendedRegex(opening)}//' \\
+      -e 's/^${asExtendedRegex(opening)}//' \\`
+
+export function messageArms(indent: string, body: (rule: MessageArrivesRule) => string): string {
+  const arms: { patterns: string[]; body: string }[] = []
+  for (const rule of messageArrivesRules()) {
+    const pattern = 'opensWith' in rule.match ? `${shq(textOf(rule))}*` : shq(textOf(rule))
+    const said = body(rule)
+    const last = arms.at(-1)
+    if (last?.body === said) last.patterns.push(pattern)
+    else arms.push({ patterns: [pattern], body: said })
+  }
+  return arms.map((arm) => `${indent}${arm.patterns.join('|')})${arm.body}`).join('\n')
+}
+
 // CC§19
 export const QUOTE_PROMPT_FN = `prompt_body() {
   printf '%s' "$input" |
@@ -135,8 +163,7 @@ export const QUOTE_PROMPT_FN = `prompt_body() {
 quote_prompt() {
   prompt_body |
     LC_ALL=C sed -E -e 's/^${HANDOVER_OPENING}.*koloft session send [^ ]+ \\\\"<your result>\\\\"\\\\n\\\\n//' \\
-      -e 's/^<cross-session-message from-mode=\\\\"[a-z]+\\\\">\\\\n\\[Discord\\] //' \\
-      -e 's/^\\[Discord\\] //' \\
+${openingsCutFromTheOwnersWords().map(cutTheOpening).join('\n')}
       -e 's/\\\\n\\(Koloft message [A-Za-z0-9-]+\\)\\\\n<\\/cross-session-message>$//' |
     head -c ${QUOTED_PROMPT_BYTES} | whole_chars
 }

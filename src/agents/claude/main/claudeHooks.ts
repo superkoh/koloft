@@ -2,17 +2,10 @@ import fs from 'fs'
 import path from 'path'
 import type { StatusLineSetting } from '../../../main/statuslineParts'
 import { shq } from '@shared/shellQuote'
-import { BUTLER_SAYS_OPENING } from '@shared/agentGuide'
-import { DISCORD_PREFIX } from '@plugins/discord/api'
-import { A_HELPER_HAS_IT } from '@plugins/sessions/main/messageOpenings'
-import {
-  NOT_FROM_THE_RELAY,
-  NOT_SENT_BY_KOLOFT,
-  OPENINGS_ONLY_KOLOFT_SENDS
-} from '@plugins/sessions/main/hooks'
+import type { MessageArrivesRule } from '@core/hookMoments'
 import {
   languageFns,
-  opensLike,
+  messageArms,
   QUOTE_PROMPT_FN,
   QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS,
   REMIND_AFTER_A_TOOL,
@@ -41,8 +34,16 @@ const NOTES_COMMAND_TITLES_AND_REPLY: WhatTheUserReads = {
   all: 'the short notes between tool calls, the description of each Bash command, and your final reply',
   next: 'the next note, the description of each Bash command and everything else'
 }
-const FROM_DISCORD = `${DISCORD_PREFIX} `
-const WORDS_THAT_ASK_NOTHING = shq(A_HELPER_HAS_IT)
+
+// CC§13 ADR-0028
+function armOfARule(rule: MessageArrivesRule): string {
+  const owners = rule.countsAs === 'the-owners-words-after-the-opening'
+  if (rule.ifNotSentByKoloft === undefined) return owners ? ' save_quote ;;' : ' ;;'
+  const flag = `flag=${shq(rule.ifNotSentByKoloft)}`
+  return owners
+    ? `\n          if [ -n "$sent" ]; then save_quote; else ${flag}; fi ;;`
+    : ` [ -n "$sent" ] || ${flag} ;;`
+}
 
 export const START_IN_STATUS_LOG = 'inStatusLog'
 export const FROM_SESSION_FIELD = 'fromSession'
@@ -290,10 +291,7 @@ case "$event" in
           [ -n "$id" ] && grep -qxF "$id" "$reg/$tab${SENT_IDS_SUFFIX}" 2>/dev/null && sent=1 ;;
       esac
       case "$(prompt_body | LC_ALL=C sed -E 's/^<cross-session-message( [a-z-]+=\\\\"[^"\\\\]*\\\\")*>\\\\n//')" in
-        ${WORDS_THAT_ASK_NOTHING}) ;;
-        ${opensLike(OPENINGS_ONLY_KOLOFT_SENDS)}) [ -n "$sent" ] || flag=${shq(NOT_SENT_BY_KOLOFT)} ;;
-        ${opensLike([FROM_DISCORD])})
-          if [ -n "$sent" ]; then save_quote; else flag=${shq(NOT_FROM_THE_RELAY)}; fi ;;
+${messageArms('        ', armOfARule)}
         *)
           case "$input" in
             *'"prompt":"<cross-session-message '*|*'"prompt":"<task-notification>'*|*'"prompt":"<agent-message '*) ;;

@@ -2,16 +2,10 @@ import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
 import type { KoloftHook } from './codexLaunchConfig'
-import { DISCORD_PREFIX } from '@plugins/discord/api'
-import { A_HELPER_HAS_IT } from '@plugins/sessions/main/messageOpenings'
-import {
-  NOT_FROM_THE_RELAY,
-  NOT_SENT_BY_KOLOFT,
-  OPENINGS_ONLY_KOLOFT_SENDS
-} from '@plugins/sessions/main/hooks'
+import type { MessageArrivesRule } from '@core/hookMoments'
 import {
   LANGUAGE_FNS,
-  opensLike,
+  messageArms,
   QUOTE_PROMPT_FN,
   QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS,
   REMIND_AFTER_A_TOOL,
@@ -22,8 +16,20 @@ import {
 } from '@agents/kit/main/hookScriptParts'
 import { NOTICE_ENV } from '../../../main/hookFiles'
 
-const FROM_DISCORD = `${DISCORD_PREFIX} `
-const WORDS_THAT_ASK_NOTHING = shq(A_HELPER_HAS_IT)
+function armOfARule(rule: MessageArrivesRule): string {
+  const owners = rule.countsAs === 'the-owners-words-after-the-opening'
+  if (rule.ifNotSentByKoloft === undefined)
+    return owners ? ` ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS} ;;` : ' ;;'
+  const flag = `flag=${shq(rule.ifNotSentByKoloft)}`
+  return owners
+    ? `
+    if sent_by_koloft; then
+      ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS}
+    else
+      ${flag}
+    fi ;;`
+    : ` sent_by_koloft || ${flag} ;;`
+}
 
 // ADR-0028 CODEX§33
 export const QUOTE_THE_OWNER_OR_FLAG_A_FORGERY = `words_key() {
@@ -34,14 +40,7 @@ sent_by_koloft() {
 }
 flag=""
 case "$(prompt_body)" in
-  ${WORDS_THAT_ASK_NOTHING}) ;;
-  ${opensLike(OPENINGS_ONLY_KOLOFT_SENDS)}) sent_by_koloft || flag=${shq(NOT_SENT_BY_KOLOFT)} ;;
-  ${opensLike([FROM_DISCORD])})
-    if sent_by_koloft; then
-      ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS}
-    else
-      flag=${shq(NOT_FROM_THE_RELAY)}
-    fi ;;
+${messageArms('  ', armOfARule)}
   *) ${QUOTE_UNLESS_KOLOFT_SAVED_THE_OWNERS_WORDS} ;;
 esac`
 

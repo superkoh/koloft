@@ -76,6 +76,15 @@ interface V2Manifest {
   hints?: readonly string[]
   assistJobs?: readonly { id: string; name: string; does: string; kind: V2SmallJobKind }[]
   mcpServers?: readonly { name: string; command: string; args: readonly string[] }[]
+  hookMomentRules?: readonly (
+    | {
+        moment: 'message-arrives'
+        match: { opensWith: string } | { isExactly: string }
+        ifNotSentByKoloft?: string
+        countsAs: 'the-owners-words-after-the-opening' | 'not-the-owners-words'
+      }
+    | { moment: 'turn-about-to-end'; whileSwitchIsOn: string; say: string }
+  )[]
 }
 
 interface V2Reply {

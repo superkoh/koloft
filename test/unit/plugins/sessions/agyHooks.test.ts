@@ -18,7 +18,7 @@ import {
   A_HELPER_HAS_IT,
   FROM_A_SESSION,
   FROM_KOLOFT
-} from '../../../../src/plugins/sessions/main/messageOpenings'
+} from '../../../../src/plugins/sessions/shared/messageOpenings'
 import {
   REPLY_LANGUAGE_AFTER_QUOTE,
   REPLY_LANGUAGE_BEFORE_QUOTE

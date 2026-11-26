@@ -27,11 +27,8 @@ import { SessionAsks, type SessionAskDeps } from '../../../../src/plugins/sessio
 import { HandOver, type HandOverDeps } from '../../../../src/plugins/sessions/main/handOver'
 import { typeKeys } from '../../../../src/core/typeKeys'
 import { waitingForAnswer } from '../../../../src/shared/slashCommands'
-import {
-  NOT_FROM_THE_RELAY,
-  noteSent,
-  opensAsOnlyKoloftSends
-} from '../../../../src/plugins/sessions/main/hooks'
+import { noteSent, opensAsOnlyKoloftSends } from '../../../../src/plugins/sessions/main/hooks'
+import { NOT_FROM_THE_RELAY } from '../../../../src/plugins/discord/shared/hookRules'
 import {
   CODEX_REPLY_LANGUAGE_SCRIPT,
   CODEX_SAID_ENV,

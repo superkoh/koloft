@@ -45,8 +45,9 @@ import {
   remoteKey
 } from './helpers/remote'
 import { crossSessionLine, writeLine } from '../../src/agents/claude/main/crossSessionMessage'
-import { FROM_KOLOFT } from '../../src/plugins/sessions/main/messageOpenings'
-import { NOT_FROM_THE_RELAY, NOT_SENT_BY_KOLOFT } from '../../src/plugins/sessions/main/hooks'
+import { FROM_KOLOFT } from '../../src/plugins/sessions/shared/messageOpenings'
+import { NOT_FROM_THE_RELAY } from '../../src/plugins/discord/shared/hookRules'
+import { NOT_SENT_BY_KOLOFT } from '../../src/plugins/sessions/shared/hookRules'
 import { BUTLER_SAYS_OPENING } from '../../src/shared/agentGuide'
 
 const BOUND_CHANNEL = { guildId: '111', channelId: '222', name: 'koloft-all' }

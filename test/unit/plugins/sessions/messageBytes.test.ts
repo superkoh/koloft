@@ -105,7 +105,7 @@ import { HandOver, type Recipient } from '../../../../src/plugins/sessions/main/
 import { StartedSessions } from '../../../../src/plugins/sessions/main/startedSessions'
 import { noteSent, opensAsOnlyKoloftSends } from '../../../../src/plugins/sessions/main/hooks'
 import { writeConductorMarker } from '../../../../src/agents/claude/main/claudeHooks'
-import { FROM_KOLOFT } from '../../../../src/plugins/sessions/main/messageOpenings'
+import { FROM_KOLOFT } from '../../../../src/plugins/sessions/shared/messageOpenings'
 import { writeLineInTurn } from '../../../../src/agents/claude/main/crossSessionMessage'
 import { whenMessagingSocket } from '../../../../src/agents/claude/main/claudeSessionRegistry'
 import type { RemoteTab } from '../../../../src/main/host/host'
