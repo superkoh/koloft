@@ -32,7 +32,6 @@ import {
   identityOf,
   kindsOf,
   messagingOf,
-  namedAtLaunch,
   talksWithItsOwnTool
 } from '@shared/sessionBackend'
 import { isValidWorktreeName } from '@shared/worktreeName'
@@ -436,8 +435,6 @@ const aSessionOf = (backend: BackendId): string => {
   const label = BACKEND_LABEL[backend]
   return `${/^[AEIOU]/.test(label) ? 'an' : 'a'} ${label} session`
 }
-const hasNoName = (backend: BackendId): string =>
-  `koloft session new: ${aSessionOf(backend)} in a remote workspace has no name, so leave out --name. Koloft prints an id to reach it by.`
 
 function modelAndEffortRefusal(
   backend: BackendId,
@@ -543,8 +540,6 @@ async function startSibling(
     return refused(
       `koloft session new: ${turnedOff}, so Koloft starts no ${BACKEND_LABEL[backend]} session. Do the task yourself, or start it with --backend and an agent that is on.`
     )
-  if (!namedAtLaunch(backend, isRemoteKey(workspace)) && args.name !== undefined)
-    return refused(hasNoName(backend), EXIT_USAGE)
   const launched = await launchSibling(
     d,
     names,
@@ -649,11 +644,9 @@ async function launchSibling(
       .some((w) => w.workspace.path === workspace && w.workspace.isGit)
     const wantsWorktree = gitWorkspace && (!!args.worktree || caller.assist)
     const [, handover, told, assistNamed] = await Promise.all([
-      !namedAtLaunch(backend, isRemoteKey(workspace))
-        ? undefined
-        : args.name !== undefined
-          ? (held = names.own(args.name))
-          : titleForTask(args.prompt, d.assist, ownerWords).then((t) => (held = names.pick(t))),
+      args.name !== undefined
+        ? (held = names.own(args.name))
+        : titleForTask(args.prompt, d.assist, ownerWords).then((t) => (held = names.pick(t))),
       handoverInOwnersLanguage(caller, d.assist),
       d.announceStarting({ helper }),
       wantsWorktree && !args.worktree ? worktreeNameForTask(args.prompt, d.assist) : null
@@ -1504,8 +1497,7 @@ export function sessionVerb(d: SessionVerbDeps): {
       about?.backendId ??
       (aboutRow ? identityOf(aboutRow)?.backendId : undefined) ??
       AGENT_PICKED_ON_FIRST_OPEN
-    const held =
-      spec.name && namedAtLaunch(backend, isRemoteKey(workspace)) ? names.own(spec.name) : undefined
+    const held = spec.name ? names.own(spec.name) : undefined
     let tabId: string | null = null
     try {
       const gitWorkspace = d

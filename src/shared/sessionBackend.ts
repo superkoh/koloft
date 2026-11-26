@@ -140,11 +140,6 @@ export function pasteKeepsItsLastLineFeeds(backend: BackendId): boolean {
   return agentManifest(backend).flags.pasteKeepsItsLastLineFeeds
 }
 
-// AGY§16
-export function namedAtLaunch(backend: BackendId, remote: boolean): boolean {
-  return !(backend === 'agy' && remote)
-}
-
 export function sourceOf(backendId: BackendId, workspacePath: string): SessionSource {
   return { backendId, host: hostOf(workspacePath) }
 }

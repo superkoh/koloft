@@ -3,7 +3,6 @@ import {
   BACKEND_LABEL,
   SESSION_BACKENDS,
   kindsOf,
-  namedAtLaunch,
   talksWithItsOwnTool,
   whenAny
 } from '@shared/sessionBackend'
@@ -20,10 +19,6 @@ const KINDS_WITHOUT_ONE = kindsOf(
   SESSION_BACKENDS.filter((b) => !talksWithItsOwnTool(b)),
   'or'
 )
-const KINDS_UNNAMED_REMOTELY = kindsOf(
-  SESSION_BACKENDS.filter((b) => !namedAtLaunch(b, true)),
-  'or'
-)
 const KINDS_THAT_MIGHT_NOT_TAKE_A_MESSAGE_WHILE_THEIR_TURN_RUNS = kindsOf(
   SESSION_BACKENDS.filter((b) => agentManifest(b).flags.mightNotTakeAMessageWhileItsTurnRuns),
   'or'
@@ -33,7 +28,6 @@ const KINDS_WITH_A_STAND_IN_FOR_THEIR_NORMAL_MODEL = kindsOf(
   SESSION_BACKENDS.filter((b) => agentManifest(b).normalTaskFamilyEveryAccountHas),
   'or'
 )
-const UNNAMED_IN_A_REMOTE_WORKSPACE = `${/^[AEIOU]/.test(KINDS_UNNAMED_REMOTELY) ? 'An' : 'A'} ${KINDS_UNNAMED_REMOTELY}`
 const BACKEND_CHOICE = SESSION_BACKENDS.join('|')
 const OWN_KIND = SESSION_BACKENDS.map((b) => `${BACKEND_LABEL[b]} starts ${BACKEND_LABEL[b]}`).join(
   ', '
@@ -64,7 +58,7 @@ koloft instructions set [--workspace <workspace> | --every-workspace] -- "<the w
 
 koloft session new [--name <name>] [--workspace <workspace>] [-w <worktree name>] [--backend ${BACKEND_CHOICE}] ${PICKED_FLAGS} -- "<first message>"
     Pick the model and effort that fit the task, every time. {{koloft-help-pick-model}} ${whenAny(KINDS_WHOSE_MODELS_KOLOFT_LISTS, (kinds) => `A ${kinds} model is named by its family, and Koloft starts the newest version of it the account has; a full model id works too. `)}When the account cannot run the very hard model${whenAny(KINDS_WITH_A_STAND_IN_FOR_THEIR_NORMAL_MODEL, (kinds) => `, or ${kinds}'s normal one`)}, Koloft starts the next best one and says so.
-    Start a sibling session of your own kind (${OWN_KIND}) unless --backend picks another, and print the name to reach it by. The session's name is also the title the owner sees in Koloft{{koloft-help-session-title}}: leave --name out and Koloft makes a short title from the first message, or give a short phrase in the owner's language. It starts in this workspace, on the same machine as you, or in the one --workspace names, which may be on another machine (SSH). ${UNNAMED_IN_A_REMOTE_WORKSPACE} session in a remote workspace has no name. ${whenAny(KINDS_WITHOUT_ONE, (kinds) => `For a ${kinds} session you also get its tab id; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. `)}-w starts it in a new git worktree of its own (a separate copy of the repository), never in one that already exists: a name already taken gets -2, -3 and so on. The new session is told to report back to you; if it ends its first turn without doing so, Koloft hands its reply to you as a message from it.{{koloft-help-session-new-examples}}
+    Start a sibling session of your own kind (${OWN_KIND}) unless --backend picks another, and print the name to reach it by. The session's name is also the title the owner sees in Koloft{{koloft-help-session-title}}: leave --name out and Koloft makes a short title from the first message, or give a short phrase in the owner's language. It starts in this workspace, on the same machine as you, or in the one --workspace names, which may be on another machine (SSH). ${whenAny(KINDS_WITHOUT_ONE, (kinds) => `For a ${kinds} session you also get its tab id; its session id shows in "koloft session list" once it starts, and "koloft session send" takes either. `)}-w starts it in a new git worktree of its own (a separate copy of the repository), never in one that already exists: a name already taken gets -2, -3 and so on. The new session is told to report back to you; if it ends its first turn without doing so, Koloft hands its reply to you as a message from it.{{koloft-help-session-new-examples}}
 
 How to talk to a session you started:{{koloft-help-own-message-tool}}
     Any other pair (a ${KINDS_WITHOUT_ONE} session${whenAny(KINDS_WITH_A_MESSAGE_TOOL_OF_THEIR_OWN, (kinds) => `, or a ${kinds} session talking to one`)}): use "koloft session send".
