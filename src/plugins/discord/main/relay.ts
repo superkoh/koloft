@@ -170,6 +170,7 @@ export class DiscordRelay {
   roomOpened(tab: string): void {
     this.answersDiscord(tab, 'turn')
     this.held.delete(tab)
+    this.codexAsks.delete(tab)
     this.postOpenAsk(tab)
   }
 
