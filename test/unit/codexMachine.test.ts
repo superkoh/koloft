@@ -146,6 +146,17 @@ describe('the tab script of a Codex session on a machine', () => {
     expect(tabScript(false)).toContain(docs)
     expect(tabScript(false)).not.toContain(koloft)
   })
+
+  // ADR-0039 CODEX§16
+  it("removes the API key an older Koloft's Codex login left in the machine's shared Codex home before its server starts, and leaves the rest of that home", () => {
+    const { home, codexHome } = aHomeWhereAnOlderKoloftLeftAKey()
+    const homeLines = tabScript(false)
+      .split('\n')
+      .filter((line) => line.includes('/codex-home'))
+      .join('\n')
+    expect(spawnSync('/bin/sh', ['-c', homeLines], { env: { HOME: home } }).status).toBe(0)
+    expect(fs.readdirSync(codexHome)).toEqual(['config.toml'])
+  })
 })
 
 describe('the side app-server on a machine', () => {
@@ -179,7 +190,33 @@ describe('the side app-server on a machine', () => {
     expect(() => process.kill(next, 0)).not.toThrow()
     fs.rmSync(home, { recursive: true, force: true })
   })
+
+  // ADR-0039 CODEX§16
+  it("removes the API key an older Koloft's Codex login left in the machine's shared Codex home as it starts, and leaves the rest of that home", () => {
+    const { home, codexHome } = aHomeWhereAnOlderKoloftLeftAKey()
+    const bin = path.join(home, '.koloft', 'codex-cli', 'bin')
+    fs.mkdirSync(bin, { recursive: true })
+    fs.writeFileSync(path.join(bin, 'codex'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+    const started = spawnSync('/bin/sh', ['-c', `exec ${machineAppServerCmd('inst')}`], {
+      env: { PATH: process.env.PATH, HOME: home }
+    })
+    expect(started.status).toBe(0)
+    expect(fs.readdirSync(codexHome)).toEqual(['config.toml'])
+  })
 })
+
+function aHomeWhereAnOlderKoloftLeftAKey(): { home: string; codexHome: string } {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'kcm-left-'))
+  stops.push(() => fs.rmSync(home, { recursive: true, force: true }))
+  const codexHome = path.join(home, '.koloft', 'codex-home')
+  fs.mkdirSync(codexHome, { recursive: true })
+  fs.writeFileSync(
+    path.join(codexHome, 'auth.json'),
+    JSON.stringify({ auth_mode: 'apikey', OPENAI_API_KEY: 'sk-left-by-an-older-koloft' })
+  )
+  fs.writeFileSync(path.join(codexHome, 'config.toml'), 'model = "m"\n')
+  return { home, codexHome }
+}
 
 describe('MachineCodexUpstream: the relay between a Codex TUI on this Mac and its app-server on a machine', () => {
   // ADR-0039 CODEX§16

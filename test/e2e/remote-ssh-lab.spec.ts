@@ -196,9 +196,11 @@ const STAND_IN_MODEL_CONFIG = [
   ''
 ].join('\n')
 // CODEX§15
+const MADE_UP_CODEX_API_KEY = 'sk-not-a-real-key'
 const A_MADE_UP_API_KEY_CODEX_READS_AS_SIGNED_IN = JSON.stringify({
-  OPENAI_API_KEY: 'sk-not-a-real-key'
+  OPENAI_API_KEY: MADE_UP_CODEX_API_KEY
 })
+const AN_OLDER_KOLOFTS_CODEX_API_KEY = 'sk-left-by-an-older-koloft'
 const MACHINES_FOR_THE_KOLOFT_COMMAND: [LabAlias, string][] = [
   ['kt-key', 'kuser'],
   ['kt-few', 'muser'],
@@ -263,10 +265,19 @@ async function withLab(
   }
 }
 
-const KEY_HOLDERS_UNDER_KOLOFT = `grep -rl -e '${E2E_CLAUDE_ACCOUNT_KEY}' .koloft 2>/dev/null || true`
-
-const filesHoldingTheKeyOn = (lab: SshLab, user: string): string[] =>
-  runOnTarget(lab, user, KEY_HOLDERS_UNDER_KOLOFT).split('\n').filter(Boolean)
+const filesHoldingTheKeyOn = (
+  lab: SshLab,
+  user: string,
+  keys = [E2E_CLAUDE_ACCOUNT_KEY],
+  under = '.koloft'
+): string[] =>
+  runOnTarget(
+    lab,
+    user,
+    `grep -rl ${keys.map((key) => `-e '${key}'`).join(' ')} ${under} 2>/dev/null || true`
+  )
+    .split('\n')
+    .filter(Boolean)
 
 const tabScriptsRunningOn = (lab: SshLab, user: string): string[] =>
   runOnTarget(lab, user, "ps -eo args= | grep -e '[.]koloft/tabs/' || true")
@@ -2335,7 +2346,7 @@ test.describe('remote workspaces against real sshd machines behind a company jum
   })
 
   // ADR-0039 CODEX§16
-  test('E-SSH-24: a REAL Codex, which Koloft installs on the Linux machine with npm, runs there under the Mac’s real Codex screen, and a turn there (a stand-in model on the machine, a made-up API key, no real account) runs koloft with its own shell tool and gets this Koloft’s answer (opt-in, spends nothing)', async ({
+  test('E-SSH-24: a REAL Codex, which Koloft installs on the Linux machine with npm, runs there under the Mac’s real Codex screen, and a turn there (a stand-in model on the machine, a made-up API key, no real account) runs koloft with its own shell tool and gets this Koloft’s answer; neither that key nor one an older Koloft left there is in any file in the machine’s home while the tab is open, after it closes, or after Koloft quits (opt-in, spends nothing)', async ({
     env
   }) => {
     test.skip(
@@ -2355,9 +2366,20 @@ test.describe('remote workspaces against real sshd machines behind a company jum
     addCodexAccount(env, A_MADE_UP_API_KEY_CODEX_READS_AS_SIGNED_IN)
     const turns = '/home/kuser/stand-in-model.jsonl'
     const config = Buffer.from(STAND_IN_MODEL_CONFIG).toString('base64')
+    const keyHolders = (lab: SshLab): string[] =>
+      filesHoldingTheKeyOn(
+        lab,
+        'kuser',
+        [MADE_UP_CODEX_API_KEY, AN_OLDER_KOLOFTS_CODEX_API_KEY],
+        '.'
+      )
+    const leftByAnOlderKoloft = JSON.stringify({
+      auth_mode: 'apikey',
+      OPENAI_API_KEY: AN_OLDER_KOLOFTS_CODEX_API_KEY
+    })
     await withLab(
       env,
-      async ({ page, lab }) => {
+      async ({ app, page, lab, quitKoloft }) => {
         await addMachine(page, 'kt-key', 'kuser')
         await expect(dot(page, 'kt-key')).toHaveClass(/\bon\b/, { timeout: BACKGROUND_CONNECT_MS })
         await newSessionInWith(page, 'kt-key', 'Codex')
@@ -2390,13 +2412,31 @@ test.describe('remote workspaces against real sshd machines behind a company jum
         await expect
           .poll(asked, { timeout: KOLOFT_ON_THE_MACHINE_WAITS_UP_TO_30S_PLUS_ROOM_MS })
           .toContain('koloft lets you ask Koloft')
+        const whileOpen = keyHolders(lab)
+        await sendShortcut(app, 'shortcut:close-tab')
+        await expect.poll(() => termIds(page), { timeout: 30_000 }).not.toContain(tabId)
+        await expect
+          .poll(
+            () =>
+              runOnTarget(lab, 'kuser', 'ps -eo args= | grep -e "app-server [-]-listen" || true'),
+            { timeout: 30_000 }
+          )
+          .toBe('')
+        const afterClose = keyHolders(lab)
+        await quitKoloft()
+        expect({ whileOpen, afterClose, afterQuit: keyHolders(lab) }).toEqual({
+          whileOpen: [],
+          afterClose: [],
+          afterQuit: []
+        })
       },
       (lab) => {
         startFakeResponsesOnTarget(lab, 'koloft help', turns)
         runOnTarget(
           lab,
           'kuser',
-          `mkdir -p .koloft/codex-home && echo ${config} | base64 -d > .koloft/codex-home/config.toml`
+          `mkdir -p .koloft/codex-home && echo ${config} | base64 -d > .koloft/codex-home/config.toml && ` +
+            `(umask 077 && printf '%s' '${leftByAnOlderKoloft}' > .koloft/codex-home/auth.json)`
         )
       }
     )

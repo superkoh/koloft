@@ -33,6 +33,7 @@ sh "$M/ensure-codex.sh" '999.0.0' || exit $?
 PATH="$HOME/.koloft/codex-cli/bin:$PATH"; export PATH
 H="$HOME/.koloft/codex-home"
 mkdir -p "$H" "$HOME/.koloft/cx/table-instance" && chmod 700 "$H" "$HOME/.koloft/cx/table-instance" || exit 3
+rm -f "$HOME/.koloft/codex-home/auth.json"
 mkdir -p "$H/skills"; { diff -r "$M/docs-plugin/skills/koloft-docs" "$H/skills/koloft-docs" >/dev/null 2>&1 || { rm -rf "$H/skills/koloft-docs.new-$$" && cp -R "$M/docs-plugin/skills/koloft-docs" "$H/skills/koloft-docs.new-$$" && rm -rf "$H/skills/koloft-docs" && mv "$H/skills/koloft-docs.new-$$" "$H/skills/koloft-docs"; }; }; rm -rf "$H/skills/koloft"
 cd '/home/me/proj' || exit 3
 if d=$(cd '/home/me/proj' 2>/dev/null && pwd -P); then grep -qxF "[projects.\"$d\"]" "$H/config.toml" 2>/dev/null || printf '\n[projects."%s"]\ntrust_level = "trusted"\n' "$d" >> "$H/config.toml"; fi
@@ -48,8 +49,8 @@ PATH="$PATH":'/opt/login-shell/bin:/home/linuxbrew/.linuxbrew/bin'
   KOLOFT_SHELL_WROTE="$HOME/.koloft/hook-sessions/pty-t1.shell-wrote.jsonl"; KOLOFT_CODEX_DISCORD_SAID="$HOME/.koloft/hook-sessions/pty-t1.discord-said"
   export KOLOFT_CODEX_REPLY_LANGUAGE KOLOFT_CODEX_SAID KOLOFT_NOTICE KOLOFT_SHELL_WROTE KOLOFT_CODEX_DISCORD_SAID
   KOLOFT_HOLD_TAB=pty-t1; export KOLOFT_HOLD_TAB
-  command -v setsid >/dev/null 2>&1 && exec setsid nohup codex app-server --listen "unix://$S.sock" -c 'tui.status_line=["context-used","five-hour-limit","weekly-limit","git-branch","codex-version","model-with-reasoning","estimated-thread-cost","pull-request-number","current-dir"]' -c 'sandbox_workspace_write.network_access=true' -c 'developer_instructions="OWNER TEXT"' -c 'features.default_mode_request_user_input=true' -c 'allow_login_shell=false'
-  exec nohup codex app-server --listen "unix://$S.sock" -c 'tui.status_line=["context-used","five-hour-limit","weekly-limit","git-branch","codex-version","model-with-reasoning","estimated-thread-cost","pull-request-number","current-dir"]' -c 'sandbox_workspace_write.network_access=true' -c 'developer_instructions="OWNER TEXT"' -c 'features.default_mode_request_user_input=true' -c 'allow_login_shell=false'
+  command -v setsid >/dev/null 2>&1 && exec setsid nohup codex app-server --listen "unix://$S.sock" -c 'tui.status_line=["context-used","five-hour-limit","weekly-limit","git-branch","codex-version","model-with-reasoning","estimated-thread-cost","pull-request-number","current-dir"]' -c 'sandbox_workspace_write.network_access=true' -c 'developer_instructions="OWNER TEXT"' -c 'features.default_mode_request_user_input=true' -c 'allow_login_shell=false' -c 'cli_auth_credentials_store="ephemeral"'
+  exec nohup codex app-server --listen "unix://$S.sock" -c 'tui.status_line=["context-used","five-hour-limit","weekly-limit","git-branch","codex-version","model-with-reasoning","estimated-thread-cost","pull-request-number","current-dir"]' -c 'sandbox_workspace_write.network_access=true' -c 'developer_instructions="OWNER TEXT"' -c 'features.default_mode_request_user_input=true' -c 'allow_login_shell=false' -c 'cli_auth_credentials_store="ephemeral"'
 ) </dev/null >"$S.log" 2>&1 &
 echo $! > "$S.pid"
 i=0
