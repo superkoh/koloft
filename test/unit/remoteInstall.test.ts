@@ -18,9 +18,9 @@ import { answerOf } from '../../src/main/remote/ssh'
 import { REMOTE_CLAUDE_PROJECTS } from '../../src/agents/claude/main/claudeMirror'
 import { MIN_AGY_VERSION } from '../../src/agents/agy/main/agyMinimum'
 import { MIN_CLAUDE_VERSION } from '../../src/agents/claude/main/claudeMinimum'
-import { everyAgentWithItsOwnTools } from './helpers/agentShims'
+import { everyAgentWithItsOwnToolsAndMachinePackage } from './helpers/agentShims'
 
-const EVERY_AGENTS_ENSURE = everyAgentWithItsOwnTools().ensuresOnTheMachine()
+const EVERY_AGENTS_ENSURE = everyAgentWithItsOwnToolsAndMachinePackage().ensuresOnTheMachine()
 const ENSURE_SH = ensureSh(EVERY_AGENTS_ENSURE)
 
 const CLAUDE_PROJECTS_OF_API = [{ folder: REMOTE_CLAUDE_PROJECTS, subfolders: ['-home-koh-api'] }]

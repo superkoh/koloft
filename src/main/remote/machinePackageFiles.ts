@@ -23,8 +23,7 @@ export function machinePackageFiles(agents: AgentsMain): Record<string, string |
     [`${SESSION_BIN_DIR}open`]: REMOTE_OPEN_SHIM,
     [`${SESSION_BIN_DIR}gh`]: machineGhWrapperScript(),
     [`${UTIL_BIN_DIR}gh`]: machineGhWrapperScript(),
-    [STATUS_RELAY_FILE]: STATUS_RELAY_PY,
-    ...agents.filesForTheMachinePackage()
+    [STATUS_RELAY_FILE]: STATUS_RELAY_PY
   }
   if (passwordsOn())
     for (const [name, text] of Object.entries(SUDO_SHIM_FILES))
@@ -33,6 +32,7 @@ export function machinePackageFiles(agents: AgentsMain): Record<string, string |
     pkgFiles[`${AGENT_PLUGIN_DIR}${rel}`] = text
   for (const [rel, text] of Object.entries(docsPluginFiles()))
     pkgFiles[`${DOCS_PLUGIN_DIR}${rel}`] = text
+  let statusLineBundleRead = true
   try {
     // PLATFORM§36
     const bundleDir = path.dirname(bundlePath())
@@ -41,9 +41,13 @@ export function machinePackageFiles(agents: AgentsMain): Record<string, string |
     pkgFiles[`${STATUS_LINE_DIR}package.json`] = '{"type":"module"}\n'
     pkgFiles[`${STATUS_LINE_DIR}theme.json`] = JSON.stringify(DEFAULT_THEME, null, 2)
   } catch (err) {
+    statusLineBundleRead = false
     console.error('[koloft] remote statusline bundle unreadable:', err)
-    for (const rel of Object.keys(pkgFiles))
-      if (rel.startsWith(STATUS_LINE_DIR)) delete pkgFiles[rel]
+  }
+  for (const [rel, text] of agents.filesForTheMachinePackage()) {
+    if (!statusLineBundleRead && rel.startsWith(STATUS_LINE_DIR)) continue
+    if (rel in pkgFiles) throw new Error(`Two parts of Koloft put ${rel} in the machine package.`)
+    pkgFiles[rel] = text
   }
   return pkgFiles
 }

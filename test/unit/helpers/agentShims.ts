@@ -33,7 +33,7 @@ export const CANNOT_WRITE_THE_REQUEST = {
   agy: COULD_NOT_REACH_KOLOFT
 }
 
-export function everyAgentWithItsOwnTools(): AgentsMain {
+export function everyAgentWithItsOwnToolsAndMachinePackage(): AgentsMain {
   const agents = new AgentsMain()
   for (const id of AGENT_IDS)
     agents.register({
@@ -54,5 +54,5 @@ export function everyAgentWithItsOwnTools(): AgentsMain {
 }
 
 export function everyAgentsShimScripts(): AgentShimScript[] {
-  return everyAgentWithItsOwnTools().shimScripts()
+  return everyAgentWithItsOwnToolsAndMachinePackage().shimScripts()
 }

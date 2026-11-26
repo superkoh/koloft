@@ -55,7 +55,7 @@ export const ENSURE_CODEX_FILE = 'ensure-codex.sh'
 
 const CODEX_CLI_DIR = '$HOME/.koloft/codex-cli'
 
-export const CODEX_FIRST_ON_PATH = `PATH="${CODEX_CLI_DIR}/bin:$PATH"; export PATH`
+const CODEX_FIRST_ON_PATH = `PATH="${CODEX_CLI_DIR}/bin:$PATH"; export PATH`
 
 const CA_BUNDLES = [
   '/etc/ssl/certs/ca-certificates.crt',

@@ -132,10 +132,9 @@ export class AgentsMain {
     }))
   }
 
-  filesForTheMachinePackage(): Record<string, string> {
-    return Object.assign(
-      {},
-      ...this.inListOrder().map((agent) => agent.machinePackage.filesForTheMachinePackage())
+  filesForTheMachinePackage(): [string, string][] {
+    return this.inListOrder().flatMap((agent) =>
+      Object.entries(agent.machinePackage.filesForTheMachinePackage())
     )
   }
 

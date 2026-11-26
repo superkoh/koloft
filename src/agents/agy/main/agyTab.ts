@@ -16,7 +16,8 @@ import {
   REMOTE_COMPILE_CACHE,
   REMOTE_HOOK_DIR,
   REMOTE_HOME,
-  remoteMachineDir
+  remoteMachineDir,
+  STATUS_LINE_DIR
 } from '../../../main/remote/paths'
 import { STATUS_RELAY_FILE } from '../../../main/remote/statusRelay'
 
@@ -44,7 +45,7 @@ export const AGY_REMOTE_BRAIN = `${AGY_REMOTE_GEMINI}/${AGY_APP_DIR}/brain`
 export const AGY_HOOK_FILE = 'agy-hook.sh'
 export const AGY_TITLE_FILE = 'agy-title.sh'
 export const AGY_LIST_FILE = 'agy-list.mjs'
-export const AGY_STATUSLINE_FILE = 'statusline/agy.sh'
+export const AGY_STATUSLINE_FILE = `${STATUS_LINE_DIR}agy.sh`
 
 const REMOTE_GEMINI = `$HOME/${AGY_REMOTE_GEMINI}`
 const REMOTE_NODE = `${REMOTE_HOME}/node/bin/node`

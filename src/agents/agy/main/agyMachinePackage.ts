@@ -28,12 +28,13 @@ export const agyMachinePackage: AgentMachinePackage = {
     [`${STATUS_LINE_DIR}agy.cjs`]: AGY_STATUSLINE_JS,
     [AGY_STATUSLINE_FILE]: agyStatuslineScript()
   }),
+  // AGY§3 AGY§8
   ensureOnTheMachine: {
     word: agent.command,
     functions: ENSURE_AGY_MINIMUM_FN,
     install: `  # AGY§3
-  have agy || official_install agy ${AGY_INSTALLER_URL}
-  ensure_agy_minimum agy || exit 4`,
+  have ${agent.command} || official_install ${agent.command} ${AGY_INSTALLER_URL}
+  ensure_agy_minimum ${agent.command} || exit 4`,
     whichNodeWillDo: `  # AGY§8
   [ "$program" = ${agent.command} ] && { node_runs; return; }`
   }
