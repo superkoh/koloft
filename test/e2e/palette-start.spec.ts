@@ -129,8 +129,8 @@ function savedOwnerWords(env: E2EEnv, backend: 'claude' | 'codex'): string {
     .join('\n')
 }
 
-function agyTitlesSet(env: E2EEnv): unknown[] {
-  const file = path.join(env.home, 'fake-agy-api.jsonl')
+function agyTitlesSet(env: E2EEnv, home = env.home): unknown[] {
+  const file = path.join(home, 'fake-agy-api.jsonl')
   if (!fs.existsSync(file)) return []
   return fs
     .readFileSync(file, 'utf8')
@@ -234,7 +234,8 @@ const ON_THE_MACHINE: Record<OtherAgentName, { backend: BackendId } & AgentStart
   Antigravity: {
     backend: 'agy',
     launches: machineAgyCalls,
-    firstPrompt: firstPromptAfter('-i')
+    firstPrompt: firstPromptAfter('-i'),
+    titleSentToTheAgent: (env) => agyTitlesSet(env, machineHome(env))
   }
 }
 
@@ -790,7 +791,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
     }
   })
 
-  test('local new project: Assist gives only a name, the folder is picked once in the New Project dialog and remembered, after which a new project starts at once, its name counting up rather than reuse a folder', async ({
+  test('local new project: Assist gives only a name, the session starts with the title Assist gave on its row, the folder is picked once in the New Project dialog and remembered, after which a new project starts at once, its name counting up rather than reuse a folder', async ({
     env
   }) => {
     test.setTimeout(180_000)
@@ -818,6 +819,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
       expect(fs.realpathSync(call.cwd)).toBe(path.join(parent, 'ledger'))
       expect(textAfterDashes(call)).toBe('start a new bookkeeping site')
       await expect(wsRows(page, 'ledger')).toHaveCount(1, { timeout: 30_000 })
+      await expect(titledRow(page, 'ledger', 'Ledger')).toHaveCount(1, { timeout: 30_000 })
       await expect
         .poll(() => (settingsOnDisk(env).newProjectFolders as Record<string, string>)?.local)
         .toBe(parent)
@@ -898,6 +900,9 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
         expect(onRemote.cwd).toBe(remoteDir(env))
         expect(textAfterDashes(onRemote)).toBe('check the deploy script')
         expect(nameOf(onRemote)).toBe('Deploy check')
+        await expect(titledRow(page, REMOTE_WS_NAME, 'Deploy check')).toHaveCount(1, {
+          timeout: 60_000
+        })
 
         assistAnswers(env, { workspace: null, machine: REMOTE_HOST, newFolder: 'crawler' })
         await ask(app, page, `on ${REMOTE_HOST}, a new price crawler`)
@@ -919,8 +924,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
 
     for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
       const { backend, launches, firstPrompt, titleSentToTheAgent } = ON_THE_MACHINE[agent.label]
-      const named = backend !== 'agy'
-      test(`remote ${agent.label}: a request starts ${agent.label} at once in the ssh workspace with its first prompt, ${named ? 'and the title Assist gave on its row' : 'its row titled by agy from the request, since agy on another machine takes no name from Koloft'}`, async ({
+      test(`remote ${agent.label}: a request starts ${agent.label} at once in the ssh workspace with its first prompt and the title Assist gave, which ${agent.label} on that machine takes too, so the row keeps it once its tab is closed and after Koloft starts again`, async ({
         env
       }) => {
         test.setTimeout(300_000)
@@ -928,7 +932,7 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
         agent.install(env)
         seedRemoteWorkspace(env)
         assistAnswers(env, { workspace: 3, worktree: 'main', title: 'Deploy check', why: 'proj' })
-        const app = await launchApp(env)
+        let app = await launchApp(env)
         try {
           const page = await app.firstWindow()
           await waitBooted(page)
@@ -941,16 +945,64 @@ test.describe('starting work from ⌘P: Koloft Assist picks the workspace, workt
           const [call] = launches(env)
           expect(fs.realpathSync(call.cwd)).toBe(fs.realpathSync(remoteDir(env)))
           expect(firstPrompt(call.argv)).toBe('check the deploy script')
-          // AGY§8 AGY§16
-          const title = named ? 'Deploy check' : 'check the deploy script'
-          await expect(titledRow(page, REMOTE_WS_NAME, title)).toHaveClass(/\bst-waiting\b/, {
+          const row = titledRow(page, REMOTE_WS_NAME, 'Deploy check')
+          await expect(row).toHaveClass(/\bst-waiting\b/, { timeout: 60_000 })
+          // AGY§16 AGY§29
+          await expect
+            .poll(() => titleSentToTheAgent?.(env), { timeout: 30_000 })
+            .toContain('Deploy check')
+          expect(readAllCalls(env)).toHaveLength(0)
+          await sendShortcut(app, 'shortcut:close-tab')
+          await expect(row).toHaveClass(/\bcold\b/, { timeout: 60_000 })
+        } finally {
+          await quitAndClose(app)
+        }
+        app = await launchApp(env)
+        try {
+          const page = await app.firstWindow()
+          await waitBooted(page)
+          await expect(titledRow(page, REMOTE_WS_NAME, 'Deploy check')).toHaveClass(/\bcold\b/, {
             timeout: 60_000
           })
-          if (titleSentToTheAgent)
-            await expect
-              .poll(() => titleSentToTheAgent(env), { timeout: 30_000 })
-              .toContain('Deploy check')
-          expect(readAllCalls(env)).toHaveLength(0)
+          await expect(wsRows(page, REMOTE_WS_NAME)).toHaveCount(1)
+        } finally {
+          await quitAndClose(app)
+        }
+      })
+    }
+
+    for (const agent of OTHER_AGENTS_ON_THE_MACHINE) {
+      const { backend, launches, titleSentToTheAgent } = ON_THE_MACHINE[agent.label]
+      test(`remote ${agent.label}: a new project made on the machine from the New Project dialog starts ${agent.label} there with the title typed in its Title box on its row, which ${agent.label} on that machine takes too`, async ({
+        env
+      }) => {
+        test.setTimeout(300_000)
+        installFakeRemote(env)
+        agent.install(env)
+        seedRemoteWorkspace(env)
+        const remoteParent = path.join(machineHome(env), 'projects')
+        fs.mkdirSync(remoteParent, { recursive: true })
+        assistAnswers(env, { workspace: null, machine: REMOTE_HOST, newFolder: 'crawler' })
+        const app = await launchApp(env)
+        try {
+          const page = await app.firstWindow()
+          await waitBooted(page)
+          await makeDefaultAgent(page, backend)
+          await ask(app, page, `on ${REMOTE_HOST}, a new price crawler`)
+          await page.keyboard.press('Enter')
+          const made = page.getByRole('dialog', { name: 'New Project' })
+          await expect(made.locator('.ws-remote')).toHaveText(REMOTE_HOST, { timeout: 30_000 })
+          await made.getByRole('textbox', { name: 'Title' }).fill('Price crawler')
+          await made.getByRole('textbox', { name: 'In' }).fill(remoteParent)
+          await made.getByRole('textbox', { name: 'In' }).press('Enter')
+          await expect(made).toHaveCount(0)
+          await expect.poll(() => launches(env).length, { timeout: 90_000 }).toBe(1)
+          await expect(titledRow(page, 'crawler', 'Price crawler')).toHaveClass(/\bst-waiting\b/, {
+            timeout: 60_000
+          })
+          await expect
+            .poll(() => titleSentToTheAgent?.(env), { timeout: 30_000 })
+            .toContain('Price crawler')
         } finally {
           await quitAndClose(app)
         }

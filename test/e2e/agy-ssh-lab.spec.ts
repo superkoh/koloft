@@ -659,4 +659,82 @@ test.describe('Antigravity sessions on real sshd machines behind a company jump 
       }
     )
   })
+
+  // AGY§16 AGY§29
+  test('E-SSH-A12: a REAL agy on the Linux machine, started from ⌘P with the title Assist gave, takes that title in its own list there, and its row keeps it while open, once its tab is closed and after Koloft starts again (downloads agy, spends nothing)', async ({
+    env
+  }) => {
+    test.setTimeout(A_FIRST_AGY_AND_GH_DOWNLOAD_ON_THE_MACHINE_MS + 300_000)
+    const TITLE = 'Lab named'
+    await withLab(
+      env,
+      async ({ app, page, lab, quitKoloft, openKoloftAgain }) => {
+        await addMachine(page, 'kt-key', 'kuser')
+        await page.evaluate(() =>
+          window.api.settings.set({
+            sessionMethods: {
+              defaultBackend: 'agy',
+              enabled: { claude: true, codex: true, agy: true }
+            }
+          })
+        )
+        fs.writeFileSync(
+          path.join(env.home, 'fake-claude-assist-reply'),
+          JSON.stringify({ workspace: 3, worktree: 'main', title: TITLE, why: 'the lab project' })
+        )
+        const tabId = await tabOpenedBy(page, async () => {
+          await sendShortcut(app, 'shortcut:command-palette')
+          const askBox = page
+            .locator('.modal.palette')
+            .getByRole('textbox', { name: 'Ask or jump' })
+          await expect(askBox).toBeFocused()
+          await askBox.fill('say the word')
+          await page.keyboard.press('Enter')
+        })
+        const row = rowOfTab(page, tabId)
+        await expect(row).toHaveClass(/\bst-waiting\b/, {
+          timeout: A_FIRST_AGY_AND_GH_DOWNLOAD_ON_THE_MACHINE_MS
+        })
+        await expect(row.locator('.ws-tab-title')).toHaveText(TITLE)
+        const { id } = await boundAgyOn(page, 'kt-key')
+        await expect
+          .poll(
+            () =>
+              lines(
+                runOnTarget(
+                  lab,
+                  'kuser',
+                  `grep -l -r -F '${TITLE}' .gemini/antigravity-cli/annotations || true`
+                )
+              ),
+            { timeout: A_TURN_THROUGH_THE_MIRROR_MS }
+          )
+          .toEqual([expect.stringContaining(id)])
+        await sendShortcut(app, 'shortcut:close-tab')
+        const cold = wsRows(page, 'kt-key').first()
+        await expect(cold).toHaveClass(/\bcold\b/, { timeout: 60_000 })
+        await expect(cold.locator('.ws-tab-title')).toHaveText(TITLE)
+        await quitKoloft()
+        const again = await openKoloftAgain()
+        await expect(wsRows(again, 'kt-key').first().locator('.ws-tab-title')).toHaveText(TITLE, {
+          timeout: 60_000
+        })
+      },
+      (lab) => {
+        installCurlOnTarget(lab)
+        startFakeGeminiOnTarget(
+          lab,
+          { title: STAND_IN_TITLE, reply: STAND_IN_REPLY },
+          STAND_IN_LOG_OUTSIDE_THE_HOME_SEARCHED_FOR_THE_KEY,
+          TURN_LONGER_THAN_A_MIRROR_PULL_MS
+        )
+        everyLoginOnTargetGets(
+          lab,
+          'GOOGLE_GEMINI_BASE_URL',
+          `http://127.0.0.1:${FAKE_GEMINI_PORT}`
+        )
+        agyTrustsTheProjectAndFindsKoloftsNode(lab, 'kuser')
+      }
+    )
+  })
 })

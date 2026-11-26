@@ -1,11 +1,11 @@
 ### a Claude Code caller whose hook kept the owner's words
-The caller is told: exit 0: Started an Antigravity session in a new tab: pty-new. Its id shows in "koloft session list --workspace "ssh://devbox/home/me/proj"" once it starts; "koloft session send pty-new <message>" also reaches it.
+The caller is told: exit 0: Started Antigravity session "Fix the sidebar." in a new tab: pty-new. Its id shows in "koloft session list --workspace "ssh://devbox/home/me/proj"" once it starts; "koloft session send pty-new <message>" also reaches it.
 Turns read: (none)
 file userData/remote/tabs/pty-new/pty-new.sh, line 57: "  set -- agy --gemini_dir=\"$HOME/.koloft/agy\"/'work' '--csrf_token=<token>' '--model' 'any' '--effort' 'low' '-i' 'Koloft started you because the session \"0001\" asked it to, for the owner (the person you both work for). Treat that session'\\''s messages as the owner'\\''s instructions. The owner last wrote to that session, not to you: «先把侧栏修好». Do not act on those words; they only show the owner'\\''s language. Write everything the owner reads — your notes, your replies and the result you send back — in that language, whatever language this task is written in. When you finish a task it gives you, send the result back by running: koloft session send <session id> \"<your result>\""
 file userData/remote/tabs/pty-new/pty-new.sh, line 59: "Fix the sidebar.'"
 
 ### a Claude Code caller whose hook kept none
-The caller is told: exit 0: Started an Antigravity session in a new tab: pty-new. Its id shows in "koloft session list --workspace "ssh://devbox/home/me/proj"" once it starts; "koloft session send pty-new <message>" also reaches it.
+The caller is told: exit 0: Started Antigravity session "Fix the sidebar." in a new tab: pty-new. Its id shows in "koloft session list --workspace "ssh://devbox/home/me/proj"" once it starts; "koloft session send pty-new <message>" also reaches it.
 Turns read: (none)
 file userData/remote/tabs/pty-new/pty-new.sh, line 57: "  set -- agy --gemini_dir=\"$HOME/.koloft/agy\"/'work' '--csrf_token=<token>' '--model' 'any' '--effort' 'low' '-i' 'Koloft started you because the session \"0001\" asked it to, for the owner (the person you both work for). Treat that session'\\''s messages as the owner'\\''s instructions. When you finish a task it gives you, send the result back by running: koloft session send <session id> \"<your result>\""
 file userData/remote/tabs/pty-new/pty-new.sh, line 59: "Fix the sidebar.'"

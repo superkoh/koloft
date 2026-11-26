@@ -99,6 +99,7 @@ import {
   agyConversations,
   agyConversationTitle,
   agyHeldElsewhere,
+  agyRename,
   agySend,
   launchAgy,
   readAgyConfig
@@ -1111,6 +1112,8 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       resource,
       explicitStop: false,
       resumeKey: opts.resumeSessionId,
+      launchName: opts.name,
+      givenTitle: opts.name,
       permission: opts.permission ?? 'default',
       bypassing: permission === 'bypass',
       firstLine,
@@ -2760,9 +2763,28 @@ export class AgySessions extends StoredSessions<AgyRun, HistoryEntry, AgyLaunch>
       if (name !== run.info.title) this.retitle(run.info, name)
       return
     }
-    run.givenTitle = undefined
-    // AGY§16
-    if (name !== given) void run.api?.rename(id, given).catch(() => undefined)
+    if (name === given) {
+      run.givenTitle = undefined
+      return
+    }
+    void this.renameInAgy(run, id, given).then(
+      () => {
+        if (run.givenTitle === given) run.givenTitle = undefined
+        if (run.remote) void this.deps.remote.nextPull(run.remote.host)
+      },
+      (e) => this.deps.error(`could not give the Antigravity conversation ${id} its name: ${e}`)
+    )
+  }
+
+  // AGY§16 AGY§29
+  private async renameInAgy(run: AgyRun, id: string, title: string): Promise<void> {
+    if (!run.remote) {
+      if (!run.api) throw new Error('its local API is not known')
+      return run.api.rename(id, title)
+    }
+    const machine = this.deps.remote.machine(run.remote.host)
+    if (!(await agyRename(machine, run.remote.tmuxName, id, title)))
+      throw new Error(`its API on ${run.remote.host} did not take it`)
   }
 
   // AGY§8

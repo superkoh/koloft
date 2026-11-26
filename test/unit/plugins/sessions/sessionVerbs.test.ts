@@ -956,7 +956,7 @@ describe('koloft session new', () => {
     expect(launched[0].firstPrompt).toContain('koloft session send me-session')
   })
 
-  it('--workspace starts a Codex or Antigravity sibling in a remote workspace too, reached by its tab id; an Antigravity one there takes no --name', async () => {
+  it('--workspace starts a Codex or Antigravity sibling in a remote workspace too, reached by its tab id', async () => {
     const REMOTE = 'ssh://box/srv/api'
     const { verb, launched } = harness([session('me', 'claude')])
     for (const backend of ['codex', 'agy']) {
@@ -967,11 +967,6 @@ describe('koloft session new', () => {
       expect(reply.exit).toBe(0)
       expect(reply.text).toContain('koloft session send new-tab')
     }
-    const named = await verb(
-      ['new', ...PICKED, '--backend', 'agy', '--name', 'x', '--workspace', REMOTE, '--', 'go'],
-      from('me')
-    )
-    expect(named.exit).toBe(EXIT_USAGE)
     expect(launched.map((l) => [l.kind, l.cwd])).toEqual([
       ['codex', REMOTE],
       ['agy', REMOTE]
@@ -993,7 +988,7 @@ describe('koloft session new', () => {
     expect(launched).toEqual([])
   })
 
-  it('a Codex or Antigravity sibling takes its --name, or a title made from its task; one in a remote workspace, Antigravity, cannot be named and gets no made-up title, since Koloft cannot reach that agy’s local API', async () => {
+  it('a Codex or Antigravity sibling takes its --name, or a title made from its task, in a local workspace and in a remote one alike', async () => {
     const REMOTE = 'ssh://box/srv/api'
     const { verb, launched } = harness([
       session('cx', 'codex', { nativeSessionId: CODEX_THREAD }),
@@ -1002,14 +997,13 @@ describe('koloft session new', () => {
     ])
     expect((await verb(['new', ...PICKED, '--name', 'x', '--', 'go'], from('cx'))).exit).toBe(0)
     expect((await verb(['new', ...PICKED, '--', 'Look around.'], from('ag'))).exit).toBe(0)
-    const refused = await verb(['new', ...PICKED, '--name', 'x', '--', 'go'], from('far'))
-    expect(refused).toMatchObject({ exit: EXIT_USAGE })
-    expect(refused.text).toContain('an Antigravity session in a remote workspace has no name')
-    expect((await verb(['new', ...PICKED, '--', 'Look around.'], from('far'))).exit).toBe(0)
-    expect(launched.map((l) => [l.kind, l.name])).toEqual([
-      ['codex', 'x'],
-      ['agy', 'Look around.'],
-      ['agy', undefined]
+    expect((await verb(['new', ...PICKED, '--name', 'y', '--', 'go'], from('far'))).exit).toBe(0)
+    expect((await verb(['new', ...PICKED, '--', 'Read the logs.'], from('far'))).exit).toBe(0)
+    expect(launched.map((l) => [l.kind, l.cwd, l.name])).toEqual([
+      ['codex', expect.any(String), 'x'],
+      ['agy', expect.any(String), 'Look around.'],
+      ['agy', REMOTE, 'y'],
+      ['agy', REMOTE, 'Read the logs.']
     ])
   })
 })

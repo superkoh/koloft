@@ -628,7 +628,6 @@
       "const OUTSIDE_LOCAL_CLAUDE: Capabilities = {",
       "local: OUTSIDE_LOCAL_CLAUDE,",
       "local: OUTSIDE_LOCAL_CLAUDE,",
-      "return !(backend === 'agy' && remote)",
       "return host === 'local' || backend !== 'claude'",
       "return session?.details?.codex?.observation === 'degraded'"
     ],
