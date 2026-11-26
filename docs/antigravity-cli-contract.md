@@ -481,6 +481,11 @@ only downloaded the public release.
   - The user's words are `USER_INPUT.content`, still wrapped as in §2; the reply is
     `PLANNER_RESPONSE.content`; tool results are `GENERIC.content`. Tokens are on
     `PLANNER_RESPONSE` lines.
+  - A `'` in `content` is written as it is, not as `'` (2026-11-25, read from a real
+    `transcript_full.jsonl` of 2026-11-22 on the Mac, agy version not recorded: a tool
+    result holding `"(From the butler, Koloft's AI, for your owner."`). Koloft
+    dependent: the hook's list of openings that are not the owner's words (§12) matches
+    that opening by its raw text.
   - What the token fields hold (2026-10-19, agy 1.3.6, `agy -p` against a fake model
     server, two calls checked against what it sent): `input_tokens =
     promptTokenCount − cachedContentTokenCount` (cached already taken out, unlike

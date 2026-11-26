@@ -493,7 +493,7 @@ describe("Antigravity's hook script on this Mac, run as agy runs each hook", () 
   })
 })
 
-describe('a message the butler passes on, which Koloft proves it sent, and the file of the owner’s last words', () => {
+describe('a message the butler passes on is not the owner’s words in any agent’s tab, even when Koloft proves it sent it', () => {
   const readOrNothing = (file: string): string | undefined =>
     fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined
 
@@ -523,7 +523,7 @@ describe('a message the butler passes on, which Koloft proves it sent, and the f
     expect(readOrNothing(saidFile)).toBe('先看看侧栏\n')
   })
 
-  it("in a Codex tab it replaces the owner's last words with the butler's whole message; one Koloft did not send leaves them alone", () => {
+  it("in a Codex tab the butler's words are not the owner's: one Koloft sent leaves the owner's last words as the owner typed them and the reminder quotes those; one Koloft did not send is flagged and leaves them alone too", () => {
     const { codexReplyLanguage } = setupHooks(() => false)
     const saidFile = path.join(reg, `${TAB}.codex-said`)
     const sentWords = path.join(reg, `${TAB}.discord-said`)
@@ -542,11 +542,13 @@ describe('a message the butler passes on, which Koloft proves it sent, and the f
     expect(prompt(BUTLER_PASSES_ON)).toContain('Koloft did not send it')
     expect(readOrNothing(saidFile)).toBe(`${OWNER_TYPED}\n`)
     noteSent(reg, TAB, { words: BUTLER_PASSES_ON })
-    expect(prompt(BUTLER_PASSES_ON)).toContain('The user writes Chinese')
-    expect(readOrNothing(saidFile)).toBe(`${BUTLER_PASSES_ON}\n`)
+    const proven = prompt(BUTLER_PASSES_ON)
+    expect(proven).not.toContain('Koloft did not send it')
+    expect(proven).toContain(`«${OWNER_TYPED}»`)
+    expect(readOrNothing(saidFile)).toBe(`${OWNER_TYPED}\n`)
   })
 
-  it("in an Antigravity tab there is no such file: before each model call its hook quotes the newest message in the transcript, and takes the butler's message as the owner's words whether Koloft sent it or not", () => {
+  it("in an Antigravity tab there is no such file: before each model call its hook quotes the owner's newest own message in the transcript, past a butler's message, whether Koloft sent it or not", () => {
     const { hook } = writeAgyScripts(path.join(root, 'scripts'))
     const transcript = path.join(root, 'transcript_full.jsonl')
     const before = (newest: string): string => {
@@ -570,7 +572,7 @@ describe('a message the butler passes on, which Koloft proves it sent, and the f
       return JSON.parse(printed).injectSteps[0].ephemeralMessage as string
     }
     expect(before('please also read the README')).toContain('«please also read the README»')
-    expect(before(BUTLER_PASSES_ON)).toMatch(/^The user writes Chinese\. /)
+    expect(before(BUTLER_PASSES_ON)).toContain(`«${OWNER_TYPED}»`)
     expect(fs.readdirSync(reg)).toEqual([`${TAB}.agy.jsonl`])
   })
 })

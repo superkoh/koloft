@@ -1,6 +1,7 @@
 import fs from 'fs'
 import path from 'path'
 import { shq } from '@shared/shellQuote'
+import { BUTLER_SAYS_OPENING } from '@shared/agentGuide'
 import { nonEmptyString, record } from '@core/unknownValue'
 import {
   A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS,
@@ -34,7 +35,13 @@ export const AGY_COST_ENV = 'KOLOFT_AGY_COST'
 const EVENTS = ['SessionStart', 'PreInvocation', 'PreToolUse', 'PostToolUse', 'Stop'] as const
 type AgyHookName = (typeof EVENTS)[number]
 
-const NOT_THE_OWNERS_WORDS = [FROM_A_SESSION, FROM_KOLOFT, A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS]
+// AGY§8 ADR-0031
+const NOT_THE_OWNERS_WORDS = [
+  FROM_A_SESSION,
+  FROM_KOLOFT,
+  BUTLER_SAYS_OPENING,
+  A_HELPER_HAS_IT_IN_OLDER_TRANSCRIPTS
+]
   .map((opening) => `-e ${shq(`"content":"<USER_REQUEST>\\n${opening}`)}`)
   .join(' ')
 

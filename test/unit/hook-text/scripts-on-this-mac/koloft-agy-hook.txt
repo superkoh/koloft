@@ -119,7 +119,7 @@ case "$event" in
   SessionStart) [ -f "$KOLOFT_AGY_START" ] && cat "$KOLOFT_AGY_START" ;;
   PreInvocation)
     tp="$(printf '%s' "$input" | tr -d '\n' | sed -n 's/.*"transcriptPath" *: *"\([^"]*\)".*/\1/p')"
-    said="$(grep -F '"type":"USER_INPUT"' "$tp" 2>/dev/null | grep -v -F -e '"content":"<USER_REQUEST>\n(From the session ' -e '"content":"<USER_REQUEST>\n(From Koloft:) ' -e '"content":"<USER_REQUEST>\n(From Koloft: the owner asked for something' | tail -n 1 | sed -n 's/.*"content":"<USER_REQUEST>\\n//p' | sed -E 's/\\n<\/USER_REQUEST>.*//; s/^Koloft started you because .*koloft session send [^ ]+ \\"<your result>\\"\\n\\n//; s/\\[nrt]/ /g; s/ +/ /g; s/^ //' | head -c 300 | ( iconv -c -f UTF-8 -t UTF-8 2>/dev/null || cat ) | sed -E 's/\\u[0-9a-fA-F]{0,3}$//; s/\\+$//')"
+    said="$(grep -F '"type":"USER_INPUT"' "$tp" 2>/dev/null | grep -v -F -e '"content":"<USER_REQUEST>\n(From the session ' -e '"content":"<USER_REQUEST>\n(From Koloft:) ' -e '"content":"<USER_REQUEST>\n(From the butler, Koloft'\''s AI, for your owner.' -e '"content":"<USER_REQUEST>\n(From Koloft: the owner asked for something' | tail -n 1 | sed -n 's/.*"content":"<USER_REQUEST>\\n//p' | sed -E 's/\\n<\/USER_REQUEST>.*//; s/^Koloft started you because .*koloft session send [^ ]+ \\"<your result>\\"\\n\\n//; s/\\[nrt]/ /g; s/ +/ /g; s/^ //' | head -c 300 | ( iconv -c -f UTF-8 -t UTF-8 2>/dev/null || cat ) | sed -E 's/\\u[0-9a-fA-F]{0,3}$//; s/\\+$//')"
     [ -n "$said" ] && said="$(reply_language_words "$said" last_reply)"
     if [ -n "$turn" ]; then
       case "$(printf '%s' "$input" | tr -d ' \n')" in *'"invocationNum":0'[,}]*) rm -f "$turn" ;; esac
