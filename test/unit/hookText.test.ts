@@ -53,13 +53,10 @@ vi.mock('../../src/agents/codex/main/codexTransport', async (importOriginal) => 
 })
 
 import { tabPackageDir } from '../../src/main/remote/paths'
-import {
-  perInstallHash,
-  setupAgyStatusline,
-  setupStatusline,
-  statusLineSetting
-} from '../../src/main/statusline'
-import { setupHooks, writeTabHookSettings } from '../../src/plugins/sessions/main/hooks'
+import { perInstallHash, setupStatusline, statusLineSetting } from '../../src/main/statusline'
+import { setupAgyStatusline } from '../../src/agents/agy/main/agyStatusline'
+import { writeTabHookSettings } from '../../src/agents/claude/main/claudeHooks'
+import { setupHookScripts } from './helpers/hookScripts'
 import { writeAgyScripts } from '../../src/agents/agy/main/agyHooks'
 import { machineHookSettings } from '../../src/agents/claude/main/backend'
 import {
@@ -122,7 +119,7 @@ const readOrNothing = (file: string): string | undefined =>
 
 describe('the full text of every hook script and status line script Koloft writes on this Mac, read back from disk, pinned so that moving the code that builds them changes no character', () => {
   it("Claude Code's hook script and Codex's reply-language script", async () => {
-    const { hookScript, codexReplyLanguage } = setupHooks(noPeerInstance)
+    const { hookScript, codexReplyLanguage } = setupHookScripts(noPeerInstance)
     await pinScript(hookScript)
     await pinScript(codexReplyLanguage)
   })
@@ -153,7 +150,7 @@ const EVERYTHING_OFF: Switches = { statusLine: false, agentTools: false }
 const STATUS_LINE_ONLY: Switches = { statusLine: true, agentTools: false }
 
 async function claudeOnThisMac(s: Switches): Promise<string> {
-  const hookPaths = setupHooks(noPeerInstance)
+  const hookPaths = setupHookScripts(noPeerInstance)
   const statusline = setupStatusline()
   let written: string | undefined
   const { pty } = recordingPty(TAB)
@@ -235,7 +232,7 @@ async function agyTab(cwd: string, s: Switches): Promise<void> {
     machine: { run: recordingSsh().run, loginPath: async () => LOGIN_PATH_ON_THE_MACHINE },
     apiKey: 'api-key-of-the-koloft-account',
     agentTools: s.agentTools,
-    builtInStatusLine: s.statusLine ? setupAgyStatusline(statusline) : undefined
+    builtInStatusLine: s.statusLine ? statusline : undefined
   })
   stops.push(() => sessions.stopAll())
   await sessions.launch({ kind: 'agy', cwd, tabId: TAB, trustFolder: true })

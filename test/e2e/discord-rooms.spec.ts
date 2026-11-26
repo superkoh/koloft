@@ -29,7 +29,8 @@ import {
 import type { BackendId, SessionInfo } from '../../src/shared/types'
 import { agentSessionId, identityOf } from '../../src/shared/sessionBackend'
 import { CLOSED_IN_ROOM, STARTED_OVER_IN_ROOM } from '../../src/plugins/discord/main/rooms'
-import { NOT_FROM_THE_RELAY, NOT_SENT_BY_KOLOFT } from '../../src/plugins/sessions/main/hooks'
+import { NOT_FROM_THE_RELAY } from '../../src/plugins/discord/shared/hookRules'
+import { NOT_SENT_BY_KOLOFT } from '../../src/plugins/sessions/shared/hookRules'
 
 test.setTimeout(180_000)
 
