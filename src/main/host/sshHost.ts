@@ -68,7 +68,7 @@ import {
   remoteSentWordsFile,
   sentWordsLine,
   type NoticeFile
-} from '@plugins/sessions/main/hooks'
+} from '../hookFiles'
 import type { SentNote } from '@core/agent/sessionBackends'
 import { AGENT_IDS, agentManifest, type AgentId } from '@core/agent/registry'
 import { shortProductList } from '@shared/sessionBackend'

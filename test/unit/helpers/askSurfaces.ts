@@ -25,7 +25,8 @@ import {
   questionsOf
 } from '../../../src/plugins/sessions/main/appHelpers'
 import { followEachState, followEachTurn } from '../../../src/plugins/sessions/main/sessionHooks'
-import { HOOK_SCRIPT, markAnswerable } from '../../../src/plugins/sessions/main/hooks'
+import { markAnswerable } from '../../../src/plugins/sessions/main/hooks'
+import { HOOK_SCRIPT } from '../../../src/agents/claude/main/claudeHooks'
 import { DiscordRelay, type Destination } from '../../../src/plugins/discord/main/relay'
 import { AskButtons } from '../../../src/plugins/discord/main/buttons'
 import type { Card } from '../../../src/plugins/discord/main/cards'

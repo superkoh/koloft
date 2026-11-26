@@ -1,4 +1,4 @@
-import { OWNER_QUOTE_MARKS } from '@core/ownerWords'
+import { OWNER_QUOTE_MARKS, OWNER_WORDS_QUOTED_CHARS } from '@core/ownerWords'
 import type { Assist } from '@core/assistModels'
 import { composePrompt } from '@core/prompt'
 import { HANDOVER_OPENING, RESULT_PLACEHOLDER } from '@core/handOver'
@@ -12,7 +12,7 @@ export interface SessionCaller {
   ownerWords?: string
 }
 
-export const OWNER_WORDS_QUOTED_CHARS = 150
+export { OWNER_WORDS_QUOTED_CHARS }
 const CALLER_SLOT = '{caller}'
 const OWNER_WORDS_SLOT = '{owner}'
 

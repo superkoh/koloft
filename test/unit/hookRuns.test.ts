@@ -15,13 +15,9 @@ vi.mock('electron', async () => {
 
 afterAll(() => fs.rmSync(app.getPath('userData'), { recursive: true, force: true }))
 
-import {
-  localNotice,
-  markAnswerable,
-  noteSent,
-  noticeFile,
-  setupHooks
-} from '../../src/plugins/sessions/main/hooks'
+import { markAnswerable, noteSent } from '../../src/plugins/sessions/main/hooks'
+import { localNotice, noticeFile } from '../../src/main/hookFiles'
+import { setupHookScripts } from './helpers/hookScripts'
 import { sessionStartOutput, writeAgyScripts } from '../../src/agents/agy/main/agyHooks'
 import { crossSessionLine } from '../../src/agents/claude/main/crossSessionMessage'
 import { ownerSays } from '../../src/shared/agentGuide'
@@ -181,7 +177,7 @@ describe("Claude Code's hook script on this Mac, run as Claude Code runs it for 
     runSync(script, [reg, TAB, event], { session_id: SESSION, ...(payload as object) }, claudeEnv())
 
   beforeEach(() => {
-    ;({ hookScript: script } = setupHooks(() => false))
+    ;({ hookScript: script } = setupHookScripts(() => false))
   })
 
   const holdAnAsk = async (r: Steps): Promise<void> => {
@@ -363,7 +359,7 @@ describe("Codex's reply-language script on this Mac, run as Codex runs each hook
     runInSh(`sh "$KOLOFT_CODEX_REPLY_LANGUAGE" ${arg}`, payload, codexEnv())
 
   beforeEach(() => {
-    ;({ codexReplyLanguage: script } = setupHooks(() => false))
+    ;({ codexReplyLanguage: script } = setupHookScripts(() => false))
   })
 
   it('what each hook writes beside the tab and what the script prints back', async () => {
@@ -498,7 +494,7 @@ describe('a message the butler passes on is not the owner’s words in any agent
     fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : undefined
 
   it("in a Claude Code tab it does not replace the owner's last words: they stay what the owner last typed; the owner's next typed prompt does replace them", () => {
-    const { hookScript } = setupHooks(() => false)
+    const { hookScript } = setupHookScripts(() => false)
     const saidFile = path.join(reg, `${TAB}.said`)
     const statusLog = path.join(reg, `${TAB}.status.jsonl`)
     const prompt = (text: string): void => {
@@ -524,7 +520,7 @@ describe('a message the butler passes on is not the owner’s words in any agent
   })
 
   it("in a Codex tab the butler's words are not the owner's: one Koloft sent leaves the owner's last words as the owner typed them and the reminder quotes those; one Koloft did not send is flagged and leaves them alone too", () => {
-    const { codexReplyLanguage } = setupHooks(() => false)
+    const { codexReplyLanguage } = setupHookScripts(() => false)
     const saidFile = path.join(reg, `${TAB}.codex-said`)
     const sentWords = path.join(reg, `${TAB}.discord-said`)
     const prompt = (text: string): string =>

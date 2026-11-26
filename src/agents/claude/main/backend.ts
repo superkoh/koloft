@@ -75,13 +75,12 @@ import {
   KOLOFT_ALLOW_RULE,
   removeConductorMarker,
   SENT_TO_A_SESSION_EVENT,
-  SHELL_WROTE_EVENT,
   START_IN_STATUS_LOG,
-  STATUS_LOG_SUFFIX,
-  statusLogOf,
   TO_SESSION_FIELD
-} from '@plugins/sessions/main/hooks'
-import type { StatusLineSetting } from '../../../main/statusline'
+} from './claudeHooks'
+import { SHELL_WROTE_EVENT } from '@agents/kit/main/hookScriptParts'
+import { STATUS_LOG_SUFFIX, statusLogOf } from '../../../main/hookFiles'
+import type { StatusLineSetting } from '../../../main/statuslineParts'
 import { listAccounts } from '../../../main/accounts'
 import { SESSION_ID_RE } from './claudeArgs'
 import {
