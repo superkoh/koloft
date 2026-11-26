@@ -146,22 +146,22 @@ the card now says: -# ✅ Yes
 Discord said: (nothing)
 what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"permission":{"allow":true}}}
 --- replied "yes" in the session's Discord room ---
-Discord said: reacted ⏳
-handed to the session as a message: [Discord] yes
-what reached the agent: (nothing)
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"permission":{"allow":true}}}
 --- answered "yes" with koloft session answer ---
 Koloft said: (taken, no refusal)
 what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"permission":{"allow":true}}}
 --- replied "no" in the session's Discord room ---
-Discord said: reacted ⏳
-handed to the session as a message: [Discord] no
-what reached the agent: (nothing)
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"permission":{"allow":false}}}
 --- answered "no" with koloft session answer ---
 Koloft said: (taken, no refusal)
 what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"permission":{"allow":false}}}
 --- replied "maybe" in the session's Discord room ---
-Discord said: reacted ⏳
-handed to the session as a message: [Discord] maybe
+Discord said: under the message: Reply yes or no.
+handed to the session as a message: (nothing)
 what reached the agent: (nothing)
 --- answered "maybe" with koloft session answer ---
 Koloft said: Reply yes or no.

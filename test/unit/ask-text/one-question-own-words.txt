@@ -150,23 +150,23 @@ the card now says: -# ✅ 1. Red
 Discord said: (nothing)
 what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which colour do you prefer?","selectedOptionIds":["a"]}]}}}
 --- replied "1" in the session's Discord room ---
-Discord said: reacted ⏳
-handed to the session as a message: [Discord] 1
-what reached the agent: (nothing)
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which colour do you prefer?","selectedOptionIds":["a"]}]}}}
 --- answered "1" with koloft session answer ---
 Koloft said: (taken, no refusal)
 what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which colour do you prefer?","selectedOptionIds":["a"]}]}}}
 --- replied "Green" in the session's Discord room ---
-Discord said: reacted ⏳
-handed to the session as a message: [Discord] Green
-what reached the agent: (nothing)
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which colour do you prefer?","selectedOptionIds":["b"]}]}}}
 --- answered "Green" with koloft session answer ---
 Koloft said: (taken, no refusal)
 what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which colour do you prefer?","selectedOptionIds":["b"]}]}}}
 --- replied "Blue, please" in the session's Discord room ---
-Discord said: reacted ⏳
-handed to the session as a message: [Discord] Blue, please
-what reached the agent: (nothing)
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which colour do you prefer?","writeInResponse":"Blue, please"}]}}}
 --- answered "Blue, please" with koloft session answer ---
 Koloft said: (taken, no refusal)
 what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"askQuestion":{"responses":[{"question":"Which colour do you prefer?","writeInResponse":"Blue, please"}]}}}

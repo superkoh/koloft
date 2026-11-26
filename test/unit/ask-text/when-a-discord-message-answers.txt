@@ -29,20 +29,20 @@ handed to the session as a message: (nothing)
 what reached the agent: keys pressed: "y"
 cards posted: 0
 --- replied "yes" in the session's Discord room ---
-Discord said: reacted ⏳
-handed to the session as a message: [Discord] yes
-what reached the agent: (nothing)
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: keys pressed: "y"
 ## Antigravity, read through its API (a tab on this Mac)
 cards posted: 1
 --- replied "yes" in the session's Discord room ---
-Discord said: reacted ⏳
-handed to the session as a message: [Discord] yes
-what reached the agent: (nothing)
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"permission":{"allow":true}}}
 cards posted: 0
 --- replied "yes" in the session's Discord room ---
-Discord said: reacted ⏳
-handed to the session as a message: [Discord] yes
-what reached the agent: (nothing)
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: through its API, HandleCascadeUserInteraction: {"cascadeId":"3f1c2b9e-0d4a-4c1e-9a7b-5e6f7a8b9c0d","interaction":{"trajectoryId":"t9","stepIndex":2,"permission":{"allow":true}}}
 ## Antigravity, read from its tool call and 7501 status only, its API not answering (a tab on another machine has no API client and reads this way: inferred, not checked): Koloft answers by keys
 cards posted: 1
 --- replied "yes" in the session's Discord room ---
@@ -51,6 +51,6 @@ handed to the session as a message: (nothing)
 what reached the agent: written to its terminal: "1"
 cards posted: 0
 --- replied "yes" in the session's Discord room ---
-Discord said: reacted ⏳
-handed to the session as a message: [Discord] yes
-what reached the agent: (nothing)
+Discord said: reacted ✅
+handed to the session as a message: (nothing)
+what reached the agent: written to its terminal: "1"
