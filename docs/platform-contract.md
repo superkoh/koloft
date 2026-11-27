@@ -3473,6 +3473,16 @@ server unless a line says so.
   banner for the whole run, though the Dock badge was still drawn. `lsregister -f` on the
   bundle right after `codesign` gave `didGrant: 1 hasError: 0` and the question. Measured
   2026-10-30, macOS 27.0 26A428, Electron 43.8.1, in the tart VM above.
+- **A file put on the clipboard by a short-lived `osascript` is sometimes not there when it
+  returns.** Right after `osascript -e 'set the clipboard to (POSIX file "…")'` exited,
+  Electron's `clipboard.availableFormats()` in the app was `[]` in 6 of 40 runs, and a
+  real ⌘V 3 s later still pasted nothing (the paste event had no types); in the other 34
+  it held `text/uri-list` and the paste carried the file as `image/png`. JXA's
+  `NSPasteboard.generalPasteboard.writeObjects([NSURL])` from `osascript -l JavaScript`
+  did the same in 1 of 40 though it returned `true`.
+  Writing again until the app reads the file URL back, then pressing ⌘V, pasted every
+  time. Why it comes up empty was not probed. Measured 2026-11-27, GitHub's
+  `macos-26-arm64` runner (macOS 26.7.2), Electron 43.8.7, in `real-window.spec.ts`.
 
 ## §53 An SSH remote sent over https, and a server that refuses https
 
