@@ -248,7 +248,13 @@ test.describe('a real Mac screen: keys, mouse, Dock, banners and input methods a
 
     const file = path.join(env.home, 'copied in Finder.png')
     fs.writeFileSync(file, Buffer.from(png, 'base64'))
-    execFileSync('osascript', ['-e', `set the clipboard to (POSIX file "${file}")`])
+    // PLATFORM§52
+    await expect
+      .poll(() => {
+        execFileSync('osascript', ['-e', `set the clipboard to (POSIX file "${file}")`])
+        return app.evaluate(({ clipboard }) => clipboard.read('public.file-url'))
+      })
+      .toContain(encodeURIComponent(path.basename(file)))
     realKey(KEY_V, COMMAND_FLAG)
     await expect(pictures).toHaveCount(2)
     await expect(field).toHaveValue('')
